@@ -251,36 +251,46 @@ export class Context7Provider extends BaseDocProvider {
 	private async searchRequest(url: string): Promise<Context7SearchResponse> {
 		return withRetry(
 			async () => {
-				const response = await fetch(url, {
-					headers: {
-						Authorization: `Bearer ${this.apiKey}`,
-						Accept: "application/json",
-					},
-				});
+				const controller = new AbortController();
+				const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-				if (response.status === 401) {
-					throw new AuthenticationError("context7", "Invalid API key");
+				try {
+					const response = await fetch(url, {
+						headers: {
+							Authorization: `Bearer ${this.apiKey}`,
+							Accept: "application/json",
+						},
+						signal: controller.signal,
+					});
+
+					if (response.status === 401) {
+						throw new AuthenticationError("context7", "Invalid API key");
+					}
+
+					if (response.status === 429) {
+						const retryAfter = response.headers.get("Retry-After");
+						throw new RateLimitError(
+							"context7",
+							retryAfter ? Number.parseInt(retryAfter) * 1000 : undefined,
+						);
+					}
+
+					if (!response.ok) {
+						throw new Error(`Context7 search error: ${response.status}`);
+					}
+
+					return response.json() as Promise<Context7SearchResponse>;
+				} finally {
+					clearTimeout(timeoutId);
 				}
-
-				if (response.status === 429) {
-					const retryAfter = response.headers.get("Retry-After");
-					throw new RateLimitError(
-						"context7",
-						retryAfter ? Number.parseInt(retryAfter) * 1000 : undefined,
-					);
-				}
-
-				if (!response.ok) {
-					throw new Error(`Context7 search error: ${response.status}`);
-				}
-
-				return response.json() as Promise<Context7SearchResponse>;
 			},
 			{
 				maxAttempts: 3,
 				shouldRetry: (error) => {
 					if (error instanceof RateLimitError) return true;
 					if (error instanceof TypeError) return true;
+					// Retry on timeout (AbortError)
+					if (error instanceof Error && error.name === "AbortError") return true;
 					return false;
 				},
 			},
@@ -293,40 +303,50 @@ export class Context7Provider extends BaseDocProvider {
 	private async docsRequest(url: string): Promise<string> {
 		return withRetry(
 			async () => {
-				const response = await fetch(url, {
-					headers: {
-						Authorization: `Bearer ${this.apiKey}`,
-						Accept: "text/plain, text/markdown, */*",
-					},
-				});
+				const controller = new AbortController();
+				const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-				if (response.status === 401) {
-					throw new AuthenticationError("context7", "Invalid API key");
+				try {
+					const response = await fetch(url, {
+						headers: {
+							Authorization: `Bearer ${this.apiKey}`,
+							Accept: "text/plain, text/markdown, */*",
+						},
+						signal: controller.signal,
+					});
+
+					if (response.status === 401) {
+						throw new AuthenticationError("context7", "Invalid API key");
+					}
+
+					if (response.status === 404) {
+						throw new LibraryNotFoundError(url, "context7");
+					}
+
+					if (response.status === 429) {
+						const retryAfter = response.headers.get("Retry-After");
+						throw new RateLimitError(
+							"context7",
+							retryAfter ? Number.parseInt(retryAfter) * 1000 : undefined,
+						);
+					}
+
+					if (!response.ok) {
+						throw new Error(`Context7 docs error: ${response.status}`);
+					}
+
+					return response.text();
+				} finally {
+					clearTimeout(timeoutId);
 				}
-
-				if (response.status === 404) {
-					throw new LibraryNotFoundError(url, "context7");
-				}
-
-				if (response.status === 429) {
-					const retryAfter = response.headers.get("Retry-After");
-					throw new RateLimitError(
-						"context7",
-						retryAfter ? Number.parseInt(retryAfter) * 1000 : undefined,
-					);
-				}
-
-				if (!response.ok) {
-					throw new Error(`Context7 docs error: ${response.status}`);
-				}
-
-				return response.text();
 			},
 			{
 				maxAttempts: 3,
 				shouldRetry: (error) => {
 					if (error instanceof RateLimitError) return true;
 					if (error instanceof TypeError) return true;
+					// Retry on timeout (AbortError)
+					if (error instanceof Error && error.name === "AbortError") return true;
 					return false;
 				},
 			},

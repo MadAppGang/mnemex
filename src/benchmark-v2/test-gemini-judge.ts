@@ -272,3 +272,6 @@ async function main() {
 }
 
 main();
+
+// Make this file a module to avoid global scope conflicts
+export {};

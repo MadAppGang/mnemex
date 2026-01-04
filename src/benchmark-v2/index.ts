@@ -46,6 +46,7 @@ import type {
 	BenchmarkRun,
 	BenchmarkPhase,
 	ModelConfig,
+	ModelProvider,
 	SamplingConfig,
 	JudgeEvaluationConfig,
 	ContrastiveEvaluationConfig,
@@ -167,8 +168,6 @@ export const DEFAULT_EVAL_WEIGHTS: EvaluationWeights = {
 // Model Provider Detection (for bias warnings)
 // ============================================================================
 
-export type ModelProvider = "anthropic" | "openai" | "google" | "meta" | "mistral" | "local" | "unknown";
-
 /**
  * Detect the provider/family of a model from its ID.
  * Used to warn about potential bias when judge and generator are from same provider.
@@ -267,12 +266,7 @@ export interface BenchmarkOptions {
 	/** Output directory for reports */
 	outputDir?: string;
 	/** LLM models to test (generator configs) */
-	generators?: Array<{
-		id: string;
-		provider: string;
-		model: string;
-		displayName?: string;
-	}>;
+	generators?: ModelConfig[];
 	/** Judge models for LLM-as-Judge */
 	judgeModels?: string[];
 	/** Sampling configuration */
@@ -340,20 +334,10 @@ export function createBenchmarkConfig(options: BenchmarkOptions): BenchmarkConfi
 		weights = {},
 	} = options;
 
-	// Convert simple generator format to ModelConfig
-	const modelConfigs: ModelConfig[] = generators.map((g) => ({
-		id: g.id,
-		provider: g.provider as any,
-		modelName: g.model,
-		displayName: g.displayName || g.id,
-		temperature: 0.3,
-		maxTokens: 2000,
-	}));
-
 	return {
 		name: runName,
 		projectPath,
-		generators: modelConfigs,
+		generators,
 		judges: judge.judgeModels || judgeModels,
 		sampleSize: sampling.targetCount || DEFAULT_SAMPLING_CONFIG.targetCount,
 		samplingStrategy: sampling.strategy || DEFAULT_SAMPLING_CONFIG.strategy,
@@ -878,32 +862,38 @@ export async function runBenchmarkCLI(args: string[]): Promise<void> {
 	// Parse generators
 	// Format: "anthropic" or "openrouter/openai/gpt-4" (provider/model)
 	let generatorSpecs = generatorsStr.split(",").map((s) => s.trim());
-	let generators = generatorSpecs.map((spec) => {
+	let generators: ModelConfig[] = generatorSpecs.map((spec) => {
 		if (spec.startsWith("openrouter/")) {
 			// OpenRouter format: openrouter/provider/model
-			const model = spec.slice("openrouter/".length); // "openai/gpt-4"
+			const modelName = spec.slice("openrouter/".length); // "openai/gpt-4"
 			return {
 				id: spec,
-				provider: "openrouter",
-				model,
+				provider: "openrouter" as ModelProvider,
+				modelName,
 				displayName: spec,
+				temperature: 0.7,
+				maxTokens: 4096,
 			};
 		} else if (spec.includes("/")) {
 			// Generic provider/model format
 			const slashIdx = spec.indexOf("/");
 			return {
 				id: spec,
-				provider: spec.slice(0, slashIdx),
-				model: spec.slice(slashIdx + 1),
+				provider: spec.slice(0, slashIdx) as ModelProvider,
+				modelName: spec.slice(slashIdx + 1),
 				displayName: spec,
+				temperature: 0.7,
+				maxTokens: 4096,
 			};
 		} else {
 			// Just provider name (e.g., "anthropic")
 			return {
 				id: spec,
-				provider: spec,
-				model: spec,
+				provider: spec as ModelProvider,
+				modelName: spec,
 				displayName: spec,
+				temperature: 0.7,
+				maxTokens: 4096,
 			};
 		}
 	});

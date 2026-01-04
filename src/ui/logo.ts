@@ -29,7 +29,7 @@ function getVersion(): string {
 			if (existsSync(path)) {
 				const pkg = JSON.parse(readFileSync(path, "utf-8"));
 				_version = pkg.version || "0.0.0";
-				return _version;
+				return _version!;
 			}
 		}
 	} catch {

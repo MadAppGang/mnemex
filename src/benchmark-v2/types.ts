@@ -181,6 +181,7 @@ export interface DownstreamResults {
 	taskId: string;
 	success: boolean;
 	partialScore?: number;
+	bleuScore?: number;
 	details?: Record<string, unknown>;
 }
 
@@ -534,7 +535,7 @@ export interface NormalizedScores {
 // ============================================================================
 
 /** Supported model providers */
-export type ModelProvider = "anthropic" | "openai" | "google" | "openrouter" | "local";
+export type ModelProvider = "anthropic" | "openai" | "google" | "openrouter" | "meta" | "mistral" | "local" | "unknown";
 
 /** Configuration for a model under test */
 export interface ModelConfig {
@@ -575,7 +576,11 @@ export interface EvaluationConfig {
 	};
 	downstream: {
 		enabled: boolean;
-		tasks: DownstreamTaskType[];
+		tasks: {
+			codeCompletion: boolean;
+			bugLocalization: boolean;
+			functionSelection: boolean;
+		};
 		completionModel?: string;
 	};
 	/** Self-evaluation: generating model tests its own summaries */

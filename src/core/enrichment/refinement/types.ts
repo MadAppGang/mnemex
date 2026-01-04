@@ -31,6 +31,8 @@ export interface QualityTestResult {
 		query?: string;
 		/** Model that produced the winning summary */
 		winningModelId?: string;
+		/** Effective target rank (may be lower than configured if candidate pool is small) */
+		effectiveTargetRank?: number;
 	};
 }
 

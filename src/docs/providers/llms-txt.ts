@@ -119,34 +119,46 @@ export class LlmsTxtProvider extends BaseDocProvider {
 			`https://${library}.io/llms.txt`,
 		];
 
-		// Try each pattern
+		// Try each pattern with timeout
 		for (const url of patterns) {
 			try {
-				const response = await fetch(url, { method: "HEAD" });
-				if (response.ok) return url;
+				const controller = new AbortController();
+				const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s for HEAD requests
+				try {
+					const response = await fetch(url, { method: "HEAD", signal: controller.signal });
+					if (response.ok) return url;
+				} finally {
+					clearTimeout(timeoutId);
+				}
 			} catch {
 				// Continue to next pattern
 			}
 		}
 
-		// Try llms-text.ai search API
+		// Try llms-text.ai search API with timeout
 		try {
-			const searchUrl = `https://llms-text.ai/api/search-llms?q=${encodeURIComponent(library)}`;
-			const response = await fetch(searchUrl);
-			if (response.ok) {
-				const results = (await response.json()) as Array<{
-					url: string;
-					name: string;
-				}>;
-				if (results.length > 0) {
-					// Find best match
-					const match = results.find(
-						(r) =>
-							r.name.toLowerCase().includes(library.toLowerCase()) ||
-							r.url.toLowerCase().includes(library.toLowerCase()),
-					);
-					return match?.url || results[0].url;
+			const controller = new AbortController();
+			const timeoutId = setTimeout(() => controller.abort(), 10000);
+			try {
+				const searchUrl = `https://llms-text.ai/api/search-llms?q=${encodeURIComponent(library)}`;
+				const response = await fetch(searchUrl, { signal: controller.signal });
+				if (response.ok) {
+					const results = (await response.json()) as Array<{
+						url: string;
+						name: string;
+					}>;
+					if (results.length > 0) {
+						// Find best match
+						const match = results.find(
+							(r) =>
+								r.name.toLowerCase().includes(library.toLowerCase()) ||
+								r.url.toLowerCase().includes(library.toLowerCase()),
+						);
+						return match?.url || results[0].url;
+					}
 				}
+			} finally {
+				clearTimeout(timeoutId);
 			}
 		} catch {
 			// API not available, continue without it
@@ -161,13 +173,24 @@ export class LlmsTxtProvider extends BaseDocProvider {
 	private async fetchLlmsTxt(url: string): Promise<string> {
 		return withRetry(
 			async () => {
-				const response = await fetch(url);
-				if (!response.ok) {
-					throw new Error(`Failed to fetch llms.txt: ${response.status}`);
+				const controller = new AbortController();
+				const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+				try {
+					const response = await fetch(url, { signal: controller.signal });
+					if (!response.ok) {
+						throw new Error(`Failed to fetch llms.txt: ${response.status}`);
+					}
+					return response.text();
+				} finally {
+					clearTimeout(timeoutId);
 				}
-				return response.text();
 			},
-			{ maxAttempts: 3 },
+			{
+				maxAttempts: 3,
+				shouldRetry: (error) =>
+					error instanceof Error && error.name === "AbortError",
+			},
 		);
 	}
 

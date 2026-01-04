@@ -444,7 +444,7 @@ ${comp.summaryB.summary}`;
 	): PairwiseResult {
 		// For swapped comparisons, we need to swap the winner back
 		let winner = response.winner;
-		let criteriaBreakdown = response.criteria_breakdown;
+		let criteriaBreakdown: PairwiseResult["criteriaBreakdown"] = response.criteria_breakdown;
 
 		if (comp.swapped) {
 			winner = this.swapWinner(response.winner);

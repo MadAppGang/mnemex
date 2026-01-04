@@ -23,7 +23,8 @@
     "plugin-dev@claude-code-plugins": true,
     "ralph-wiggum@claude-code-plugins": true,
     "code-analysis@mag-claude-plugins": true,
-    "orchestration@mag-claude-plugins": true
+    "orchestration@mag-claude-plugins": true,
+    "seo@mag-claude-plugins": true
   },
   "installedPluginVersions": {
     "code-review@claude-code-plugins": "1.0.0",
@@ -35,6 +36,7 @@
     "plugin-dev@claude-code-plugins": "0.1.0",
     "ralph-wiggum@claude-code-plugins": "1.0.0",
     "code-analysis@mag-claude-plugins": "2.4.0",
-    "orchestration@mag-claude-plugins": "0.5.0"
+    "orchestration@mag-claude-plugins": "0.5.0",
+    "seo@mag-claude-plugins": "1.2.2"
   }
 }

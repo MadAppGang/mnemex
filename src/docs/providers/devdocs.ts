@@ -153,13 +153,26 @@ export class DevDocsProvider extends BaseDocProvider {
 	private async fetchDocsIndex(): Promise<DevDocsIndexEntry[]> {
 		return withRetry(
 			async () => {
-				const response = await fetch(`${DEVDOCS_API_URL}/docs.json`);
-				if (!response.ok) {
-					throw new Error(`Failed to fetch DevDocs index: ${response.status}`);
+				const controller = new AbortController();
+				const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+				try {
+					const response = await fetch(`${DEVDOCS_API_URL}/docs.json`, {
+						signal: controller.signal,
+					});
+					if (!response.ok) {
+						throw new Error(`Failed to fetch DevDocs index: ${response.status}`);
+					}
+					return response.json() as Promise<DevDocsIndexEntry[]>;
+				} finally {
+					clearTimeout(timeoutId);
 				}
-				return response.json() as Promise<DevDocsIndexEntry[]>;
 			},
-			{ maxAttempts: 3 },
+			{
+				maxAttempts: 3,
+				shouldRetry: (error) =>
+					error instanceof Error && error.name === "AbortError",
+			},
 		);
 	}
 
@@ -173,13 +186,26 @@ export class DevDocsProvider extends BaseDocProvider {
 	): Promise<FetchedDoc[]> {
 		const db = await withRetry(
 			async () => {
-				const response = await fetch(`${DEVDOCS_API_URL}/docs/${slug}/db.json`);
-				if (!response.ok) {
-					throw new Error(`Failed to fetch DevDocs db: ${response.status}`);
+				const controller = new AbortController();
+				const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+				try {
+					const response = await fetch(`${DEVDOCS_API_URL}/docs/${slug}/db.json`, {
+						signal: controller.signal,
+					});
+					if (!response.ok) {
+						throw new Error(`Failed to fetch DevDocs db: ${response.status}`);
+					}
+					return response.json() as Promise<DevDocsDatabase>;
+				} finally {
+					clearTimeout(timeoutId);
 				}
-				return response.json() as Promise<DevDocsDatabase>;
 			},
-			{ maxAttempts: 3 },
+			{
+				maxAttempts: 3,
+				shouldRetry: (error) =>
+					error instanceof Error && error.name === "AbortError",
+			},
 		);
 
 		// Get entry content (DevDocs stores HTML content separately)

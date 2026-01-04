@@ -402,7 +402,11 @@ export class BenchmarkCodeExtractor {
 				startLine: unit.startLine,
 				endLine: unit.endLine,
 				signature: unit.signature,
-				parameters: unit.metadata?.parameters,
+				parameters: unit.metadata?.parameters?.map((p) => ({
+					name: p.name,
+					type: p.type,
+					optional: false, // Default to non-optional since source doesn't track this
+				})),
 				returnType: unit.metadata?.returnType,
 				visibility: unit.metadata?.visibility as "public" | "private" | "protected" | undefined,
 				decorators: unit.metadata?.decorators,
