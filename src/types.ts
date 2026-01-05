@@ -391,6 +391,14 @@ export interface GlobalConfig {
 	// ─── External Documentation Settings ───
 	/** Context7 API key for fetching framework documentation */
 	context7ApiKey?: string;
+
+	// ─── Self-Learning Settings ───
+	/**
+	 * Enable self-learning system (default: true).
+	 * When enabled, claudemem tracks interactions and learns from user corrections
+	 * to improve search quality over time.
+	 */
+	learning?: boolean;
 }
 
 export interface ProjectConfig {
@@ -435,6 +443,13 @@ export interface ProjectConfig {
 	 * - 'include': Treat test files normally (no special handling)
 	 */
 	testFiles?: "downrank" | "exclude" | "include";
+
+	// ─── Self-Learning Settings ───
+	/**
+	 * Enable/disable self-learning for this project (overrides global).
+	 * When enabled, claudemem learns from interactions to improve search quality.
+	 */
+	learning?: boolean;
 }
 
 /** Configuration for external documentation fetching */

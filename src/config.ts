@@ -759,6 +759,31 @@ export function getDocsCachePath(projectPath: string): string {
 /** Test file handling mode */
 export type TestFileMode = "downrank" | "exclude" | "include";
 
+// ============================================================================
+// Self-Learning Configuration
+// ============================================================================
+
+/**
+ * Check if self-learning system is enabled.
+ * Priority: project config > global config > default (true)
+ *
+ * When enabled, claudemem tracks interactions and learns from user corrections
+ * to improve search quality over time.
+ */
+export function isLearningEnabled(projectPath?: string): boolean {
+	// Check project override first
+	if (projectPath) {
+		const projectConfig = loadProjectConfig(projectPath);
+		if (projectConfig?.learning !== undefined) {
+			return projectConfig.learning;
+		}
+	}
+
+	// Fall back to global config (default: true)
+	const globalConfig = loadGlobalConfig();
+	return globalConfig.learning !== false;
+}
+
 /**
  * Get test file handling mode for search results.
  * Priority: project config > default ('downrank')

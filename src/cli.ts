@@ -19,6 +19,7 @@ import {
 	getLLMSpec,
 	getVoyageApiKey,
 	hasApiKey,
+	isLearningEnabled,
 	isVectorEnabled,
 	loadGlobalConfig,
 	saveGlobalConfig,
@@ -811,26 +812,29 @@ async function handleSearch(args: string[]): Promise<void> {
 
 		// Record query for implicit feedback (refinement detection)
 		// This happens in background and doesn't block results
-		const tracker = getFileTracker(projectPath);
-		if (tracker) {
-			try {
-				const { createLearningSystem } = await import("./learning/index.js");
-				const learning = createLearningSystem(tracker.getDatabase());
-				// Generate a CLI session ID based on process start time
-				const cliSessionId = `cli_${process.pid}`;
-				learning.collector.recordSearch({
-					query,
-					sessionId: cliSessionId,
-					resultCount: results.length,
-					useCase,
-				});
-			} catch (learningError) {
-				// Learning system errors shouldn't break search (silent in compact mode)
-				if (!compactMode) {
-					console.error("[claudemem] Learning system error:", learningError);
+		// Only if learning is enabled in config
+		if (isLearningEnabled(projectPath)) {
+			const tracker = getFileTracker(projectPath);
+			if (tracker) {
+				try {
+					const { createLearningSystem } = await import("./learning/index.js");
+					const learning = createLearningSystem(tracker.getDatabase());
+					// Generate a CLI session ID based on process start time
+					const cliSessionId = `cli_${process.pid}`;
+					learning.collector.recordSearch({
+						query,
+						sessionId: cliSessionId,
+						resultCount: results.length,
+						useCase,
+					});
+				} catch (learningError) {
+					// Learning system errors shouldn't break search (silent in compact mode)
+					if (!compactMode) {
+						console.error("[claudemem] Learning system error:", learningError);
+					}
+				} finally {
+					tracker.close();
 				}
-			} finally {
-				tracker.close();
 			}
 		}
 
@@ -1422,6 +1426,30 @@ Documentation providers (used in priority order):
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════════
+	// STEP 4: Self-Learning System
+	// ═══════════════════════════════════════════════════════════════════════════
+	console.log("\n─── Self-Learning System ───\n");
+	console.log("claudemem can learn from your interactions to improve search quality.");
+	console.log("It tracks which results you find helpful and adapts over time.\n");
+
+	const enableLearning = await confirm({
+		message: "Enable self-learning system?",
+		default: true,
+	});
+
+	if (enableLearning) {
+		console.log(`
+Learning features:
+  • Tracks search interactions and result feedback
+  • Learns from user corrections to improve ranking
+  • Adapts to your codebase patterns over time
+  • All data stored locally in .claudemem/
+
+View stats anytime with: claudemem learn
+`);
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════════
 	// Save Configuration
 	// ═══════════════════════════════════════════════════════════════════════════
 	saveGlobalConfig({
@@ -1436,6 +1464,7 @@ Documentation providers (used in priority order):
 		enableEnrichment,
 		...(llmSpec ? { llm: llmSpec } : {}),
 		...(context7ApiKey ? { context7ApiKey } : {}),
+		learning: enableLearning,
 	});
 
 	// ═══════════════════════════════════════════════════════════════════════════
@@ -1453,6 +1482,7 @@ Documentation providers (used in priority order):
 		const hasContext7 = context7ApiKey || getContext7ApiKey();
 		console.log(`  Context7 API:       ${hasContext7 ? "configured" : "not configured (using llms.txt/DevDocs)"}`);
 	}
+	console.log(`  Self-learning:      ${enableLearning ? "enabled" : "disabled"}`);
 	console.log("\nYou can now index your codebase:");
 	console.log("  claudemem index\n");
 }
@@ -3920,6 +3950,17 @@ async function handleFeedback(args: string[]): Promise<void> {
 		process.exit(1);
 	}
 
+	// Check if learning is enabled
+	if (!isLearningEnabled(projectPath)) {
+		if (compactMode) {
+			console.log("error: learning disabled in config");
+		} else {
+			console.error("Self-learning is disabled in configuration.");
+			console.error("Enable it with: claudemem init (or set learning: true in config)");
+		}
+		process.exit(1);
+	}
+
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
 		if (compactMode) {
@@ -3982,6 +4023,13 @@ async function handleLearn(args: string[]): Promise<void> {
 	const projectPath = pathIdx >= 0 ? resolve(args[pathIdx + 1]) : process.cwd();
 
 	const subcommand = args.find((a) => !a.startsWith("-"));
+	const learningEnabled = isLearningEnabled(projectPath);
+
+	// Show warning if learning is disabled (but still allow viewing stats)
+	if (!learningEnabled && !compactMode) {
+		console.warn("⚠️  Self-learning is disabled in configuration.");
+		console.warn("   Enable with: claudemem init (or set learning: true in config)\n");
+	}
 
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
@@ -4114,6 +4162,17 @@ async function handleLearn(args: string[]): Promise<void> {
 		// ================================================================
 
 		if (subcommand === "reset") {
+			// Block reset if learning is disabled
+			if (!learningEnabled) {
+				if (compactMode) {
+					console.log("error: learning disabled in config");
+				} else {
+					console.error("Cannot reset: Self-learning is disabled in configuration.");
+					console.error("Enable it first with: claudemem init");
+				}
+				return;
+			}
+
 			// Reset learning
 			const force = args.includes("--force") || args.includes("-f");
 
@@ -4367,13 +4426,14 @@ ${c.yellow}${c.bold}DEVELOPER EXPERIENCE${c.reset}
   ${c.green}hook${c.reset}                   Claude Code hook handler ${c.dim}(reads JSON from stdin)${c.reset}
   ${c.green}install${c.reset} <tool>         Install integration ${c.dim}(opencode|claude-code)${c.reset}
 
-${c.yellow}${c.bold}ADAPTIVE LEARNING${c.reset} ${c.dim}(improves ranking from feedback)${c.reset}
+${c.yellow}${c.bold}SELF-LEARNING SYSTEM${c.reset} ${c.dim}(enabled by default, learns from interactions)${c.reset}
   ${c.green}feedback${c.reset}               Report search feedback ${c.dim}(--query, --helpful, --unhelpful)${c.reset}
   ${c.green}learn${c.reset}                  Show learning statistics
   ${c.green}learn sessions${c.reset}         Show session interaction statistics
   ${c.green}learn corrections${c.reset}      Show correction gap analysis
   ${c.green}learn patterns${c.reset}         Show detected patterns
   ${c.green}learn reset${c.reset}            Reset learned weights to defaults
+  ${c.dim}Configure: claudemem init or set "learning: false" in ~/.claudemem/config.json${c.reset}
 
 ${c.yellow}${c.bold}INDEX OPTIONS${c.reset}
   ${c.cyan}-f, --force${c.reset}            Force re-index all files

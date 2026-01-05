@@ -29,6 +29,11 @@ export class FeedbackStore {
 	private config: LearningConfig;
 	private initialized = false;
 
+	// Rate limiting to prevent database flooding
+	private rateLimiter = new Map<string, { count: number; resetAt: number }>();
+	private readonly RATE_LIMIT = 100; // max events per session per window
+	private readonly RATE_WINDOW_MS = 60_000; // 1 minute window
+
 	constructor(db: SQLiteDatabase, config: Partial<LearningConfig> = {}) {
 		this.db = db;
 		this.config = { ...DEFAULT_LEARNING_CONFIG, ...config };
@@ -106,13 +111,44 @@ export class FeedbackStore {
 	}
 
 	// ========================================================================
+	// Rate Limiting
+	// ========================================================================
+
+	/**
+	 * Check if session has exceeded rate limit.
+	 * @throws Error if rate limit exceeded
+	 */
+	private checkRateLimit(sessionId: string): void {
+		const now = Date.now();
+		const entry = this.rateLimiter.get(sessionId);
+
+		if (!entry || now > entry.resetAt) {
+			// New window or expired - reset counter
+			this.rateLimiter.set(sessionId, { count: 1, resetAt: now + this.RATE_WINDOW_MS });
+			return;
+		}
+
+		if (entry.count >= this.RATE_LIMIT) {
+			throw new Error(
+				`Rate limit exceeded for session ${sessionId}: ${this.RATE_LIMIT} events per ${this.RATE_WINDOW_MS / 1000}s`,
+			);
+		}
+
+		entry.count++;
+	}
+
+	// ========================================================================
 	// Feedback Event Operations
 	// ========================================================================
 
 	/**
 	 * Record a search feedback event.
+	 * @throws Error if rate limit exceeded for session
 	 */
 	recordFeedback(event: Omit<SearchFeedbackEvent, "id" | "createdAt">): void {
+		// Check rate limit before recording
+		this.checkRateLimit(event.sessionId);
+
 		const stmt = this.db.prepare(`
 			INSERT INTO search_feedback
 			(query, query_hash, session_id, result_ids, accepted_ids, rejected_ids,
@@ -516,16 +552,25 @@ export class FeedbackStore {
 			)
 			.get() as { last_updated: string } | undefined;
 
-		// Calculate average acceptance rate
+		// Calculate average acceptance rate using SQL aggregation (avoid N+1 query)
 		let averageAcceptanceRate = 0;
 		if (totalEvents > 0) {
-			const feedback = this.getRecentFeedback(100);
-			let totalResults = 0;
-			let totalAccepted = 0;
-			for (const event of feedback) {
-				totalResults += event.resultIds.length;
-				totalAccepted += event.acceptedIds.length;
-			}
+			const aggStmt = this.db.prepare(`
+				SELECT
+					SUM(json_array_length(result_ids)) as total_results,
+					SUM(json_array_length(accepted_ids)) as total_accepted
+				FROM (
+					SELECT result_ids, accepted_ids FROM search_feedback
+					ORDER BY created_at DESC
+					LIMIT 100
+				)
+			`);
+			const agg = aggStmt.get() as {
+				total_results: number | null;
+				total_accepted: number | null;
+			};
+			const totalResults = agg.total_results ?? 0;
+			const totalAccepted = agg.total_accepted ?? 0;
 			averageAcceptanceRate =
 				totalResults > 0 ? totalAccepted / totalResults : 0;
 		}
@@ -581,19 +626,40 @@ export class FeedbackStore {
 	// Private Helpers
 	// ========================================================================
 
+	/**
+	 * Safely parse JSON with error handling.
+	 * Returns defaultValue if parsing fails instead of crashing.
+	 */
+	private safeJsonParse<T>(
+		json: string,
+		defaultValue: T,
+		context: string,
+	): T {
+		try {
+			return JSON.parse(json);
+		} catch (error) {
+			console.error(
+				`[FeedbackStore] Failed to parse JSON in ${context}: ${json.slice(0, 100)}${json.length > 100 ? "..." : ""}`,
+			);
+			return defaultValue;
+		}
+	}
+
 	private rowToFeedbackEvent(row: Record<string, unknown>): SearchFeedbackEvent {
 		return {
 			id: row.id as number,
 			query: row.query as string,
 			queryHash: row.query_hash as string,
 			sessionId: row.session_id as string,
-			resultIds: JSON.parse(row.result_ids as string),
-			acceptedIds: JSON.parse(row.accepted_ids as string),
-			rejectedIds: JSON.parse(row.rejected_ids as string),
+			resultIds: this.safeJsonParse(row.result_ids as string, [], "result_ids"),
+			acceptedIds: this.safeJsonParse(row.accepted_ids as string, [], "accepted_ids"),
+			rejectedIds: this.safeJsonParse(row.rejected_ids as string, [], "rejected_ids"),
 			feedbackType: row.feedback_type as FeedbackType,
 			feedbackSource: row.feedback_source as "mcp" | "cli" | "api",
 			useCase: row.use_case as SearchUseCase | undefined,
-			context: row.context ? JSON.parse(row.context as string) : undefined,
+			context: row.context
+				? this.safeJsonParse(row.context as string, undefined, "context")
+				: undefined,
 			createdAt: row.created_at as string,
 		};
 	}
