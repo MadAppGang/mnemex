@@ -1,5 +1,3 @@
-import React from 'react';
-
 export const DocTable = ({ headers, rows }: { headers: string[], rows: string[][] }) => (
     <div className="overflow-x-auto border border-white/10 rounded-lg">
         <table className="w-full text-left border-collapse font-mono text-xs md:text-sm">

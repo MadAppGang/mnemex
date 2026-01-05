@@ -2075,7 +2075,7 @@ const DocsPage: React.FC = () => {
             {/* Self-Learning System */}
             {/* Self-Learning System */}
             {activeSection === 'self-learning' && (
-                <SelfLearningDoc onNavigate={setActiveSection} />
+                <SelfLearningDoc onNavigate={(section) => setActiveSection(section as typeof activeSection)} />
             )}
 
             {/* Validation & Results */}
