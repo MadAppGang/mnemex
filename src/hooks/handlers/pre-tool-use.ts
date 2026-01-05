@@ -6,12 +6,14 @@
  * - Bash: Detect grep/find commands and intercept
  * - Glob: Provide tips about semantic search
  * - Read: Track for potential feedback (future)
+ * - All tools: Log tool start for interaction monitoring
  */
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import type { HookInput, HookOutput, IndexStatus } from "../types.js";
+import { logToolStart } from "./interaction-logger.js";
 
 // ============================================================================
 // Utilities
@@ -237,6 +239,13 @@ async function handleReadIntercept(
 export async function handlePreToolUse(
 	input: HookInput,
 ): Promise<HookOutput | null> {
+	// Log tool start for interaction monitoring
+	try {
+		logToolStart(input);
+	} catch {
+		// Don't fail the hook if logging fails
+	}
+
 	switch (input.tool_name) {
 		case "Grep":
 			return handleGrepIntercept(input);

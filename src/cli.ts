@@ -3971,6 +3971,9 @@ async function handleFeedback(args: string[]): Promise<void> {
  * Usage:
  *   claudemem learn                 Show learning statistics
  *   claudemem learn stats           Show detailed learning statistics
+ *   claudemem learn sessions        Show session interaction statistics
+ *   claudemem learn corrections     Show correction gap statistics
+ *   claudemem learn patterns        Show detected patterns
  *   claudemem learn reset           Reset all learned weights
  */
 async function handleLearn(args: string[]): Promise<void> {
@@ -3993,6 +3996,122 @@ async function handleLearn(args: string[]): Promise<void> {
 	try {
 		const { createLearningSystem } = await import("./learning/index.js");
 		const learning = createLearningSystem(tracker.getDatabase());
+
+		// ================================================================
+		// Interaction Monitoring Subcommands
+		// ================================================================
+
+		if (subcommand === "sessions") {
+			// Show session interaction statistics
+			const {
+				getSessionStatistics,
+				formatSessionStats,
+			} = await import("./learning/interaction/index.js");
+			const stats = getSessionStatistics(projectPath);
+
+			if (!stats) {
+				if (compactMode) {
+					console.log("error: interaction monitoring not enabled");
+				} else {
+					console.error("Interaction monitoring not enabled or no data yet.");
+					console.error("Session data is captured automatically during Claude Code sessions.");
+				}
+				return;
+			}
+
+			if (compactMode) {
+				console.log(
+					`sessions:${stats.totalSessions} tools:${stats.totalToolEvents} corrections:${stats.totalCorrections} intervention:${(stats.avgInterventionRate * 100).toFixed(1)}%`
+				);
+			} else {
+				printLogo();
+				console.log("\n" + formatSessionStats(stats));
+				console.log("");
+			}
+			return;
+		}
+
+		if (subcommand === "corrections") {
+			// Show correction gap statistics
+			const {
+				getCorrectionGapStats,
+				getRecentCorrections,
+			} = await import("./learning/interaction/index.js");
+
+			const gapStats = getCorrectionGapStats(projectPath);
+			const recentCorrections = getRecentCorrections(projectPath, 0.5);
+
+			if (gapStats.length === 0 && recentCorrections.length === 0) {
+				if (compactMode) {
+					console.log("corrections:0");
+				} else {
+					printLogo();
+					console.log("\n📊 No corrections detected yet.\n");
+					console.log("Corrections are detected when users modify agent-generated code.");
+					console.log("");
+				}
+				return;
+			}
+
+			if (compactMode) {
+				console.log(`corrections:${recentCorrections.length}`);
+			} else {
+				printLogo();
+				console.log("\n📊 Correction Gap Analysis\n");
+
+				if (gapStats.length > 0) {
+					console.log("Files with most corrections:");
+					for (const stat of gapStats.slice(0, 10)) {
+						console.log(`  ${stat.corrections}x  ${stat.filePath}`);
+					}
+				}
+
+				if (recentCorrections.length > 0) {
+					console.log("\nRecent high-confidence corrections:");
+					for (const corr of recentCorrections.slice(0, 5)) {
+						const score = (corr.correctionScore * 100).toFixed(0);
+						const date = new Date(corr.timestamp).toLocaleDateString();
+						console.log(`  [${score}%] ${date} - ${corr.triggerEvent?.substring(0, 50) || "N/A"}...`);
+					}
+				}
+				console.log("");
+			}
+			return;
+		}
+
+		if (subcommand === "patterns") {
+			// Show detected patterns
+			const { getPatternStatistics, formatPatternStats } = await import(
+				"./learning/interaction/index.js"
+			);
+			const stats = getPatternStatistics(projectPath);
+
+			if (!stats || stats.totalPatterns === 0) {
+				if (compactMode) {
+					console.log("patterns:0");
+				} else {
+					printLogo();
+					console.log("\n📊 No patterns detected yet.\n");
+					console.log("Patterns are mined from tool sequences and error clusters.");
+					console.log("More interaction data is needed for pattern detection.");
+					console.log("");
+				}
+				return;
+			}
+
+			if (compactMode) {
+				console.log(`patterns:${stats.totalPatterns}`);
+			} else {
+				printLogo();
+				console.log("\n" + formatPatternStats(stats));
+				console.log("");
+			}
+			return;
+		}
+
+		// ================================================================
+		// Legacy Learning Subcommands
+		// ================================================================
 
 		if (subcommand === "reset") {
 			// Reset learning
@@ -4251,6 +4370,9 @@ ${c.yellow}${c.bold}DEVELOPER EXPERIENCE${c.reset}
 ${c.yellow}${c.bold}ADAPTIVE LEARNING${c.reset} ${c.dim}(improves ranking from feedback)${c.reset}
   ${c.green}feedback${c.reset}               Report search feedback ${c.dim}(--query, --helpful, --unhelpful)${c.reset}
   ${c.green}learn${c.reset}                  Show learning statistics
+  ${c.green}learn sessions${c.reset}         Show session interaction statistics
+  ${c.green}learn corrections${c.reset}      Show correction gap analysis
+  ${c.green}learn patterns${c.reset}         Show detected patterns
   ${c.green}learn reset${c.reset}            Reset learned weights to defaults
 
 ${c.yellow}${c.bold}INDEX OPTIONS${c.reset}
@@ -4392,6 +4514,8 @@ ${c.yellow}${c.bold}EXAMPLES${c.reset}
   ${c.dim}# Adaptive learning${c.reset}
   ${c.cyan}claudemem feedback --query "auth" --helpful id1,id2 --unhelpful id3${c.reset}
   ${c.cyan}claudemem learn${c.reset}                           ${c.dim}# show learning stats${c.reset}
+  ${c.cyan}claudemem learn sessions${c.reset}                  ${c.dim}# session interactions${c.reset}
+  ${c.cyan}claudemem learn corrections${c.reset}               ${c.dim}# correction gap analysis${c.reset}
   ${c.cyan}claudemem learn reset -f${c.reset}                  ${c.dim}# reset without prompt${c.reset}
   ${c.cyan}claudemem hooks install${c.reset}                   ${c.dim}# install git hook${c.reset}
 

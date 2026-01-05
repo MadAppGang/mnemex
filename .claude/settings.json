@@ -14,29 +14,27 @@
     }
   },
   "enabledPlugins": {
-    "code-review@claude-code-plugins": true,
-    "commit-commands@claude-code-plugins": true,
-    "explanatory-output-style@claude-code-plugins": true,
-    "feature-dev@claude-code-plugins": true,
-    "frontend-design@claude-code-plugins": true,
-    "learning-output-style@claude-code-plugins": true,
-    "plugin-dev@claude-code-plugins": true,
-    "ralph-wiggum@claude-code-plugins": true,
+    "code-review@claude-code-plugins": false,
+    "commit-commands@claude-code-plugins": false,
+    "explanatory-output-style@claude-code-plugins": false,
+    "feature-dev@claude-code-plugins": false,
+    "frontend-design@claude-code-plugins": false,
+    "learning-output-style@claude-code-plugins": false,
+    "plugin-dev@claude-code-plugins": false,
+    "ralph-wiggum@claude-code-plugins": false,
     "code-analysis@mag-claude-plugins": true,
     "orchestration@mag-claude-plugins": true,
-    "seo@mag-claude-plugins": true
+    "seo@mag-claude-plugins": true,
+    "agentdev@mag-claude-plugins": true,
+    "feature-dev@claude-plugins-official": true,
+    "github@claude-plugins-official": true
   },
   "installedPluginVersions": {
-    "code-review@claude-code-plugins": "1.0.0",
-    "commit-commands@claude-code-plugins": "1.0.0",
-    "explanatory-output-style@claude-code-plugins": "1.0.0",
-    "feature-dev@claude-code-plugins": "1.0.0",
-    "frontend-design@claude-code-plugins": "1.0.0",
-    "learning-output-style@claude-code-plugins": "1.0.0",
-    "plugin-dev@claude-code-plugins": "0.1.0",
-    "ralph-wiggum@claude-code-plugins": "1.0.0",
-    "code-analysis@mag-claude-plugins": "2.4.0",
-    "orchestration@mag-claude-plugins": "0.5.0",
-    "seo@mag-claude-plugins": "1.2.2"
+    "code-analysis@mag-claude-plugins": "2.12.0",
+    "orchestration@mag-claude-plugins": "0.8.0",
+    "seo@mag-claude-plugins": "1.4.0",
+    "agentdev@mag-claude-plugins": "1.3.0",
+    "feature-dev@claude-plugins-official": "0.0.0",
+    "github@claude-plugins-official": "0.0.0"
   }
 }

@@ -4,6 +4,7 @@
  * Runs when Claude Code session starts:
  * - Cleans up old temporary session directories
  * - Checks claudemem version and index status
+ * - Initializes interaction monitoring
  * - Returns context about available features
  */
 
@@ -12,6 +13,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import type { HookInput, HookOutput, IndexStatus } from "../types.js";
+import { logSessionStart, cleanupStaleSessions } from "./interaction-logger.js";
 
 // ============================================================================
 // Version Utilities
@@ -156,8 +158,16 @@ function cleanupOldSessions(): number {
 export async function handleSessionStart(
 	input: HookInput,
 ): Promise<HookOutput> {
-	// Clean up old sessions
+	// Clean up old sessions (temp directories)
 	const cleaned = cleanupOldSessions();
+
+	// Initialize interaction monitoring
+	try {
+		logSessionStart(input);
+		cleanupStaleSessions(input.cwd);
+	} catch {
+		// Don't fail the hook if logging fails
+	}
 
 	// Get claudemem version
 	const version = getVersion();

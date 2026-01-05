@@ -3,6 +3,7 @@
  *
  * Runs after tool execution completes:
  * - Write/Edit: Auto-reindex code files (debounced, background)
+ * - All tools: Log tool completion for interaction monitoring
  */
 
 import {
@@ -14,6 +15,7 @@ import {
 import { spawn } from "node:child_process";
 import { join, extname } from "node:path";
 import type { HookInput, HookOutput } from "../types.js";
+import { logToolCompletion } from "./interaction-logger.js";
 
 // ============================================================================
 // Constants
@@ -154,6 +156,14 @@ async function handleAutoReindex(input: HookInput): Promise<HookOutput | null> {
 export async function handlePostToolUse(
 	input: HookInput,
 ): Promise<HookOutput | null> {
+	// Log tool completion for interaction monitoring
+	try {
+		logToolCompletion(input);
+	} catch {
+		// Don't fail the hook if logging fails
+	}
+
+	// Handle auto-reindex for code files
 	if (input.tool_name === "Write" || input.tool_name === "Edit") {
 		return handleAutoReindex(input);
 	}

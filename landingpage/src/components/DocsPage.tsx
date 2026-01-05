@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { TerminalWindow } from './TerminalWindow';
+import { SelfLearningDoc } from './docs/SelfLearningDoc';
+import { ValidationResultsDoc } from './docs/ValidationResultsDoc';
+import { DocTable as Table } from './docs/DocTable';
 
 const DocsPage: React.FC = () => {
   const [activeSection, setActiveSection] = useState<
-    'installation' | 'cli' | 'integration' | 'framework-docs' |
+    'installation' | 'cli' | 'integration' | 'framework-docs' | 'self-learning' | 'validation-results' |
     'comparisons-claude-mem' | 'comparisons-claude-context' | 'comparisons-context-engine' | 'comparisons-greptile' | 'comparisons-brokk' |
     'comparisons-serena' | 'comparisons-amp' | 'comparisons-supermemory'
   >('installation');
-  const [expandedCategories, setExpandedCategories] = useState<string[]>(['comparisons']);
+  const [expandedCategories, setExpandedCategories] = useState<string[]>(['system', 'comparisons']);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -28,6 +31,11 @@ const DocsPage: React.FC = () => {
     { id: 'integration', label: 'Claude Code Integration' },
   ];
 
+  const systemItems = [
+    { id: 'self-learning', label: 'Self-Learning System' },
+    { id: 'validation-results', label: 'Validation & Results' },
+  ];
+
   const comparisonItems = [
     { id: 'comparisons-claude-mem', label: 'vs claude-mem ⚠️' },
     { id: 'comparisons-claude-context', label: 'vs claude-context' },
@@ -38,29 +46,6 @@ const DocsPage: React.FC = () => {
     { id: 'comparisons-amp', label: 'vs Amp' },
     { id: 'comparisons-supermemory', label: 'vs Supermemory' },
   ];
-
-  const Table = ({ headers, rows }: { headers: string[], rows: string[][] }) => (
-    <div className="overflow-x-auto border border-white/10 rounded-lg">
-        <table className="w-full text-left border-collapse font-mono text-xs md:text-sm">
-            <thead className="bg-[#1a1a1a] text-gray-300">
-                <tr>
-                    {headers.map((h, i) => (
-                        <th key={i} className="p-3 border-b border-white/10 whitespace-nowrap">{h}</th>
-                    ))}
-                </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5 text-gray-400 bg-[#0c0c0c]">
-                {rows.map((row, i) => (
-                    <tr key={i}>
-                        {row.map((cell, j) => (
-                            <td key={j} className="p-3 align-top" dangerouslySetInnerHTML={{__html: cell}} />
-                        ))}
-                    </tr>
-                ))}
-            </tbody>
-        </table>
-    </div>
-  );
 
   return (
     <div className="pt-28 pb-24 px-4 md:px-8 min-h-screen bg-[#0f0f0f]">
@@ -85,6 +70,46 @@ const DocsPage: React.FC = () => {
                     {item.label}
                   </button>
                 ))}
+
+                {/* Self Improving System Category */}
+                <div className="pt-2">
+                  <button
+                    onClick={() => toggleCategory('system')}
+                    className={`w-full text-left px-4 py-2 rounded-lg text-sm font-mono transition-colors flex items-center justify-between ${
+                      ['self-learning', 'validation-results'].includes(activeSection)
+                        ? 'text-white'
+                        : 'text-gray-500 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <span>Self Improving System</span>
+                    <svg
+                      className={`w-4 h-4 transition-transform ${expandedCategories.includes('system') ? 'rotate-180' : ''}`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+
+                  {expandedCategories.includes('system') && (
+                    <div className="ml-4 mt-1 space-y-1 border-l border-white/10 pl-2">
+                      {systemItems.map((item) => (
+                        <button
+                          key={item.id}
+                          onClick={() => setActiveSection(item.id as any)}
+                          className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-mono transition-colors ${
+                            activeSection === item.id
+                              ? 'bg-claude-ish/10 text-claude-ish font-bold border border-claude-ish/20'
+                              : 'text-gray-500 hover:text-white hover:bg-white/5'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
                 {/* Comparisons Category */}
                 <div className="pt-2">
@@ -2045,6 +2070,17 @@ const DocsPage: React.FC = () => {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Self-Learning System */}
+            {/* Self-Learning System */}
+            {activeSection === 'self-learning' && (
+                <SelfLearningDoc onNavigate={setActiveSection} />
+            )}
+
+            {/* Validation & Results */}
+            {activeSection === 'validation-results' && (
+                <ValidationResultsDoc />
             )}
         </div>
       </div>
