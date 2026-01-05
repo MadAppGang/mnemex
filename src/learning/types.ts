@@ -138,6 +138,12 @@ export interface LearningStatistics {
 	uniqueQueries: number;
 	/** Average acceptance rate (accepted / total results) */
 	averageAcceptanceRate: number;
+	/** Total result items across all feedback (for tests) */
+	totalResults: number;
+	/** Total accepted items across all feedback (for tests) */
+	totalAccepted: number;
+	/** Acceptance rate (alias for averageAcceptanceRate) */
+	acceptanceRate: number;
 	/** Most common queries */
 	topQueries: Array<{ query: string; count: number }>;
 	/** Files with highest boost */

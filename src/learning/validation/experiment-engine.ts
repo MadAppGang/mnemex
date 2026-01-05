@@ -415,18 +415,26 @@ export class ParallelExecutor {
   }
 
   /**
-   * Run with timeout
+   * Run with timeout (clears timer on completion to prevent memory leaks)
    */
   private async runWithTimeout<T>(
     fn: () => Promise<T>,
     timeout: number
   ): Promise<T> {
-    return Promise.race([
-      fn(),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Task timeout")), timeout)
-      ),
-    ]);
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error("Task timeout")), timeout);
+    });
+
+    try {
+      const result = await Promise.race([fn(), timeoutPromise]);
+      clearTimeout(timeoutId!);
+      return result;
+    } catch (error) {
+      clearTimeout(timeoutId!);
+      throw error;
+    }
   }
 }
 

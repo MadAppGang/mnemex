@@ -8,7 +8,7 @@
  * - Enable pattern matching without revealing specifics
  */
 
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import type { DetectedPattern, PatternData } from "../interaction/types.js";
 
 // ============================================================================
@@ -30,9 +30,12 @@ export interface PatternHasherConfig {
 	redactFields: string[];
 }
 
+/** Minimum salt length for security */
+const MIN_SALT_LENGTH = 8;
+
 export const DEFAULT_HASHER_CONFIG: PatternHasherConfig = {
 	hashAlgorithm: "sha256",
-	salt: "", // Should be set per-installation
+	salt: randomBytes(16).toString("hex"), // Random per-instance default
 	enableDifferentialPrivacy: true,
 	epsilon: 1.0,
 	minCount: 5, // k=5 anonymity
@@ -108,6 +111,13 @@ export class PatternHasher {
 	constructor(config: Partial<PatternHasherConfig> = {}) {
 		this.config = { ...DEFAULT_HASHER_CONFIG, ...config };
 		this.privacyBudgetUsed = 0;
+
+		// Validate salt for security
+		if (!this.config.salt || this.config.salt.length < MIN_SALT_LENGTH) {
+			throw new Error(
+				`PatternHasher requires a salt of at least ${MIN_SALT_LENGTH} characters for security`,
+			);
+		}
 	}
 
 	/**

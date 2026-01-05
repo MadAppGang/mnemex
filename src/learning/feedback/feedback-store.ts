@@ -553,26 +553,36 @@ export class FeedbackStore {
 			.get() as { last_updated: string } | undefined;
 
 		// Calculate average acceptance rate using SQL aggregation (avoid N+1 query)
+		// Wrapped in try-catch to handle corrupted JSON in database
 		let averageAcceptanceRate = 0;
+		let totalResults = 0;
+		let totalAccepted = 0;
 		if (totalEvents > 0) {
-			const aggStmt = this.db.prepare(`
-				SELECT
-					SUM(json_array_length(result_ids)) as total_results,
-					SUM(json_array_length(accepted_ids)) as total_accepted
-				FROM (
-					SELECT result_ids, accepted_ids FROM search_feedback
-					ORDER BY created_at DESC
-					LIMIT 100
-				)
-			`);
-			const agg = aggStmt.get() as {
-				total_results: number | null;
-				total_accepted: number | null;
-			};
-			const totalResults = agg.total_results ?? 0;
-			const totalAccepted = agg.total_accepted ?? 0;
-			averageAcceptanceRate =
-				totalResults > 0 ? totalAccepted / totalResults : 0;
+			try {
+				const aggStmt = this.db.prepare(`
+					SELECT
+						SUM(json_array_length(result_ids)) as total_results,
+						SUM(json_array_length(accepted_ids)) as total_accepted
+					FROM (
+						SELECT result_ids, accepted_ids FROM search_feedback
+						ORDER BY created_at DESC
+						LIMIT 100
+					)
+				`);
+				const agg = aggStmt.get() as {
+					total_results: number | null;
+					total_accepted: number | null;
+				};
+				totalResults = agg.total_results ?? 0;
+				totalAccepted = agg.total_accepted ?? 0;
+				averageAcceptanceRate =
+					totalResults > 0 ? totalAccepted / totalResults : 0;
+			} catch (error) {
+				// JSON may be corrupted in database - fall back to 0
+				console.error(
+					`[FeedbackStore] Failed to calculate acceptance rate: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
 		}
 
 		return {
@@ -581,6 +591,9 @@ export class FeedbackStore {
 			eventsByUseCase,
 			uniqueQueries,
 			averageAcceptanceRate,
+			totalResults,
+			totalAccepted,
+			acceptanceRate: averageAcceptanceRate,
 			topQueries,
 			topBoostedFiles,
 			lastFeedbackAt: lastFeedback ? new Date(lastFeedback.created_at) : null,

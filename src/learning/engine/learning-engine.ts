@@ -160,6 +160,7 @@ export class LearningEngine {
 	/**
 	 * Train weights from feedback data.
 	 * Uses Exponential Moving Average for smooth updates.
+	 * Continues processing even if individual events fail.
 	 */
 	async train(): Promise<LearnedWeights> {
 		const feedback = this.store.getRecentFeedback(this.config.maxSamples);
@@ -168,9 +169,35 @@ export class LearningEngine {
 			return this.getWeights();
 		}
 
-		// Process each feedback event
+		// Process each feedback event with error recovery
+		let processedCount = 0;
+		let errorCount = 0;
+
 		for (const event of feedback) {
-			this.processEvent(event);
+			try {
+				this.processEvent(event);
+				processedCount++;
+			} catch (error) {
+				errorCount++;
+				console.error(
+					`[LearningEngine] Failed to process event ${event.id ?? "unknown"}: ${error instanceof Error ? error.message : String(error)}`,
+				);
+				// Continue processing remaining events
+			}
+		}
+
+		// Log summary if there were errors
+		if (errorCount > 0) {
+			console.warn(
+				`[LearningEngine] Training completed with ${errorCount}/${feedback.length} errors, ${processedCount} events processed successfully`,
+			);
+		}
+
+		// Fail only if ALL events failed and we had events to process
+		if (processedCount === 0 && feedback.length > 0) {
+			throw new Error(
+				`All ${feedback.length} feedback events failed to process`,
+			);
 		}
 
 		// Invalidate cache and reload

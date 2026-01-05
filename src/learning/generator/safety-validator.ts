@@ -104,6 +104,13 @@ export interface BatchValidationResult {
 }
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+/** Maximum input length for regex checks to prevent ReDoS attacks */
+const MAX_INPUT_LENGTH_FOR_REGEX = 100_000; // 100KB
+
+// ============================================================================
 // SafetyValidator Class
 // ============================================================================
 
@@ -112,6 +119,14 @@ export class SafetyValidator {
 
 	constructor(config: Partial<SafetyValidatorConfig> = {}) {
 		this.config = { ...DEFAULT_SAFETY_CONFIG, ...config };
+	}
+
+	/**
+	 * Check if input exceeds safe length for regex operations.
+	 * Returns true if input is safe to process with regex.
+	 */
+	private isInputLengthSafe(text: string): boolean {
+		return text.length <= MAX_INPUT_LENGTH_FOR_REGEX;
 	}
 
 	/**
@@ -449,12 +464,26 @@ export class SafetyValidator {
 
 	/**
 	 * Check text for dangerous patterns.
+	 * Includes input length limit to prevent ReDoS attacks.
 	 */
 	private checkDangerousPatterns(
 		text: string,
 		location: string,
 		issues: ValidationIssue[]
 	): void {
+		// Prevent ReDoS by limiting input length for regex operations
+		if (!this.isInputLengthSafe(text)) {
+			issues.push({
+				severity: "high",
+				category: "unbounded_resource",
+				description: `Input too large for safe pattern checking (${text.length} chars, max ${MAX_INPUT_LENGTH_FOR_REGEX})`,
+				location,
+				penalty: 0.2,
+			});
+			// Still check truncated text for critical patterns
+			text = text.substring(0, MAX_INPUT_LENGTH_FOR_REGEX);
+		}
+
 		for (const pattern of this.config.dangerousPatterns) {
 			if (pattern.test(text)) {
 				issues.push({
@@ -483,12 +512,19 @@ export class SafetyValidator {
 
 	/**
 	 * Check text for credential patterns.
+	 * Includes input length limit to prevent ReDoS attacks.
 	 */
 	private checkCredentialPatterns(
 		text: string,
 		location: string,
 		issues: ValidationIssue[]
 	): void {
+		// Prevent ReDoS by limiting input length for regex operations
+		if (!this.isInputLengthSafe(text)) {
+			// Still check truncated text for credentials
+			text = text.substring(0, MAX_INPUT_LENGTH_FOR_REGEX);
+		}
+
 		const credentialPatterns = [
 			/api[_-]?key/i,
 			/secret[_-]?key/i,
@@ -622,13 +658,21 @@ export function createSafetyValidator(
 
 /**
  * Quick check if text contains dangerous patterns.
+ * Uses the default SafetyValidator configuration.
  */
 export function containsDangerousPatterns(text: string): boolean {
-	const validator = new SafetyValidator();
-	const issues: ValidationIssue[] = [];
-	// @ts-expect-error - accessing private method for utility
-	validator.checkDangerousPatterns(text, "text", issues);
-	return issues.some((i) => i.severity === "critical");
+	// Limit input length for safety
+	const safeText =
+		text.length > MAX_INPUT_LENGTH_FOR_REGEX
+			? text.substring(0, MAX_INPUT_LENGTH_FOR_REGEX)
+			: text;
+
+	for (const pattern of DEFAULT_SAFETY_CONFIG.dangerousPatterns) {
+		if (pattern.test(safeText)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 /**
