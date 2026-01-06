@@ -13,6 +13,7 @@
 		"deploy": "npm run build && firebase deploy --only hosting:claudish-6da10-eddc7"
 	},
 	"dependencies": {
+		"@tanstack/react-router": "^1.145.7",
 		"react": "^19.2.0",
 		"react-dom": "^19.2.0"
 	},

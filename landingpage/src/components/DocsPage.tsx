@@ -1,20 +1,33 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { TerminalWindow } from './TerminalWindow';
 import { SelfLearningDoc } from './docs/SelfLearningDoc';
 import { ValidationResultsDoc } from './docs/ValidationResultsDoc';
 import { DocTable as Table } from './docs/DocTable';
 
-const DocsPage: React.FC = () => {
-  const [activeSection, setActiveSection] = useState<
-    'installation' | 'cli' | 'integration' | 'framework-docs' | 'self-learning' | 'validation-results' |
-    'comparisons-claude-mem' | 'comparisons-mem0' | 'comparisons-claude-context' | 'comparisons-context-engine' | 'comparisons-greptile' | 'comparisons-brokk' |
-    'comparisons-serena' | 'comparisons-amp' | 'comparisons-supermemory'
-  >('installation');
+type SectionType =
+  | 'installation' | 'cli' | 'integration' | 'framework-docs' | 'self-learning' | 'validation-results'
+  | 'comparisons-claude-mem' | 'comparisons-mem0' | 'comparisons-claude-context' | 'comparisons-context-engine' | 'comparisons-greptile' | 'comparisons-brokk'
+  | 'comparisons-serena' | 'comparisons-amp' | 'comparisons-supermemory';
+
+interface DocsPageProps {
+  section?: string;
+}
+
+const DocsPage: React.FC<DocsPageProps> = ({ section = 'installation' }) => {
+  const navigate = useNavigate();
+  const activeSection = (section as SectionType) || 'installation';
   const [expandedCategories, setExpandedCategories] = useState<string[]>(['system', 'comparisons']);
 
+  // Scroll to top when section changes
   useEffect(() => {
     window.scrollTo(0, 0);
-  }, []);
+  }, [activeSection]);
+
+  // Navigate to a section
+  const setActiveSection = (newSection: string) => {
+    navigate({ to: '/docs/$section', params: { section: newSection } });
+  };
 
   const toggleCategory = (category: string) => {
     setExpandedCategories(prev =>
