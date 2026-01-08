@@ -125,7 +125,10 @@ export class LlmsTxtProvider extends BaseDocProvider {
 				const controller = new AbortController();
 				const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s for HEAD requests
 				try {
-					const response = await fetch(url, { method: "HEAD", signal: controller.signal });
+					const response = await fetch(url, {
+						method: "HEAD",
+						signal: controller.signal,
+					});
 					if (response.ok) return url;
 				} finally {
 					clearTimeout(timeoutId);

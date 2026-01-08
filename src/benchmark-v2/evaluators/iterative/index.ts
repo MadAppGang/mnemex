@@ -78,7 +78,7 @@ async function preEmbedAll(
 	summaries: GeneratedSummary[],
 	codeUnits: BenchmarkCodeUnit[],
 	embeddingsClient: IEmbeddingsClient,
-	onProgress?: (msg: string) => void
+	onProgress?: (msg: string) => void,
 ): Promise<EmbeddingCache> {
 	const cache: EmbeddingCache = {
 		summaries: new Map(),
@@ -115,7 +115,9 @@ async function preEmbedAll(
 		}
 	}
 
-	onProgress?.(`Pre-embedded ${summaryTexts.length} summaries, ${queryTexts.length} queries`);
+	onProgress?.(
+		`Pre-embedded ${summaryTexts.length} summaries, ${queryTexts.length} queries`,
+	);
 	return cache;
 }
 
@@ -132,7 +134,7 @@ function buildRefinementContext(
 	codeUnit: BenchmarkCodeUnit,
 	allSummaries: Map<string, GeneratedSummary[]>,
 	currentModelId: string,
-	embeddingCache?: EmbeddingCache
+	embeddingCache?: EmbeddingCache,
 ): RefinementContext {
 	// Collect competitor summaries (same code unit, different models)
 	const competitors: RefinementContext["competitors"] = [];
@@ -141,7 +143,7 @@ function buildRefinementContext(
 		if (modelId === currentModelId) continue;
 
 		const competitorSummary = summaries.find(
-			(s) => s.codeUnitId === codeUnit.id
+			(s) => s.codeUnitId === codeUnit.id,
 		);
 		if (competitorSummary) {
 			competitors.push({
@@ -182,7 +184,7 @@ function toEvaluationResult(
 	modelId: string,
 	codeUnitId: string,
 	result: RefinementResult,
-	strategyName: string
+	strategyName: string,
 ): EvaluationResult {
 	const iterativeResults: IterativeResults = {
 		modelId,
@@ -199,8 +201,7 @@ function toEvaluationResult(
 			summary: h.summary,
 		})),
 		strategyName,
-		refinedSummary:
-			result.rounds > 0 ? result.finalSummary : undefined,
+		refinedSummary: result.rounds > 0 ? result.finalSummary : undefined,
 		durationMs: result.metrics.totalDurationMs,
 	};
 
@@ -228,7 +229,7 @@ function toEvaluationResult(
  */
 export function createIterativePhaseExecutor(
 	generatorClients: Map<string, ILLMClient>,
-	embeddingsClient: IEmbeddingsClient
+	embeddingsClient: IEmbeddingsClient,
 ): (context: PhaseContext) => Promise<PhaseResult> {
 	return async (context: PhaseContext): Promise<PhaseResult> => {
 		const { db, run, config, stateMachine } = context;
@@ -289,7 +290,9 @@ export function createIterativePhaseExecutor(
 			let completed = 0;
 
 			if (process.env.DEBUG_PROGRESS) {
-				console.error(`[Iterative] Starting phase with ${totalItems} items (${summariesByModel.size} models)`);
+				console.error(
+					`[Iterative] Starting phase with ${totalItems} items (${summariesByModel.size} models)`,
+				);
 			}
 			stateMachine.startPhase("evaluation:iterative", totalItems);
 
@@ -310,14 +313,20 @@ export function createIterativePhaseExecutor(
 				"evaluation:iterative",
 				0,
 				undefined,
-				"Pre-embedding summaries and queries..."
+				"Pre-embedding summaries and queries...",
 			);
 			// Embed ALL summaries (not just sampled) because competitors need embeddings too
 			const embeddingCache = await preEmbedAll(
 				allSummaries,
 				codeUnits,
 				embeddingsClient,
-				(msg) => stateMachine.updateProgress("evaluation:iterative", 0, undefined, msg)
+				(msg) =>
+					stateMachine.updateProgress(
+						"evaluation:iterative",
+						0,
+						undefined,
+						msg,
+					),
 			);
 
 			// Set query embeddings cache on strategy
@@ -343,9 +352,16 @@ export function createIterativePhaseExecutor(
 			const THINKING_TIMEOUT_MS = 600_000; // 10 minutes for thinking models
 			const SLOW_MODEL_PATTERNS = [
 				// Thinking/reasoning models
-				"thinking", "kimi", "o1-", "o3-", "deepseek-r1", "qwq",
+				"thinking",
+				"kimi",
+				"o1-",
+				"o3-",
+				"deepseek-r1",
+				"qwq",
 				// Models from error logs that frequently timeout
-				"nemotron", "trinity", "olmo",
+				"nemotron",
+				"trinity",
+				"olmo",
 			];
 
 			const isSlowModel = (modelId: string): boolean =>
@@ -355,11 +371,18 @@ export function createIterativePhaseExecutor(
 				isSlowModel(modelId) ? THINKING_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
 
 			// Timeout wrapper
-			const withTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+			const withTimeout = <T>(
+				promise: Promise<T>,
+				timeoutMs: number,
+			): Promise<T> => {
 				return Promise.race([
 					promise,
 					new Promise<T>((_, reject) =>
-						setTimeout(() => reject(new Error(`Refinement timeout after ${timeoutMs}ms`)), timeoutMs)
+						setTimeout(
+							() =>
+								reject(new Error(`Refinement timeout after ${timeoutMs}ms`)),
+							timeoutMs,
+						),
 					),
 				]);
 			};
@@ -368,7 +391,8 @@ export function createIterativePhaseExecutor(
 			const cloudModels: string[] = [];
 			const localModels: string[] = [];
 			for (const modelId of summariesByModel.keys()) {
-				const isLocal = modelId.startsWith("lmstudio/") || modelId.startsWith("ollama/");
+				const isLocal =
+					modelId.startsWith("lmstudio/") || modelId.startsWith("ollama/");
 				if (isLocal) {
 					localModels.push(modelId);
 				} else {
@@ -377,12 +401,15 @@ export function createIterativePhaseExecutor(
 			}
 
 			// Per-model progress tracking
-			const modelProgress = new Map<string, {
-				completed: number;
-				total: number;
-				inProgress: number;
-				failures: number;
-			}>();
+			const modelProgress = new Map<
+				string,
+				{
+					completed: number;
+					total: number;
+					inProgress: number;
+					failures: number;
+				}
+			>();
 
 			// Initialize progress for all models
 			for (const [modelId, modelSummaries] of summariesByModel) {
@@ -397,7 +424,9 @@ export function createIterativePhaseExecutor(
 			// Debug: log the model IDs being tracked
 			if (process.env.DEBUG_PROGRESS) {
 				const modelIds = Array.from(summariesByModel.keys());
-				console.error(`[Iterative] Tracking ${modelIds.length} models: ${modelIds.join(", ")}`);
+				console.error(
+					`[Iterative] Tracking ${modelIds.length} models: ${modelIds.join(", ")}`,
+				);
 			}
 
 			// Helper to report per-model progress
@@ -407,7 +436,7 @@ export function createIterativePhaseExecutor(
 					"evaluation:iterative",
 					completed,
 					undefined,
-					`${modelId}: ${p.completed}/${p.total}/${p.inProgress}/${p.failures}`
+					`${modelId}: ${p.completed}/${p.total}/${p.inProgress}/${p.failures}`,
 				);
 			};
 
@@ -462,23 +491,19 @@ export function createIterativePhaseExecutor(
 							codeUnit,
 							allSummariesByModel,
 							modelId,
-							embeddingCache
+							embeddingCache,
 						);
 
 						// Run refinement with timeout protection
 						// Thinking models can take 5+ minutes per refinement round
 						const timeoutMs = getTimeoutForModel(modelId);
 						const result = await withTimeout(
-							engine.refine(
-								summary.summary,
-								refinementContext,
-								{
-									maxRounds: evalConfig.maxRounds,
-									strategy,
-									llmClient: client,
-								}
-							),
-							timeoutMs
+							engine.refine(summary.summary, refinementContext, {
+								maxRounds: evalConfig.maxRounds,
+								strategy,
+								llmClient: client,
+							}),
+							timeoutMs,
 						);
 
 						// Track stats
@@ -492,7 +517,7 @@ export function createIterativePhaseExecutor(
 							modelId,
 							codeUnit.id,
 							result,
-							strategy.getName()
+							strategy.getName(),
 						);
 						db.insertEvaluationResult(run.id, evalResult);
 
@@ -521,7 +546,10 @@ export function createIterativePhaseExecutor(
 						} else if (error instanceof RateLimitError) {
 							errorType = "rate_limit";
 							message = error.message;
-						} else if (error instanceof Error && error.message.includes("timeout")) {
+						} else if (
+							error instanceof Error &&
+							error.message.includes("timeout")
+						) {
 							errorType = "timeout";
 							message = error.message;
 						} else {
@@ -560,7 +588,10 @@ export function createIterativePhaseExecutor(
 
 				// If threshold is 0, skip size-based isolation
 				if (largeModelThreshold === 0) {
-					if (localParallelism === 0 || localParallelism >= localModels.length) {
+					if (
+						localParallelism === 0 ||
+						localParallelism >= localModels.length
+					) {
 						await Promise.all(localModels.map(processModel));
 					} else if (localParallelism === 1) {
 						for (const modelId of localModels) {
@@ -576,7 +607,10 @@ export function createIterativePhaseExecutor(
 				}
 
 				// Query model sizes to separate large from small
-				if (debug) console.error(`[Iterative] Querying sizes for ${localModels.length} local models, threshold=${largeModelThreshold}B`);
+				if (debug)
+					console.error(
+						`[Iterative] Querying sizes for ${localModels.length} local models, threshold=${largeModelThreshold}B`,
+					);
 				const modelSizes = new Map<string, number | undefined>();
 
 				await Promise.all(
@@ -586,12 +620,15 @@ export function createIterativePhaseExecutor(
 							try {
 								const size = await client.getModelSizeB();
 								modelSizes.set(modelId, size);
-								if (debug) console.error(`[Iterative] ${modelId} → ${size ?? "unknown"}B ${size !== undefined && size >= largeModelThreshold ? "(LARGE)" : "(small)"}`);
+								if (debug)
+									console.error(
+										`[Iterative] ${modelId} → ${size ?? "unknown"}B ${size !== undefined && size >= largeModelThreshold ? "(LARGE)" : "(small)"}`,
+									);
 							} catch {
 								modelSizes.set(modelId, undefined);
 							}
 						}
-					})
+					}),
 				);
 
 				// Separate large models (>= threshold) from small models
@@ -614,7 +651,10 @@ export function createIterativePhaseExecutor(
 
 				// Then run small models with configured parallelism
 				if (smallModels.length > 0) {
-					if (localParallelism === 0 || localParallelism >= smallModels.length) {
+					if (
+						localParallelism === 0 ||
+						localParallelism >= smallModels.length
+					) {
 						await Promise.all(smallModels.map(processModel));
 					} else if (localParallelism === 1) {
 						for (const modelId of smallModels) {
@@ -677,12 +717,12 @@ export interface IterativeMetrics {
  */
 export function aggregateIterativeResults(
 	results: EvaluationResult[],
-	modelId: string
+	modelId: string,
 ): IterativeMetrics {
 	const iterativeResults = results.filter(
 		(r) =>
 			r.evaluationType === "iterative" &&
-			r.iterativeResults?.modelId === modelId
+			r.iterativeResults?.modelId === modelId,
 	);
 
 	if (iterativeResults.length === 0) {

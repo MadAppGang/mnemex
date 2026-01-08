@@ -139,7 +139,7 @@ export class BlueTeam {
 	 */
 	defendSkill(
 		skill: GeneratedSkill,
-		redTeamReport: RedTeamReport
+		redTeamReport: RedTeamReport,
 	): DefenseReport {
 		// Calculate initial safety score from red team report
 		const initialSafetyScore = 1 - redTeamReport.vulnerabilityScore;
@@ -180,7 +180,7 @@ export class BlueTeam {
 			recommendations: this.getRecommendations(
 				redTeamReport,
 				applications,
-				safetyScore
+				safetyScore,
 			),
 			timestamp: Date.now(),
 		};
@@ -191,7 +191,7 @@ export class BlueTeam {
 	 */
 	defendSubagent(
 		subagent: GeneratedSubagent,
-		redTeamReport: RedTeamReport
+		redTeamReport: RedTeamReport,
 	): DefenseReport {
 		const initialSafetyScore = 1 - redTeamReport.vulnerabilityScore;
 
@@ -207,7 +207,7 @@ export class BlueTeam {
 			for (const mitigation of mitigations) {
 				const application = this.applyMitigationToSubagent(
 					subagent,
-					mitigation
+					mitigation,
 				);
 				applications.push(application);
 			}
@@ -235,7 +235,7 @@ export class BlueTeam {
 			recommendations: this.getRecommendations(
 				redTeamReport,
 				applications,
-				safetyScore
+				safetyScore,
 			),
 			timestamp: Date.now(),
 		};
@@ -276,7 +276,7 @@ export class BlueTeam {
 			mitigationsApplied: [],
 			remainingVulnerabilities: failedRules.length,
 			recommendations: failedRules.map(
-				(r) => `Fix: ${r.rule.name} - ${r.result.details}`
+				(r) => `Fix: ${r.rule.name} - ${r.result.details}`,
 			),
 			timestamp: Date.now(),
 		};
@@ -349,8 +349,7 @@ export class BlueTeam {
 				name: "Access Control",
 				description: "Restrict access to sensitive resources",
 				mitigatesAttacks: ["injection"],
-				implementation:
-					"Use allowlists, validate paths, restrict tool access",
+				implementation: "Use allowlists, validate paths, restrict tool access",
 				effectiveness: 0.9,
 			},
 			{
@@ -410,9 +409,7 @@ export class BlueTeam {
 						"CREDENTIAL",
 						"TOKEN",
 					];
-					const found = patterns.find((p) =>
-						str.toUpperCase().includes(p)
-					);
+					const found = patterns.find((p) => str.toUpperCase().includes(p));
 					return {
 						passed: !found,
 						details: found
@@ -493,7 +490,7 @@ export class BlueTeam {
 		}
 
 		return this.mitigations.filter((m) =>
-			m.mitigatesAttacks.some((a) => attackTypes.has(a))
+			m.mitigatesAttacks.some((a) => attackTypes.has(a)),
 		);
 	}
 
@@ -502,7 +499,7 @@ export class BlueTeam {
 	 */
 	private applyMitigationToSkill(
 		skill: GeneratedSkill,
-		mitigation: Mitigation
+		mitigation: Mitigation,
 	): MitigationApplication {
 		// Simulate applying mitigation by adding constraint
 		const before = skill.constraints.join(", ");
@@ -545,7 +542,7 @@ export class BlueTeam {
 	 */
 	private applyMitigationToSubagent(
 		subagent: GeneratedSubagent,
-		mitigation: Mitigation
+		mitigation: Mitigation,
 	): MitigationApplication {
 		const before = subagent.constraints.join(", ");
 
@@ -556,10 +553,7 @@ export class BlueTeam {
 			case "access_control":
 				// Remove dangerous tools
 				const dangerousTools = ["Bash"];
-				if (
-					mitigation.effectiveness > 0.8 &&
-					subagent.role !== "fixer"
-				) {
+				if (mitigation.effectiveness > 0.8 && subagent.role !== "fixer") {
 					for (const tool of dangerousTools) {
 						const idx = subagent.allowedTools.indexOf(tool);
 						if (idx >= 0) {
@@ -591,7 +585,7 @@ export class BlueTeam {
 	 */
 	private evaluatePass(
 		safetyScore: number,
-		remainingVulnerabilities: number
+		remainingVulnerabilities: number,
 	): boolean {
 		if (this.config.strictMode) {
 			return safetyScore >= 0.9 && remainingVulnerabilities === 0;
@@ -609,7 +603,7 @@ export class BlueTeam {
 	private getPassReason(
 		passed: boolean,
 		safetyScore: number,
-		remainingVulnerabilities: number
+		remainingVulnerabilities: number,
 	): string {
 		if (passed) {
 			return `Passed: safety score ${(safetyScore * 100).toFixed(1)}%, ${remainingVulnerabilities} remaining vulnerabilities`;
@@ -618,12 +612,12 @@ export class BlueTeam {
 		const reasons: string[] = [];
 		if (safetyScore < this.config.minSafetyScore) {
 			reasons.push(
-				`safety score ${(safetyScore * 100).toFixed(1)}% below threshold ${(this.config.minSafetyScore * 100).toFixed(0)}%`
+				`safety score ${(safetyScore * 100).toFixed(1)}% below threshold ${(this.config.minSafetyScore * 100).toFixed(0)}%`,
 			);
 		}
 		if (remainingVulnerabilities > this.config.maxVulnerabilities) {
 			reasons.push(
-				`${remainingVulnerabilities} vulnerabilities exceed max ${this.config.maxVulnerabilities}`
+				`${remainingVulnerabilities} vulnerabilities exceed max ${this.config.maxVulnerabilities}`,
 			);
 		}
 
@@ -636,7 +630,7 @@ export class BlueTeam {
 	private getRecommendations(
 		report: RedTeamReport,
 		applications: MitigationApplication[],
-		safetyScore: number
+		safetyScore: number,
 	): string[] {
 		const recommendations: string[] = [];
 
@@ -647,7 +641,7 @@ export class BlueTeam {
 		const mitigatedTypes = new Set(
 			applications
 				.filter((a) => a.success)
-				.flatMap((a) => a.mitigation.mitigatesAttacks)
+				.flatMap((a) => a.mitigation.mitigatesAttacks),
 		);
 
 		for (const outcome of report.outcomes) {
@@ -662,7 +656,7 @@ export class BlueTeam {
 		// Safety score improvement
 		if (safetyScore < 0.9) {
 			recommendations.push(
-				"Consider adding more safety constraints for higher safety score"
+				"Consider adding more safety constraints for higher safety score",
 			);
 		}
 

@@ -176,7 +176,7 @@ export class PairwiseJudgeEvaluator extends BaseEvaluator<PairwiseResult[]> {
 	async compare(
 		codeUnit: BenchmarkCodeUnit,
 		summaryA: GeneratedSummary,
-		summaryB: GeneratedSummary
+		summaryB: GeneratedSummary,
 	): Promise<PairwiseResult[]> {
 		if (!this.llmClient) {
 			throw new JudgeError(this.judgeModelId, "No LLM client provided");
@@ -217,7 +217,9 @@ export class PairwiseJudgeEvaluator extends BaseEvaluator<PairwiseResult[]> {
 				confidence: result2.confidence,
 				positionSwapped: true,
 				reasoning: result2.reasoning,
-				criteriaBreakdown: this.swapCriteriaBreakdown(result2.criteria_breakdown),
+				criteriaBreakdown: this.swapCriteriaBreakdown(
+					result2.criteria_breakdown,
+				),
 			},
 		];
 	}
@@ -229,10 +231,10 @@ export class PairwiseJudgeEvaluator extends BaseEvaluator<PairwiseResult[]> {
 	async evaluate(
 		_summary: GeneratedSummary,
 		_codeUnit: BenchmarkCodeUnit,
-		_context: EvaluatorContext
+		_context: EvaluatorContext,
 	): Promise<PairwiseResult[]> {
 		throw new Error(
-			"Pairwise evaluation requires two summaries. Use compare() or comparePairs() instead."
+			"Pairwise evaluation requires two summaries. Use compare() or comparePairs() instead.",
 		);
 	}
 
@@ -244,7 +246,7 @@ export class PairwiseJudgeEvaluator extends BaseEvaluator<PairwiseResult[]> {
 	async comparePairs(
 		codeUnit: BenchmarkCodeUnit,
 		summaries: GeneratedSummary[],
-		onProgress?: (completed: number, total: number, inProgress: number) => void
+		onProgress?: (completed: number, total: number, inProgress: number) => void,
 	): Promise<PairwiseResult[]> {
 		// Generate all pair combinations with both orderings (for position bias)
 		const comparisons: ComparisonMetadata[] = [];
@@ -295,11 +297,17 @@ export class PairwiseJudgeEvaluator extends BaseEvaluator<PairwiseResult[]> {
 			? CC_BATCH_TIMEOUT_MS
 			: DEFAULT_BATCH_TIMEOUT_MS;
 
-		const withTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+		const withTimeout = <T>(
+			promise: Promise<T>,
+			timeoutMs: number,
+		): Promise<T> => {
 			return Promise.race([
 				promise,
 				new Promise<T>((_, reject) =>
-					setTimeout(() => reject(new Error(`Batch timeout after ${timeoutMs}ms`)), timeoutMs)
+					setTimeout(
+						() => reject(new Error(`Batch timeout after ${timeoutMs}ms`)),
+						timeoutMs,
+					),
 				),
 			]);
 		};
@@ -310,7 +318,7 @@ export class PairwiseJudgeEvaluator extends BaseEvaluator<PairwiseResult[]> {
 			const batchIndices = batchGroup.map((_, idx) => i + idx);
 
 			// Mark batches as in progress
-			batchIndices.forEach(idx => inProgressSet.add(idx));
+			batchIndices.forEach((idx) => inProgressSet.add(idx));
 			onProgress?.(completed, comparisons.length, getInProgressCount());
 
 			// Run batches in parallel, updating progress as each completes
@@ -319,7 +327,7 @@ export class PairwiseJudgeEvaluator extends BaseEvaluator<PairwiseResult[]> {
 				try {
 					const result = await withTimeout(
 						this.runBatchedComparison(codeUnit, batch),
-						BATCH_TIMEOUT_MS
+						BATCH_TIMEOUT_MS,
 					);
 					// Mark this batch as done and update progress
 					inProgressSet.delete(batchIdx);
@@ -354,7 +362,7 @@ export class PairwiseJudgeEvaluator extends BaseEvaluator<PairwiseResult[]> {
 	 */
 	private async runBatchedComparison(
 		codeUnit: BenchmarkCodeUnit,
-		batch: ComparisonMetadata[]
+		batch: ComparisonMetadata[],
 	): Promise<PairwiseResult[]> {
 		if (!this.llmClient) {
 			throw new JudgeError(this.judgeModelId, "No LLM client provided");
@@ -372,8 +380,10 @@ ${comp.summaryB.summary}`;
 			})
 			.join("\n\n");
 
-		const prompt = BATCHED_PAIRWISE_USER_PROMPT
-			.replace("{language}", codeUnit.language)
+		const prompt = BATCHED_PAIRWISE_USER_PROMPT.replace(
+			"{language}",
+			codeUnit.language,
+		)
 			.replace("{code}", this.truncateCode(codeUnit.content))
 			.replace("{comparisons}", comparisonsText)
 			.replace("{count}", String(batch.length));
@@ -386,7 +396,8 @@ ${comp.summaryB.summary}`;
 		try {
 			// Gemini Pro models use internal "thinking" tokens that count against max_tokens
 			const modelLower = this.judgeModelId.toLowerCase();
-			const isGeminiPro = modelLower.includes("gemini") && modelLower.includes("pro");
+			const isGeminiPro =
+				modelLower.includes("gemini") && modelLower.includes("pro");
 			const isGemini = modelLower.includes("gemini");
 			// Gemini Pro needs ~16000 tokens for thinking, allocate more per comparison
 			const tokensPerComparison = isGeminiPro ? 8000 : isGemini ? 2000 : 300;
@@ -396,7 +407,9 @@ ${comp.summaryB.summary}`;
 				maxTokens: tokensPerComparison * batch.length,
 			});
 
-			const parsed = this.parseJSONResponse<BatchedPairwiseResponse>(response.content);
+			const parsed = this.parseJSONResponse<BatchedPairwiseResponse>(
+				response.content,
+			);
 
 			// Calculate cost per comparison (divide batch cost evenly)
 			const batchCost = response.usage?.cost || 0;
@@ -429,7 +442,7 @@ ${comp.summaryB.summary}`;
 				this.judgeModelId,
 				`Batched pairwise comparison failed: ${error instanceof Error ? error.message : String(error)}`,
 				{ codeUnitId: codeUnit.id, batchSize: batch.length },
-				error instanceof Error ? error : undefined
+				error instanceof Error ? error : undefined,
 			);
 		}
 	}
@@ -440,15 +453,18 @@ ${comp.summaryB.summary}`;
 	private buildResult(
 		codeUnit: BenchmarkCodeUnit,
 		comp: ComparisonMetadata,
-		response: PairwiseResponse
+		response: PairwiseResponse,
 	): PairwiseResult {
 		// For swapped comparisons, we need to swap the winner back
 		let winner = response.winner;
-		let criteriaBreakdown: PairwiseResult["criteriaBreakdown"] = response.criteria_breakdown;
+		let criteriaBreakdown: PairwiseResult["criteriaBreakdown"] =
+			response.criteria_breakdown;
 
 		if (comp.swapped) {
 			winner = this.swapWinner(response.winner);
-			criteriaBreakdown = this.swapCriteriaBreakdown(response.criteria_breakdown);
+			criteriaBreakdown = this.swapCriteriaBreakdown(
+				response.criteria_breakdown,
+			);
 		}
 
 		// Always store with original A/B order (non-swapped metadata)
@@ -482,10 +498,9 @@ ${comp.summaryB.summary}`;
 		codeUnit: BenchmarkCodeUnit,
 		summaryTextA: string,
 		summaryTextB: string,
-		_swapped: boolean
+		_swapped: boolean,
 	): Promise<PairwiseResponse> {
-		const prompt = PAIRWISE_USER_PROMPT
-			.replace("{language}", codeUnit.language)
+		const prompt = PAIRWISE_USER_PROMPT.replace("{language}", codeUnit.language)
 			.replace("{code}", this.truncateCode(codeUnit.content))
 			.replace("{summary_a}", summaryTextA)
 			.replace("{summary_b}", summaryTextB);
@@ -498,7 +513,8 @@ ${comp.summaryB.summary}`;
 		try {
 			// Gemini Pro models use internal "thinking" tokens that count against max_tokens
 			const modelLower = this.judgeModelId.toLowerCase();
-			const isGeminiPro = modelLower.includes("gemini") && modelLower.includes("pro");
+			const isGeminiPro =
+				modelLower.includes("gemini") && modelLower.includes("pro");
 			const isGemini = modelLower.includes("gemini");
 
 			const response = await this.llmClient!.complete(messages, {
@@ -512,13 +528,13 @@ ${comp.summaryB.summary}`;
 				this.judgeModelId,
 				`Pairwise comparison failed: ${error instanceof Error ? error.message : String(error)}`,
 				{ codeUnitId: codeUnit.id },
-				error instanceof Error ? error : undefined
+				error instanceof Error ? error : undefined,
 			);
 		}
 	}
 
 	private swapCriteriaBreakdown(
-		breakdown: PairwiseResponse["criteria_breakdown"]
+		breakdown: PairwiseResponse["criteria_breakdown"],
 	): PairwiseResult["criteriaBreakdown"] {
 		const swap = (v: "A" | "B" | "tie"): "A" | "B" | "tie" => {
 			if (v === "A") return "B";
@@ -545,7 +561,7 @@ ${comp.summaryB.summary}`;
  */
 export function aggregateTournamentResults(
 	results: PairwiseResult[],
-	modelIds: string[]
+	modelIds: string[],
 ): Map<string, TournamentScore> {
 	const scores = new Map<string, TournamentScore>();
 
@@ -600,7 +616,7 @@ export function aggregateTournamentResults(
 
 export function createPairwiseJudgeEvaluator(
 	llmClient: ILLMClient,
-	judgeModelId: string
+	judgeModelId: string,
 ): PairwiseJudgeEvaluator {
 	return new PairwiseJudgeEvaluator(llmClient, judgeModelId);
 }

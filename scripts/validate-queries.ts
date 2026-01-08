@@ -13,7 +13,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const grammarsPath = join(__dirname, "../grammars");
 
 // Language configurations (same as parser-manager.ts)
-const LANGUAGE_CONFIGS: Record<string, { grammarFile: string; chunkQuery: string; referenceQuery?: string }> = {
+const LANGUAGE_CONFIGS: Record<
+	string,
+	{ grammarFile: string; chunkQuery: string; referenceQuery?: string }
+> = {
 	typescript: {
 		grammarFile: "tree-sitter-typescript.wasm",
 		chunkQuery: `
@@ -314,13 +317,20 @@ async function validateQueries() {
 	});
 
 	let hasErrors = false;
-	const results: { lang: string; query: string; status: "ok" | "error"; error?: string }[] = [];
+	const results: {
+		lang: string;
+		query: string;
+		status: "ok" | "error";
+		error?: string;
+	}[] = [];
 
 	for (const [langName, config] of Object.entries(LANGUAGE_CONFIGS)) {
 		const grammarPath = join(grammarsPath, config.grammarFile);
 
 		if (!existsSync(grammarPath)) {
-			console.log(`⚠️  ${langName}: Grammar file not found (${config.grammarFile})`);
+			console.log(
+				`⚠️  ${langName}: Grammar file not found (${config.grammarFile})`,
+			);
 			continue;
 		}
 
@@ -335,18 +345,32 @@ async function validateQueries() {
 			} catch (error) {
 				hasErrors = true;
 				const msg = error instanceof Error ? error.message : String(error);
-				results.push({ lang: langName, query: "chunkQuery", status: "error", error: msg });
+				results.push({
+					lang: langName,
+					query: "chunkQuery",
+					status: "error",
+					error: msg,
+				});
 			}
 
 			// Test referenceQuery if present
 			if (config.referenceQuery) {
 				try {
 					new Query(lang, config.referenceQuery);
-					results.push({ lang: langName, query: "referenceQuery", status: "ok" });
+					results.push({
+						lang: langName,
+						query: "referenceQuery",
+						status: "ok",
+					});
 				} catch (error) {
 					hasErrors = true;
 					const msg = error instanceof Error ? error.message : String(error);
-					results.push({ lang: langName, query: "referenceQuery", status: "error", error: msg });
+					results.push({
+						lang: langName,
+						query: "referenceQuery",
+						status: "error",
+						error: msg,
+					});
 				}
 			}
 		} catch (error) {

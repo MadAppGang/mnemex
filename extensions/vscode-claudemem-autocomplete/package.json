@@ -1,103 +1,99 @@
 {
-  "name": "claudemem-autocomplete",
-  "displayName": "claudemem Autocomplete",
-  "description": "Inline code completion powered by claudemem semantic context + local/cloud LLMs",
-  "version": "0.0.1",
-  "publisher": "claudemem",
-  "engines": {
-    "vscode": "^1.92.0"
-  },
-  "categories": [
-    "Programming Languages",
-    "AI"
-  ],
-  "activationEvents": [
-    "onStartupFinished",
-    "onCommand:claudememAutocomplete.setOpenRouterKey",
-    "onCommand:claudememAutocomplete.restartServer"
-  ],
-  "main": "./dist/extension.js",
-  "contributes": {
-    "commands": [
-      {
-        "command": "claudememAutocomplete.setOpenRouterKey",
-        "title": "claudemem: Set OpenRouter API Key"
-      },
-      {
-        "command": "claudememAutocomplete.restartServer",
-        "title": "claudemem: Restart Autocomplete Server"
-      }
-    ],
-    "configuration": {
-      "title": "claudemem Autocomplete",
-      "properties": {
-        "claudememAutocomplete.enable": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable inline autocompletions from claudemem."
-        },
-        "claudememAutocomplete.binaryPath": {
-          "type": "string",
-          "default": "claudemem",
-          "description": "Path to the claudemem binary."
-        },
-        "claudememAutocomplete.debounceMs": {
-          "type": "number",
-          "default": 120,
-          "minimum": 0,
-          "description": "Debounce time for automatic inline completions."
-        },
-        "claudememAutocomplete.maxPrefixChars": {
-          "type": "number",
-          "default": 4000,
-          "minimum": 200,
-          "description": "Max characters before cursor to send to the server."
-        },
-        "claudememAutocomplete.maxSuffixChars": {
-          "type": "number",
-          "default": 2000,
-          "minimum": 0,
-          "description": "Max characters after cursor to send to the server."
-        },
-        "claudememAutocomplete.maxTokens": {
-          "type": "number",
-          "default": 200,
-          "minimum": 16,
-          "description": "Max tokens for the completion model."
-        },
-        "claudememAutocomplete.temperature": {
-          "type": "number",
-          "default": 0.2,
-          "minimum": 0,
-          "maximum": 2,
-          "description": "Temperature for the completion model."
-        },
-        "claudememAutocomplete.llmProvider": {
-          "type": "string",
-          "default": "",
-          "description": "Override LLM provider for completions (openrouter | local | anthropic | claude-code). Empty = use claudemem config/env."
-        },
-        "claudememAutocomplete.llmModel": {
-          "type": "string",
-          "default": "",
-          "description": "Override LLM model for completions. Empty = use claudemem config/env."
-        },
-        "claudememAutocomplete.llmEndpoint": {
-          "type": "string",
-          "default": "",
-          "description": "Override local LLM endpoint (OpenAI-compatible), e.g. http://localhost:11434/v1 or LM Studio http://localhost:1234/v1."
-        }
-      }
-    }
-  },
-  "scripts": {
-    "build": "tsc -p .",
-    "watch": "tsc -p . -w"
-  },
-  "devDependencies": {
-    "@types/node": "^20.11.0",
-    "@types/vscode": "^1.92.0",
-    "typescript": "^5.7.2"
-  }
+	"name": "claudemem-autocomplete",
+	"displayName": "claudemem Autocomplete",
+	"description": "Inline code completion powered by claudemem semantic context + local/cloud LLMs",
+	"version": "0.0.1",
+	"publisher": "claudemem",
+	"engines": {
+		"vscode": "^1.92.0"
+	},
+	"categories": ["Programming Languages", "AI"],
+	"activationEvents": [
+		"onStartupFinished",
+		"onCommand:claudememAutocomplete.setOpenRouterKey",
+		"onCommand:claudememAutocomplete.restartServer"
+	],
+	"main": "./dist/extension.js",
+	"contributes": {
+		"commands": [
+			{
+				"command": "claudememAutocomplete.setOpenRouterKey",
+				"title": "claudemem: Set OpenRouter API Key"
+			},
+			{
+				"command": "claudememAutocomplete.restartServer",
+				"title": "claudemem: Restart Autocomplete Server"
+			}
+		],
+		"configuration": {
+			"title": "claudemem Autocomplete",
+			"properties": {
+				"claudememAutocomplete.enable": {
+					"type": "boolean",
+					"default": true,
+					"description": "Enable inline autocompletions from claudemem."
+				},
+				"claudememAutocomplete.binaryPath": {
+					"type": "string",
+					"default": "claudemem",
+					"description": "Path to the claudemem binary."
+				},
+				"claudememAutocomplete.debounceMs": {
+					"type": "number",
+					"default": 120,
+					"minimum": 0,
+					"description": "Debounce time for automatic inline completions."
+				},
+				"claudememAutocomplete.maxPrefixChars": {
+					"type": "number",
+					"default": 4000,
+					"minimum": 200,
+					"description": "Max characters before cursor to send to the server."
+				},
+				"claudememAutocomplete.maxSuffixChars": {
+					"type": "number",
+					"default": 2000,
+					"minimum": 0,
+					"description": "Max characters after cursor to send to the server."
+				},
+				"claudememAutocomplete.maxTokens": {
+					"type": "number",
+					"default": 200,
+					"minimum": 16,
+					"description": "Max tokens for the completion model."
+				},
+				"claudememAutocomplete.temperature": {
+					"type": "number",
+					"default": 0.2,
+					"minimum": 0,
+					"maximum": 2,
+					"description": "Temperature for the completion model."
+				},
+				"claudememAutocomplete.llmProvider": {
+					"type": "string",
+					"default": "",
+					"description": "Override LLM provider for completions (openrouter | local | anthropic | claude-code). Empty = use claudemem config/env."
+				},
+				"claudememAutocomplete.llmModel": {
+					"type": "string",
+					"default": "",
+					"description": "Override LLM model for completions. Empty = use claudemem config/env."
+				},
+				"claudememAutocomplete.llmEndpoint": {
+					"type": "string",
+					"default": "",
+					"description": "Override local LLM endpoint (OpenAI-compatible), e.g. http://localhost:11434/v1 or LM Studio http://localhost:1234/v1."
+				}
+			}
+		}
+	},
+	"scripts": {
+		"build": "tsc -p .",
+		"watch": "tsc -p . -w"
+	},
+	"devDependencies": {
+		"@types/node": "^20.11.0",
+		"@types/vscode": "^1.92.0",
+		"typescript": "^5.7.2"
+	}
 }
-

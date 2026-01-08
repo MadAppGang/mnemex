@@ -175,7 +175,7 @@ Write for developers who are new to the codebase.`,
 export function buildFileSummaryPrompt(
 	filePath: string,
 	fileContent: string,
-	language: string
+	language: string,
 ): string {
 	// Sanitize code content to prevent prompt injection
 	const safeContent = sanitizeCodeContent(truncateContent(fileContent, 8000));
@@ -212,7 +212,9 @@ export function buildBatchedFileSummaryPrompt(files: BatchFileInfo[]): string {
 		const file = files[i];
 		// Truncate more aggressively when batching to fit context window
 		const maxChars = Math.floor(24000 / files.length);
-		const safeContent = sanitizeCodeContent(truncateContent(file.fileContent, maxChars));
+		const safeContent = sanitizeCodeContent(
+			truncateContent(file.fileContent, maxChars),
+		);
 
 		prompt += `=== FILE ${i + 1}: ${file.filePath} ===
 \`\`\`${file.language}
@@ -258,12 +260,10 @@ Be concise. Focus on what developers need to know to use or modify each file.`;
  */
 export function buildSymbolSummaryPrompt(
 	chunk: CodeChunk,
-	fileContext?: string
+	fileContext?: string,
 ): string {
 	const symbolType = chunk.chunkType === "method" ? "method" : chunk.chunkType;
-	const contextInfo = chunk.parentName
-		? ` (part of ${chunk.parentName})`
-		: "";
+	const contextInfo = chunk.parentName ? ` (part of ${chunk.parentName})` : "";
 
 	// Sanitize code content to prevent prompt injection
 	const safeContent = sanitizeCodeContent(chunk.content);
@@ -306,7 +306,9 @@ export interface BatchSymbolInfo {
 /**
  * Build prompt for BATCHED symbol summary extraction (multiple symbols in one call)
  */
-export function buildBatchedSymbolSummaryPrompt(symbols: BatchSymbolInfo[]): string {
+export function buildBatchedSymbolSummaryPrompt(
+	symbols: BatchSymbolInfo[],
+): string {
 	let prompt = `Analyze these ${symbols.length} code symbols and generate summaries for each.
 
 `;
@@ -315,7 +317,9 @@ export function buildBatchedSymbolSummaryPrompt(symbols: BatchSymbolInfo[]): str
 		const sym = symbols[i];
 		// Truncate more aggressively when batching
 		const maxChars = Math.floor(16000 / symbols.length);
-		const safeContent = sanitizeCodeContent(truncateContent(sym.content, maxChars));
+		const safeContent = sanitizeCodeContent(
+			truncateContent(sym.content, maxChars),
+		);
 		const parentInfo = sym.parentName ? ` (part of ${sym.parentName})` : "";
 
 		prompt += `=== SYMBOL ${i + 1}: ${sym.name}${parentInfo} [${sym.symbolType}] ===
@@ -362,7 +366,7 @@ Be precise and practical. Focus on information needed to correctly use each symb
  */
 export function buildIdiomPrompt(
 	chunks: CodeChunk[],
-	language: string
+	language: string,
 ): string {
 	// Select representative chunks (mix of types)
 	const selectedChunks = selectRepresentativeChunks(chunks, 10);
@@ -373,7 +377,9 @@ export function buildIdiomPrompt(
 
 	for (const chunk of selectedChunks) {
 		// Sanitize code content to prevent prompt injection
-		const safeContent = sanitizeCodeContent(truncateContent(chunk.content, 500));
+		const safeContent = sanitizeCodeContent(
+			truncateContent(chunk.content, 500),
+		);
 		prompt += `--- ${chunk.filePath}:${chunk.startLine} (${chunk.chunkType}: ${chunk.name || "anonymous"}) ---
 \`\`\`${chunk.language}
 ${safeContent}
@@ -382,7 +388,8 @@ ${safeContent}
 `;
 	}
 
-	prompt += "Identify idioms and patterns used across these code samples. Generate the JSON response.";
+	prompt +=
+		"Identify idioms and patterns used across these code samples. Generate the JSON response.";
 	return prompt;
 }
 
@@ -391,11 +398,13 @@ ${safeContent}
  */
 export function buildUsageExamplePrompt(
 	chunk: CodeChunk,
-	symbolSummary?: string
+	symbolSummary?: string,
 ): string {
 	// Sanitize code content to prevent prompt injection
 	const safeContent = sanitizeCodeContent(chunk.content);
-	const safeSignature = chunk.signature ? sanitizeCodeContent(chunk.signature) : "";
+	const safeSignature = chunk.signature
+		? sanitizeCodeContent(chunk.signature)
+		: "";
 
 	let prompt = `Generate usage examples for this ${chunk.language} ${chunk.chunkType}.
 
@@ -424,7 +433,7 @@ Symbol summary: ${safeSummary}`;
  */
 export function buildAntiPatternPrompt(
 	chunks: CodeChunk[],
-	language: string
+	language: string,
 ): string {
 	let prompt = `Review this ${language} code for potential anti-patterns, code smells, or common mistakes.
 
@@ -432,7 +441,9 @@ export function buildAntiPatternPrompt(
 
 	for (const chunk of chunks.slice(0, 5)) {
 		// Sanitize code content to prevent prompt injection
-		const safeContent = sanitizeCodeContent(truncateContent(chunk.content, 800));
+		const safeContent = sanitizeCodeContent(
+			truncateContent(chunk.content, 800),
+		);
 		prompt += `--- ${chunk.filePath}:${chunk.startLine} (${chunk.chunkType}: ${chunk.name || "anonymous"}) ---
 \`\`\`${chunk.language}
 ${safeContent}
@@ -441,7 +452,8 @@ ${safeContent}
 `;
 	}
 
-	prompt += "Identify any anti-patterns or code quality issues. Generate the JSON response.";
+	prompt +=
+		"Identify any anti-patterns or code quality issues. Generate the JSON response.";
 	return prompt;
 }
 
@@ -449,9 +461,14 @@ ${safeContent}
  * Build prompt for project documentation
  */
 export function buildProjectDocPrompt(
-	category: "architecture" | "getting_started" | "api" | "contributing" | "standards",
+	category:
+		| "architecture"
+		| "getting_started"
+		| "api"
+		| "contributing"
+		| "standards",
 	fileSummaries: Array<{ filePath: string; summary: string }>,
-	idioms: Array<{ pattern: string; rationale: string }>
+	idioms: Array<{ pattern: string; rationale: string }>,
 ): string {
 	let prompt = `Generate ${category} documentation for this project.
 
@@ -564,7 +581,10 @@ function truncateContent(content: string, maxChars: number): string {
 /**
  * Select representative chunks for pattern extraction
  */
-function selectRepresentativeChunks(chunks: CodeChunk[], maxCount: number): CodeChunk[] {
+function selectRepresentativeChunks(
+	chunks: CodeChunk[],
+	maxCount: number,
+): CodeChunk[] {
 	if (chunks.length <= maxCount) {
 		return chunks;
 	}

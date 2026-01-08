@@ -71,7 +71,7 @@ describeContext7("Context7Provider", () => {
 					allContent.includes("component") ||
 						allContent.includes("hook") ||
 						allContent.includes("state") ||
-						allContent.includes("react")
+						allContent.includes("react"),
 				).toBe(true);
 			}
 		} catch (error) {
@@ -98,7 +98,9 @@ describeContext7("Context7Provider", () => {
 	test("search returns results even for vague queries", async () => {
 		// Context7's search API does fuzzy matching, so even random strings may return results
 		// This test verifies the search behavior rather than expecting false
-		const supports = await provider.supports("definitely-not-a-real-library-xyz123");
+		const supports = await provider.supports(
+			"definitely-not-a-real-library-xyz123",
+		);
 		// The API may or may not find something - both are valid behaviors
 		expect(typeof supports).toBe("boolean");
 	});
@@ -149,7 +151,7 @@ describe("LlmsTxtProvider", () => {
 		expect(
 			allContent.includes("vue") ||
 				allContent.includes("component") ||
-				allContent.includes("reactive")
+				allContent.includes("reactive"),
 		).toBe(true);
 	});
 
@@ -245,7 +247,7 @@ describe("LibraryMapper", () => {
 				devDependencies: {
 					typescript: "^5.0.0",
 				},
-			})
+			}),
 		);
 
 		const deps = await mapper.detectDependencies(mockProjectPath);
@@ -272,7 +274,7 @@ describe("LibraryMapper", () => {
 
 		fs.writeFileSync(
 			path.join(mockProjectPath, "requirements.txt"),
-			"django>=4.0\nfastapi==0.100.0\nrequests\n"
+			"django>=4.0\nfastapi==0.100.0\nrequests\n",
 		);
 
 		const deps = await mapper.detectDependencies(mockProjectPath);

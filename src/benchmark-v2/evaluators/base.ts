@@ -27,7 +27,7 @@ export abstract class BaseEvaluator<TResult> implements IEvaluator<TResult> {
 	abstract evaluate(
 		summary: GeneratedSummary,
 		codeUnit: BenchmarkCodeUnit,
-		context: EvaluatorContext
+		context: EvaluatorContext,
 	): Promise<TResult>;
 
 	abstract getType(): EvaluationType;
@@ -40,7 +40,9 @@ export abstract class BaseEvaluator<TResult> implements IEvaluator<TResult> {
 		let jsonStr = response.trim();
 
 		// Strategy 1: Try to extract JSON from markdown code blocks (greedy - last closing ```)
-		const jsonMatch = response.match(/```(?:json)?\s*([\s\S]*?)```(?![\s\S]*```)/);
+		const jsonMatch = response.match(
+			/```(?:json)?\s*([\s\S]*?)```(?![\s\S]*```)/,
+		);
 		if (jsonMatch) {
 			jsonStr = jsonMatch[1].trim();
 		} else {
@@ -76,11 +78,12 @@ export abstract class BaseEvaluator<TResult> implements IEvaluator<TResult> {
 			}
 
 			// Provide more helpful error message
-			const preview = jsonStr.slice(0, 200) + (jsonStr.length > 200 ? "..." : "");
+			const preview =
+				jsonStr.slice(0, 200) + (jsonStr.length > 200 ? "..." : "");
 			const suffix = jsonStr.slice(-50);
 			throw new Error(
 				`JSON Parse error: ${error instanceof Error ? error.message : error}. ` +
-				`Response preview: "${preview}" ... ends with: "${suffix}"`
+					`Response preview: "${preview}" ... ends with: "${suffix}"`,
 			);
 		}
 	}
@@ -164,25 +167,9 @@ const MODEL_FAMILIES: Record<string, string[]> = {
 		"o1-preview",
 		"o1-mini",
 	],
-	google: [
-		"gemini-pro",
-		"gemini-1.5-pro",
-		"gemini-1.5-flash",
-		"gemini-ultra",
-	],
-	meta: [
-		"llama-3",
-		"llama-3.1",
-		"llama-3.2",
-		"llama-3-8b",
-		"llama-3-70b",
-	],
-	mistral: [
-		"mistral-large",
-		"mistral-medium",
-		"mistral-small",
-		"mixtral",
-	],
+	google: ["gemini-pro", "gemini-1.5-pro", "gemini-1.5-flash", "gemini-ultra"],
+	meta: ["llama-3", "llama-3.1", "llama-3.2", "llama-3-8b", "llama-3-70b"],
+	mistral: ["mistral-large", "mistral-medium", "mistral-small", "mixtral"],
 };
 
 /**
@@ -225,16 +212,16 @@ export function getModelFamily(modelId: string): string | null {
 export function selectJudges(
 	generatorModel: string,
 	availableJudges: string[],
-	minJudges: number = 2
+	minJudges: number = 2,
 ): string[] {
 	// Filter out same-family models
 	const eligible = availableJudges.filter(
-		(j) => !isSameModelFamily(j, generatorModel)
+		(j) => !isSameModelFamily(j, generatorModel),
 	);
 
 	if (eligible.length < minJudges) {
 		throw new Error(
-			`Insufficient judge models: need ${minJudges}, have ${eligible.length} (after excluding same family)`
+			`Insufficient judge models: need ${minJudges}, have ${eligible.length} (after excluding same family)`,
 		);
 	}
 

@@ -51,7 +51,12 @@ export class BenchmarkEvaluator {
 	private testCases: TestCase[] = [];
 
 	// Buffer for diagnostic messages during progress display
-	private diagnosticBuffer: Array<{ category: string; message: string; error?: Error; timestamp: string }> = [];
+	private diagnosticBuffer: Array<{
+		category: string;
+		message: string;
+		error?: Error;
+		timestamp: string;
+	}> = [];
 	private progressDisplayActive = true; // Assume progress display is active during benchmark
 
 	constructor(config: BenchmarkConfig) {
@@ -62,7 +67,11 @@ export class BenchmarkEvaluator {
 	 * Log diagnostic message. Buffers messages while progress display is active
 	 * to avoid corrupting the multi-line progress display.
 	 */
-	private logDiagnostic(category: string, message: string, error?: Error): void {
+	private logDiagnostic(
+		category: string,
+		message: string,
+		error?: Error,
+	): void {
 		if (!this.config.verbose) return;
 
 		const timestamp = new Date().toISOString().slice(11, 23);
@@ -80,17 +89,24 @@ export class BenchmarkEvaluator {
 	/**
 	 * Output a single diagnostic message to stderr.
 	 */
-	private outputDiagnostic(category: string, message: string, timestamp: string, error?: Error): void {
+	private outputDiagnostic(
+		category: string,
+		message: string,
+		timestamp: string,
+		error?: Error,
+	): void {
 		const prefix = `\x1b[2m[${timestamp}]\x1b[0m`;
 		const categoryColors: Record<string, string> = {
-			ERROR: "\x1b[31m",  // Red
-			WARN: "\x1b[33m",   // Yellow
-			INFO: "\x1b[36m",   // Cyan
+			ERROR: "\x1b[31m", // Red
+			WARN: "\x1b[33m", // Yellow
+			INFO: "\x1b[36m", // Cyan
 		};
 		const categoryColor = categoryColors[category] || "\x1b[37m";
 		const reset = "\x1b[0m";
 
-		process.stderr.write(`${prefix} ${categoryColor}${category}${reset}: ${message}\n`);
+		process.stderr.write(
+			`${prefix} ${categoryColor}${category}${reset}: ${message}\n`,
+		);
 		if (error && error.stack) {
 			// Only show first line of stack in verbose mode
 			const stackLine = error.stack.split("\n")[1]?.trim() || "";
@@ -111,7 +127,12 @@ export class BenchmarkEvaluator {
 
 		process.stderr.write("\n\x1b[2m─── Diagnostic Log ───\x1b[0m\n");
 		for (const entry of this.diagnosticBuffer) {
-			this.outputDiagnostic(entry.category, entry.message, entry.timestamp, entry.error);
+			this.outputDiagnostic(
+				entry.category,
+				entry.message,
+				entry.timestamp,
+				entry.error,
+			);
 		}
 		process.stderr.write("\x1b[2m──────────────────────\x1b[0m\n\n");
 		this.diagnosticBuffer = [];
@@ -124,7 +145,10 @@ export class BenchmarkEvaluator {
 		const startTime = Date.now();
 
 		if (this.config.verbose) {
-			this.logDiagnostic("INFO", "Verbose/diagnostic mode enabled - errors will be logged to stderr");
+			this.logDiagnostic(
+				"INFO",
+				"Verbose/diagnostic mode enabled - errors will be logged to stderr",
+			);
 		}
 
 		// Phase 1: Prepare
@@ -142,14 +166,17 @@ export class BenchmarkEvaluator {
 		// Phase 2: Generate summaries with each model
 		// Strategy: Run cloud models in parallel, local models sequentially (GPU constraint)
 		// Both sessions run in parallel with each other
-		const allGenerations = new Map<string, Map<string, GenerationResult<FileSummary | SymbolSummary>>>();
+		const allGenerations = new Map<
+			string,
+			Map<string, GenerationResult<FileSummary | SymbolSummary>>
+		>();
 
 		// Separate cloud and local generators
 		const cloudGenerators = this.generators.filter(
-			(g) => g.getInfo().provider !== "local"
+			(g) => g.getInfo().provider !== "local",
 		);
 		const localGenerators = this.generators.filter(
-			(g) => g.getInfo().provider === "local"
+			(g) => g.getInfo().provider === "local",
 		);
 
 		let completedCount = 0;
@@ -172,11 +199,14 @@ export class BenchmarkEvaluator {
 							"generating",
 							completed,
 							total,
-							`Running ${displayName}: ${completed}/${total}`
+							`Running ${displayName}: ${completed}/${total}`,
 						);
 					};
 
-					const { results: generations, errors } = await this.runGenerator(generator, onProgress);
+					const { results: generations, errors } = await this.runGenerator(
+						generator,
+						onProgress,
+					);
 					completedCount++;
 
 					// Store errors
@@ -194,7 +224,7 @@ export class BenchmarkEvaluator {
 							"generating",
 							this.testCases.length,
 							this.testCases.length,
-							`Failed ${displayName} (all ${failureCount} tests failed)`
+							`Failed ${displayName} (all ${failureCount} tests failed)`,
 						);
 					} else if (failureCount > 0) {
 						// Some failures
@@ -202,7 +232,7 @@ export class BenchmarkEvaluator {
 							"generating",
 							this.testCases.length,
 							this.testCases.length,
-							`Completed ${displayName} (${failureCount} failures)`
+							`Completed ${displayName} (${failureCount} failures)`,
 						);
 					} else {
 						// All succeeded
@@ -210,17 +240,21 @@ export class BenchmarkEvaluator {
 							"generating",
 							this.testCases.length,
 							this.testCases.length,
-							`Completed ${displayName}`
+							`Completed ${displayName}`,
 						);
 					}
 					return { generatorId, generations, failureCount };
-				})
+				}),
 			);
 			return results;
 		};
 
 		const runLocalModels = async () => {
-			const results: Array<{ generatorId: string; generations: Map<string, GenerationResult<FileSummary | SymbolSummary>>; failureCount: number }> = [];
+			const results: Array<{
+				generatorId: string;
+				generations: Map<string, GenerationResult<FileSummary | SymbolSummary>>;
+				failureCount: number;
+			}> = [];
 			for (const generator of localGenerators) {
 				const generatorId = generator.getInfo().model;
 				const displayName = generator.getInfo().displayName;
@@ -231,11 +265,14 @@ export class BenchmarkEvaluator {
 						"generating",
 						completed,
 						total,
-						`Running ${displayName} (local): ${completed}/${total}`
+						`Running ${displayName} (local): ${completed}/${total}`,
 					);
 				};
 
-				const { results: generations, errors } = await this.runGenerator(generator, onProgress);
+				const { results: generations, errors } = await this.runGenerator(
+					generator,
+					onProgress,
+				);
 				completedCount++;
 
 				// Store errors
@@ -253,7 +290,7 @@ export class BenchmarkEvaluator {
 						"generating",
 						this.testCases.length,
 						this.testCases.length,
-						`Failed ${displayName} (all ${failureCount} tests failed)`
+						`Failed ${displayName} (all ${failureCount} tests failed)`,
 					);
 				} else if (failureCount > 0) {
 					// Some failures
@@ -261,7 +298,7 @@ export class BenchmarkEvaluator {
 						"generating",
 						this.testCases.length,
 						this.testCases.length,
-						`Completed ${displayName} (${failureCount} failures)`
+						`Completed ${displayName} (${failureCount} failures)`,
 					);
 				} else {
 					// All succeeded
@@ -269,7 +306,7 @@ export class BenchmarkEvaluator {
 						"generating",
 						this.testCases.length,
 						this.testCases.length,
-						`Completed ${displayName}`
+						`Completed ${displayName}`,
 					);
 				}
 				results.push({ generatorId, generations, failureCount });
@@ -284,7 +321,10 @@ export class BenchmarkEvaluator {
 		]);
 
 		// Merge results
-		for (const { generatorId, generations, failureCount } of [...cloudResults, ...localResults]) {
+		for (const { generatorId, generations, failureCount } of [
+			...cloudResults,
+			...localResults,
+		]) {
 			allGenerations.set(generatorId, generations);
 			// Note: failure tracking is now handled during generation
 		}
@@ -293,7 +333,15 @@ export class BenchmarkEvaluator {
 		// Strategy: Run cloud judges in parallel, local judges sequentially
 		// Each judge processes ALL generations independently
 		const allJudgments = new Map<string, Map<string, JudgmentResult>>();
-		const perJudgeBreakdowns = new Map<string, Array<{ judge: string; qualityScore: number; usefulness: number; conciseness: number }>>();
+		const perJudgeBreakdowns = new Map<
+			string,
+			Array<{
+				judge: string;
+				qualityScore: number;
+				usefulness: number;
+				conciseness: number;
+			}>
+		>();
 
 		if (this.judges.length > 0) {
 			// Collect all (generatorId, testCaseId, generation) tuples
@@ -307,32 +355,47 @@ export class BenchmarkEvaluator {
 			for (const [generatorId, generations] of allGenerations) {
 				for (const [testCaseId, generation] of generations) {
 					const testCase = this.testCases.find((tc) => tc.id === testCaseId)!;
-					generationTuples.push({ generatorId, testCaseId, generation, testCase });
+					generationTuples.push({
+						generatorId,
+						testCaseId,
+						generation,
+						testCase,
+					});
 				}
 			}
 
 			const totalGenerations = generationTuples.length;
 
 			// Separate cloud and local judges
-			const cloudJudges = this.judges.filter(j => j.provider !== "local");
-			const localJudges = this.judges.filter(j => j.provider === "local");
+			const cloudJudges = this.judges.filter((j) => j.provider !== "local");
+			const localJudges = this.judges.filter((j) => j.provider === "local");
 
 			// Per-judge results: judgeModel -> Map<generatorId, Map<testCaseId, JudgmentResult>>
-			const perJudgeResults = new Map<string, Map<string, Map<string, JudgmentResult>>>();
+			const perJudgeResults = new Map<
+				string,
+				Map<string, Map<string, JudgmentResult>>
+			>();
 
 			// Run a single judge through all generations
-			const runJudge = async (judgeWithProvider: JudgeWithProvider): Promise<void> => {
+			const runJudge = async (
+				judgeWithProvider: JudgeWithProvider,
+			): Promise<void> => {
 				const { judge, model } = judgeWithProvider;
 				const judgeResults = new Map<string, Map<string, JudgmentResult>>();
 				let completed = 0;
 
-				for (const { generatorId, testCaseId, generation, testCase } of generationTuples) {
+				for (const {
+					generatorId,
+					testCaseId,
+					generation,
+					testCase,
+				} of generationTuples) {
 					// Report progress for this judge
 					this.reportProgress(
 						"judging",
 						completed,
 						totalGenerations,
-						`Judge ${model}: ${completed}/${totalGenerations}`
+						`Judge ${model}: ${completed}/${totalGenerations}`,
 					);
 
 					try {
@@ -349,8 +412,13 @@ export class BenchmarkEvaluator {
 						}
 						judgeResults.get(generatorId)!.set(testCaseId, judgment);
 					} catch (error) {
-						const err = error instanceof Error ? error : new Error(String(error));
-						this.logDiagnostic("ERROR", `Judge ${model} failed for ${testCaseId}: ${err.message}`, err);
+						const err =
+							error instanceof Error ? error : new Error(String(error));
+						this.logDiagnostic(
+							"ERROR",
+							`Judge ${model} failed for ${testCaseId}: ${err.message}`,
+							err,
+						);
 
 						// Store default judgment on error
 						if (!judgeResults.has(generatorId)) {
@@ -375,7 +443,7 @@ export class BenchmarkEvaluator {
 					"judging",
 					totalGenerations,
 					totalGenerations,
-					`Judge ${model}: ${totalGenerations}/${totalGenerations}`
+					`Judge ${model}: ${totalGenerations}/${totalGenerations}`,
 				);
 
 				perJudgeResults.set(model, judgeResults);
@@ -413,7 +481,10 @@ export class BenchmarkEvaluator {
 
 					// Aggregate using median
 					if (judgeResults.length > 0) {
-						aggregatedJudgments.set(testCaseId, this.aggregateJudgments(judgeResults));
+						aggregatedJudgments.set(
+							testCaseId,
+							this.aggregateJudgments(judgeResults),
+						);
 					}
 				}
 
@@ -423,25 +494,33 @@ export class BenchmarkEvaluator {
 			// Compute per-judge score breakdown for each generator (when multiple judges)
 			if (this.judges.length > 1) {
 				for (const [generatorId] of allGenerations) {
-					const breakdown: Array<{ judge: string; qualityScore: number; usefulness: number; conciseness: number }> = [];
+					const breakdown: Array<{
+						judge: string;
+						qualityScore: number;
+						usefulness: number;
+						conciseness: number;
+					}> = [];
 
 					for (const [judgeModel, judgeResultsMap] of perJudgeResults) {
 						const genJudgments = judgeResultsMap.get(generatorId);
 						if (genJudgments && genJudgments.size > 0) {
 							// Calculate average scores from this judge for this generator
 							const judgments = Array.from(genJudgments.values()).filter(
-								j => !j.feedback?.startsWith("Judgment failed:")
+								(j) => !j.feedback?.startsWith("Judgment failed:"),
 							);
 
 							if (judgments.length > 0) {
 								const avgUsefulness = Math.round(
-									judgments.reduce((sum, j) => sum + j.usefulness, 0) / judgments.length
+									judgments.reduce((sum, j) => sum + j.usefulness, 0) /
+										judgments.length,
 								);
 								const avgConciseness = Math.round(
-									judgments.reduce((sum, j) => sum + j.conciseness, 0) / judgments.length
+									judgments.reduce((sum, j) => sum + j.conciseness, 0) /
+										judgments.length,
 								);
 								const avgQuality = Math.round(
-									judgments.reduce((sum, j) => sum + j.qualityScore, 0) / judgments.length
+									judgments.reduce((sum, j) => sum + j.qualityScore, 0) /
+										judgments.length,
 								);
 
 								breakdown.push({
@@ -462,7 +541,12 @@ export class BenchmarkEvaluator {
 		}
 
 		// Phase 4: Score all results
-		this.reportProgress("scoring", 0, this.generators.length, "Calculating scores...");
+		this.reportProgress(
+			"scoring",
+			0,
+			this.generators.length,
+			"Calculating scores...",
+		);
 
 		const generatorResults: GeneratorResults[] = [];
 
@@ -479,7 +563,11 @@ export class BenchmarkEvaluator {
 
 		// Create composite scorer with normalization data
 		const weights = this.config.weights || DEFAULT_WEIGHTS;
-		const compositeScorer = createCompositeScorer(allDurations, allCosts, weights);
+		const compositeScorer = createCompositeScorer(
+			allDurations,
+			allCosts,
+			weights,
+		);
 
 		for (let i = 0; i < this.generators.length; i++) {
 			const generator = this.generators[i];
@@ -489,7 +577,7 @@ export class BenchmarkEvaluator {
 				"scoring",
 				i,
 				this.generators.length,
-				`Scoring ${generator.getInfo().displayName}...`
+				`Scoring ${generator.getInfo().displayName}...`,
 			);
 
 			const generations = allGenerations.get(generatorId)!;
@@ -503,7 +591,7 @@ export class BenchmarkEvaluator {
 				judgments,
 				compositeScorer,
 				judgeBreakdown,
-				errors
+				errors,
 			);
 
 			generatorResults.push(result);
@@ -533,7 +621,7 @@ export class BenchmarkEvaluator {
 				genInfo.provider,
 				genInfo.model,
 				genInfo.displayName,
-				genInfo.endpoint
+				genInfo.endpoint,
 			);
 			this.generators.push(generator);
 		}
@@ -545,7 +633,10 @@ export class BenchmarkEvaluator {
 	 */
 	private async initializeJudges(): Promise<void> {
 		if (this.config.judges.length === 0) {
-			this.logDiagnostic("WARN", "No judges configured - usefulness/conciseness will default to 50%");
+			this.logDiagnostic(
+				"WARN",
+				"No judges configured - usefulness/conciseness will default to 50%",
+			);
 			this.judges = [];
 			return;
 		}
@@ -562,16 +653,25 @@ export class BenchmarkEvaluator {
 				this.logDiagnostic("INFO", `Initialized judge: ${model} (${provider})`);
 			} catch (error) {
 				const err = error instanceof Error ? error : new Error(String(error));
-				this.logDiagnostic("ERROR", `Failed to initialize judge ${judgeSpec}: ${err.message}`, err);
+				this.logDiagnostic(
+					"ERROR",
+					`Failed to initialize judge ${judgeSpec}: ${err.message}`,
+					err,
+				);
 			}
 		}
 
 		if (this.judges.length === 0) {
 			this.logDiagnostic("WARN", "No judges could be initialized");
 		} else {
-			const cloudCount = this.judges.filter(j => j.provider !== "local").length;
+			const cloudCount = this.judges.filter(
+				(j) => j.provider !== "local",
+			).length;
 			const localCount = this.judges.length - cloudCount;
-			this.logDiagnostic("INFO", `Judges ready: ${cloudCount} cloud (parallel), ${localCount} local (sequential)`);
+			this.logDiagnostic(
+				"INFO",
+				`Judges ready: ${cloudCount} cloud (parallel), ${localCount} local (sequential)`,
+			);
 		}
 	}
 
@@ -595,7 +695,9 @@ export class BenchmarkEvaluator {
 		});
 
 		if (this.testCases.length === 0) {
-			throw new Error("No test cases selected. Check that the project is indexed.");
+			throw new Error(
+				"No test cases selected. Check that the project is indexed.",
+			);
 		}
 	}
 
@@ -612,9 +714,15 @@ export class BenchmarkEvaluator {
 	 */
 	private async runGenerator(
 		generator: ISummaryGenerator,
-		onTestCaseProgress?: (completed: number, total: number) => void
-	): Promise<{ results: Map<string, GenerationResult<FileSummary | SymbolSummary>>; errors: string[] }> {
-		const results = new Map<string, GenerationResult<FileSummary | SymbolSummary>>();
+		onTestCaseProgress?: (completed: number, total: number) => void,
+	): Promise<{
+		results: Map<string, GenerationResult<FileSummary | SymbolSummary>>;
+		errors: string[];
+	}> {
+		const results = new Map<
+			string,
+			GenerationResult<FileSummary | SymbolSummary>
+		>();
 		const errors: string[] = [];
 		generator.resetUsage();
 
@@ -625,7 +733,9 @@ export class BenchmarkEvaluator {
 		onTestCaseProgress?.(0, totalTestCases);
 
 		// Check if this is a batch generator
-		const isBatch = "isBatch" in generator && (generator as { isBatch?: boolean }).isBatch === true;
+		const isBatch =
+			"isBatch" in generator &&
+			(generator as { isBatch?: boolean }).isBatch === true;
 
 		if (isBatch) {
 			// Batch generator: queue all requests first, then flush
@@ -634,7 +744,10 @@ export class BenchmarkEvaluator {
 			};
 
 			// Queue all requests (these return promises that will resolve after flush)
-			const pendingResults = new Map<string, Promise<GenerationResult<FileSummary | SymbolSummary>>>();
+			const pendingResults = new Map<
+				string,
+				Promise<GenerationResult<FileSummary | SymbolSummary>>
+			>();
 
 			for (const testCase of this.testCases) {
 				if (testCase.type === "file_summary") {
@@ -644,8 +757,8 @@ export class BenchmarkEvaluator {
 							testCase.filePath,
 							testCase.fileContent,
 							testCase.language,
-							testCase.codeChunks || []
-						)
+							testCase.codeChunks || [],
+						),
 					);
 				} else {
 					pendingResults.set(
@@ -653,8 +766,8 @@ export class BenchmarkEvaluator {
 						batchGen.generateSymbolSummary(
 							testCase.codeChunk!,
 							testCase.fileContent,
-							testCase.language
-						)
+							testCase.language,
+						),
 					);
 				}
 			}
@@ -674,7 +787,7 @@ export class BenchmarkEvaluator {
 					this.logDiagnostic(
 						"ERROR",
 						`Batch generator failed for test case ${testCaseId}: ${errorMsg}`,
-						err
+						err,
 					);
 				}
 				completedTestCases++;
@@ -691,13 +804,13 @@ export class BenchmarkEvaluator {
 							testCase.filePath,
 							testCase.fileContent,
 							testCase.language,
-							testCase.codeChunks || []
+							testCase.codeChunks || [],
 						);
 					} else {
 						result = await generator.generateSymbolSummary(
 							testCase.codeChunk!,
 							testCase.fileContent,
-							testCase.language
+							testCase.language,
 						);
 					}
 
@@ -709,7 +822,7 @@ export class BenchmarkEvaluator {
 					this.logDiagnostic(
 						"ERROR",
 						`Generator failed for ${testCase.filePath}: ${errorMsg}`,
-						err
+						err,
 					);
 				}
 				completedTestCases++;
@@ -741,7 +854,7 @@ export class BenchmarkEvaluator {
 
 		// Filter out failed judgments
 		const validJudgments = judgments.filter(
-			j => !j.feedback?.startsWith("Judgment failed:")
+			(j) => !j.feedback?.startsWith("Judgment failed:"),
 		);
 
 		// If all failed, return first result
@@ -759,24 +872,26 @@ export class BenchmarkEvaluator {
 				: sorted[mid];
 		};
 
-		const usefulness = median(validJudgments.map(j => j.usefulness));
-		const conciseness = median(validJudgments.map(j => j.conciseness));
-		const clarity = median(validJudgments.map(j => j.clarity));
+		const usefulness = median(validJudgments.map((j) => j.usefulness));
+		const conciseness = median(validJudgments.map((j) => j.conciseness));
+		const clarity = median(validJudgments.map((j) => j.clarity));
 		const qualityScore = Math.round(
-			usefulness * 0.5 + conciseness * 0.25 + clarity * 0.25
+			usefulness * 0.5 + conciseness * 0.25 + clarity * 0.25,
 		);
 
 		// Combine durations and judge names
-		const totalDuration = validJudgments.reduce((sum, j) => sum + j.durationMs, 0);
-		const judgeNames = validJudgments.map(j => j.judgedBy).join(", ");
+		const totalDuration = validJudgments.reduce(
+			(sum, j) => sum + j.durationMs,
+			0,
+		);
+		const judgeNames = validJudgments.map((j) => j.judgedBy).join(", ");
 
 		// Combine feedback
 		const feedbackParts = validJudgments
-			.map(j => j.feedback)
+			.map((j) => j.feedback)
 			.filter((f): f is string => !!f);
-		const feedback = feedbackParts.length > 0
-			? feedbackParts.join(" | ")
-			: undefined;
+		const feedback =
+			feedbackParts.length > 0 ? feedbackParts.join(" | ") : undefined;
 
 		return {
 			usefulness,
@@ -797,8 +912,13 @@ export class BenchmarkEvaluator {
 		generations: Map<string, GenerationResult<FileSummary | SymbolSummary>>,
 		judgments: Map<string, JudgmentResult> | undefined,
 		compositeScorer: CompositeScorer,
-		judgeBreakdown?: Array<{ judge: string; qualityScore: number; usefulness: number; conciseness: number }>,
-		errors?: string[]
+		judgeBreakdown?: Array<{
+			judge: string;
+			qualityScore: number;
+			usefulness: number;
+			conciseness: number;
+		}>,
+		errors?: string[],
 	): Promise<GeneratorResults> {
 		const testCaseResults: TestCaseResult[] = [];
 		let totalDuration = 0;
@@ -819,7 +939,7 @@ export class BenchmarkEvaluator {
 			const { overall, components } = await compositeScorer.scoreDetailed(
 				testCase,
 				generation,
-				judgment
+				judgment,
 			);
 
 			testCaseResults.push({
@@ -832,7 +952,8 @@ export class BenchmarkEvaluator {
 
 			totalDuration += generation.durationMs;
 			totalCost += generation.usage.cost;
-			totalTokens += generation.usage.inputTokens + generation.usage.outputTokens;
+			totalTokens +=
+				generation.usage.inputTokens + generation.usage.outputTokens;
 		}
 
 		// Calculate aggregate scores
@@ -840,7 +961,7 @@ export class BenchmarkEvaluator {
 
 		// Add per-judge breakdown if available
 		if (judgeBreakdown && judgeBreakdown.length > 0) {
-			scores.judgeBreakdown = judgeBreakdown.map(jb => ({
+			scores.judgeBreakdown = judgeBreakdown.map((jb) => ({
 				judge: jb.judge,
 				qualityScore: jb.qualityScore,
 				usefulness: jb.usefulness,
@@ -850,9 +971,8 @@ export class BenchmarkEvaluator {
 
 		// Calculate metrics with errors
 		const metrics: PerformanceMetrics = {
-			avgDurationMs: testCaseResults.length > 0
-				? totalDuration / testCaseResults.length
-				: 0,
+			avgDurationMs:
+				testCaseResults.length > 0 ? totalDuration / testCaseResults.length : 0,
 			totalCost,
 			totalTokens,
 			successRate: testCaseResults.length / this.testCases.length,
@@ -911,7 +1031,14 @@ export class BenchmarkEvaluator {
 	 */
 	private calculateRankings(results: GeneratorResults[]): Rankings {
 		// Type for numeric score keys only
-		type NumericScoreKey = "overall" | "correctness" | "completeness" | "usefulness" | "conciseness" | "speed" | "cost";
+		type NumericScoreKey =
+			| "overall"
+			| "correctness"
+			| "completeness"
+			| "usefulness"
+			| "conciseness"
+			| "speed"
+			| "cost";
 
 		const sortBy = (key: NumericScoreKey) =>
 			[...results]
@@ -943,7 +1070,10 @@ export class BenchmarkEvaluator {
 			projectPath: this.config.projectPath,
 			timestamp: new Date().toISOString(),
 			totalTestCases: this.testCases.length,
-			testCaseTypes: typeCounts as Record<"file_summary" | "symbol_summary", number>,
+			testCaseTypes: typeCounts as Record<
+				"file_summary" | "symbol_summary",
+				number
+			>,
 			judges: this.config.judges,
 			weights: this.config.weights || DEFAULT_WEIGHTS,
 		};
@@ -956,7 +1086,7 @@ export class BenchmarkEvaluator {
 		phase: BenchmarkPhase,
 		completed: number,
 		total: number,
-		details?: string
+		details?: string,
 	): void {
 		this.config.onProgress?.(phase, completed, total, details);
 	}
@@ -979,7 +1109,9 @@ export interface BenchmarkRunResult {
  * Create and run a benchmark.
  * Returns results and a flushDiagnostics function to call after progress display is stopped.
  */
-export async function runBenchmark(config: BenchmarkConfig): Promise<BenchmarkRunResult> {
+export async function runBenchmark(
+	config: BenchmarkConfig,
+): Promise<BenchmarkRunResult> {
 	const evaluator = new BenchmarkEvaluator(config);
 	const results = await evaluator.run();
 	return {

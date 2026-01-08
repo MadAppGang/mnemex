@@ -272,9 +272,7 @@ export class LearningEngine {
 
 		// Nudge toward 0.5 (balanced)
 		const delta =
-			currentVector > 0.5
-				? -this.config.alpha * 0.5
-				: this.config.alpha * 0.5;
+			currentVector > 0.5 ? -this.config.alpha * 0.5 : this.config.alpha * 0.5;
 
 		const newVector = this.clamp(currentVector + delta);
 		const newBM25 = 1.0 - newVector;
@@ -313,14 +311,16 @@ export class LearningEngine {
 
 		// Update boosts with proper sample count tracking
 		for (const filePath of acceptedFiles) {
-			const { boost: current, sampleCount } = this.store.getFileBoostWithSamples(filePath);
+			const { boost: current, sampleCount } =
+				this.store.getFileBoostWithSamples(filePath);
 			const newBoost = current * (1 + this.config.alpha);
 			const clamped = Math.min(newBoost, this.config.maxFileBoost);
 			this.store.updateFileBoost(filePath, clamped, sampleCount + 1);
 		}
 
 		for (const filePath of rejectedFiles) {
-			const { boost: current, sampleCount } = this.store.getFileBoostWithSamples(filePath);
+			const { boost: current, sampleCount } =
+				this.store.getFileBoostWithSamples(filePath);
 			const newBoost = current * (1 - this.config.alpha);
 			const clamped = Math.max(newBoost, this.config.minFileBoost);
 			this.store.updateFileBoost(filePath, clamped, sampleCount + 1);
@@ -363,7 +363,8 @@ export class LearningEngine {
 		for (const id of event.acceptedIds) {
 			const meta = chunkMetadata.get(id);
 			if (meta) {
-				const { boost: current, sampleCount } = this.store.getFileBoostWithSamples(meta.filePath);
+				const { boost: current, sampleCount } =
+					this.store.getFileBoostWithSamples(meta.filePath);
 				const newBoost = current * (1 + this.config.alpha);
 				this.store.updateFileBoost(
 					meta.filePath,
@@ -376,7 +377,8 @@ export class LearningEngine {
 		for (const id of event.rejectedIds) {
 			const meta = chunkMetadata.get(id);
 			if (meta) {
-				const { boost: current, sampleCount } = this.store.getFileBoostWithSamples(meta.filePath);
+				const { boost: current, sampleCount } =
+					this.store.getFileBoostWithSamples(meta.filePath);
 				const newBoost = current * (1 - this.config.alpha);
 				this.store.updateFileBoost(
 					meta.filePath,

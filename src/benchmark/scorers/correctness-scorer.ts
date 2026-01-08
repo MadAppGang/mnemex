@@ -26,7 +26,7 @@ export class CorrectnessScorer implements IScorer {
 	async score(
 		testCase: TestCase,
 		generation: GenerationResult<FileSummary | SymbolSummary>,
-		_judgment?: JudgmentResult
+		_judgment?: JudgmentResult,
 	): Promise<ScoreResult> {
 		const summary = generation.result;
 		const groundTruth = testCase.groundTruth;
@@ -41,7 +41,10 @@ export class CorrectnessScorer implements IScorer {
 			details = result.details;
 		} else {
 			const symbolSummary = summary as SymbolSummary;
-			const result = this.scoreSymbolSummaryCorrectness(symbolSummary, groundTruth);
+			const result = this.scoreSymbolSummaryCorrectness(
+				symbolSummary,
+				groundTruth,
+			);
 			score = result.score;
 			details = result.details;
 		}
@@ -60,8 +63,9 @@ export class CorrectnessScorer implements IScorer {
 	getCriterion(): ScoringCriterion {
 		return {
 			name: "correctness",
-			weight: 0.30,
-			description: "Are the mentioned elements (params, exports, types) factually correct?",
+			weight: 0.3,
+			description:
+				"Are the mentioned elements (params, exports, types) factually correct?",
 		};
 	}
 
@@ -70,7 +74,7 @@ export class CorrectnessScorer implements IScorer {
 	 */
 	private scoreFileSummaryCorrectness(
 		summary: FileSummary,
-		groundTruth: TestCase["groundTruth"]
+		groundTruth: TestCase["groundTruth"],
 	): { score: number; details: Record<string, unknown> } {
 		const mentionedExports = summary.exports || [];
 		const actualExports = groundTruth.exports || [];
@@ -82,9 +86,10 @@ export class CorrectnessScorer implements IScorer {
 		let exportCorrectness = 100;
 		if (mentionedExports.length > 0 && actualExports.length > 0) {
 			const correctExports = mentionedExports.filter((exp) =>
-				actualExports.some((actual) => fuzzyMatch(exp, actual))
+				actualExports.some((actual) => fuzzyMatch(exp, actual)),
 			);
-			exportCorrectness = (correctExports.length / mentionedExports.length) * 100;
+			exportCorrectness =
+				(correctExports.length / mentionedExports.length) * 100;
 		} else if (mentionedExports.length > 0 && actualExports.length === 0) {
 			// Mentioned exports that don't exist = hallucination
 			exportCorrectness = 0;
@@ -94,7 +99,7 @@ export class CorrectnessScorer implements IScorer {
 		let depCorrectness = 100;
 		if (mentionedDeps.length > 0 && actualDeps.length > 0) {
 			const correctDeps = mentionedDeps.filter((dep) =>
-				actualDeps.some((actual) => fuzzyMatch(dep, actual))
+				actualDeps.some((actual) => fuzzyMatch(dep, actual)),
 			);
 			depCorrectness = (correctDeps.length / mentionedDeps.length) * 100;
 		} else if (mentionedDeps.length > 0 && actualDeps.length === 0) {
@@ -121,7 +126,7 @@ export class CorrectnessScorer implements IScorer {
 	 */
 	private scoreSymbolSummaryCorrectness(
 		summary: SymbolSummary,
-		groundTruth: TestCase["groundTruth"]
+		groundTruth: TestCase["groundTruth"],
 	): { score: number; details: Record<string, unknown> } {
 		const mentionedParams = summary.parameters || [];
 		const actualParams = groundTruth.parameters || [];
@@ -130,7 +135,7 @@ export class CorrectnessScorer implements IScorer {
 		let paramCorrectness = 100;
 		if (mentionedParams.length > 0 && actualParams.length > 0) {
 			const correctParams = mentionedParams.filter((param) =>
-				actualParams.some((actual) => actual.name === param.name)
+				actualParams.some((actual) => actual.name === param.name),
 			);
 			paramCorrectness = (correctParams.length / mentionedParams.length) * 100;
 		} else if (mentionedParams.length > 0 && actualParams.length === 0) {
@@ -140,7 +145,8 @@ export class CorrectnessScorer implements IScorer {
 
 		// Check async correctness (15% weight)
 		let asyncCorrectness = 100;
-		const mentionsAsync = summary.summary?.toLowerCase().includes("async") ||
+		const mentionsAsync =
+			summary.summary?.toLowerCase().includes("async") ||
 			summary.returnDescription?.toLowerCase().includes("promise");
 		if (groundTruth.isAsync !== mentionsAsync) {
 			asyncCorrectness = mentionsAsync ? 50 : 80; // Saying async when not is worse than missing it
@@ -149,16 +155,23 @@ export class CorrectnessScorer implements IScorer {
 		// Check return type correctness (15% weight)
 		let returnCorrectness = 100;
 		if (groundTruth.returnType) {
-			const mentionsReturn = summary.returnDescription?.toLowerCase().includes(
-				groundTruth.returnType.toLowerCase().replace("promise<", "").replace(">", "")
-			);
+			const mentionsReturn = summary.returnDescription
+				?.toLowerCase()
+				.includes(
+					groundTruth.returnType
+						.toLowerCase()
+						.replace("promise<", "")
+						.replace(">", ""),
+				);
 			if (!mentionsReturn) {
 				returnCorrectness = 60; // Missing return type is not as bad as wrong info
 			}
 		}
 
 		const score = Math.round(
-			paramCorrectness * 0.7 + asyncCorrectness * 0.15 + returnCorrectness * 0.15
+			paramCorrectness * 0.7 +
+				asyncCorrectness * 0.15 +
+				returnCorrectness * 0.15,
 		);
 
 		return {
@@ -174,5 +187,4 @@ export class CorrectnessScorer implements IScorer {
 			},
 		};
 	}
-
 }

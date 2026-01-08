@@ -11,7 +11,9 @@ export function combineAbortSignals(
 	if (active.length === 0) return undefined;
 	if (active.length === 1) return active[0];
 
-	const anyFn = (AbortSignal as unknown as { any?: (signals: AbortSignal[]) => AbortSignal }).any;
+	const anyFn = (
+		AbortSignal as unknown as { any?: (signals: AbortSignal[]) => AbortSignal }
+	).any;
 	if (typeof anyFn === "function") {
 		return anyFn(active);
 	}
@@ -29,4 +31,3 @@ export function combineAbortSignals(
 
 	return controller.signal;
 }
-

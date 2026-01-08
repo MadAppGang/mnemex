@@ -99,9 +99,7 @@ export async function handleHook(options: HookOptions = {}): Promise<void> {
 		}
 
 		case "PostToolUse": {
-			const { handlePostToolUse } = await import(
-				"./handlers/post-tool-use.js"
-			);
+			const { handlePostToolUse } = await import("./handlers/post-tool-use.js");
 			output = await handlePostToolUse(input);
 			break;
 		}

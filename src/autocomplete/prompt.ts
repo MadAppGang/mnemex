@@ -40,11 +40,16 @@ export function inferStyleHints(text: string): StyleHints {
 	else if (twoSpaces > 0) indent = "  ";
 
 	const quotes: StyleHints["quotes"] =
-		singleQuotes > doubleQuotes ? "single" : doubleQuotes > singleQuotes ? "double" : undefined;
+		singleQuotes > doubleQuotes
+			? "single"
+			: doubleQuotes > singleQuotes
+				? "double"
+				: undefined;
 
 	return {
 		indent,
-		semicolons: statementLines > 20 ? semicolons / statementLines > 0.6 : undefined,
+		semicolons:
+			statementLines > 20 ? semicolons / statementLines > 0.6 : undefined,
 		quotes,
 	};
 }
@@ -59,7 +64,9 @@ function formatDoc(doc: BaseDocument, maxChars: number): string {
 		`type: ${doc.documentType}`,
 		doc.filePath ? `file: ${doc.filePath}` : undefined,
 		doc.metadata?.startLine ? `line: ${doc.metadata.startLine}` : undefined,
-	].filter(Boolean).join("\n");
+	]
+		.filter(Boolean)
+		.join("\n");
 
 	switch (doc.documentType) {
 		case "code_chunk":
@@ -121,7 +128,10 @@ export function buildAutocompletePrompt(args: {
 	if (args.retrieval?.results?.length) {
 		const docs = args.retrieval.results
 			.slice(0, 12)
-			.map((r, i) => `\n[context_${i + 1}] score=${r.score.toFixed(3)}\n${formatDoc(r.document, 1400)}`)
+			.map(
+				(r, i) =>
+					`\n[context_${i + 1}] score=${r.score.toFixed(3)}\n${formatDoc(r.document, 1400)}`,
+			)
 			.join("\n");
 		userParts.push("\n[retrieved_context]" + docs);
 	}
@@ -153,7 +163,11 @@ export function stripCodeFences(text: string): string {
 	return out.trim();
 }
 
-export function trimPrefixOverlap(prefix: string, completion: string, maxOverlap = 80): string {
+export function trimPrefixOverlap(
+	prefix: string,
+	completion: string,
+	maxOverlap = 80,
+): string {
 	const max = Math.min(maxOverlap, prefix.length, completion.length);
 	for (let k = max; k > 0; k--) {
 		if (prefix.endsWith(completion.slice(0, k))) {
@@ -163,11 +177,13 @@ export function trimPrefixOverlap(prefix: string, completion: string, maxOverlap
 	return completion;
 }
 
-export function truncateAtSuffixHint(suffix: string, completion: string): string {
+export function truncateAtSuffixHint(
+	suffix: string,
+	completion: string,
+): string {
 	const hint = suffix.trim().slice(0, 40);
 	if (!hint) return completion;
 	const idx = completion.indexOf(hint);
 	if (idx === -1) return completion;
 	return completion.slice(0, idx);
 }
-

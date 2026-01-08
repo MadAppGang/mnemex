@@ -40,7 +40,10 @@ import { mkdirSync, existsSync, writeFileSync } from "fs";
 import { join } from "path";
 import type { PhaseContext, PhaseResult } from "../pipeline/orchestrator.js";
 import { createScoreAggregator } from "../scorers/aggregator.js";
-import { calculateCorrelationMatrix, analyzeInterRaterAgreement } from "../scorers/statistics.js";
+import {
+	calculateCorrelationMatrix,
+	analyzeInterRaterAgreement,
+} from "../scorers/statistics.js";
 import { createJSONReporter } from "./json-reporter.js";
 import { createMarkdownReporter } from "./markdown-reporter.js";
 import { createHTMLReporter } from "./html-reporter.js";
@@ -49,7 +52,7 @@ import { createHTMLReporter } from "./html-reporter.js";
  * Create the reporting phase executor
  */
 export function createReportingPhaseExecutor(
-	outputDir: string
+	outputDir: string,
 ): (context: PhaseContext) => Promise<PhaseResult> {
 	return async (context: PhaseContext): Promise<PhaseResult> => {
 		const { db, run: contextRun, config, stateMachine } = context;
@@ -87,9 +90,14 @@ export function createReportingPhaseExecutor(
 				};
 				writeFileSync(
 					join(outputDir, `${run.id}.json`),
-					JSON.stringify(placeholderReport, null, 2)
+					JSON.stringify(placeholderReport, null, 2),
 				);
-				stateMachine.updateProgress("reporting", 3, "complete", "Empty report generated");
+				stateMachine.updateProgress(
+					"reporting",
+					3,
+					"complete",
+					"Empty report generated",
+				);
 				return {
 					success: true,
 					itemsProcessed: 1,
@@ -141,7 +149,12 @@ export function createReportingPhaseExecutor(
 				pairwiseResults,
 			});
 			jsonReporter.writeToFile(jsonReport, join(outputDir, `${run.id}.json`));
-			stateMachine.updateProgress("reporting", 1, "json", "JSON report generated");
+			stateMachine.updateProgress(
+				"reporting",
+				1,
+				"json",
+				"JSON report generated",
+			);
 
 			// Generate Markdown report
 			const mdReporter = createMarkdownReporter();
@@ -154,7 +167,12 @@ export function createReportingPhaseExecutor(
 				interRaterAgreement,
 			});
 			mdReporter.writeToFile(mdReport, join(outputDir, `${run.id}.md`));
-			stateMachine.updateProgress("reporting", 2, "markdown", "Markdown report generated");
+			stateMachine.updateProgress(
+				"reporting",
+				2,
+				"markdown",
+				"Markdown report generated",
+			);
 
 			// Generate HTML report
 			const htmlReporter = createHTMLReporter();
@@ -166,7 +184,12 @@ export function createReportingPhaseExecutor(
 				correlationMatrix,
 			});
 			htmlReporter.writeToFile(htmlReport, join(outputDir, `${run.id}.html`));
-			stateMachine.updateProgress("reporting", 3, "html", "HTML report generated");
+			stateMachine.updateProgress(
+				"reporting",
+				3,
+				"html",
+				"HTML report generated",
+			);
 
 			return {
 				success: true,

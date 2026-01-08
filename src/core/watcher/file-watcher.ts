@@ -37,13 +37,34 @@ interface PendingChange {
 // ============================================================================
 
 const DEFAULT_EXTENSIONS = new Set([
-	".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
-	".py", ".go", ".rs", ".java", ".c", ".cpp", ".cc", ".h", ".hpp",
+	".ts",
+	".tsx",
+	".js",
+	".jsx",
+	".mjs",
+	".cjs",
+	".py",
+	".go",
+	".rs",
+	".java",
+	".c",
+	".cpp",
+	".cc",
+	".h",
+	".hpp",
 ]);
 
 const DEFAULT_IGNORE_DIRS = new Set([
-	"node_modules", ".git", "dist", "build", ".claudemem",
-	"__pycache__", ".next", ".nuxt", "coverage", ".cache",
+	"node_modules",
+	".git",
+	"dist",
+	"build",
+	".claudemem",
+	"__pycache__",
+	".next",
+	".nuxt",
+	"coverage",
+	".cache",
 ]);
 
 /** Dependency manifest files that trigger docs refresh */

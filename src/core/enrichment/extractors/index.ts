@@ -5,15 +5,34 @@
  */
 
 // Base classes
-export { BaseExtractor, ExtractorRegistry, createExtractorRegistry } from "./base.js";
+export {
+	BaseExtractor,
+	ExtractorRegistry,
+	createExtractorRegistry,
+} from "./base.js";
 
 // Extractors
-export { FileSummaryExtractor, createFileSummaryExtractor } from "./file-summary.js";
-export { SymbolSummaryExtractor, createSymbolSummaryExtractor } from "./symbol-summary.js";
+export {
+	FileSummaryExtractor,
+	createFileSummaryExtractor,
+} from "./file-summary.js";
+export {
+	SymbolSummaryExtractor,
+	createSymbolSummaryExtractor,
+} from "./symbol-summary.js";
 export { IdiomExtractor, createIdiomExtractor } from "./idiom.js";
-export { UsageExampleExtractor, createUsageExampleExtractor } from "./usage-example.js";
-export { AntiPatternExtractor, createAntiPatternExtractor } from "./anti-pattern.js";
-export { ProjectDocExtractor, createProjectDocExtractor } from "./project-doc.js";
+export {
+	UsageExampleExtractor,
+	createUsageExampleExtractor,
+} from "./usage-example.js";
+export {
+	AntiPatternExtractor,
+	createAntiPatternExtractor,
+} from "./anti-pattern.js";
+export {
+	ProjectDocExtractor,
+	createProjectDocExtractor,
+} from "./project-doc.js";
 
 // Import for internal use
 import { createFileSummaryExtractor } from "./file-summary.js";

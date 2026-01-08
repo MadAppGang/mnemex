@@ -38,7 +38,10 @@
 import type { SQLiteDatabase } from "../../core/sqlite.js";
 import type { InteractionConfig } from "./types.js";
 import { DEFAULT_INTERACTION_CONFIG } from "./types.js";
-import { InteractionStore, createInteractionStore } from "./interaction-store.js";
+import {
+	InteractionStore,
+	createInteractionStore,
+} from "./interaction-store.js";
 import { SessionTracker, createSessionTracker } from "./session-tracker.js";
 import { ToolEventLogger, createToolEventLogger } from "./tool-event-logger.js";
 
@@ -50,7 +53,10 @@ import { ToolEventLogger, createToolEventLogger } from "./tool-event-logger.js";
 export * from "./types.js";
 
 // Store
-export { InteractionStore, createInteractionStore } from "./interaction-store.js";
+export {
+	InteractionStore,
+	createInteractionStore,
+} from "./interaction-store.js";
 
 // Session Tracker
 export {

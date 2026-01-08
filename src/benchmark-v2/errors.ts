@@ -29,7 +29,7 @@ export class BenchmarkError extends Error {
 			context?: Record<string, unknown>;
 			recoverable?: boolean;
 			cause?: Error;
-		}
+		},
 	) {
 		super(message, { cause: options?.cause });
 		this.name = "BenchmarkError";
@@ -60,7 +60,7 @@ export class ConfigurationError extends BenchmarkError {
 	constructor(
 		message: string,
 		context?: Record<string, unknown>,
-		cause?: Error
+		cause?: Error,
 	) {
 		super(message, "CONFIG_ERROR", {
 			context,
@@ -79,13 +79,17 @@ export class InvalidModelConfigError extends ConfigurationError {
 		modelId: string,
 		provider: ModelProvider,
 		reason: string,
-		cause?: Error
+		cause?: Error,
 	) {
-		super(`Invalid model configuration for ${modelId}: ${reason}`, {
-			modelId,
-			provider,
-			reason,
-		}, cause);
+		super(
+			`Invalid model configuration for ${modelId}: ${reason}`,
+			{
+				modelId,
+				provider,
+				reason,
+			},
+			cause,
+		);
 		this.name = "InvalidModelConfigError";
 		this.modelId = modelId;
 		this.provider = provider;
@@ -110,7 +114,7 @@ export class ExtractionError extends BenchmarkError {
 	constructor(
 		message: string,
 		context?: Record<string, unknown>,
-		cause?: Error
+		cause?: Error,
 	) {
 		super(message, "EXTRACTION_ERROR", {
 			phase: "extraction",
@@ -130,13 +134,17 @@ export class FileParseError extends ExtractionError {
 		filePath: string,
 		language: string,
 		reason: string,
-		cause?: Error
+		cause?: Error,
 	) {
-		super(`Failed to parse ${filePath}: ${reason}`, {
-			filePath,
-			language,
-			reason,
-		}, cause);
+		super(
+			`Failed to parse ${filePath}: ${reason}`,
+			{
+				filePath,
+				language,
+				reason,
+			},
+			cause,
+		);
 		this.name = "FileParseError";
 		this.filePath = filePath;
 		this.language = language;
@@ -163,7 +171,7 @@ export class GenerationError extends BenchmarkError {
 	constructor(
 		message: string,
 		context?: Record<string, unknown>,
-		cause?: Error
+		cause?: Error,
 	) {
 		super(message, "GENERATION_ERROR", {
 			phase: "generation",
@@ -187,14 +195,18 @@ export class ModelApiError extends GenerationError {
 		options?: {
 			statusCode?: number;
 			cause?: Error;
-		}
+		},
 	) {
-		super(`API error from ${provider}/${modelId}: ${reason}`, {
-			modelId,
-			provider,
-			statusCode: options?.statusCode,
-			reason,
-		}, options?.cause);
+		super(
+			`API error from ${provider}/${modelId}: ${reason}`,
+			{
+				modelId,
+				provider,
+				statusCode: options?.statusCode,
+				reason,
+			},
+			options?.cause,
+		);
 		this.name = "ModelApiError";
 		this.modelId = modelId;
 		this.provider = provider;
@@ -205,11 +217,7 @@ export class ModelApiError extends GenerationError {
 export class RateLimitError extends ModelApiError {
 	readonly retryAfterMs?: number;
 
-	constructor(
-		modelId: string,
-		provider: ModelProvider,
-		retryAfterMs?: number
-	) {
+	constructor(modelId: string, provider: ModelProvider, retryAfterMs?: number) {
 		super(modelId, provider, "Rate limit exceeded", { statusCode: 429 });
 		this.name = "RateLimitError";
 		this.retryAfterMs = retryAfterMs;
@@ -258,7 +266,7 @@ export class EvaluationError extends BenchmarkError {
 		message: string,
 		evaluationType: EvaluationType,
 		context?: Record<string, unknown>,
-		cause?: Error
+		cause?: Error,
 	) {
 		super(message, "EVALUATION_ERROR", {
 			phase: `evaluation:${evaluationType}` as BenchmarkPhase,
@@ -278,13 +286,18 @@ export class JudgeError extends EvaluationError {
 		judgeModel: string,
 		reason: string,
 		context?: Record<string, unknown>,
-		cause?: Error
+		cause?: Error,
 	) {
-		super(`Judge ${judgeModel} failed: ${reason}`, "judge", {
-			...context,
-			judgeModel,
-			reason,
-		}, cause);
+		super(
+			`Judge ${judgeModel} failed: ${reason}`,
+			"judge",
+			{
+				...context,
+				judgeModel,
+				reason,
+			},
+			cause,
+		);
 		this.name = "JudgeError";
 		this.judgeModel = judgeModel;
 	}
@@ -306,9 +319,14 @@ export class ContrastiveError extends EvaluationError {
 	constructor(
 		reason: string,
 		context?: Record<string, unknown>,
-		cause?: Error
+		cause?: Error,
 	) {
-		super(`Contrastive evaluation failed: ${reason}`, "contrastive", context, cause);
+		super(
+			`Contrastive evaluation failed: ${reason}`,
+			"contrastive",
+			context,
+			cause,
+		);
 		this.name = "ContrastiveError";
 	}
 }
@@ -319,11 +337,14 @@ export class InsufficientDistractorsError extends ContrastiveError {
 	readonly available: number;
 
 	constructor(targetId: string, required: number, available: number) {
-		super(`Not enough distractors for ${targetId}: need ${required}, have ${available}`, {
-			targetId,
-			required,
-			available,
-		});
+		super(
+			`Not enough distractors for ${targetId}: need ${required}, have ${available}`,
+			{
+				targetId,
+				required,
+				available,
+			},
+		);
 		this.name = "InsufficientDistractorsError";
 		this.targetId = targetId;
 		this.required = required;
@@ -335,9 +356,14 @@ export class RetrievalError extends EvaluationError {
 	constructor(
 		reason: string,
 		context?: Record<string, unknown>,
-		cause?: Error
+		cause?: Error,
 	) {
-		super(`Retrieval evaluation failed: ${reason}`, "retrieval", context, cause);
+		super(
+			`Retrieval evaluation failed: ${reason}`,
+			"retrieval",
+			context,
+			cause,
+		);
 		this.name = "RetrievalError";
 	}
 }
@@ -351,13 +377,18 @@ export class DownstreamError extends EvaluationError {
 		taskId: string,
 		reason: string,
 		context?: Record<string, unknown>,
-		cause?: Error
+		cause?: Error,
 	) {
-		super(`Downstream task ${taskType}/${taskId} failed: ${reason}`, "downstream", {
-			...context,
-			taskType,
-			taskId,
-		}, cause);
+		super(
+			`Downstream task ${taskType}/${taskId} failed: ${reason}`,
+			"downstream",
+			{
+				...context,
+				taskType,
+				taskId,
+			},
+			cause,
+		);
 		this.name = "DownstreamError";
 		this.taskType = taskType;
 		this.taskId = taskId;
@@ -372,7 +403,7 @@ export class StorageError extends BenchmarkError {
 	constructor(
 		message: string,
 		context?: Record<string, unknown>,
-		cause?: Error
+		cause?: Error,
 	) {
 		super(message, "STORAGE_ERROR", {
 			context,
@@ -387,10 +418,14 @@ export class DatabaseError extends StorageError {
 	readonly operation: string;
 
 	constructor(operation: string, reason: string, cause?: Error) {
-		super(`Database ${operation} failed: ${reason}`, {
-			operation,
-			reason,
-		}, cause);
+		super(
+			`Database ${operation} failed: ${reason}`,
+			{
+				operation,
+				reason,
+			},
+			cause,
+		);
 		this.name = "DatabaseError";
 		this.operation = operation;
 	}
@@ -411,11 +446,15 @@ export class CorruptedDataError extends StorageError {
 	readonly dataId: string;
 
 	constructor(dataType: string, dataId: string, reason: string, cause?: Error) {
-		super(`Corrupted ${dataType} data (${dataId}): ${reason}`, {
-			dataType,
-			dataId,
-			reason,
-		}, cause);
+		super(
+			`Corrupted ${dataType} data (${dataId}): ${reason}`,
+			{
+				dataType,
+				dataId,
+				reason,
+			},
+			cause,
+		);
 		this.name = "CorruptedDataError";
 		this.dataType = dataType;
 		this.dataId = dataId;
@@ -430,7 +469,7 @@ export class StateError extends BenchmarkError {
 	constructor(
 		message: string,
 		context?: Record<string, unknown>,
-		cause?: Error
+		cause?: Error,
 	) {
 		super(message, "STATE_ERROR", {
 			context,
@@ -476,7 +515,7 @@ export class AggregationError extends BenchmarkError {
 	constructor(
 		message: string,
 		context?: Record<string, unknown>,
-		cause?: Error
+		cause?: Error,
 	) {
 		super(message, "AGGREGATION_ERROR", {
 			phase: "aggregation",
@@ -494,11 +533,14 @@ export class InsufficientDataError extends AggregationError {
 	readonly available: number;
 
 	constructor(dataType: string, required: number, available: number) {
-		super(`Insufficient ${dataType} for aggregation: need ${required}, have ${available}`, {
-			dataType,
-			required,
-			available,
-		});
+		super(
+			`Insufficient ${dataType} for aggregation: need ${required}, have ${available}`,
+			{
+				dataType,
+				required,
+				available,
+			},
+		);
 		this.name = "InsufficientDataError";
 		this.dataType = dataType;
 		this.required = required;
@@ -514,7 +556,7 @@ export class ReportingError extends BenchmarkError {
 	constructor(
 		message: string,
 		context?: Record<string, unknown>,
-		cause?: Error
+		cause?: Error,
 	) {
 		super(message, "REPORTING_ERROR", {
 			phase: "reporting",
@@ -530,10 +572,14 @@ export class ReportGenerationError extends ReportingError {
 	readonly format: string;
 
 	constructor(format: string, reason: string, cause?: Error) {
-		super(`Failed to generate ${format} report: ${reason}`, {
-			format,
-			reason,
-		}, cause);
+		super(
+			`Failed to generate ${format} report: ${reason}`,
+			{
+				format,
+				reason,
+			},
+			cause,
+		);
 		this.name = "ReportGenerationError";
 		this.format = format;
 	}
@@ -559,15 +605,13 @@ export function isRateLimitError(error: unknown): error is RateLimitError {
 /** Wrap unknown errors in a BenchmarkError */
 export function wrapError(
 	error: unknown,
-	phase?: BenchmarkPhase
+	phase?: BenchmarkPhase,
 ): BenchmarkError {
 	if (error instanceof BenchmarkError) {
 		return error;
 	}
 
-	const message = error instanceof Error
-		? error.message
-		: String(error);
+	const message = error instanceof Error ? error.message : String(error);
 
 	return new BenchmarkError(message, "UNKNOWN_ERROR", {
 		phase,

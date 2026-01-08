@@ -1,0 +1,42 @@
+// Main Dingo test file
+package main
+
+import "fmt"
+
+// Enum with variants
+enum Result {
+    Ok(int),
+    Err(string),
+}
+
+// Function using error propagation
+func processData(input string) Result {
+    let data = parseInput(input)?
+    let processed = transform(data)?
+    return Result.Ok(processed)
+}
+
+// Match expression
+func handleResult(r Result) int {
+    match r {
+        Ok(val) => val,
+        Err(e) => {
+            fmt.Println(e)
+            return 0
+        },
+    }
+}
+
+// Lambda expressions
+let add = |x, y| x + y
+let multiply = (x, y) => x * y
+
+// Safe navigation
+func getUserName(user *User) string {
+    return user?.name ?? "anonymous"
+}
+
+type User struct {
+    name string
+    email string
+}

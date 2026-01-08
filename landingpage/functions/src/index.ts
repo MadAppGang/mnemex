@@ -57,7 +57,10 @@ function isRateLimited(ip: string): boolean {
 	return false;
 }
 
-function getClientIP(req: { ip?: string; headers: Record<string, string | string[] | undefined> }): string {
+function getClientIP(req: {
+	ip?: string;
+	headers: Record<string, string | string[] | undefined>;
+}): string {
 	// Cloud Functions sets the client IP in x-forwarded-for
 	const forwarded = req.headers["x-forwarded-for"];
 	if (forwarded) {
@@ -296,13 +299,15 @@ export const uploadBenchmarkResults = onRequest(
 				message: error instanceof Error ? error.message : "Unknown error",
 			});
 		}
-	}
+	},
 );
 
 /**
  * Update the leaderboard with new model scores
  */
-async function updateLeaderboard(modelScores: ModelScoreEntry[]): Promise<void> {
+async function updateLeaderboard(
+	modelScores: ModelScoreEntry[],
+): Promise<void> {
 	const batch = db.batch();
 
 	for (const score of modelScores) {
@@ -321,18 +326,29 @@ async function updateLeaderboard(modelScores: ModelScoreEntry[]): Promise<void> 
 			displayName: score.displayName,
 			runCount,
 			avgQualityScore: existingData
-				? (existingData.avgQualityScore * existingData.runCount + score.quality.overall) / runCount
+				? (existingData.avgQualityScore * existingData.runCount +
+						score.quality.overall) /
+					runCount
 				: score.quality.overall,
 			avgRetrievalScore: existingData
-				? (existingData.avgRetrievalScore * existingData.runCount + score.quality.retrieval) / runCount
+				? (existingData.avgRetrievalScore * existingData.runCount +
+						score.quality.retrieval) /
+					runCount
 				: score.quality.retrieval,
 			avgContrastiveScore: existingData
-				? (existingData.avgContrastiveScore * existingData.runCount + score.quality.contrastive) / runCount
+				? (existingData.avgContrastiveScore * existingData.runCount +
+						score.quality.contrastive) /
+					runCount
 				: score.quality.contrastive,
 			avgJudgeScore: existingData
-				? (existingData.avgJudgeScore * existingData.runCount + score.quality.judge) / runCount
+				? (existingData.avgJudgeScore * existingData.runCount +
+						score.quality.judge) /
+					runCount
 				: score.quality.judge,
-			bestQualityScore: Math.max(existingData?.bestQualityScore || 0, score.quality.overall),
+			bestQualityScore: Math.max(
+				existingData?.bestQualityScore || 0,
+				score.quality.overall,
+			),
 			lastRunTimestamp: Timestamp.now(),
 		};
 
@@ -374,7 +390,7 @@ export const getLeaderboard = onRequest(
 			console.error("Leaderboard error:", error);
 			res.status(500).json({ error: "Failed to fetch leaderboard" });
 		}
-	}
+	},
 );
 
 /**
@@ -409,7 +425,7 @@ export const getRecentRuns = onRequest(
 			console.error("Recent runs error:", error);
 			res.status(500).json({ error: "Failed to fetch recent runs" });
 		}
-	}
+	},
 );
 
 /**

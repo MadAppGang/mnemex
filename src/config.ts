@@ -50,20 +50,20 @@ export const DEFAULT_EXCLUDE_PATTERNS = [
 	"**/bower_components/**",
 	"**/jspm_packages/**",
 	"**/.pnpm/**",
-	"**/vendor/**",           // Go, PHP, Ruby
-	"**/Pods/**",             // iOS CocoaPods
-	"**/Carthage/**",         // iOS Carthage
-	"**/.bundle/**",          // Ruby bundler
+	"**/vendor/**", // Go, PHP, Ruby
+	"**/Pods/**", // iOS CocoaPods
+	"**/Carthage/**", // iOS Carthage
+	"**/.bundle/**", // Ruby bundler
 
 	// ─── Build outputs ───
 	"**/dist/**",
 	"**/build/**",
 	"**/out/**",
 	"**/output/**",
-	"**/target/**",           // Rust, Java/Maven
+	"**/target/**", // Rust, Java/Maven
 	"**/bin/**",
-	"**/obj/**",              // .NET
-	"**/_build/**",           // Elixir
+	"**/obj/**", // .NET
+	"**/_build/**", // Elixir
 	"**/.output/**",
 	"**/artifacts/**",
 
@@ -128,7 +128,7 @@ export const DEFAULT_EXCLUDE_PATTERNS = [
 	"**/*.min.js",
 	"**/*.min.css",
 	"**/*.map",
-	"**/*.d.ts",              // TypeScript declarations (often generated)
+	"**/*.d.ts", // TypeScript declarations (often generated)
 	"**/*.generated.*",
 	"**/generated/**",
 	"**/auto-generated/**",
@@ -163,7 +163,7 @@ export const DEFAULT_EXCLUDE_PATTERNS = [
 
 	// ─── Documentation builds ───
 	"**/docs/_build/**",
-	"**/_site/**",            // Jekyll output
+	"**/_site/**", // Jekyll output
 
 	// ─── Misc ───
 	"**/.claudemem/**",
@@ -738,7 +738,9 @@ export function getDocsConfig(projectPath?: string): Required<DocsConfig> {
 	return {
 		enabled: isDocsEnabled(projectPath),
 		context7ApiKey: getContext7ApiKey(projectPath) ?? "",
-		providers: docsConfig.providers ?? (["context7", "llms_txt", "devdocs"] as DocProviderType[]),
+		providers:
+			docsConfig.providers ??
+			(["context7", "llms_txt", "devdocs"] as DocProviderType[]),
 		cacheTTL: docsConfig.cacheTTL ?? DEFAULT_DOCS_CACHE_TTL,
 		excludeLibraries: docsConfig.excludeLibraries ?? [],
 		maxPagesPerLibrary: docsConfig.maxPagesPerLibrary ?? DEFAULT_DOCS_MAX_PAGES,

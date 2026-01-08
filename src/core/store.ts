@@ -164,9 +164,13 @@ export class VectorStore {
 			// Extract vector dimension from schema for compatibility checks
 			try {
 				const schema = await this.table.schema();
-				const vectorField = schema.fields.find((f: { name: string }) => f.name === "vector");
+				const vectorField = schema.fields.find(
+					(f: { name: string }) => f.name === "vector",
+				);
 				if (vectorField && vectorField.type && "listSize" in vectorField.type) {
-					this.tableDimension = (vectorField.type as { listSize: number }).listSize;
+					this.tableDimension = (
+						vectorField.type as { listSize: number }
+					).listSize;
 				}
 			} catch {
 				// Ignore schema read errors - dimension check will be skipped
@@ -221,13 +225,19 @@ export class VectorStore {
 
 		// Check for dimension mismatch with existing table
 		const incomingDimension = data[0].vector.length;
-		if (table && this.tableDimension && this.tableDimension !== incomingDimension) {
+		if (
+			table &&
+			this.tableDimension &&
+			this.tableDimension !== incomingDimension
+		) {
 			// Dimension mismatch - clear the table and recreate
 			// This happens when embedding model changes but tracker metadata wasn't updated properly
 			console.warn(
 				`⚠️  Vector dimension mismatch: table has ${this.tableDimension}d, new embeddings are ${incomingDimension}d`,
 			);
-			console.warn("   Clearing existing vectors to match new embedding model...\n");
+			console.warn(
+				"   Clearing existing vectors to match new embedding model...\n",
+			);
 			await this.clear();
 			table = null;
 			this.tableDimension = null;
@@ -296,9 +306,7 @@ export class VectorStore {
 		// BM25 full-text search (if available)
 		let bm25Results: any[] = [];
 		try {
-			let ftsQuery = table
-				.search(queryText, "content")
-				.limit(limit * 2);
+			let ftsQuery = table.search(queryText, "content").limit(limit * 2);
 			if (filterStr) {
 				ftsQuery = ftsQuery.where(filterStr);
 			}
@@ -386,7 +394,9 @@ export class VectorStore {
 		try {
 			const results = await table
 				.query()
-				.where(`filePath = '${escapeFilterValue(filePath)}' AND documentType = 'code_chunk'`)
+				.where(
+					`filePath = '${escapeFilterValue(filePath)}' AND documentType = 'code_chunk'`,
+				)
 				.toArray();
 
 			return results.map((row) => ({
@@ -526,11 +536,17 @@ export class VectorStore {
 
 		// Check for dimension mismatch with existing table
 		const incomingDimension = data[0].vector.length;
-		if (table && this.tableDimension && this.tableDimension !== incomingDimension) {
+		if (
+			table &&
+			this.tableDimension &&
+			this.tableDimension !== incomingDimension
+		) {
 			console.warn(
 				`⚠️  Vector dimension mismatch: table has ${this.tableDimension}d, new embeddings are ${incomingDimension}d`,
 			);
-			console.warn("   Clearing existing vectors to match new embedding model...\n");
+			console.warn(
+				"   Clearing existing vectors to match new embedding model...\n",
+			);
 			await this.clear();
 			table = null;
 			this.tableDimension = null;
@@ -656,12 +672,23 @@ export class VectorStore {
 		}
 
 		// Filter by document types (these are enum values, but escape anyway for safety)
-		const effectiveTypes = documentTypes || (includeCodeChunks
-			? undefined // No filter = all types
-			: ["file_summary", "symbol_summary", "idiom", "usage_example", "anti_pattern", "project_doc"]);
+		const effectiveTypes =
+			documentTypes ||
+			(includeCodeChunks
+				? undefined // No filter = all types
+				: [
+						"file_summary",
+						"symbol_summary",
+						"idiom",
+						"usage_example",
+						"anti_pattern",
+						"project_doc",
+					]);
 
 		if (effectiveTypes && effectiveTypes.length > 0) {
-			const types = effectiveTypes.map((t) => `'${escapeFilterValue(t)}'`).join(", ");
+			const types = effectiveTypes
+				.map((t) => `'${escapeFilterValue(t)}'`)
+				.join(", ");
 			filters.push(`documentType IN (${types})`);
 		}
 
@@ -798,11 +825,17 @@ export class VectorStore {
 
 		// Check for dimension mismatch
 		const incomingDimension = data[0].vector.length;
-		if (table && this.tableDimension && this.tableDimension !== incomingDimension) {
+		if (
+			table &&
+			this.tableDimension &&
+			this.tableDimension !== incomingDimension
+		) {
 			console.warn(
 				`⚠️  Vector dimension mismatch: table has ${this.tableDimension}d, new embeddings are ${incomingDimension}d`,
 			);
-			console.warn("   Clearing existing vectors to match new embedding model...\n");
+			console.warn(
+				"   Clearing existing vectors to match new embedding model...\n",
+			);
 			await this.clear();
 			table = null;
 			this.tableDimension = null;
@@ -836,7 +869,10 @@ export class VectorStore {
 		try {
 			// LanceDB update via delete + insert pattern
 			// First, get the existing record
-			const results = await table.query().where(`id = '${escapeFilterValue(unitId)}'`).toArray();
+			const results = await table
+				.query()
+				.where(`id = '${escapeFilterValue(unitId)}'`)
+				.toArray();
 			if (results.length === 0) return;
 
 			const existing = results[0] as StoredChunk;
@@ -864,7 +900,10 @@ export class VectorStore {
 
 		try {
 			// LanceDB update via delete + insert pattern
-			const results = await table.query().where(`id = '${escapeFilterValue(documentId)}'`).toArray();
+			const results = await table
+				.query()
+				.where(`id = '${escapeFilterValue(documentId)}'`)
+				.toArray();
 			if (results.length === 0) return false;
 
 			const existing = results[0] as StoredChunk;
@@ -873,12 +912,14 @@ export class VectorStore {
 			await table.delete(`id = '${escapeFilterValue(documentId)}'`);
 
 			// Insert updated record with new content and vector
-			await table.add([{
-				...existing,
-				content: newContent,
-				vector: newVector,
-				enrichedAt: new Date().toISOString(),
-			}]);
+			await table.add([
+				{
+					...existing,
+					content: newContent,
+					vector: newVector,
+					enrichedAt: new Date().toISOString(),
+				},
+			]);
 
 			return true;
 		} catch (error) {
@@ -928,7 +969,9 @@ export class VectorStore {
 		try {
 			let filter = `filePath = '${escapeFilterValue(filePath)}' AND documentType = 'code_unit'`;
 			if (unitTypes && unitTypes.length > 0) {
-				const types = unitTypes.map((t) => `'${escapeFilterValue(t)}'`).join(", ");
+				const types = unitTypes
+					.map((t) => `'${escapeFilterValue(t)}'`)
+					.join(", ");
 				filter += ` AND unitType IN (${types})`;
 			}
 
@@ -943,7 +986,10 @@ export class VectorStore {
 	/**
 	 * Get code units by depth level (for bottom-up processing)
 	 */
-	async getCodeUnitsByDepth(depth: number, filePath?: string): Promise<CodeUnit[]> {
+	async getCodeUnitsByDepth(
+		depth: number,
+		filePath?: string,
+	): Promise<CodeUnit[]> {
 		const table = await this.ensureTableOpen();
 		if (!table) return [];
 
@@ -1011,7 +1057,14 @@ export class VectorStore {
 			includeSummaries?: boolean;
 		} = {},
 	): Promise<Array<CodeUnit & { score: number }>> {
-		const { limit = 10, unitTypes, minDepth, maxDepth, filePath, includeSummaries = true } = options;
+		const {
+			limit = 10,
+			unitTypes,
+			minDepth,
+			maxDepth,
+			filePath,
+			includeSummaries = true,
+		} = options;
 
 		const table = await this.ensureTableOpen();
 		if (!table) return [];
@@ -1020,7 +1073,9 @@ export class VectorStore {
 		const filters: string[] = ["documentType = 'code_unit'"];
 
 		if (unitTypes && unitTypes.length > 0) {
-			const types = unitTypes.map((t) => `'${escapeFilterValue(t)}'`).join(", ");
+			const types = unitTypes
+				.map((t) => `'${escapeFilterValue(t)}'`)
+				.join(", ");
 			filters.push(`unitType IN (${types})`);
 		}
 		if (minDepth !== undefined) {
@@ -1141,14 +1196,16 @@ function reciprocalRankFusion(
 	// Helper to check if result should be excluded
 	// Note: Empty/missing filePath returns false (safe default - don't exclude unknown sources)
 	const shouldExclude = (filePath: string): boolean => {
-		if (!filePath || !testFileDetector || testFileMode !== "exclude") return false;
+		if (!filePath || !testFileDetector || testFileMode !== "exclude")
+			return false;
 		return testFileDetector.isTestFile(filePath);
 	};
 
 	// Helper to get test file weight multiplier
 	// Note: Empty/missing filePath returns 1.0 (safe default - full weight for unknown sources)
 	const getTestWeight = (filePath: string): number => {
-		if (!filePath || !testFileDetector || testFileMode !== "downrank") return 1.0;
+		if (!filePath || !testFileDetector || testFileMode !== "downrank")
+			return 1.0;
 		return testFileDetector.isTestFile(filePath) ? TEST_FILE_WEIGHT : 1.0;
 	};
 
@@ -1205,7 +1262,9 @@ function reciprocalRankFusion(
 	}
 
 	// Sort by fused score
-	return Array.from(scores.values()).sort((a, b) => b.fusedScore - a.fusedScore);
+	return Array.from(scores.values()).sort(
+		(a, b) => b.fusedScore - a.fusedScore,
+	);
 }
 
 // ============================================================================
@@ -1213,26 +1272,29 @@ function reciprocalRankFusion(
 // ============================================================================
 
 /** Default weights per document type for each use case */
-const USE_CASE_WEIGHTS: Record<SearchUseCase, Partial<Record<DocumentType, number>>> = {
+const USE_CASE_WEIGHTS: Record<
+	SearchUseCase,
+	Partial<Record<DocumentType, number>>
+> = {
 	// FIM completion: prioritize code and examples, include API docs
 	fim: {
-		code_chunk: 0.40,
-		usage_example: 0.20,
+		code_chunk: 0.4,
+		usage_example: 0.2,
 		idiom: 0.12,
 		symbol_summary: 0.08,
-		api_reference: 0.10, // API docs help with completion
+		api_reference: 0.1, // API docs help with completion
 		framework_doc: 0.07, // Framework patterns
 		best_practice: 0.03, // Light best practice guidance
 	},
 	// Human search: balanced across summaries, code, and external docs
 	search: {
-		file_summary: 0.20,
-		symbol_summary: 0.20,
+		file_summary: 0.2,
+		symbol_summary: 0.2,
 		code_chunk: 0.15,
 		idiom: 0.12,
 		usage_example: 0.08,
 		anti_pattern: 0.05,
-		framework_doc: 0.10, // Official framework docs
+		framework_doc: 0.1, // Official framework docs
 		best_practice: 0.05, // Best practices
 		api_reference: 0.05, // API reference
 	},
@@ -1243,7 +1305,7 @@ const USE_CASE_WEIGHTS: Record<SearchUseCase, Partial<Record<DocumentType, numbe
 		code_chunk: 0.15,
 		idiom: 0.08,
 		project_doc: 0.04,
-		framework_doc: 0.10, // Framework understanding
+		framework_doc: 0.1, // Framework understanding
 		api_reference: 0.08, // API navigation
 		best_practice: 0.02, // Light guidance
 	},
@@ -1252,7 +1314,9 @@ const USE_CASE_WEIGHTS: Record<SearchUseCase, Partial<Record<DocumentType, numbe
 /**
  * Get weights for a use case (or default balanced weights)
  */
-function getUseCaseWeights(useCase?: SearchUseCase): Partial<Record<DocumentType, number>> {
+function getUseCaseWeights(
+	useCase?: SearchUseCase,
+): Partial<Record<DocumentType, number>> {
 	if (useCase && USE_CASE_WEIGHTS[useCase]) {
 		return USE_CASE_WEIGHTS[useCase];
 	}
@@ -1265,7 +1329,7 @@ function getUseCaseWeights(useCase?: SearchUseCase): Partial<Record<DocumentType
 		usage_example: 0.08,
 		anti_pattern: 0.03,
 		project_doc: 0.05,
-		framework_doc: 0.10,
+		framework_doc: 0.1,
 		best_practice: 0.05,
 		api_reference: 0.05,
 	};
@@ -1293,14 +1357,16 @@ function typeAwareRRFFusion(
 	// Helper to check if result should be excluded
 	// Note: Empty/missing filePath returns false (safe default - don't exclude unknown sources)
 	const shouldExclude = (filePath: string): boolean => {
-		if (!filePath || !testFileDetector || testFileMode !== "exclude") return false;
+		if (!filePath || !testFileDetector || testFileMode !== "exclude")
+			return false;
 		return testFileDetector.isTestFile(filePath);
 	};
 
 	// Helper to get test file weight multiplier
 	// Note: Empty/missing filePath returns 1.0 (safe default - full weight for unknown sources)
 	const getTestWeight = (filePath: string): number => {
-		if (!filePath || !testFileDetector || testFileMode !== "downrank") return 1.0;
+		if (!filePath || !testFileDetector || testFileMode !== "downrank")
+			return 1.0;
 		return testFileDetector.isTestFile(filePath) ? TEST_FILE_WEIGHT : 1.0;
 	};
 
@@ -1359,7 +1425,9 @@ function typeAwareRRFFusion(
 	}
 
 	// Sort by fused score
-	return Array.from(scores.values()).sort((a, b) => b.fusedScore - a.fusedScore);
+	return Array.from(scores.values()).sort(
+		(a, b) => b.fusedScore - a.fusedScore,
+	);
 }
 
 // ============================================================================
@@ -1371,6 +1439,9 @@ function typeAwareRRFFusion(
  * @param dbPath - Path to the vector database (e.g., /project/.claudemem/vectors)
  * @param projectPath - Optional explicit project path (derived from dbPath if not provided)
  */
-export function createVectorStore(dbPath: string, projectPath?: string): VectorStore {
+export function createVectorStore(
+	dbPath: string,
+	projectPath?: string,
+): VectorStore {
 	return new VectorStore(dbPath, projectPath);
 }

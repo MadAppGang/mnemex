@@ -78,7 +78,10 @@ export abstract class BaseDocProvider implements DocProvider {
 	 * Fetch documentation for a library.
 	 * Subclasses must implement this method.
 	 */
-	abstract fetch(library: string, options?: FetchOptions): Promise<FetchedDoc[]>;
+	abstract fetch(
+		library: string,
+		options?: FetchOptions,
+	): Promise<FetchedDoc[]>;
 
 	/**
 	 * Generate a cache key for a library/version combo

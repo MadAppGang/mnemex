@@ -102,7 +102,7 @@ export class QueryGenerator {
 	 * Generate queries for a single code unit
 	 */
 	async generateForCodeUnit(
-		codeUnit: BenchmarkCodeUnit
+		codeUnit: BenchmarkCodeUnit,
 	): Promise<GeneratedQuery[]> {
 		const prompt = this.buildPrompt(codeUnit);
 
@@ -117,7 +117,7 @@ export class QueryGenerator {
 				{
 					temperature: 0.7, // Some creativity in query generation
 					maxTokens: 1000,
-				}
+				},
 			);
 
 			// Convert to GeneratedQuery objects
@@ -133,7 +133,7 @@ export class QueryGenerator {
 		} catch (error) {
 			// Return empty array on failure - query generation is non-critical
 			console.warn(
-				`Failed to generate queries for ${codeUnit.name}: ${error instanceof Error ? error.message : String(error)}`
+				`Failed to generate queries for ${codeUnit.name}: ${error instanceof Error ? error.message : String(error)}`,
 			);
 			return [];
 		}
@@ -144,7 +144,7 @@ export class QueryGenerator {
 	 */
 	async generateForCodeUnits(
 		codeUnits: BenchmarkCodeUnit[],
-		onProgress?: (completed: number, total: number) => void
+		onProgress?: (completed: number, total: number) => void,
 	): Promise<GeneratedQuery[]> {
 		const allQueries: GeneratedQuery[] = [];
 
@@ -234,8 +234,7 @@ export class QueryGenerator {
 			code = code.slice(0, maxCodeLength) + "\n// ... (truncated)";
 		}
 
-		return QUERY_GENERATION_USER_PROMPT
-			.replace("{language}", codeUnit.language)
+		return QUERY_GENERATION_USER_PROMPT.replace("{language}", codeUnit.language)
 			.replace("{code}", code)
 			.replace("{file_path}", codeUnit.path)
 			.replace("{name}", codeUnit.name)
@@ -248,7 +247,7 @@ export class QueryGenerator {
 // ============================================================================
 
 export function createQueryGenerator(
-	options: QueryGeneratorOptions
+	options: QueryGeneratorOptions,
 ): QueryGenerator {
 	return new QueryGenerator(options);
 }

@@ -5,7 +5,12 @@
  * Shows full model names and detailed error information.
  */
 
-import type { BenchmarkResults, GeneratorResults, IReporter, ReportFormat } from "../types.js";
+import type {
+	BenchmarkResults,
+	GeneratorResults,
+	IReporter,
+	ReportFormat,
+} from "../types.js";
 
 // ============================================================================
 // Colors
@@ -38,41 +43,73 @@ export class CLIReporter implements IReporter {
 
 		// Header
 		lines.push("");
-		lines.push(this.color(`${c.orange}${c.bold}🏁 LLM BENCHMARK RESULTS${c.reset}`));
+		lines.push(
+			this.color(`${c.orange}${c.bold}🏁 LLM BENCHMARK RESULTS${c.reset}`),
+		);
 		lines.push("");
 
 		// Metadata
-		lines.push(this.color(`${c.dim}Project: ${results.metadata.projectPath}${c.reset}`));
-		lines.push(this.color(`${c.dim}Test cases: ${results.metadata.totalTestCases} (${results.metadata.testCaseTypes.file_summary} files, ${results.metadata.testCaseTypes.symbol_summary} symbols)${c.reset}`));
-		lines.push(this.color(`${c.dim}Judges: ${results.metadata.judges.length > 0 ? results.metadata.judges.join(", ") : "none"}${c.reset}`));
+		lines.push(
+			this.color(`${c.dim}Project: ${results.metadata.projectPath}${c.reset}`),
+		);
+		lines.push(
+			this.color(
+				`${c.dim}Test cases: ${results.metadata.totalTestCases} (${results.metadata.testCaseTypes.file_summary} files, ${results.metadata.testCaseTypes.symbol_summary} symbols)${c.reset}`,
+			),
+		);
+		lines.push(
+			this.color(
+				`${c.dim}Judges: ${results.metadata.judges.length > 0 ? results.metadata.judges.join(", ") : "none"}${c.reset}`,
+			),
+		);
 		lines.push("");
 
 		// Results table
 		lines.push(this.formatResultsTable(results));
 
 		// Failed models section (detailed errors)
-		const failedGenerators = results.generators.filter(g => g.metrics.failures > 0 || g.scores.overall === 0);
+		const failedGenerators = results.generators.filter(
+			(g) => g.metrics.failures > 0 || g.scores.overall === 0,
+		);
 		if (failedGenerators.length > 0) {
 			lines.push("");
 			lines.push(this.color(`${c.red}${c.bold}⚠ FAILED MODELS${c.reset}`));
 			for (const gen of failedGenerators) {
-				lines.push(this.formatFailedGenerator(gen, results.metadata.totalTestCases));
+				lines.push(
+					this.formatFailedGenerator(gen, results.metadata.totalTestCases),
+				);
 			}
 		}
 
 		// Rankings (only show models that didn't completely fail)
-		const successfulModels = results.rankings.byOverallScore.filter(model => {
-			const gen = results.generators.find(g => g.info.model === model);
+		const successfulModels = results.rankings.byOverallScore.filter((model) => {
+			const gen = results.generators.find((g) => g.info.model === model);
 			return gen && gen.scores.overall > 0;
 		});
 
 		if (successfulModels.length > 0) {
 			lines.push("");
 			lines.push(this.color(`${c.bold}Rankings:${c.reset}`));
-			lines.push(this.color(`  ${c.cyan}Overall:${c.reset} ${this.formatRanking(successfulModels)}`));
-			lines.push(this.color(`  ${c.cyan}Correctness:${c.reset} ${this.formatRanking(results.rankings.byCorrectness.filter(m => successfulModels.includes(m)))}`));
-			lines.push(this.color(`  ${c.cyan}Speed:${c.reset} ${this.formatRanking(results.rankings.bySpeed.filter(m => successfulModels.includes(m)))}`));
-			lines.push(this.color(`  ${c.cyan}Cost:${c.reset} ${this.formatRanking(results.rankings.byCost.filter(m => successfulModels.includes(m)))}`));
+			lines.push(
+				this.color(
+					`  ${c.cyan}Overall:${c.reset} ${this.formatRanking(successfulModels)}`,
+				),
+			);
+			lines.push(
+				this.color(
+					`  ${c.cyan}Correctness:${c.reset} ${this.formatRanking(results.rankings.byCorrectness.filter((m) => successfulModels.includes(m)))}`,
+				),
+			);
+			lines.push(
+				this.color(
+					`  ${c.cyan}Speed:${c.reset} ${this.formatRanking(results.rankings.bySpeed.filter((m) => successfulModels.includes(m)))}`,
+				),
+			);
+			lines.push(
+				this.color(
+					`  ${c.cyan}Cost:${c.reset} ${this.formatRanking(results.rankings.byCost.filter((m) => successfulModels.includes(m)))}`,
+				),
+			);
 		}
 
 		// Weights legend
@@ -95,23 +132,51 @@ export class CLIReporter implements IReporter {
 		// Calculate dynamic model name width (full names, no truncation)
 		const maxModelLen = Math.max(
 			5, // minimum "Model" header
-			...results.generators.map(g => g.info.displayName.length)
+			...results.generators.map((g) => g.info.displayName.length),
 		);
 
 		// Check if we have per-judge breakdowns (multi-judge mode)
 		const hasJudgeBreakdown = results.generators.some(
-			g => g.scores.judgeBreakdown && g.scores.judgeBreakdown.length > 1
+			(g) => g.scores.judgeBreakdown && g.scores.judgeBreakdown.length > 1,
 		);
 
 		// Calculate width for usefulness column based on breakdown
-		const usefulWidth = hasJudgeBreakdown ? this.calculateBreakdownWidth(results, "usefulness") : 8;
+		const usefulWidth = hasJudgeBreakdown
+			? this.calculateBreakdownWidth(results, "usefulness")
+			: 8;
 
 		// Calculate price column width based on actual costs
-		const priceWidth = Math.max(6, ...results.generators.map(g => this.formatPrice(g.metrics.totalCost).length)) + 1;
+		const priceWidth =
+			Math.max(
+				6,
+				...results.generators.map(
+					(g) => this.formatPrice(g.metrics.totalCost).length,
+				),
+			) + 1;
 
 		// Headers and widths
-		const headers = ["Model", "Overall", "Correct", "Complete", "Useful", "Speed", "Price", "Time", "Status"];
-		const widths = [maxModelLen + 2, 8, 8, 9, usefulWidth, 6, priceWidth, 8, 12];
+		const headers = [
+			"Model",
+			"Overall",
+			"Correct",
+			"Complete",
+			"Useful",
+			"Speed",
+			"Price",
+			"Time",
+			"Status",
+		];
+		const widths = [
+			maxModelLen + 2,
+			8,
+			8,
+			9,
+			usefulWidth,
+			6,
+			priceWidth,
+			8,
+			12,
+		];
 
 		const headerRow = headers.map((h, i) => h.padEnd(widths[i])).join(" ");
 		lines.push(this.color(`  ${c.bold}${headerRow}${c.reset}`));
@@ -119,14 +184,21 @@ export class CLIReporter implements IReporter {
 
 		// Find best/worst for highlighting
 		const validOverall = results.generators
-			.filter(g => g.scores.overall > 0)
-			.map(g => g.scores.overall);
+			.filter((g) => g.scores.overall > 0)
+			.map((g) => g.scores.overall);
 		const maxOverall = validOverall.length > 0 ? Math.max(...validOverall) : 0;
 		const minOverall = validOverall.length > 0 ? Math.min(...validOverall) : 0;
 
 		// Data rows
 		for (const gen of results.generators) {
-			const row = this.formatGeneratorRow(gen, widths, maxOverall, minOverall, results.metadata.totalTestCases, hasJudgeBreakdown);
+			const row = this.formatGeneratorRow(
+				gen,
+				widths,
+				maxOverall,
+				minOverall,
+				results.metadata.totalTestCases,
+				hasJudgeBreakdown,
+			);
 			lines.push("  " + row);
 		}
 
@@ -136,12 +208,17 @@ export class CLIReporter implements IReporter {
 	/**
 	 * Calculate width needed for breakdown column.
 	 */
-	private calculateBreakdownWidth(results: BenchmarkResults, _field: "usefulness" | "conciseness"): number {
+	private calculateBreakdownWidth(
+		results: BenchmarkResults,
+		_field: "usefulness" | "conciseness",
+	): number {
 		let maxLen = 8; // minimum width
 		for (const gen of results.generators) {
 			if (gen.scores.judgeBreakdown && gen.scores.judgeBreakdown.length > 1) {
 				// Format: "75%(80,70,75)" - score + "(" + comma-separated + ")"
-				const breakdown = gen.scores.judgeBreakdown.map(jb => jb.qualityScore.toString()).join(",");
+				const breakdown = gen.scores.judgeBreakdown
+					.map((jb) => jb.qualityScore.toString())
+					.join(",");
 				const formatted = `${gen.scores.usefulness}%(${breakdown})`;
 				maxLen = Math.max(maxLen, formatted.length + 1);
 			}
@@ -158,7 +235,7 @@ export class CLIReporter implements IReporter {
 		maxOverall: number,
 		minOverall: number,
 		totalTestCases: number,
-		hasJudgeBreakdown: boolean
+		hasJudgeBreakdown: boolean,
 	): string {
 		const scores = gen.scores;
 		const metrics = gen.metrics;
@@ -167,7 +244,8 @@ export class CLIReporter implements IReporter {
 		const modelName = gen.info.displayName;
 
 		// Check if completely failed
-		const isFailed = scores.overall === 0 && metrics.failures === totalTestCases;
+		const isFailed =
+			scores.overall === 0 && metrics.failures === totalTestCases;
 		const hasErrors = metrics.failures > 0 && !isFailed;
 
 		// Format scores with color coding
@@ -175,12 +253,16 @@ export class CLIReporter implements IReporter {
 			if (isFailed) return this.color(`${c.dim}-${c.reset}`);
 			const str = `${score}%`;
 			if (isBest && this.useColors) return `${c.green}${str}${c.reset}`;
-			if (isWorst && score < 50 && this.useColors) return `${c.red}${str}${c.reset}`;
+			if (isWorst && score < 50 && this.useColors)
+				return `${c.red}${str}${c.reset}`;
 			return str;
 		};
 
 		const overallBest = scores.overall === maxOverall && maxOverall > 0;
-		const overallWorst = scores.overall === minOverall && maxOverall !== minOverall && minOverall > 0;
+		const overallWorst =
+			scores.overall === minOverall &&
+			maxOverall !== minOverall &&
+			minOverall > 0;
 
 		// Status column
 		let status: string;
@@ -196,9 +278,15 @@ export class CLIReporter implements IReporter {
 		let usefulStr: string;
 		if (isFailed) {
 			usefulStr = this.color(`${c.dim}-${c.reset}`);
-		} else if (hasJudgeBreakdown && scores.judgeBreakdown && scores.judgeBreakdown.length > 1) {
+		} else if (
+			hasJudgeBreakdown &&
+			scores.judgeBreakdown &&
+			scores.judgeBreakdown.length > 1
+		) {
 			// Format: "75%(80,70,75)" showing aggregate and individual judge quality scores
-			const breakdown = scores.judgeBreakdown.map(jb => jb.qualityScore).join(",");
+			const breakdown = scores.judgeBreakdown
+				.map((jb) => jb.qualityScore)
+				.join(",");
 			usefulStr = `${scores.usefulness}%(${breakdown})`;
 		} else {
 			usefulStr = `${scores.usefulness}%`;
@@ -211,48 +299,79 @@ export class CLIReporter implements IReporter {
 			formatScore(scores.completeness),
 			usefulStr,
 			formatScore(scores.speed),
-			isFailed ? this.color(`${c.dim}-${c.reset}`) : this.formatPrice(metrics.totalCost),
-			isFailed ? this.color(`${c.dim}-${c.reset}`) : this.formatDuration(metrics.avgDurationMs),
+			isFailed
+				? this.color(`${c.dim}-${c.reset}`)
+				: this.formatPrice(metrics.totalCost),
+			isFailed
+				? this.color(`${c.dim}-${c.reset}`)
+				: this.formatDuration(metrics.avgDurationMs),
 			status,
 		];
 
-		return values.map((v, i) => {
-			// Strip ANSI codes for padding calculation
-			const stripped = v.replace(/\x1b\[[0-9;]*m/g, "");
-			const padding = widths[i] - stripped.length;
-			return v + " ".repeat(Math.max(0, padding));
-		}).join(" ");
+		return values
+			.map((v, i) => {
+				// Strip ANSI codes for padding calculation
+				const stripped = v.replace(/\x1b\[[0-9;]*m/g, "");
+				const padding = widths[i] - stripped.length;
+				return v + " ".repeat(Math.max(0, padding));
+			})
+			.join(" ");
 	}
 
 	/**
 	 * Format detailed error info for a failed generator.
 	 */
-	private formatFailedGenerator(gen: GeneratorResults, totalTestCases: number): string {
+	private formatFailedGenerator(
+		gen: GeneratorResults,
+		totalTestCases: number,
+	): string {
 		const lines: string[] = [];
 		const isTotalFailure = gen.scores.overall === 0;
 
-		lines.push(this.color(`  ${c.red}✗${c.reset} ${c.bold}${gen.info.displayName}${c.reset}`));
-		lines.push(this.color(`    ${c.dim}Provider: ${gen.info.provider} | Model: ${gen.info.model}${c.reset}`));
+		lines.push(
+			this.color(
+				`  ${c.red}✗${c.reset} ${c.bold}${gen.info.displayName}${c.reset}`,
+			),
+		);
+		lines.push(
+			this.color(
+				`    ${c.dim}Provider: ${gen.info.provider} | Model: ${gen.info.model}${c.reset}`,
+			),
+		);
 
 		if (isTotalFailure) {
-			lines.push(this.color(`    ${c.red}All ${totalTestCases} test cases failed${c.reset}`));
+			lines.push(
+				this.color(
+					`    ${c.red}All ${totalTestCases} test cases failed${c.reset}`,
+				),
+			);
 		} else {
-			lines.push(this.color(`    ${c.yellow}${gen.metrics.failures} of ${totalTestCases} test cases failed${c.reset}`));
+			lines.push(
+				this.color(
+					`    ${c.yellow}${gen.metrics.failures} of ${totalTestCases} test cases failed${c.reset}`,
+				),
+			);
 		}
 
 		// Show actual errors from metrics.errors (captured during generation)
 		if (gen.metrics.errors && gen.metrics.errors.length > 0) {
 			// Show all unique errors
 			const uniqueErrors = [...new Set(gen.metrics.errors)];
-			lines.push(this.color(`    ${c.red}Errors (${uniqueErrors.length} unique):${c.reset}`));
+			lines.push(
+				this.color(
+					`    ${c.red}Errors (${uniqueErrors.length} unique):${c.reset}`,
+				),
+			);
 			for (const error of uniqueErrors) {
 				lines.push(this.color(`    ${c.red}  • ${error}${c.reset}`));
 			}
 		} else {
 			// Fallback to test case results
-			const firstError = gen.testCaseResults.find(r => r.error);
+			const firstError = gen.testCaseResults.find((r) => r.error);
 			if (firstError?.error) {
-				lines.push(this.color(`    ${c.red}Error: ${firstError.error}${c.reset}`));
+				lines.push(
+					this.color(`    ${c.red}Error: ${firstError.error}${c.reset}`),
+				);
 			}
 		}
 
@@ -263,12 +382,16 @@ export class CLIReporter implements IReporter {
 	 * Format ranking list.
 	 */
 	private formatRanking(ranking: string[]): string {
-		return ranking.slice(0, 5).map((model, i) => {
-			const prefix = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
-			// Show short model name for rankings
-			const shortModel = model.split("/").pop() || model;
-			return `${prefix} ${shortModel}`;
-		}).join("  ");
+		return ranking
+			.slice(0, 5)
+			.map((model, i) => {
+				const prefix =
+					i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
+				// Show short model name for rankings
+				const shortModel = model.split("/").pop() || model;
+				return `${prefix} ${shortModel}`;
+			})
+			.join("  ");
 	}
 
 	/**

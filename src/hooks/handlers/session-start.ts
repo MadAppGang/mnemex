@@ -8,7 +8,13 @@
  * - Returns context about available features
  */
 
-import { existsSync, readdirSync, statSync, rmSync, readFileSync } from "node:fs";
+import {
+	existsSync,
+	readdirSync,
+	statSync,
+	rmSync,
+	readFileSync,
+} from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";

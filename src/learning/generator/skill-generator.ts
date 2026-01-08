@@ -12,7 +12,11 @@
  * - Safety constraints
  */
 
-import type { DetectedPattern, Improvement, ImprovementData } from "../interaction/types.js";
+import type {
+	DetectedPattern,
+	Improvement,
+	ImprovementData,
+} from "../interaction/types.js";
 import type { Workflow } from "../analysis/workflow-detector.js";
 import type { ErrorCluster } from "../analysis/error-clusterer.js";
 
@@ -81,7 +85,8 @@ export class SkillGenerator {
 	 */
 	generateFromPatterns(patterns: DetectedPattern[]): SkillGenerationResult {
 		const skills: GeneratedSkill[] = [];
-		const skippedPatterns: Array<{ pattern: DetectedPattern; reason: string }> = [];
+		const skippedPatterns: Array<{ pattern: DetectedPattern; reason: string }> =
+			[];
 
 		for (const pattern of patterns) {
 			// Skip non-workflow patterns
@@ -135,10 +140,11 @@ export class SkillGenerator {
 	 */
 	generateFromWorkflows(workflows: Workflow[]): GeneratedSkill[] {
 		return workflows
-			.filter((w) =>
-				w.automationPotential >= this.config.minAutomationPotential &&
-				w.occurrences >= this.config.minOccurrences &&
-				w.successRate >= this.config.minSuccessRate
+			.filter(
+				(w) =>
+					w.automationPotential >= this.config.minAutomationPotential &&
+					w.occurrences >= this.config.minOccurrences &&
+					w.successRate >= this.config.minSuccessRate,
 			)
 			.map((w) => this.generateSkillFromWorkflow(w));
 	}
@@ -189,7 +195,8 @@ export class SkillGenerator {
 	 * Generate skill from a pattern.
 	 */
 	private generateSkillFromPattern(pattern: DetectedPattern): GeneratedSkill {
-		const sequence = pattern.patternData.sequence ?? pattern.patternData.toolSequence ?? [];
+		const sequence =
+			pattern.patternData.sequence ?? pattern.patternData.toolSequence ?? [];
 		const name = this.generateSkillName(sequence, pattern.patternType);
 		const description = this.generateDescription(pattern);
 
@@ -274,14 +281,17 @@ export class SkillGenerator {
 	 * Generate description from pattern.
 	 */
 	private generateDescription(pattern: DetectedPattern): string {
-		const sequence = pattern.patternData.sequence ?? pattern.patternData.toolSequence ?? [];
+		const sequence =
+			pattern.patternData.sequence ?? pattern.patternData.toolSequence ?? [];
 		const occurrences = pattern.occurrenceCount;
 		const automation = pattern.patternData.automationPotential ?? 0;
 
-		return `Auto-generated skill from detected workflow pattern. ` +
+		return (
+			`Auto-generated skill from detected workflow pattern. ` +
 			`Sequence: ${sequence.join(" → ")}. ` +
 			`Observed ${occurrences} times. ` +
-			`Automation potential: ${(automation * 100).toFixed(0)}%.`;
+			`Automation potential: ${(automation * 100).toFixed(0)}%.`
+		);
 	}
 
 	/**
@@ -453,7 +463,7 @@ export class SkillGenerator {
  * Create a skill generator with optional configuration.
  */
 export function createSkillGenerator(
-	config: Partial<SkillGeneratorConfig> = {}
+	config: Partial<SkillGeneratorConfig> = {},
 ): SkillGenerator {
 	return new SkillGenerator(config);
 }

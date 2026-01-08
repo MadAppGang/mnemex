@@ -19,7 +19,12 @@
  * Core principle: STRUCTURE FIRST, then targeted reads
  */
 
-import { getInstructions, getCompactInstructions, type AgentRole, VALID_ROLES } from "./ai-instructions.js";
+import {
+	getInstructions,
+	getCompactInstructions,
+	type AgentRole,
+	VALID_ROLES,
+} from "./ai-instructions.js";
 
 /**
  * Full agentic skill document for claudemem

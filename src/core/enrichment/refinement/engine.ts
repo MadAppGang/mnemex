@@ -38,7 +38,7 @@ Guidelines:
 function buildRefinementPrompt(
 	context: RefinementContext,
 	feedback: string,
-	previousSummary: string
+	previousSummary: string,
 ): string {
 	return `## Previous Summary
 ${previousSummary}
@@ -71,7 +71,7 @@ export class RefinementEngine {
 	async refine(
 		initialSummary: string,
 		context: RefinementContext,
-		options: RefinementOptions
+		options: RefinementOptions,
 	): Promise<RefinementResult> {
 		const { strategy, llmClient, maxRounds, onProgress, abortSignal } = options;
 		const startTime = Date.now();
@@ -98,12 +98,14 @@ export class RefinementEngine {
 				history,
 				initialResult.rank,
 				initialResult.rank,
-				startTime
+				startTime,
 			);
 		}
 
 		if (process.env.DEBUG_ITERATIVE) {
-			console.log(`[ENGINE] Initial summary FAILED (rank=${initialResult.rank}), entering refinement loop (maxRounds=${maxRounds})`);
+			console.log(
+				`[ENGINE] Initial summary FAILED (rank=${initialResult.rank}), entering refinement loop (maxRounds=${maxRounds})`,
+			);
 		}
 
 		// Iterative refinement loop
@@ -123,7 +125,7 @@ export class RefinementEngine {
 				context,
 				feedback,
 				currentSummary,
-				llmClient
+				llmClient,
 			);
 
 			// Test the refined summary
@@ -147,7 +149,9 @@ export class RefinementEngine {
 			// Check if we've achieved success
 			if (strategy.isSuccess(testResult)) {
 				if (process.env.DEBUG_ITERATIVE) {
-					console.log(`[ENGINE] Refinement succeeded at round ${round}, new rank=${testResult.rank}`);
+					console.log(
+						`[ENGINE] Refinement succeeded at round ${round}, new rank=${testResult.rank}`,
+					);
 				}
 				return this.buildResult(
 					currentSummary,
@@ -156,14 +160,16 @@ export class RefinementEngine {
 					history,
 					initialResult.rank,
 					testResult.rank,
-					startTime
+					startTime,
 				);
 			}
 		}
 
 		// Max rounds reached without success
 		if (process.env.DEBUG_ITERATIVE) {
-			console.log(`[ENGINE] Max rounds (${maxRounds}) reached without success, returning rounds=${history.length}`);
+			console.log(
+				`[ENGINE] Max rounds (${maxRounds}) reached without success, returning rounds=${history.length}`,
+			);
 		}
 		return this.buildResult(
 			currentSummary,
@@ -172,7 +178,7 @@ export class RefinementEngine {
 			history,
 			initialResult.rank,
 			finalResult?.rank ?? null,
-			startTime
+			startTime,
 		);
 	}
 
@@ -183,7 +189,7 @@ export class RefinementEngine {
 		context: RefinementContext,
 		feedback: string,
 		previousSummary: string,
-		llmClient: ILLMClient
+		llmClient: ILLMClient,
 	): Promise<string> {
 		const prompt = buildRefinementPrompt(context, feedback, previousSummary);
 
@@ -193,7 +199,7 @@ export class RefinementEngine {
 				systemPrompt: REFINEMENT_SYSTEM_PROMPT,
 				maxTokens: 500,
 				temperature: 0.3, // Lower temperature for focused refinement
-			}
+			},
 		);
 
 		// Clean up the response (remove quotes, extra whitespace)
@@ -210,13 +216,11 @@ export class RefinementEngine {
 		history: RefinementAttempt[],
 		initialRank: number | null,
 		finalRank: number | null,
-		startTime: number
+		startTime: number,
 	): RefinementResult {
 		// Calculate rank improvement (positive = better)
 		const rankImprovement =
-			initialRank !== null && finalRank !== null
-				? initialRank - finalRank
-				: 0;
+			initialRank !== null && finalRank !== null ? initialRank - finalRank : 0;
 
 		return {
 			finalSummary,

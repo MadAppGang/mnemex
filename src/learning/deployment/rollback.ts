@@ -130,7 +130,7 @@ export class RollbackManager {
 		description: string,
 		initiatedBy: RollbackEvent["initiatedBy"] = "system",
 		metrics?: RollbackMetrics,
-		anomaly?: MetricAnomaly
+		anomaly?: MetricAnomaly,
 	): RollbackEvent {
 		const rollbackId = `rb_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -162,7 +162,7 @@ export class RollbackManager {
 			// Set cooldown
 			this.cooldowns.set(
 				improvement.improvementId,
-				Date.now() + this.config.rollbackCooldownMs
+				Date.now() + this.config.rollbackCooldownMs,
 			);
 		} catch (error) {
 			event.success = false;
@@ -207,7 +207,7 @@ export class RollbackManager {
 	evaluateForRollback(
 		improvement: Improvement,
 		currentMetrics: RollbackMetrics,
-		anomalies: MetricAnomaly[]
+		anomalies: MetricAnomaly[],
 	): RollbackCandidate {
 		const evidence: string[] = [];
 		let severity = 0;
@@ -216,14 +216,14 @@ export class RollbackManager {
 		const relatedAnomalies = anomalies.filter(
 			(a) =>
 				a.detectedAt > improvement.deployedAt! &&
-				(a.metricName.includes("correction") || a.metricName.includes("error"))
+				(a.metricName.includes("correction") || a.metricName.includes("error")),
 		);
 
 		for (const anomaly of relatedAnomalies) {
 			if (anomaly.severity >= this.config.autoRollbackThreshold) {
 				severity = Math.max(severity, anomaly.severity);
 				evidence.push(
-					`Anomaly detected: ${anomaly.metricName} ${anomaly.type} (severity: ${anomaly.severity.toFixed(2)})`
+					`Anomaly detected: ${anomaly.metricName} ${anomaly.type} (severity: ${anomaly.severity.toFixed(2)})`,
 				);
 			}
 		}
@@ -232,14 +232,14 @@ export class RollbackManager {
 		if (currentMetrics.vsBaseline.correctionRateChange > 0.2) {
 			severity = Math.max(severity, 2);
 			evidence.push(
-				`Correction rate increased ${(currentMetrics.vsBaseline.correctionRateChange * 100).toFixed(1)}%`
+				`Correction rate increased ${(currentMetrics.vsBaseline.correctionRateChange * 100).toFixed(1)}%`,
 			);
 		}
 
 		if (currentMetrics.vsBaseline.errorRateChange > 0.3) {
 			severity = Math.max(severity, 2.5);
 			evidence.push(
-				`Error rate increased ${(currentMetrics.vsBaseline.errorRateChange * 100).toFixed(1)}%`
+				`Error rate increased ${(currentMetrics.vsBaseline.errorRateChange * 100).toFixed(1)}%`,
 			);
 		}
 
@@ -291,7 +291,7 @@ export class RollbackManager {
 					candidate.improvement,
 					candidate.reason,
 					candidate.evidence.join("; "),
-					"system"
+					"system",
 				);
 				events.push(event);
 			}
@@ -313,7 +313,7 @@ export class RollbackManager {
 			candidate.improvement,
 			candidate.reason,
 			candidate.evidence.join("; "),
-			"user"
+			"user",
 		);
 	}
 
@@ -399,7 +399,8 @@ export class RollbackManager {
 		return {
 			totalRollbacks: this.history.length,
 			byReason,
-			successRate: this.history.length > 0 ? successCount / this.history.length : 1,
+			successRate:
+				this.history.length > 0 ? successCount / this.history.length : 1,
 			avgTimeToRollback: timeCount > 0 ? totalTime / timeCount : 0,
 			currentlyRolledBack: this.rolledBackIds.size,
 		};
@@ -459,7 +460,7 @@ export class RollbackManager {
 
 		// Log for debugging
 		console.log(
-			`[RollbackManager] Rolled back improvement: ${improvement.improvementId}`
+			`[RollbackManager] Rolled back improvement: ${improvement.improvementId}`,
 		);
 	}
 
@@ -481,7 +482,7 @@ export class RollbackManager {
  * Create a rollback manager with optional configuration.
  */
 export function createRollbackManager(
-	config: Partial<RollbackManagerConfig> = {}
+	config: Partial<RollbackManagerConfig> = {},
 ): RollbackManager {
 	return new RollbackManager(config);
 }

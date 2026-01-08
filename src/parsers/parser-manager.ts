@@ -216,6 +216,60 @@ const LANGUAGE_CONFIGS: Record<SupportedLanguage, LanguageConfig> = {
         path: (interpreted_string_literal) @ref.import)
     `,
 	},
+	dingo: {
+		id: "dingo",
+		extensions: [".dingo"],
+		grammarFile: "tree-sitter-dingo.wasm",
+		chunkQuery: `
+      ; Go-like constructs (Dingo uses identifier instead of field_identifier/type_identifier)
+      (function_declaration
+        name: (identifier) @name) @chunk
+      (method_declaration
+        name: (identifier) @name) @chunk
+      (type_declaration
+        (type_spec
+          name: (identifier) @name)) @chunk
+
+      ; Dingo-specific: enum declarations
+      (enum_declaration
+        name: (identifier) @name) @chunk
+
+      ; Dingo-specific: let bindings
+      (let_declaration
+        name: (identifier) @name) @chunk
+
+      ; Dingo-specific: lambda expressions
+      (rust_style_lambda) @chunk
+      (arrow_style_lambda) @chunk
+
+      ; Dingo-specific: match expressions
+      (match_expression) @chunk
+    `,
+		referenceQuery: `
+      ; Function calls (Dingo uses identifier instead of field_identifier)
+      (call_expression
+        function: (identifier) @ref.call)
+      (call_expression
+        function: (selector_expression
+          field: (identifier) @ref.call))
+
+      ; Qualified type references (package.Type)
+      (qualified_type
+        package: (identifier) @ref.import)
+
+      ; Import statements
+      (import_spec
+        path: (interpreted_string_literal) @ref.import)
+
+      ; Dingo-specific: enum variant references
+      (variant_pattern
+        type: (identifier) @ref.type)
+
+      ; Dingo-specific: safe navigation references
+      (safe_navigation
+        field: (identifier) @ref.call)
+    `,
+	},
 	rust: {
 		id: "rust",
 		extensions: [".rs"],

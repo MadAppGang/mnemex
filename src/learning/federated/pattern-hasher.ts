@@ -142,7 +142,7 @@ export class PatternHasher {
 		// Add noise to count
 		const noisyCount = this.addLaplaceNoise(
 			pattern.occurrenceCount,
-			this.config.epsilon
+			this.config.epsilon,
 		);
 
 		// Bucket timestamp to day
@@ -283,7 +283,7 @@ export class PatternHasher {
 			category: this.categorizePattern(data),
 			noisyConfidence: this.addLaplaceNoise(
 				data.confidence ?? 0.8,
-				this.config.epsilon * 2
+				this.config.epsilon * 2,
 			),
 			metadata: {},
 		};
@@ -313,7 +313,7 @@ export class PatternHasher {
 		// Add safe metadata
 		if (data.automationPotential !== undefined) {
 			anonymized.metadata["automationBucket"] = this.bucketPercent(
-				data.automationPotential
+				data.automationPotential,
 			);
 		}
 
@@ -440,7 +440,7 @@ export class PatternHasher {
  * Create a pattern hasher with optional configuration.
  */
 export function createPatternHasher(
-	config: Partial<PatternHasherConfig> = {}
+	config: Partial<PatternHasherConfig> = {},
 ): PatternHasher {
 	return new PatternHasher(config);
 }

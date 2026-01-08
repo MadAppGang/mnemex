@@ -40,7 +40,7 @@ export class CostScorer implements IScorer {
 	async score(
 		_testCase: TestCase,
 		generation: GenerationResult<FileSummary | SymbolSummary>,
-		_judgment?: JudgmentResult
+		_judgment?: JudgmentResult,
 	): Promise<ScoreResult> {
 		const cost = generation.usage.cost;
 
@@ -100,8 +100,9 @@ export class CostScorer implements IScorer {
 	getCriterion(): ScoringCriterion {
 		return {
 			name: "cost",
-			weight: 0.10,
-			description: "How cost-effective is the generation? (cheapest/free = 100)",
+			weight: 0.1,
+			description:
+				"How cost-effective is the generation? (cheapest/free = 100)",
 		};
 	}
 }

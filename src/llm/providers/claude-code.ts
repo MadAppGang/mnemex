@@ -14,7 +14,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { BaseLLMClient, DEFAULT_LLM_MODELS } from "../client.js";
 import { combineAbortSignals } from "../abort.js";
-import type { LLMGenerateOptions, LLMMessage, LLMResponse } from "../../types.js";
+import type {
+	LLMGenerateOptions,
+	LLMMessage,
+	LLMResponse,
+} from "../../types.js";
 
 // ============================================================================
 // Types
@@ -91,7 +95,7 @@ function getClaudeOAuthToken(): string {
 		try {
 			const keychainData = execSync(
 				'security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null',
-				{ encoding: "utf-8", timeout: 5000 }
+				{ encoding: "utf-8", timeout: 5000 },
 			).trim();
 
 			if (keychainData) {
@@ -130,7 +134,7 @@ function getClaudeOAuthToken(): string {
 
 	throw new Error(
 		"Could not find Claude OAuth token. Make sure Claude Code is installed and authenticated.\n" +
-		"Run: claude auth login"
+			"Run: claude auth login",
 	);
 }
 
@@ -141,23 +145,27 @@ function getClaudeOAuthToken(): string {
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 // Required beta header for OAuth tokens from Claude Code
-const ANTHROPIC_BETA = "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14";
+const ANTHROPIC_BETA =
+	"claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14";
 
 // Required system prompt prefix for Claude Code OAuth authentication
 // Without this prefix, Anthropic rejects Sonnet/Opus requests with OAuth tokens
-const CLAUDE_CODE_SYSTEM_PREFIX = "You are Claude Code, Anthropic's official CLI for Claude.";
+const CLAUDE_CODE_SYSTEM_PREFIX =
+	"You are Claude Code, Anthropic's official CLI for Claude.";
 
 export class ClaudeCodeLLMClient extends BaseLLMClient {
 	private accessToken: string;
 
 	constructor(options: ClaudeCodeOptions = {}) {
 		// Resolve short model names to full API model IDs
-		const model = resolveModel(options.model || DEFAULT_LLM_MODELS["claude-code"]);
+		const model = resolveModel(
+			options.model || DEFAULT_LLM_MODELS["claude-code"],
+		);
 
 		super(
 			"claude-code",
 			model,
-			options.timeout || 180000 // 3 minute default timeout
+			options.timeout || 180000, // 3 minute default timeout
 		);
 
 		// Get token from options or auto-detect
@@ -166,11 +174,14 @@ export class ClaudeCodeLLMClient extends BaseLLMClient {
 
 	async complete(
 		messages: LLMMessage[],
-		options?: LLMGenerateOptions
+		options?: LLMGenerateOptions,
 	): Promise<LLMResponse> {
 		return this.withRetry(async () => {
 			// Build system prompt array (Claude Code prefix must be first for OAuth)
-			const systemBlocks = this.buildSystemPrompt(messages, options?.systemPrompt);
+			const systemBlocks = this.buildSystemPrompt(
+				messages,
+				options?.systemPrompt,
+			);
 			const conversationMessages = this.convertMessages(messages);
 
 			// Resolve model name if provided in options
@@ -182,20 +193,25 @@ export class ClaudeCodeLLMClient extends BaseLLMClient {
 				max_tokens: options?.maxTokens || 4096,
 				messages: conversationMessages,
 				system: systemBlocks, // Array of text blocks with Claude Code prefix first
-				...(options?.temperature !== undefined && { temperature: options.temperature }),
+				...(options?.temperature !== undefined && {
+					temperature: options.temperature,
+				}),
 			};
 
 			// Make API request directly to Anthropic with OAuth token
 			const controller = new AbortController();
 			const timeoutId = setTimeout(() => controller.abort(), this.timeout);
-			const signal = combineAbortSignals(controller.signal, options?.abortSignal);
+			const signal = combineAbortSignals(
+				controller.signal,
+				options?.abortSignal,
+			);
 
 			try {
 				const response = await fetch(ANTHROPIC_API_URL, {
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
-						"Authorization": `Bearer ${this.accessToken}`,
+						Authorization: `Bearer ${this.accessToken}`,
 						"anthropic-version": ANTHROPIC_VERSION,
 						"anthropic-beta": ANTHROPIC_BETA,
 					},
@@ -218,7 +234,7 @@ export class ClaudeCodeLLMClient extends BaseLLMClient {
 
 					if (response.status === 401 || response.status === 403) {
 						throw new Error(
-							"Claude OAuth token invalid or expired. Re-authenticate with: claude auth login"
+							"Claude OAuth token invalid or expired. Re-authenticate with: claude auth login",
 						);
 					} else if (response.status === 429) {
 						throw new Error("Rate limit exceeded (subscription limit reached)");
@@ -226,7 +242,9 @@ export class ClaudeCodeLLMClient extends BaseLLMClient {
 						throw new Error(`Anthropic API error: ${errorMessage}`);
 					}
 
-					throw new Error(`Anthropic API error (${response.status}): ${errorMessage}`);
+					throw new Error(
+						`Anthropic API error (${response.status}): ${errorMessage}`,
+					);
 				}
 
 				const data = (await response.json()) as AnthropicResponse;
@@ -265,11 +283,11 @@ export class ClaudeCodeLLMClient extends BaseLLMClient {
 	 */
 	private buildSystemPrompt(
 		messages: LLMMessage[],
-		optionsSystemPrompt?: string
+		optionsSystemPrompt?: string,
 	): Array<{ type: "text"; text: string }> {
 		// Claude Code prefix must be first - this is validated by Anthropic
 		const systemBlocks: Array<{ type: "text"; text: string }> = [
-			{ type: "text", text: CLAUDE_CODE_SYSTEM_PREFIX }
+			{ type: "text", text: CLAUDE_CODE_SYSTEM_PREFIX },
 		];
 
 		// Add options system prompt if provided
@@ -306,7 +324,7 @@ export class ClaudeCodeLLMClient extends BaseLLMClient {
 		try {
 			const result = await this.complete(
 				[{ role: "user", content: "Reply with only: ok" }],
-				{ maxTokens: 10 }
+				{ maxTokens: 10 },
 			);
 			return result.content.toLowerCase().includes("ok");
 		} catch {

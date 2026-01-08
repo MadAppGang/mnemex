@@ -139,20 +139,28 @@ export class MetricsTracker {
 		this.anomalies = [];
 
 		// Initialize core metrics
-		this.initializeSeries("correction_rate", "User corrections per session", "rate");
+		this.initializeSeries(
+			"correction_rate",
+			"User corrections per session",
+			"rate",
+		);
 		this.initializeSeries("error_rate", "Tool errors per session", "rate");
-		this.initializeSeries("autonomy_rate", "Autonomous completions rate", "percentage");
-		this.initializeSeries("session_duration", "Average session duration", "duration");
+		this.initializeSeries(
+			"autonomy_rate",
+			"Autonomous completions rate",
+			"percentage",
+		);
+		this.initializeSeries(
+			"session_duration",
+			"Average session duration",
+			"duration",
+		);
 	}
 
 	/**
 	 * Record a metric value.
 	 */
-	record(
-		metricName: string,
-		value: number,
-		improvementIds?: string[]
-	): void {
+	record(metricName: string, value: number, improvementIds?: string[]): void {
 		let series = this.series.get(metricName);
 		if (!series) {
 			series = this.initializeSeries(metricName, metricName, "count");
@@ -204,7 +212,7 @@ export class MetricsTracker {
 		errors: number,
 		autonomous: boolean,
 		durationMs: number,
-		improvementIds?: string[]
+		improvementIds?: string[],
 	): void {
 		// Record individual metrics
 		this.record("correction_rate", corrections, improvementIds);
@@ -219,7 +227,7 @@ export class MetricsTracker {
 				corrections,
 				errors,
 				autonomous,
-				durationMs
+				durationMs,
 			);
 		}
 	}
@@ -308,7 +316,7 @@ export class MetricsTracker {
 
 		// Linear regression
 		const { slope, r2 } = this.linearRegression(
-			recentPoints.map((p, i) => [i, p.value])
+			recentPoints.map((p, i) => [i, p.value]),
 		);
 
 		// Calculate change
@@ -350,7 +358,7 @@ export class MetricsTracker {
 		period1Start: number,
 		period1End: number,
 		period2Start: number,
-		period2End: number
+		period2End: number,
 	): {
 		period1Avg: number;
 		period2Avg: number;
@@ -363,19 +371,21 @@ export class MetricsTracker {
 		}
 
 		const period1Points = series.dataPoints.filter(
-			(p) => p.timestamp >= period1Start && p.timestamp <= period1End
+			(p) => p.timestamp >= period1Start && p.timestamp <= period1End,
 		);
 		const period2Points = series.dataPoints.filter(
-			(p) => p.timestamp >= period2Start && p.timestamp <= period2End
+			(p) => p.timestamp >= period2Start && p.timestamp <= period2End,
 		);
 
 		const period1Avg =
 			period1Points.length > 0
-				? period1Points.reduce((sum, p) => sum + p.value, 0) / period1Points.length
+				? period1Points.reduce((sum, p) => sum + p.value, 0) /
+					period1Points.length
 				: 0;
 		const period2Avg =
 			period2Points.length > 0
-				? period2Points.reduce((sum, p) => sum + p.value, 0) / period2Points.length
+				? period2Points.reduce((sum, p) => sum + p.value, 0) /
+					period2Points.length
 				: 0;
 
 		const change = period2Avg - period1Avg;
@@ -444,7 +454,7 @@ export class MetricsTracker {
 	private initializeSeries(
 		name: string,
 		description: string,
-		unit: MetricSeries["unit"]
+		unit: MetricSeries["unit"],
 	): MetricSeries {
 		const series: MetricSeries = {
 			name,
@@ -463,8 +473,10 @@ export class MetricsTracker {
 	 * Get window start timestamp.
 	 */
 	private getWindowStart(timestamp: number): number {
-		return Math.floor(timestamp / this.config.aggregationWindowMs) *
-			this.config.aggregationWindowMs;
+		return (
+			Math.floor(timestamp / this.config.aggregationWindowMs) *
+			this.config.aggregationWindowMs
+		);
 	}
 
 	/**
@@ -482,7 +494,7 @@ export class MetricsTracker {
 		corrections: number,
 		errors: number,
 		autonomous: boolean,
-		durationMs: number
+		durationMs: number,
 	): void {
 		let metrics = this.improvementMetrics.get(improvementId);
 		if (!metrics) {
@@ -500,7 +512,8 @@ export class MetricsTracker {
 		metrics.sessionsAffected += 1;
 
 		// Estimate prevented issues (compared to baseline)
-		const correctionBaseline = this.series.get("correction_rate")?.baselineValue ?? 1;
+		const correctionBaseline =
+			this.series.get("correction_rate")?.baselineValue ?? 1;
 		const errorBaseline = this.series.get("error_rate")?.baselineValue ?? 1;
 
 		if (corrections < correctionBaseline) {
@@ -512,7 +525,8 @@ export class MetricsTracker {
 
 		// Estimate time saved (assume autonomous = 50% faster)
 		if (autonomous) {
-			const avgDuration = this.series.get("session_duration")?.baselineValue ?? durationMs;
+			const avgDuration =
+				this.series.get("session_duration")?.baselineValue ?? durationMs;
 			metrics.timeSavedMs += avgDuration * 0.5;
 		}
 	}
@@ -566,16 +580,19 @@ export class MetricsTracker {
 		const baselinePoints = series.dataPoints.slice(0, -7);
 		if (baselinePoints.length > 0) {
 			series.baselineValue =
-				baselinePoints.reduce((sum, p) => sum + p.value, 0) / baselinePoints.length;
+				baselinePoints.reduce((sum, p) => sum + p.value, 0) /
+				baselinePoints.length;
 		}
 	}
 
 	/**
 	 * Simple linear regression.
 	 */
-	private linearRegression(
-		points: Array<[number, number]>
-	): { slope: number; intercept: number; r2: number } {
+	private linearRegression(points: Array<[number, number]>): {
+		slope: number;
+		intercept: number;
+		r2: number;
+	} {
 		const n = points.length;
 		if (n < 2) {
 			return { slope: 0, intercept: 0, r2: 0 };
@@ -625,7 +642,7 @@ export class MetricsTracker {
  * Create a metrics tracker with optional configuration.
  */
 export function createMetricsTracker(
-	config: Partial<MetricsTrackerConfig> = {}
+	config: Partial<MetricsTrackerConfig> = {},
 ): MetricsTracker {
 	return new MetricsTracker(config);
 }

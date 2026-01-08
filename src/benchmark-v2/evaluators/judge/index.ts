@@ -24,14 +24,21 @@ import type { ILLMClient } from "../../../types.js";
 import type { PhaseContext, PhaseResult } from "../../pipeline/orchestrator.js";
 import { selectJudges } from "../base.js";
 import { createPointwiseJudgeEvaluator } from "./pointwise.js";
-import { createPairwiseJudgeEvaluator, aggregateTournamentResults } from "./pairwise.js";
-import type { EvaluationResult, PairwiseResult, JudgeResults } from "../../types.js";
+import {
+	createPairwiseJudgeEvaluator,
+	aggregateTournamentResults,
+} from "./pairwise.js";
+import type {
+	EvaluationResult,
+	PairwiseResult,
+	JudgeResults,
+} from "../../types.js";
 
 /**
  * Create the judge evaluation phase executor
  */
 export function createJudgePhaseExecutor(
-	judgeClients: Map<string, ILLMClient>
+	judgeClients: Map<string, ILLMClient>,
 ): (context: PhaseContext) => Promise<PhaseResult> {
 	return async (context: PhaseContext): Promise<PhaseResult> => {
 		const { db, run, config, stateMachine } = context;
@@ -71,11 +78,12 @@ export function createJudgePhaseExecutor(
 			// Calculate total work per judge
 			const summariesPerJudge = summaries.length;
 			const totalPairwise = evalConfig.usePairwise
-				? (config.generators.length * (config.generators.length - 1) / 2) *
-				  codeUnits.length *
-				  evalConfig.judgeModels.length
+				? ((config.generators.length * (config.generators.length - 1)) / 2) *
+					codeUnits.length *
+					evalConfig.judgeModels.length
 				: 0;
-			const totalItems = summariesPerJudge * evalConfig.judgeModels.length + totalPairwise;
+			const totalItems =
+				summariesPerJudge * evalConfig.judgeModels.length + totalPairwise;
 
 			stateMachine.startPhase("evaluation:judge", totalItems);
 
@@ -89,22 +97,30 @@ export function createJudgePhaseExecutor(
 			};
 
 			// Timeout wrapper
-			const withTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+			const withTimeout = <T>(
+				promise: Promise<T>,
+				timeoutMs: number,
+			): Promise<T> => {
 				return Promise.race([
 					promise,
 					new Promise<T>((_, reject) =>
-						setTimeout(() => reject(new Error(`Request timeout after ${timeoutMs}ms`)), timeoutMs)
+						setTimeout(
+							() => reject(new Error(`Request timeout after ${timeoutMs}ms`)),
+							timeoutMs,
+						),
 					),
 				]);
 			};
 
 			// Track failures for reporting (don't print during progress bar)
-			const failures: Array<{ model: string; count: number; error: string }> = [];
+			const failures: Array<{ model: string; count: number; error: string }> =
+				[];
 
 			// Pointwise evaluation - process all judges in parallel
 			const judgePromises = evalConfig.judgeModels.map(async (judgeModelId) => {
 				const client = judgeClients.get(judgeModelId);
-				if (!client) return { judgeModelId, completed: 0, failures: 0, lastError: "" };
+				if (!client)
+					return { judgeModelId, completed: 0, failures: 0, lastError: "" };
 
 				const evaluator = createPointwiseJudgeEvaluator(client, judgeModelId);
 
@@ -114,7 +130,9 @@ export function createJudgePhaseExecutor(
 				let lastError = "";
 				const inProgress = new Set<string>();
 
-				const processSummary = async (summary: typeof summaries[0]): Promise<void> => {
+				const processSummary = async (
+					summary: (typeof summaries)[0],
+				): Promise<void> => {
 					const codeUnit = codeUnitMap.get(summary.codeUnitId);
 					if (!codeUnit) return;
 
@@ -136,13 +154,13 @@ export function createJudgePhaseExecutor(
 						"evaluation:judge",
 						judgeCompleted,
 						summary.id,
-						`${judgeModelId}: ${judgeCompleted}/${summariesPerJudge}/${inProgress.size}`
+						`${judgeModelId}: ${judgeCompleted}/${summariesPerJudge}/${inProgress.size}`,
 					);
 
 					try {
 						const result = await withTimeout(
 							evaluator.evaluate(summary, codeUnit, {}),
-							getTimeoutForModel(judgeModelId)
+							getTimeoutForModel(judgeModelId),
 						);
 						db.insertEvaluationResult(run.id, result);
 					} catch (error) {
@@ -159,7 +177,7 @@ export function createJudgePhaseExecutor(
 						"evaluation:judge",
 						judgeCompleted,
 						summary.id,
-						`${judgeModelId}: ${judgeCompleted}/${summariesPerJudge}/${inProgress.size}`
+						`${judgeModelId}: ${judgeCompleted}/${summariesPerJudge}/${inProgress.size}`,
 					);
 				};
 
@@ -168,7 +186,7 @@ export function createJudgePhaseExecutor(
 					"evaluation:judge",
 					0,
 					undefined,
-					`${judgeModelId}: 0/${summariesPerJudge}/0`
+					`${judgeModelId}: 0/${summariesPerJudge}/0`,
 				);
 
 				// Process in concurrent batches with allSettled (don't block on failures)
@@ -177,7 +195,12 @@ export function createJudgePhaseExecutor(
 					await Promise.allSettled(batch.map(processSummary));
 				}
 
-				return { judgeModelId, completed: judgeCompleted, failures: judgeFailures, lastError };
+				return {
+					judgeModelId,
+					completed: judgeCompleted,
+					failures: judgeFailures,
+					lastError,
+				};
 			});
 
 			const judgeResults = await Promise.all(judgePromises);
@@ -186,7 +209,11 @@ export function createJudgePhaseExecutor(
 			// Collect pointwise failures for reporting
 			for (const r of judgeResults) {
 				if (r.failures > 0) {
-					failures.push({ model: r.judgeModelId, count: r.failures, error: r.lastError });
+					failures.push({
+						model: r.judgeModelId,
+						count: r.failures,
+						error: r.lastError,
+					});
 				}
 			}
 
@@ -197,7 +224,7 @@ export function createJudgePhaseExecutor(
 					"evaluation:judge",
 					completed,
 					undefined,
-					"preparing pairwise comparisons..."
+					"preparing pairwise comparisons...",
 				);
 
 				const allPairwiseResults: PairwiseResult[] = [];
@@ -208,7 +235,10 @@ export function createJudgePhaseExecutor(
 
 				// Build comparison tasks efficiently using maps for O(1) lookups
 				const numModels = config.generators.length;
-				type ComparisonTask = { codeUnit: typeof codeUnits[0]; summaries: typeof summaries };
+				type ComparisonTask = {
+					codeUnit: (typeof codeUnits)[0];
+					summaries: typeof summaries;
+				};
 
 				// Group summaries by code unit for fast lookup
 				const summariesByUnit = new Map<string, typeof summaries>();
@@ -219,7 +249,7 @@ export function createJudgePhaseExecutor(
 				}
 
 				// Get unique model pairs
-				const modelIds = config.generators.map(g => g.id);
+				const modelIds = config.generators.map((g) => g.id);
 				const modelPairs: Array<{ modelA: string; modelB: string }> = [];
 				for (let i = 0; i < modelIds.length; i++) {
 					for (let j = i + 1; j < modelIds.length; j++) {
@@ -237,8 +267,12 @@ export function createJudgePhaseExecutor(
 						const unitSummaries = summariesByUnit.get(codeUnit.id) || [];
 						if (unitSummaries.length < 2) continue;
 
-						const summaryA = unitSummaries.find(s => s.modelId === pair.modelA);
-						const summaryB = unitSummaries.find(s => s.modelId === pair.modelB);
+						const summaryA = unitSummaries.find(
+							(s) => s.modelId === pair.modelA,
+						);
+						const summaryB = unitSummaries.find(
+							(s) => s.modelId === pair.modelB,
+						);
 						if (summaryA && summaryB) {
 							tasks.push({ codeUnit, summaries: [summaryA, summaryB] });
 						}
@@ -269,124 +303,160 @@ export function createJudgePhaseExecutor(
 				// Pairwise task concurrency - process multiple code units in parallel per judge
 				const PAIRWISE_CONCURRENCY = 20;
 
-				const pairwisePromises = evalConfig.judgeModels.map(async (judgeModelId) => {
-					const client = judgeClients.get(judgeModelId);
-					if (!client) return { results: [] as PairwiseResult[], failures: 0, lastError: "" };
+				const pairwisePromises = evalConfig.judgeModels.map(
+					async (judgeModelId) => {
+						const client = judgeClients.get(judgeModelId);
+						if (!client)
+							return {
+								results: [] as PairwiseResult[],
+								failures: 0,
+								lastError: "",
+							};
 
-					// Resume support: filter out already-evaluated pairwise comparisons for this judge
-					const tasksForJudge = sampledTasks.filter((task) => {
-						const [summaryA, summaryB] = task.summaries;
-						const pairKey = `${task.codeUnit.id}:${summaryA.modelId}:${summaryB.modelId}:${judgeModelId}`;
-						const pairKeyReverse = `${task.codeUnit.id}:${summaryB.modelId}:${summaryA.modelId}:${judgeModelId}`;
-						return !evaluatedPairwise.has(pairKey) && !evaluatedPairwise.has(pairKeyReverse);
-					});
-
-					// Calculate actual total comparisons after filtering
-					const totalComparisons = Math.min(tasksForJudge.length * 2, MAX_COMPARISONS_PER_JUDGE);
-
-					// Show this judge is starting pairwise
-					stateMachine.updateProgress(
-						"evaluation:judge",
-						0,
-						undefined,
-						`pw:${judgeModelId}: 0/${totalComparisons}/0`
-					);
-
-					const evaluator = createPairwiseJudgeEvaluator(client, judgeModelId);
-					const results: PairwiseResult[] = [];
-					let pairwiseFailures = 0;
-					let lastError = "";
-					let totalCompleted = 0;
-					let inProgressCount = 0;
-
-					// Process sampled tasks in parallel batches (filtered for resume)
-					for (let i = 0; i < tasksForJudge.length; i += PAIRWISE_CONCURRENCY) {
-						const batch = tasksForJudge.slice(i, i + PAIRWISE_CONCURRENCY);
-						inProgressCount = batch.length;
-
-						// Update progress when batch starts
-						stateMachine.updateProgress(
-							"evaluation:judge",
-							totalCompleted,
-							undefined,
-							`pw:${judgeModelId}: ${totalCompleted}/${totalComparisons}/${inProgressCount}`
-						);
-
-						const batchPromises = batch.map(async (task) => {
-							try {
-								const pairResults = await evaluator.comparePairs(
-									task.codeUnit,
-									task.summaries,
-									() => {
-										// Trigger animation refresh
-										stateMachine.updateProgress(
-											"evaluation:judge",
-											totalCompleted,
-											task.codeUnit.id,
-											`pw:${judgeModelId}: ${totalCompleted}/${totalComparisons}/${inProgressCount}`
-										);
-									}
-								);
-								inProgressCount--;
-								totalCompleted += 2;
-								// Update progress as task completes
-								stateMachine.updateProgress(
-									"evaluation:judge",
-									totalCompleted,
-									task.codeUnit.id,
-									`pw:${judgeModelId}: ${totalCompleted}/${totalComparisons}/${inProgressCount}`
-								);
-								return { success: true as const, results: pairResults };
-							} catch (error) {
-								inProgressCount--;
-								totalCompleted += 2;
-								stateMachine.updateProgress(
-									"evaluation:judge",
-									totalCompleted,
-									undefined,
-									`pw:${judgeModelId}: ${totalCompleted}/${totalComparisons}/${inProgressCount}`
-								);
-								return { success: false as const, error: String(error) };
-							}
+						// Resume support: filter out already-evaluated pairwise comparisons for this judge
+						const tasksForJudge = sampledTasks.filter((task) => {
+							const [summaryA, summaryB] = task.summaries;
+							const pairKey = `${task.codeUnit.id}:${summaryA.modelId}:${summaryB.modelId}:${judgeModelId}`;
+							const pairKeyReverse = `${task.codeUnit.id}:${summaryB.modelId}:${summaryA.modelId}:${judgeModelId}`;
+							return (
+								!evaluatedPairwise.has(pairKey) &&
+								!evaluatedPairwise.has(pairKeyReverse)
+							);
 						});
 
-						const batchResults = await Promise.allSettled(batchPromises);
+						// Calculate actual total comparisons after filtering
+						const totalComparisons = Math.min(
+							tasksForJudge.length * 2,
+							MAX_COMPARISONS_PER_JUDGE,
+						);
 
-						for (const result of batchResults) {
-							if (result.status === "fulfilled") {
-								if (result.value.success) {
-									results.push(...result.value.results);
+						// Show this judge is starting pairwise
+						stateMachine.updateProgress(
+							"evaluation:judge",
+							0,
+							undefined,
+							`pw:${judgeModelId}: 0/${totalComparisons}/0`,
+						);
+
+						const evaluator = createPairwiseJudgeEvaluator(
+							client,
+							judgeModelId,
+						);
+						const results: PairwiseResult[] = [];
+						let pairwiseFailures = 0;
+						let lastError = "";
+						let totalCompleted = 0;
+						let inProgressCount = 0;
+
+						// Process sampled tasks in parallel batches (filtered for resume)
+						for (
+							let i = 0;
+							i < tasksForJudge.length;
+							i += PAIRWISE_CONCURRENCY
+						) {
+							const batch = tasksForJudge.slice(i, i + PAIRWISE_CONCURRENCY);
+							inProgressCount = batch.length;
+
+							// Update progress when batch starts
+							stateMachine.updateProgress(
+								"evaluation:judge",
+								totalCompleted,
+								undefined,
+								`pw:${judgeModelId}: ${totalCompleted}/${totalComparisons}/${inProgressCount}`,
+							);
+
+							const batchPromises = batch.map(async (task) => {
+								try {
+									const pairResults = await evaluator.comparePairs(
+										task.codeUnit,
+										task.summaries,
+										() => {
+											// Trigger animation refresh
+											stateMachine.updateProgress(
+												"evaluation:judge",
+												totalCompleted,
+												task.codeUnit.id,
+												`pw:${judgeModelId}: ${totalCompleted}/${totalComparisons}/${inProgressCount}`,
+											);
+										},
+									);
+									inProgressCount--;
+									totalCompleted += 2;
+									// Update progress as task completes
+									stateMachine.updateProgress(
+										"evaluation:judge",
+										totalCompleted,
+										task.codeUnit.id,
+										`pw:${judgeModelId}: ${totalCompleted}/${totalComparisons}/${inProgressCount}`,
+									);
+									return { success: true as const, results: pairResults };
+								} catch (error) {
+									inProgressCount--;
+									totalCompleted += 2;
+									stateMachine.updateProgress(
+										"evaluation:judge",
+										totalCompleted,
+										undefined,
+										`pw:${judgeModelId}: ${totalCompleted}/${totalComparisons}/${inProgressCount}`,
+									);
+									return { success: false as const, error: String(error) };
+								}
+							});
+
+							const batchResults = await Promise.allSettled(batchPromises);
+
+							for (const result of batchResults) {
+								if (result.status === "fulfilled") {
+									if (result.value.success) {
+										results.push(...result.value.results);
+									} else {
+										pairwiseFailures++;
+										lastError = result.value.error;
+									}
 								} else {
 									pairwiseFailures++;
-									lastError = result.value.error;
+									lastError = result.reason?.message || "Unknown error";
 								}
-							} else {
-								pairwiseFailures++;
-								lastError = result.reason?.message || "Unknown error";
 							}
 						}
-					}
 
-					return { results, failures: pairwiseFailures, lastError };
-				});
+						return { results, failures: pairwiseFailures, lastError };
+					},
+				);
 
 				// Add a global timeout to prevent hanging indefinitely
 				const PAIRWISE_GLOBAL_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes max for all pairwise
 				const pairwiseWithTimeout = Promise.race([
 					Promise.all(pairwisePromises),
 					new Promise<never>((_, reject) =>
-						setTimeout(() => reject(new Error(`Pairwise evaluation timed out after ${PAIRWISE_GLOBAL_TIMEOUT_MS / 60000} minutes`)), PAIRWISE_GLOBAL_TIMEOUT_MS)
+						setTimeout(
+							() =>
+								reject(
+									new Error(
+										`Pairwise evaluation timed out after ${PAIRWISE_GLOBAL_TIMEOUT_MS / 60000} minutes`,
+									),
+								),
+							PAIRWISE_GLOBAL_TIMEOUT_MS,
+						),
 					),
 				]);
 
 				const pairwiseResultArrays = await pairwiseWithTimeout;
 
 				for (let i = 0; i < pairwiseResultArrays.length; i++) {
-					const { results, failures: pairFailures, lastError } = pairwiseResultArrays[i];
+					const {
+						results,
+						failures: pairFailures,
+						lastError,
+					} = pairwiseResultArrays[i];
 					allPairwiseResults.push(...results);
 					if (pairFailures > 0) {
 						const judgeId = evalConfig.judgeModels[i];
-						failures.push({ model: `${judgeId} (pairwise)`, count: pairFailures, error: lastError });
+						failures.push({
+							model: `${judgeId} (pairwise)`,
+							count: pairFailures,
+							error: lastError,
+						});
 					}
 				}
 				completed += allPairwiseResults.length;
@@ -396,7 +466,7 @@ export function createJudgePhaseExecutor(
 					"evaluation:judge",
 					completed,
 					undefined,
-					`saving ${allPairwiseResults.length} pairwise results...`
+					`saving ${allPairwiseResults.length} pairwise results...`,
 				);
 				db.insertPairwiseResults(run.id, allPairwiseResults);
 
@@ -405,11 +475,11 @@ export function createJudgePhaseExecutor(
 					"evaluation:judge",
 					completed,
 					undefined,
-					`aggregating tournament (${config.generators.length} models)...`
+					`aggregating tournament (${config.generators.length} models)...`,
 				);
 				const tournamentScores = aggregateTournamentResults(
 					allPairwiseResults,
-					config.generators.map((g) => g.id)
+					config.generators.map((g) => g.id),
 				);
 
 				// Update progress to show aggregation complete
@@ -417,7 +487,7 @@ export function createJudgePhaseExecutor(
 					"evaluation:judge",
 					completed,
 					undefined,
-					"tournament aggregation complete"
+					"tournament aggregation complete",
 				);
 			}
 

@@ -63,7 +63,10 @@ export class HTMLReporter {
         ${this.options.includeInteractiveCharts ? this.generateChartSection(scores) : ""}
         ${this.generateDetailedResults(aggregations, scores)}
         ${correlationMatrix ? this.generateCorrelationSection(correlationMatrix) : ""}
-        ${this.generateMethodology(config, scores.map(s => s.modelId))}
+        ${this.generateMethodology(
+					config,
+					scores.map((s) => s.modelId),
+				)}
         ${this.generateFooter(run)}
     </div>
     ${this.options.includeInteractiveCharts ? this.generateChartScripts(scores, correlationMatrix) : ""}
@@ -271,7 +274,7 @@ export class HTMLReporter {
 	private generateExecutiveSummary(
 		run: BenchmarkRun,
 		scores: AggregatedScore[],
-		aggregations: Map<string, ModelAggregation>
+		aggregations: Map<string, ModelAggregation>,
 	): string {
 		const topModel = scores[0];
 
@@ -318,8 +321,8 @@ export class HTMLReporter {
             </td>
             <td>${(score.retrievalMRR * 100).toFixed(1)}%</td>
             <td>${(score.contrastiveAccuracy * 100).toFixed(1)}%</td>
-            <td>${(score.judgeScore / 5 * 100).toFixed(1)}%</td>
-        </tr>`
+            <td>${((score.judgeScore / 5) * 100).toFixed(1)}%</td>
+        </tr>`,
 			)
 			.join("");
 
@@ -369,7 +372,7 @@ export class HTMLReporter {
 
 	private generateDetailedResults(
 		aggregations: Map<string, ModelAggregation>,
-		scores: AggregatedScore[]
+		scores: AggregatedScore[],
 	): string {
 		const modelDetails = scores
 			.slice(0, 5)
@@ -404,8 +407,8 @@ export class HTMLReporter {
 							v > 0.7
 								? "rgba(25, 135, 84, 0.3)"
 								: v > 0.4
-								? "rgba(255, 193, 7, 0.3)"
-								: "rgba(220, 53, 69, 0.2)";
+									? "rgba(255, 193, 7, 0.3)"
+									: "rgba(220, 53, 69, 0.2)";
 						return `<td style="background: ${color}">${v.toFixed(2)}</td>`;
 					})
 					.join("");
@@ -430,12 +433,18 @@ export class HTMLReporter {
     </section>`;
 	}
 
-	private generateMethodology(config: BenchmarkConfig, generatorIds?: string[]): string {
-		const judgeModels = config.evaluation.judge.judgeModels || config.judges || [];
+	private generateMethodology(
+		config: BenchmarkConfig,
+		generatorIds?: string[],
+	): string {
+		const judgeModels =
+			config.evaluation.judge.judgeModels || config.judges || [];
 		const generators = generatorIds || [];
 		const biasedPairs = detectSameProviderBias(generators, judgeModels);
 
-		const biasWarning = biasedPairs.length > 0 ? `
+		const biasWarning =
+			biasedPairs.length > 0
+				? `
         <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 1rem; margin-top: 1rem;">
             <h4 style="color: #856404; margin-bottom: 0.5rem;">⚠️ Same-Provider Bias Warning</h4>
             <p style="color: #856404; margin-bottom: 0.5rem;">
@@ -443,9 +452,10 @@ export class HTMLReporter {
                 These scores may be biased as models from the same family may rate each other favorably.
             </p>
             <ul style="color: #856404; margin: 0; padding-left: 1.5rem;">
-                ${biasedPairs.map(p => `<li>${p.generator} judged by ${p.judge} (${p.provider})</li>`).join("")}
+                ${biasedPairs.map((p) => `<li>${p.generator} judged by ${p.judge} (${p.provider})</li>`).join("")}
             </ul>
-        </div>` : "";
+        </div>`
+				: "";
 
 		return `<section>
         <h2>📖 Methodology</h2>
@@ -509,8 +519,8 @@ export class HTMLReporter {
 					(new Date(run.completedAt).getTime() -
 						new Date(run.startedAt).getTime()) /
 						1000 /
-						60
-			  )
+						60,
+				)
 			: "N/A";
 
 		return `<footer>
@@ -520,14 +530,24 @@ export class HTMLReporter {
 
 	private generateChartScripts(
 		scores: AggregatedScore[],
-		correlationMatrix?: CorrelationMatrix
+		correlationMatrix?: CorrelationMatrix,
 	): string {
 		const labels = scores.slice(0, 10).map((s) => s.modelId);
-		const overallData = scores.slice(0, 10).map((s) => (s.overallScore * 100).toFixed(1));
-		const judgeData = scores.slice(0, 10).map((s) => (s.judgeScore / 5 * 100).toFixed(1));
-		const contrastiveData = scores.slice(0, 10).map((s) => (s.contrastiveAccuracy * 100).toFixed(1));
-		const retrievalData = scores.slice(0, 10).map((s) => (s.retrievalMRR * 100).toFixed(1));
-		const downstreamData = scores.slice(0, 10).map((s) => (s.downstreamScore * 100).toFixed(1));
+		const overallData = scores
+			.slice(0, 10)
+			.map((s) => (s.overallScore * 100).toFixed(1));
+		const judgeData = scores
+			.slice(0, 10)
+			.map((s) => ((s.judgeScore / 5) * 100).toFixed(1));
+		const contrastiveData = scores
+			.slice(0, 10)
+			.map((s) => (s.contrastiveAccuracy * 100).toFixed(1));
+		const retrievalData = scores
+			.slice(0, 10)
+			.map((s) => (s.retrievalMRR * 100).toFixed(1));
+		const downstreamData = scores
+			.slice(0, 10)
+			.map((s) => (s.downstreamScore * 100).toFixed(1));
 
 		return `<script>
         // Tab switching
@@ -568,18 +588,18 @@ export class HTMLReporter {
             data: {
                 labels: ['Judge', 'Contrastive', 'Retrieval', 'Downstream'],
                 datasets: ${JSON.stringify(
-					scores.slice(0, 5).map((s, i) => ({
-						label: s.modelId,
-						data: [
-							parseFloat((s.judgeScore / 5 * 100).toFixed(1)),
-							parseFloat((s.contrastiveAccuracy * 100).toFixed(1)),
-							parseFloat((s.retrievalMRR * 100).toFixed(1)),
-							parseFloat((s.downstreamScore * 100).toFixed(1)),
-						],
-						borderColor: `hsl(${i * 72}, 70%, 50%)`,
-						backgroundColor: `hsla(${i * 72}, 70%, 50%, 0.2)`,
-					}))
-				)}
+									scores.slice(0, 5).map((s, i) => ({
+										label: s.modelId,
+										data: [
+											parseFloat(((s.judgeScore / 5) * 100).toFixed(1)),
+											parseFloat((s.contrastiveAccuracy * 100).toFixed(1)),
+											parseFloat((s.retrievalMRR * 100).toFixed(1)),
+											parseFloat((s.downstreamScore * 100).toFixed(1)),
+										],
+										borderColor: `hsl(${i * 72}, 70%, 50%)`,
+										backgroundColor: `hsla(${i * 72}, 70%, 50%, 0.2)`,
+									})),
+								)}
             },
             options: {
                 responsive: true,
@@ -600,7 +620,7 @@ export class HTMLReporter {
 // ============================================================================
 
 export function createHTMLReporter(
-	options?: HTMLReporterOptions
+	options?: HTMLReporterOptions,
 ): HTMLReporter {
 	return new HTMLReporter(options);
 }

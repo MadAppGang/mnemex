@@ -12,8 +12,15 @@
 
 import type { Node } from "web-tree-sitter";
 import { Query } from "web-tree-sitter";
-import { getParserManager, type ParserManager } from "../../parsers/parser-manager.js";
-import type { ASTMetadata, SupportedLanguage, Visibility } from "../../types.js";
+import {
+	getParserManager,
+	type ParserManager,
+} from "../../parsers/parser-manager.js";
+import type {
+	ASTMetadata,
+	SupportedLanguage,
+	Visibility,
+} from "../../types.js";
 
 // ============================================================================
 // Types
@@ -118,8 +125,10 @@ export class ASTMetadataExtractor {
 		// Extract references (imports, function calls, types)
 		const refs = this.extractReferences(node, ctx);
 		if (refs.importsUsed.length > 0) metadata.importsUsed = refs.importsUsed;
-		if (refs.functionsCalled.length > 0) metadata.functionsCalled = refs.functionsCalled;
-		if (refs.typesReferenced.length > 0) metadata.typesReferenced = refs.typesReferenced;
+		if (refs.functionsCalled.length > 0)
+			metadata.functionsCalled = refs.functionsCalled;
+		if (refs.typesReferenced.length > 0)
+			metadata.typesReferenced = refs.typesReferenced;
 
 		return metadata;
 	}
@@ -127,7 +136,10 @@ export class ASTMetadataExtractor {
 	/**
 	 * Extract visibility modifier
 	 */
-	private extractVisibility(node: Node, language: SupportedLanguage): Visibility | undefined {
+	private extractVisibility(
+		node: Node,
+		language: SupportedLanguage,
+	): Visibility | undefined {
 		// TypeScript/JavaScript: check for export
 		if (language === "typescript" || language === "javascript") {
 			if (this.isExported(node, language)) {
@@ -214,7 +226,10 @@ export class ASTMetadataExtractor {
 		}
 
 		// Python: check parent for async_function_definition
-		if (language === "python" && node.parent?.type === "async_function_definition") {
+		if (
+			language === "python" &&
+			node.parent?.type === "async_function_definition"
+		) {
 			return true;
 		}
 
@@ -258,10 +273,17 @@ export class ASTMetadataExtractor {
 		// Check parent for export statement
 		let current: Node | null = node;
 		while (current) {
-			if (current.type === "export_statement" || current.type === "export_declaration") {
+			if (
+				current.type === "export_statement" ||
+				current.type === "export_declaration"
+			) {
 				return true;
 			}
-			if (current.type === "program" || current.type === "module" || current.type === "source_file") {
+			if (
+				current.type === "program" ||
+				current.type === "module" ||
+				current.type === "source_file"
+			) {
 				break;
 			}
 			current = current.parent;
@@ -342,7 +364,10 @@ export class ASTMetadataExtractor {
 			if (modifiers) {
 				for (let i = 0; i < modifiers.childCount; i++) {
 					const child = modifiers.child(i);
-					if (child?.type === "marker_annotation" || child?.type === "annotation") {
+					if (
+						child?.type === "marker_annotation" ||
+						child?.type === "annotation"
+					) {
 						decorators.push(child.text.replace(/^@/, ""));
 					}
 				}
@@ -355,11 +380,16 @@ export class ASTMetadataExtractor {
 	/**
 	 * Extract function parameters with types
 	 */
-	private extractParameters(node: Node, language: SupportedLanguage): Array<{ name: string; type?: string }> {
+	private extractParameters(
+		node: Node,
+		language: SupportedLanguage,
+	): Array<{ name: string; type?: string }> {
 		const params: Array<{ name: string; type?: string }> = [];
 
 		// Find parameters node
-		const paramsNode = node.childForFieldName("parameters") || node.childForFieldName("formal_parameters");
+		const paramsNode =
+			node.childForFieldName("parameters") ||
+			node.childForFieldName("formal_parameters");
 		if (!paramsNode) return params;
 
 		// Walk parameter children
@@ -377,11 +407,17 @@ export class ASTMetadataExtractor {
 	/**
 	 * Extract single parameter info
 	 */
-	private extractParamInfo(param: Node, language: SupportedLanguage): { name: string; type?: string } | null {
+	private extractParamInfo(
+		param: Node,
+		language: SupportedLanguage,
+	): { name: string; type?: string } | null {
 		// TypeScript/JavaScript
 		if (language === "typescript" || language === "javascript") {
 			// Required/optional parameter
-			if (param.type === "required_parameter" || param.type === "optional_parameter") {
+			if (
+				param.type === "required_parameter" ||
+				param.type === "optional_parameter"
+			) {
 				const pattern = param.childForFieldName("pattern");
 				const typeNode = param.childForFieldName("type");
 				const name = pattern?.text || param.childForFieldName("name")?.text;
@@ -444,7 +480,10 @@ export class ASTMetadataExtractor {
 	/**
 	 * Extract return type annotation
 	 */
-	private extractReturnType(node: Node, language: SupportedLanguage): string | undefined {
+	private extractReturnType(
+		node: Node,
+		language: SupportedLanguage,
+	): string | undefined {
 		// TypeScript/JavaScript
 		if (language === "typescript" || language === "javascript") {
 			const returnType = node.childForFieldName("return_type");
@@ -481,7 +520,10 @@ export class ASTMetadataExtractor {
 	/**
 	 * Extract type parameters (generics)
 	 */
-	private extractTypeParameters(node: Node, language: SupportedLanguage): string[] {
+	private extractTypeParameters(
+		node: Node,
+		language: SupportedLanguage,
+	): string[] {
 		const typeParams: string[] = [];
 
 		// TypeScript/JavaScript
@@ -516,7 +558,10 @@ export class ASTMetadataExtractor {
 			if (typeParamsNode) {
 				for (let i = 0; i < typeParamsNode.namedChildCount; i++) {
 					const param = typeParamsNode.namedChild(i);
-					if (param?.type === "type_identifier" || param?.type === "constrained_type_parameter") {
+					if (
+						param?.type === "type_identifier" ||
+						param?.type === "constrained_type_parameter"
+					) {
 						typeParams.push(param.text);
 					}
 				}
@@ -540,7 +585,10 @@ export class ASTMetadataExtractor {
 	/**
 	 * Extract receiver (Go methods, Rust impl methods)
 	 */
-	private extractReceiver(node: Node, language: SupportedLanguage): string | undefined {
+	private extractReceiver(
+		node: Node,
+		language: SupportedLanguage,
+	): string | undefined {
 		// Go: receiver parameter
 		if (language === "go" && node.type === "method_declaration") {
 			const receiver = node.childForFieldName("receiver");
@@ -618,7 +666,10 @@ export class ASTMetadataExtractor {
 	/**
 	 * Extract references (imports, function calls, type references)
 	 */
-	private extractReferences(node: Node, ctx: ExtractionContext): {
+	private extractReferences(
+		node: Node,
+		ctx: ExtractionContext,
+	): {
 		importsUsed: string[];
 		functionsCalled: string[];
 		typesReferenced: string[];
@@ -639,7 +690,10 @@ export class ASTMetadataExtractor {
 			}
 
 			// Type references (TypeScript/Java)
-			if (child.type === "type_identifier" || child.type === "type_annotation") {
+			if (
+				child.type === "type_identifier" ||
+				child.type === "type_annotation"
+			) {
 				const name = child.text.replace(/^:\s*/, "").split(/[<\[\(]/)[0];
 				if (name && name.length > 1 && /^[A-Z]/.test(name)) {
 					typesReferenced.add(name);
@@ -647,7 +701,10 @@ export class ASTMetadataExtractor {
 			}
 
 			// Import tracking - collect names from import statements
-			if (child.type === "import_statement" || child.type === "import_declaration") {
+			if (
+				child.type === "import_statement" ||
+				child.type === "import_declaration"
+			) {
 				const names = this.extractImportNames(child);
 				for (const name of names) importsUsed.add(name);
 			}
@@ -672,8 +729,12 @@ export class ASTMetadataExtractor {
 		}
 
 		// Member expression: obj.method
-		if (node.type === "member_expression" || node.type === "property_access_expression") {
-			const property = node.childForFieldName("property") || node.childForFieldName("name");
+		if (
+			node.type === "member_expression" ||
+			node.type === "property_access_expression"
+		) {
+			const property =
+				node.childForFieldName("property") || node.childForFieldName("name");
 			if (property) return property.text;
 		}
 
@@ -712,13 +773,19 @@ export class ASTMetadataExtractor {
 	 * Extract name from node
 	 */
 	private extractNameFromNode(node: Node): string | undefined {
-		const nameNode = node.childForFieldName("name") || node.childForFieldName("declarator");
+		const nameNode =
+			node.childForFieldName("name") || node.childForFieldName("declarator");
 		if (nameNode) {
-			if (nameNode.type === "identifier" || nameNode.type === "type_identifier") {
+			if (
+				nameNode.type === "identifier" ||
+				nameNode.type === "type_identifier"
+			) {
 				return nameNode.text;
 			}
 			// Nested declarator
-			const inner = nameNode.childForFieldName("name") || nameNode.childForFieldName("declarator");
+			const inner =
+				nameNode.childForFieldName("name") ||
+				nameNode.childForFieldName("declarator");
 			if (inner?.type === "identifier") return inner.text;
 		}
 		return undefined;

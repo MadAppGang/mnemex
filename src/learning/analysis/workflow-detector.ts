@@ -93,7 +93,9 @@ export class WorkflowDetector {
 
 		// Sort by automation potential
 		const topAutomatable = workflows
-			.filter((w) => w.automationPotential >= this.config.minAutomationPotential)
+			.filter(
+				(w) => w.automationPotential >= this.config.minAutomationPotential,
+			)
 			.sort((a, b) => b.automationPotential - a.automationPotential)
 			.slice(0, 20);
 
@@ -121,7 +123,9 @@ export class WorkflowDetector {
 	 */
 	toPatterns(analysis: WorkflowAnalysis): DetectedPattern[] {
 		return analysis.workflows
-			.filter((w) => w.automationPotential >= this.config.minAutomationPotential)
+			.filter(
+				(w) => w.automationPotential >= this.config.minAutomationPotential,
+			)
 			.map((w) => ({
 				patternId: `workflow_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
 				patternType: "workflow" as const,
@@ -157,7 +161,12 @@ export class WorkflowDetector {
 				workflow: w,
 				skillName: this.generateSkillName(w),
 				skillDescription: this.generateSkillDescription(w),
-				priority: w.automationPotential >= 0.9 ? "high" : w.automationPotential >= 0.8 ? "medium" : "low",
+				priority:
+					w.automationPotential >= 0.9
+						? "high"
+						: w.automationPotential >= 0.8
+							? "medium"
+							: "low",
 			}));
 	}
 
@@ -188,9 +197,7 @@ export class WorkflowDetector {
 	/**
 	 * Extract all tool sequences from sessions.
 	 */
-	private extractAllSequences(
-		sessionEvents: Map<string, ToolEvent[]>
-	): Array<{
+	private extractAllSequences(sessionEvents: Map<string, ToolEvent[]>): Array<{
 		sequence: string[];
 		sessionId: string;
 		events: ToolEvent[];
@@ -211,7 +218,11 @@ export class WorkflowDetector {
 
 			for (const windowEvents of windows) {
 				// Extract n-grams of different lengths
-				for (let len = this.config.minSequenceLength; len <= Math.min(this.config.maxSequenceLength, windowEvents.length); len++) {
+				for (
+					let len = this.config.minSequenceLength;
+					len <= Math.min(this.config.maxSequenceLength, windowEvents.length);
+					len++
+				) {
 					for (let i = 0; i <= windowEvents.length - len; i++) {
 						const slice = windowEvents.slice(i, i + len);
 						results.push({
@@ -270,7 +281,7 @@ export class WorkflowDetector {
 			events: ToolEvent[];
 			duration: number;
 			successCount: number;
-		}>
+		}>,
 	): Map<string, typeof sequences> {
 		const counts = new Map<string, typeof sequences>();
 
@@ -288,20 +299,23 @@ export class WorkflowDetector {
 	 * Create Workflow objects from counted sequences.
 	 */
 	private createWorkflows(
-		sequenceCounts: Map<string, Array<{
-			sequence: string[];
-			sessionId: string;
-			events: ToolEvent[];
-			duration: number;
-			successCount: number;
-		}>>,
+		sequenceCounts: Map<
+			string,
+			Array<{
+				sequence: string[];
+				sessionId: string;
+				events: ToolEvent[];
+				duration: number;
+				successCount: number;
+			}>
+		>,
 		allSequences: Array<{
 			sequence: string[];
 			sessionId: string;
 			events: ToolEvent[];
 			duration: number;
 			successCount: number;
-		}>
+		}>,
 	): Workflow[] {
 		const workflows: Workflow[] = [];
 
@@ -312,9 +326,16 @@ export class WorkflowDetector {
 
 			const sequence = instances[0].sequence;
 			const sessionIds = [...new Set(instances.map((i) => i.sessionId))];
-			const avgDuration = instances.reduce((sum, i) => sum + i.duration, 0) / instances.length;
-			const totalSuccess = instances.reduce((sum, i) => sum + i.successCount, 0);
-			const totalEvents = instances.reduce((sum, i) => sum + i.events.length, 0);
+			const avgDuration =
+				instances.reduce((sum, i) => sum + i.duration, 0) / instances.length;
+			const totalSuccess = instances.reduce(
+				(sum, i) => sum + i.successCount,
+				0,
+			);
+			const totalEvents = instances.reduce(
+				(sum, i) => sum + i.events.length,
+				0,
+			);
 			const successRate = totalSuccess / totalEvents;
 
 			const automationPotential = this.calculateAutomationPotential(
@@ -322,7 +343,7 @@ export class WorkflowDetector {
 				instances.length,
 				sessionIds.length,
 				successRate,
-				avgDuration
+				avgDuration,
 			);
 
 			const category = this.categorizeWorkflow(sequence);
@@ -352,7 +373,7 @@ export class WorkflowDetector {
 		occurrences: number,
 		sessionCount: number,
 		successRate: number,
-		avgDurationMs: number
+		avgDurationMs: number,
 	): number {
 		// Factors that increase automation potential:
 		// 1. High frequency (occurs often)
@@ -365,16 +386,18 @@ export class WorkflowDetector {
 		const reliabilityScore = successRate;
 
 		// 4. Reasonable duration (not too long)
-		const durationScore = avgDurationMs < 30000 ? 1 : avgDurationMs < 60000 ? 0.7 : 0.4;
+		const durationScore =
+			avgDurationMs < 30000 ? 1 : avgDurationMs < 60000 ? 0.7 : 0.4;
 
 		// 5. Contains automatable tools
 		const automationFriendlyTools = ["Read", "Glob", "Grep", "Edit", "Write"];
-		const automationToolRatio = sequence.filter((t) =>
-			automationFriendlyTools.includes(t)
-		).length / sequence.length;
+		const automationToolRatio =
+			sequence.filter((t) => automationFriendlyTools.includes(t)).length /
+			sequence.length;
 
 		// 6. Sequence is not too long
-		const lengthScore = sequence.length <= 4 ? 1 : sequence.length <= 6 ? 0.7 : 0.4;
+		const lengthScore =
+			sequence.length <= 4 ? 1 : sequence.length <= 6 ? 0.7 : 0.4;
 
 		// Weighted combination
 		return (
@@ -391,7 +414,7 @@ export class WorkflowDetector {
 	 * Categorize a workflow by its tools.
 	 */
 	private categorizeWorkflow(
-		sequence: string[]
+		sequence: string[],
 	): "exploration" | "modification" | "testing" | "mixed" {
 		const readTools = ["Read", "Glob", "Grep"];
 		const writeTools = ["Edit", "Write"];
@@ -453,7 +476,7 @@ export class WorkflowDetector {
  * Create a workflow detector with optional configuration.
  */
 export function createWorkflowDetector(
-	config: Partial<WorkflowDetectorConfig> = {}
+	config: Partial<WorkflowDetectorConfig> = {},
 ): WorkflowDetector {
 	return new WorkflowDetector(config);
 }

@@ -37,11 +37,13 @@ export class CompositeScorer implements IScorer {
 	async score(
 		testCase: TestCase,
 		generation: GenerationResult<FileSummary | SymbolSummary>,
-		judgment?: JudgmentResult
+		judgment?: JudgmentResult,
 	): Promise<ScoreResult> {
 		// Run all scorers
 		const results = await Promise.all(
-			this.scorers.map((scorer) => scorer.score(testCase, generation, judgment))
+			this.scorers.map((scorer) =>
+				scorer.score(testCase, generation, judgment),
+			),
 		);
 
 		// Calculate weighted sum
@@ -55,9 +57,8 @@ export class CompositeScorer implements IScorer {
 		}
 
 		// Normalize if weights don't sum to 1
-		const score = totalWeight > 0
-			? Math.round(totalWeightedScore / totalWeight)
-			: 50;
+		const score =
+			totalWeight > 0 ? Math.round(totalWeightedScore / totalWeight) : 50;
 
 		const criterion = this.getCriterion();
 
@@ -67,14 +68,20 @@ export class CompositeScorer implements IScorer {
 			weight: 1.0, // Composite is the final score
 			weightedScore: score,
 			details: {
-				componentScores: results.reduce((acc, r) => {
-					acc[r.criterion] = {
-						score: r.score,
-						weight: this.weights[r.criterion] ?? r.weight,
-						weightedScore: r.score * (this.weights[r.criterion] ?? r.weight),
-					};
-					return acc;
-				}, {} as Record<string, { score: number; weight: number; weightedScore: number }>),
+				componentScores: results.reduce(
+					(acc, r) => {
+						acc[r.criterion] = {
+							score: r.score,
+							weight: this.weights[r.criterion] ?? r.weight,
+							weightedScore: r.score * (this.weights[r.criterion] ?? r.weight),
+						};
+						return acc;
+					},
+					{} as Record<
+						string,
+						{ score: number; weight: number; weightedScore: number }
+					>,
+				),
 				totalWeight,
 			},
 		};
@@ -95,14 +102,16 @@ export class CompositeScorer implements IScorer {
 	async scoreDetailed(
 		testCase: TestCase,
 		generation: GenerationResult<FileSummary | SymbolSummary>,
-		judgment?: JudgmentResult
+		judgment?: JudgmentResult,
 	): Promise<{
 		overall: number;
 		components: ScoreResult[];
 	}> {
 		// Run all scorers
 		const components = await Promise.all(
-			this.scorers.map((scorer) => scorer.score(testCase, generation, judgment))
+			this.scorers.map((scorer) =>
+				scorer.score(testCase, generation, judgment),
+			),
 		);
 
 		// Calculate weighted sum
@@ -115,9 +124,8 @@ export class CompositeScorer implements IScorer {
 			totalWeight += weight;
 		}
 
-		const overall = totalWeight > 0
-			? Math.round(totalWeightedScore / totalWeight)
-			: 50;
+		const overall =
+			totalWeight > 0 ? Math.round(totalWeightedScore / totalWeight) : 50;
 
 		return { overall, components };
 	}
@@ -163,7 +171,10 @@ export class CompositeScorer implements IScorer {
 import { CorrectnessScorer } from "./correctness-scorer.js";
 import { CompletenessScorer } from "./completeness-scorer.js";
 import { UsefulnessScorer, ConcisenessScorer } from "./quality-scorer.js";
-import { PerformanceScorer, createPerformanceScorer } from "./performance-scorer.js";
+import {
+	PerformanceScorer,
+	createPerformanceScorer,
+} from "./performance-scorer.js";
 import { CostScorer, createCostScorer } from "./cost-scorer.js";
 
 /**
@@ -177,7 +188,7 @@ import { CostScorer, createCostScorer } from "./cost-scorer.js";
 export function createCompositeScorer(
 	durations: number[],
 	costs: number[],
-	weights?: Record<string, number>
+	weights?: Record<string, number>,
 ): CompositeScorer {
 	const scorers: IScorer[] = [
 		new CorrectnessScorer(),
@@ -196,7 +207,7 @@ export function createCompositeScorer(
  * Useful for evaluating a single model.
  */
 export function createBasicCompositeScorer(
-	weights?: Record<string, number>
+	weights?: Record<string, number>,
 ): CompositeScorer {
 	const scorers: IScorer[] = [
 		new CorrectnessScorer(),

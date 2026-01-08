@@ -26,7 +26,10 @@ export class SessionTracker {
 	private config: InteractionConfig;
 	private activeSessions: Map<string, SessionState> = new Map();
 
-	constructor(store: InteractionStore, config: Partial<InteractionConfig> = {}) {
+	constructor(
+		store: InteractionStore,
+		config: Partial<InteractionConfig> = {},
+	) {
 		this.store = store;
 		this.config = { ...DEFAULT_INTERACTION_CONFIG, ...config };
 	}
@@ -242,8 +245,7 @@ export class SessionTracker {
 		}
 
 		// High intervention rate = failure
-		const interventionRate =
-			session.interventionCount / session.toolCount;
+		const interventionRate = session.interventionCount / session.toolCount;
 		if (interventionRate > 0.5) {
 			return "failure";
 		}

@@ -10,7 +10,11 @@
  */
 
 import { randomUUID } from "crypto";
-import type { IEmbeddingsClient, LLMMessage, ILLMClient } from "../../../types.js";
+import type {
+	IEmbeddingsClient,
+	LLMMessage,
+	ILLMClient,
+} from "../../../types.js";
 import type {
 	BenchmarkCodeUnit,
 	GeneratedSummary,
@@ -39,7 +43,12 @@ interface IndexEntry {
 class SimpleVectorIndex {
 	private entries: IndexEntry[] = [];
 
-	add(summaryId: string, codeUnitId: string, modelId: string, embedding: number[]): void {
+	add(
+		summaryId: string,
+		codeUnitId: string,
+		modelId: string,
+		embedding: number[],
+	): void {
 		this.entries.push({ summaryId, codeUnitId, modelId, embedding });
 	}
 
@@ -48,7 +57,7 @@ class SimpleVectorIndex {
 	 */
 	search(
 		queryEmbedding: number[],
-		k: number
+		k: number,
 	): Array<{ codeUnitId: string; modelId: string; score: number }> {
 		// Calculate similarities
 		const similarities = this.entries.map((entry) => ({
@@ -67,7 +76,7 @@ class SimpleVectorIndex {
 	 */
 	searchWithModelRanks(
 		queryEmbedding: number[],
-		targetCodeUnitId: string
+		targetCodeUnitId: string,
 	): Map<string, { rank: number; score: number }> {
 		// Calculate all similarities
 		const similarities = this.entries.map((entry) => ({
@@ -122,7 +131,7 @@ class SimpleVectorIndex {
 	}
 
 	getModelCount(): number {
-		return new Set(this.entries.map(e => e.modelId)).size;
+		return new Set(this.entries.map((e) => e.modelId)).size;
 	}
 }
 
@@ -157,13 +166,14 @@ export class RetrievalEvaluator extends BaseEvaluator<EvaluationResult[]> {
 	 */
 	async buildCombinedIndex(
 		summariesByModel: Map<string, GeneratedSummary[]>,
-		onProgress?: (message: string) => void
+		onProgress?: (message: string) => void,
 	): Promise<void> {
 		this.index.clear();
 		this.modelIds = Array.from(summariesByModel.keys());
 
 		// Collect all summaries with their model IDs
-		const allSummaries: Array<{ summary: GeneratedSummary; modelId: string }> = [];
+		const allSummaries: Array<{ summary: GeneratedSummary; modelId: string }> =
+			[];
 		for (const [modelId, summaries] of summariesByModel) {
 			for (const summary of summaries) {
 				allSummaries.push({ summary, modelId });
@@ -190,12 +200,7 @@ export class RetrievalEvaluator extends BaseEvaluator<EvaluationResult[]> {
 		onProgress?.(`Indexing ${total} summaries...`);
 		for (let i = 0; i < allSummaries.length; i++) {
 			const { summary, modelId } = allSummaries[i];
-			this.index.add(
-				summary.id,
-				summary.codeUnitId,
-				modelId,
-				allEmbeddings[i]
-			);
+			this.index.add(summary.id, summary.codeUnitId, modelId, allEmbeddings[i]);
 		}
 	}
 
@@ -215,7 +220,7 @@ export class RetrievalEvaluator extends BaseEvaluator<EvaluationResult[]> {
 				summaries[i].id,
 				summaries[i].codeUnitId,
 				modelId,
-				embedResult.embeddings[i]
+				embedResult.embeddings[i],
 			);
 		}
 	}
@@ -226,13 +231,16 @@ export class RetrievalEvaluator extends BaseEvaluator<EvaluationResult[]> {
 	 */
 	async evaluateQueryCrossModel(
 		query: GeneratedQuery,
-		summariesByModel: Map<string, GeneratedSummary[]>
+		summariesByModel: Map<string, GeneratedSummary[]>,
 	): Promise<EvaluationResult[]> {
 		// Embed the query
 		const queryEmbedding = await this.embeddingsClient.embedOne(query.query);
 
 		// Get ranks for all models
-		const modelRanks = this.index.searchWithModelRanks(queryEmbedding, query.codeUnitId);
+		const modelRanks = this.index.searchWithModelRanks(
+			queryEmbedding,
+			query.codeUnitId,
+		);
 
 		// Total items in index (for calculating relative rank)
 		const totalItems = this.index.size();
@@ -258,12 +266,15 @@ export class RetrievalEvaluator extends BaseEvaluator<EvaluationResult[]> {
 
 			// Calculate "model rank" - which model ranked highest among models?
 			// Sort all models by their rank for this query
-			const sortedModels = Array.from(modelRanks.entries())
-				.sort((a, b) => a[1].rank - b[1].rank);
+			const sortedModels = Array.from(modelRanks.entries()).sort(
+				(a, b) => a[1].rank - b[1].rank,
+			);
 			const modelPosition = sortedModels.findIndex(([m]) => m === modelId) + 1;
 
 			// Find the summary for this code unit from this model
-			const targetSummary = summaries.find((s) => s.codeUnitId === query.codeUnitId);
+			const targetSummary = summaries.find(
+				(s) => s.codeUnitId === query.codeUnitId,
+			);
 			if (!targetSummary) continue;
 
 			const retrievalResults: RetrievalResults = {
@@ -298,7 +309,7 @@ export class RetrievalEvaluator extends BaseEvaluator<EvaluationResult[]> {
 	async evaluateQuery(
 		query: GeneratedQuery,
 		modelId: string,
-		summaries: GeneratedSummary[]
+		summaries: GeneratedSummary[],
 	): Promise<EvaluationResult> {
 		// Embed the query
 		const queryEmbedding = await this.embeddingsClient.embedOne(query.query);
@@ -327,8 +338,8 @@ export class RetrievalEvaluator extends BaseEvaluator<EvaluationResult[]> {
 		};
 
 		// Find a representative summary for the foreign key
-		const targetSummary = summaries.find((s) => s.codeUnitId === query.codeUnitId)
-			|| summaries[0];
+		const targetSummary =
+			summaries.find((s) => s.codeUnitId === query.codeUnitId) || summaries[0];
 
 		if (!targetSummary) {
 			throw new RetrievalError(`No summary found for model ${modelId}`);
@@ -349,7 +360,7 @@ export class RetrievalEvaluator extends BaseEvaluator<EvaluationResult[]> {
 	async evaluate(
 		_summary: GeneratedSummary,
 		_codeUnit: BenchmarkCodeUnit,
-		context: EvaluatorContext
+		context: EvaluatorContext,
 	): Promise<EvaluationResult[]> {
 		const queries = context.queries || [];
 		const results: EvaluationResult[] = [];
@@ -396,7 +407,7 @@ export interface AggregatedRetrievalMetrics {
 
 export function aggregateRetrievalResults(
 	results: RetrievalResults[],
-	kValues: number[]
+	kValues: number[],
 ): AggregatedRetrievalMetrics {
 	if (results.length === 0) {
 		return {
@@ -422,14 +433,18 @@ export function aggregateRetrievalResults(
 
 	// Calculate win rate (cross-model competition)
 	const resultsWithModelRank = results.filter((r) => r.modelRank !== undefined);
-	const winRate = resultsWithModelRank.length > 0
-		? resultsWithModelRank.filter((r) => r.isWinner).length / resultsWithModelRank.length
-		: 0;
+	const winRate =
+		resultsWithModelRank.length > 0
+			? resultsWithModelRank.filter((r) => r.isWinner).length /
+				resultsWithModelRank.length
+			: 0;
 
 	// Calculate average model rank
-	const avgModelRank = resultsWithModelRank.length > 0
-		? resultsWithModelRank.reduce((sum, r) => sum + (r.modelRank || 0), 0) / resultsWithModelRank.length
-		: 0;
+	const avgModelRank =
+		resultsWithModelRank.length > 0
+			? resultsWithModelRank.reduce((sum, r) => sum + (r.modelRank || 0), 0) /
+				resultsWithModelRank.length
+			: 0;
 
 	// Group by query type
 	const byType = new Map<QueryType, RetrievalResults[]>();
@@ -449,10 +464,14 @@ export function aggregateRetrievalResults(
 			typePrecision[k] = hits / typeResults.length;
 		}
 
-		const typeResultsWithRank = typeResults.filter((r) => r.modelRank !== undefined);
-		const typeWinRate = typeResultsWithRank.length > 0
-			? typeResultsWithRank.filter((r) => r.isWinner).length / typeResultsWithRank.length
-			: 0;
+		const typeResultsWithRank = typeResults.filter(
+			(r) => r.modelRank !== undefined,
+		);
+		const typeWinRate =
+			typeResultsWithRank.length > 0
+				? typeResultsWithRank.filter((r) => r.isWinner).length /
+					typeResultsWithRank.length
+				: 0;
 
 		byQueryType[type] = {
 			precision: typePrecision,
@@ -479,7 +498,7 @@ export function aggregateRetrievalResults(
 // ============================================================================
 
 export function createRetrievalEvaluator(
-	options: RetrievalEvaluatorOptions
+	options: RetrievalEvaluatorOptions,
 ): RetrievalEvaluator {
 	return new RetrievalEvaluator(options);
 }
@@ -497,7 +516,7 @@ export function createRetrievalEvaluator(
  */
 export function createRetrievalPhaseExecutor(
 	embeddingsClient: IEmbeddingsClient,
-	llmClient?: ILLMClient
+	llmClient?: ILLMClient,
 ): (context: PhaseContext) => Promise<PhaseResult> {
 	return async (context: PhaseContext): Promise<PhaseResult> => {
 		const { db, run, config, stateMachine } = context;
@@ -531,7 +550,10 @@ export function createRetrievalPhaseExecutor(
 			for (const result of existingResults) {
 				if (result.retrievalResults) {
 					const queryId = result.retrievalResults.queryId;
-					resultCountByQuery.set(queryId, (resultCountByQuery.get(queryId) || 0) + 1);
+					resultCountByQuery.set(
+						queryId,
+						(resultCountByQuery.get(queryId) || 0) + 1,
+					);
 				}
 			}
 			// Mark queries as evaluated if they have results for all models
@@ -549,7 +571,7 @@ export function createRetrievalPhaseExecutor(
 					"evaluation:retrieval",
 					0,
 					undefined,
-					"Generating search queries..."
+					"Generating search queries...",
 				);
 
 				if (llmClient) {
@@ -581,7 +603,7 @@ export function createRetrievalPhaseExecutor(
 				"evaluation:retrieval",
 				0,
 				undefined,
-				`Building combined index (${summaries.length} summaries from ${numModels} models)...`
+				`Building combined index (${summaries.length} summaries from ${numModels} models)...`,
 			);
 
 			// Build ONE index with ALL summaries - models compete!
@@ -600,7 +622,10 @@ export function createRetrievalPhaseExecutor(
 
 				try {
 					// This returns results for ALL models in one call
-					const results = await evaluator.evaluateQueryCrossModel(query, summariesByModel);
+					const results = await evaluator.evaluateQueryCrossModel(
+						query,
+						summariesByModel,
+					);
 
 					for (const result of results) {
 						db.insertEvaluationResult(run.id, result);
@@ -611,7 +636,7 @@ export function createRetrievalPhaseExecutor(
 						"evaluation:retrieval",
 						completed,
 						query.id,
-						`Cross-model: ${completed}/${totalItems}`
+						`Cross-model: ${completed}/${totalItems}`,
 					);
 				} catch (error) {
 					// Skip query but count the models we would have evaluated

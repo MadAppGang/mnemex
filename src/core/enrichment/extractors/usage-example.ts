@@ -24,7 +24,12 @@ import { BaseExtractor } from "./base.js";
 
 interface UsageExampleLLMResponse {
 	examples: Array<{
-		exampleType: "basic" | "with_options" | "error_case" | "in_context" | "test";
+		exampleType:
+			| "basic"
+			| "with_options"
+			| "error_case"
+			| "in_context"
+			| "test";
 		code: string;
 		description?: string;
 	}>;
@@ -107,7 +112,12 @@ export class UsageExampleExtractor extends BaseExtractor {
 
 		for (const example of response.examples) {
 			const content = this.buildContent(chunk.name || "symbol", example);
-			const id = this.generateId(content, context.filePath, chunk.name || "", example.exampleType);
+			const id = this.generateId(
+				content,
+				context.filePath,
+				chunk.name || "",
+				example.exampleType,
+			);
 
 			documents.push({
 				id,

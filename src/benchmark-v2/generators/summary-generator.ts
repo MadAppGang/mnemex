@@ -7,7 +7,11 @@
 
 import { randomUUID } from "crypto";
 import type { ILLMClient, LLMMessage, LLMUsageStats } from "../../types.js";
-import { GenerationError, ModelTimeoutError, InvalidResponseError } from "../errors.js";
+import {
+	GenerationError,
+	ModelTimeoutError,
+	InvalidResponseError,
+} from "../errors.js";
 import type {
 	BenchmarkCodeUnit,
 	GeneratedSummary,
@@ -126,7 +130,7 @@ export class SummaryGenerator implements ISummaryGenerator {
 	 */
 	async generateSummary(
 		codeUnit: BenchmarkCodeUnit,
-		promptVersion?: string
+		promptVersion?: string,
 	): Promise<GeneratedSummary> {
 		const startTime = Date.now();
 		const prompt = this.buildPrompt(codeUnit);
@@ -150,7 +154,7 @@ export class SummaryGenerator implements ISummaryGenerator {
 				throw new InvalidResponseError(
 					this.modelConfig.id,
 					"Summary too short or empty",
-					summary
+					summary,
 				);
 			}
 
@@ -198,7 +202,7 @@ export class SummaryGenerator implements ISummaryGenerator {
 			throw new GenerationError(
 				`Failed to generate summary: ${message}`,
 				{ modelId: this.modelConfig.id, codeUnitId: codeUnit.id },
-				error instanceof Error ? error : undefined
+				error instanceof Error ? error : undefined,
 			);
 		}
 	}
@@ -249,8 +253,7 @@ export class SummaryGenerator implements ISummaryGenerator {
 	}
 
 	private buildFunctionPrompt(codeUnit: BenchmarkCodeUnit): string {
-		let prompt = FUNCTION_PROMPT
-			.replace(/{language}/g, codeUnit.language)
+		let prompt = FUNCTION_PROMPT.replace(/{language}/g, codeUnit.language)
 			.replace("{unit_type}", codeUnit.type)
 			.replace("{name}", codeUnit.name)
 			.replace("{file_path}", codeUnit.path)
@@ -267,7 +270,7 @@ export class SummaryGenerator implements ISummaryGenerator {
 		if (codeUnit.metadata.visibility) {
 			prompt = prompt.replace(
 				"{visibility}",
-				`**Visibility:** ${codeUnit.metadata.visibility}`
+				`**Visibility:** ${codeUnit.metadata.visibility}`,
 			);
 		} else {
 			prompt = prompt.replace("{visibility}\n", "");
@@ -281,10 +284,13 @@ export class SummaryGenerator implements ISummaryGenerator {
 		}
 
 		// Decorators
-		if (codeUnit.metadata.decorators && codeUnit.metadata.decorators.length > 0) {
+		if (
+			codeUnit.metadata.decorators &&
+			codeUnit.metadata.decorators.length > 0
+		) {
 			prompt = prompt.replace(
 				"{decorator_info}",
-				`**Decorators:** ${codeUnit.metadata.decorators.join(", ")}`
+				`**Decorators:** ${codeUnit.metadata.decorators.join(", ")}`,
 			);
 		} else {
 			prompt = prompt.replace("{decorator_info}\n", "");
@@ -294,8 +300,7 @@ export class SummaryGenerator implements ISummaryGenerator {
 	}
 
 	private buildClassPrompt(codeUnit: BenchmarkCodeUnit): string {
-		let prompt = CLASS_PROMPT
-			.replace(/{language}/g, codeUnit.language)
+		let prompt = CLASS_PROMPT.replace(/{language}/g, codeUnit.language)
 			.replace("{name}", codeUnit.name)
 			.replace("{file_path}", codeUnit.path)
 			.replace("{code}", this.truncateCode(codeUnit.content));
@@ -307,15 +312,16 @@ export class SummaryGenerator implements ISummaryGenerator {
 	}
 
 	private buildFilePrompt(codeUnit: BenchmarkCodeUnit): string {
-		let prompt = FILE_PROMPT
-			.replace(/{language}/g, codeUnit.language)
-			.replace("{file_path}", codeUnit.path);
+		let prompt = FILE_PROMPT.replace(/{language}/g, codeUnit.language).replace(
+			"{file_path}",
+			codeUnit.path,
+		);
 
 		// Exports info
 		if (codeUnit.metadata.exports && codeUnit.metadata.exports.length > 0) {
 			prompt = prompt.replace(
 				"{exports_info}",
-				`**Exports:** ${codeUnit.metadata.exports.join(", ")}`
+				`**Exports:** ${codeUnit.metadata.exports.join(", ")}`,
 			);
 		} else {
 			prompt = prompt.replace("{exports_info}\n", "");
@@ -338,7 +344,7 @@ export class SummaryGenerator implements ISummaryGenerator {
 // ============================================================================
 
 export function createSummaryGenerator(
-	options: SummaryGeneratorOptions
+	options: SummaryGeneratorOptions,
 ): SummaryGenerator {
 	return new SummaryGenerator(options);
 }

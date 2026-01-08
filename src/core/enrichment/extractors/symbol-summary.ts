@@ -71,23 +71,31 @@ export class SymbolSummaryExtractor extends BaseExtractor {
 		// For single symbol, use regular extraction
 		if (selectedSymbols.length === 1) {
 			try {
-				const doc = await this.extractSymbolSingle(selectedSymbols[0], context, llmClient);
+				const doc = await this.extractSymbolSingle(
+					selectedSymbols[0],
+					context,
+					llmClient,
+				);
 				return doc ? [doc] : [];
 			} catch (error) {
 				// Re-throw with context so caller sees the actual error
 				throw new Error(
-					`LLM error: ${error instanceof Error ? error.message : String(error)}`
+					`LLM error: ${error instanceof Error ? error.message : String(error)}`,
 				);
 			}
 		}
 
 		// Batch all symbols into single LLM call
 		try {
-			return await this.extractSymbolsBatch(selectedSymbols, context, llmClient);
+			return await this.extractSymbolsBatch(
+				selectedSymbols,
+				context,
+				llmClient,
+			);
 		} catch (error) {
 			// Re-throw with context so caller sees the actual error
 			throw new Error(
-				`LLM error: ${error instanceof Error ? error.message : String(error)}`
+				`LLM error: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
 	}
@@ -112,10 +120,11 @@ export class SymbolSummaryExtractor extends BaseExtractor {
 		const userPrompt = buildBatchedSymbolSummaryPrompt(batchInfo);
 
 		// Call LLM with batched prompt
-		const responses = await llmClient.completeJSON<BatchedSymbolSummaryResponse[]>(
-			[{ role: "user", content: userPrompt }],
-			{ systemPrompt: BATCHED_SYMBOL_SUMMARY_SYSTEM_PROMPT },
-		);
+		const responses = await llmClient.completeJSON<
+			BatchedSymbolSummaryResponse[]
+		>([{ role: "user", content: userPrompt }], {
+			systemPrompt: BATCHED_SYMBOL_SUMMARY_SYSTEM_PROMPT,
+		});
 
 		// Convert responses to documents
 		const documents: SymbolSummary[] = [];
@@ -123,7 +132,8 @@ export class SymbolSummaryExtractor extends BaseExtractor {
 		for (let i = 0; i < chunks.length; i++) {
 			const chunk = chunks[i];
 			// Match response by name or index
-			const response = responses.find((r) => r.name === chunk.name) || responses[i];
+			const response =
+				responses.find((r) => r.name === chunk.name) || responses[i];
 
 			if (!response) {
 				console.warn(`No summary returned for ${chunk.name}`);
@@ -133,11 +143,12 @@ export class SymbolSummaryExtractor extends BaseExtractor {
 			const content = this.buildContent(chunk, response);
 			const id = this.generateId(content, context.filePath, chunk.name || "");
 
-			const symbolType = chunk.chunkType === "method"
-				? "method"
-				: chunk.chunkType === "class"
-					? "class"
-					: "function";
+			const symbolType =
+				chunk.chunkType === "method"
+					? "method"
+					: chunk.chunkType === "class"
+						? "class"
+						: "function";
 
 			documents.push({
 				id,
@@ -183,11 +194,12 @@ export class SymbolSummaryExtractor extends BaseExtractor {
 		const content = this.buildContent(chunk, response);
 		const id = this.generateId(content, context.filePath, chunk.name || "");
 
-		const symbolType = chunk.chunkType === "method"
-			? "method"
-			: chunk.chunkType === "class"
-				? "class"
-				: "function";
+		const symbolType =
+			chunk.chunkType === "method"
+				? "method"
+				: chunk.chunkType === "class"
+					? "class"
+					: "function";
 
 		return {
 			id,
@@ -226,7 +238,10 @@ export class SymbolSummaryExtractor extends BaseExtractor {
 	/**
 	 * Build searchable content from the summary
 	 */
-	private buildContent(chunk: CodeChunk, response: SymbolSummaryLLMResponse): string {
+	private buildContent(
+		chunk: CodeChunk,
+		response: SymbolSummaryLLMResponse,
+	): string {
 		const parts = [
 			`${chunk.chunkType}: ${chunk.name || "anonymous"}`,
 			chunk.signature ? `Signature: ${chunk.signature}` : "",

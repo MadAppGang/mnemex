@@ -9,7 +9,12 @@
  */
 
 // Base evaluator
-export { BaseEvaluator, isSameModelFamily, getModelFamily, selectJudges } from "./base.js";
+export {
+	BaseEvaluator,
+	isSameModelFamily,
+	getModelFamily,
+	selectJudges,
+} from "./base.js";
 
 // Judge evaluators
 export {

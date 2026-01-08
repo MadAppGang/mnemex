@@ -15,7 +15,9 @@ function errorResponse(id: string, message: string): AutocompleteResponse {
 	return { id, error: { message } };
 }
 
-export async function startAutocompleteServer(args: { projectPath?: string } = {}): Promise<void> {
+export async function startAutocompleteServer(
+	args: { projectPath?: string } = {},
+): Promise<void> {
 	const projectPath = resolve(args.projectPath || process.cwd());
 	const engine = new AutocompleteEngine(projectPath);
 
@@ -53,14 +55,25 @@ export async function startAutocompleteServer(args: { projectPath?: string } = {
 					}
 
 					const hasTextMode = !!params.text && !!params.position;
-					const hasFimMode = params.prefix !== undefined && params.suffix !== undefined;
+					const hasFimMode =
+						params.prefix !== undefined && params.suffix !== undefined;
 					if (!hasTextMode && !hasFimMode) {
-						writeResponse(errorResponse(id, "Invalid complete params: provide {text, position} or {prefix, suffix}"));
+						writeResponse(
+							errorResponse(
+								id,
+								"Invalid complete params: provide {text, position} or {prefix, suffix}",
+							),
+						);
 						break;
 					}
 
-					if (params.projectPath && resolve(params.projectPath) !== projectPath) {
-						writeResponse(errorResponse(id, `Server projectPath mismatch (${projectPath})`));
+					if (
+						params.projectPath &&
+						resolve(params.projectPath) !== projectPath
+					) {
+						writeResponse(
+							errorResponse(id, `Server projectPath mismatch (${projectPath})`),
+						);
 						break;
 					}
 
@@ -68,7 +81,10 @@ export async function startAutocompleteServer(args: { projectPath?: string } = {
 					pending.set(id, controller);
 
 					try {
-						const result = await engine.complete({ ...params, abortSignal: controller.signal });
+						const result = await engine.complete({
+							...params,
+							abortSignal: controller.signal,
+						});
 						writeResponse({ id, result });
 					} finally {
 						pending.delete(id);

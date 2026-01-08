@@ -65,13 +65,18 @@ export class WeightOptimizer {
 			weights.documentTypeWeights,
 		)) {
 			if (weight < 0 || weight > 1) {
-				errors.push(`Document type weight for ${docType} is ${weight}, expected [0, 1]`);
+				errors.push(
+					`Document type weight for ${docType} is ${weight}, expected [0, 1]`,
+				);
 			}
 		}
 
 		// Check file boosts
 		for (const [filePath, boost] of weights.fileBoosts) {
-			if (boost < this.config.minFileBoost || boost > this.config.maxFileBoost) {
+			if (
+				boost < this.config.minFileBoost ||
+				boost > this.config.maxFileBoost
+			) {
 				warnings.push(
 					`File boost for ${filePath} is ${boost}, outside range [${this.config.minFileBoost}, ${this.config.maxFileBoost}]`,
 				);
@@ -101,7 +106,10 @@ export class WeightOptimizer {
 		// Normalize document type weights (optional - they don't need to sum to 1)
 		const normalizedDocWeights = { ...weights.documentTypeWeights };
 		for (const [docType, weight] of Object.entries(normalizedDocWeights)) {
-			normalizedDocWeights[docType as DocumentType] = Math.max(0, Math.min(1, weight));
+			normalizedDocWeights[docType as DocumentType] = Math.max(
+				0,
+				Math.min(1, weight),
+			);
 		}
 
 		// Clamp file boosts
@@ -157,16 +165,15 @@ export class WeightOptimizer {
 
 		// For file boosts, prefer learned if factor > 0.5, otherwise use defaults
 		const fileBoosts =
-			factor > 0.5
-				? new Map(learned.fileBoosts)
-				: new Map(defaults.fileBoosts);
+			factor > 0.5 ? new Map(learned.fileBoosts) : new Map(defaults.fileBoosts);
 
 		return {
 			vectorWeight,
 			bm25Weight,
 			documentTypeWeights,
 			fileBoosts,
-			queryPatterns: factor > 0.5 ? learned.queryPatterns : defaults.queryPatterns,
+			queryPatterns:
+				factor > 0.5 ? learned.queryPatterns : defaults.queryPatterns,
 			lastUpdated: new Date(),
 			feedbackCount: learned.feedbackCount,
 			confidence: factor,

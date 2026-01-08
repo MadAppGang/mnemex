@@ -153,7 +153,11 @@ export class ShadowPredictor {
 
 		// Update models with new observation
 		if (this.recentTools.length >= 2) {
-			for (let n = 1; n <= Math.min(this.config.maxNgramSize, this.recentTools.length); n++) {
+			for (
+				let n = 1;
+				n <= Math.min(this.config.maxNgramSize, this.recentTools.length);
+				n++
+			) {
 				const context = this.recentTools.slice(-n - 1, -1);
 				const nextTool = this.recentTools[this.recentTools.length - 1];
 				this.updateNgram(context, nextTool, n);
@@ -179,7 +183,11 @@ export class ShadowPredictor {
 		// Try from highest n-gram to lowest (backoff)
 		const allPredictions: ToolPrediction[] = [];
 
-		for (let n = Math.min(this.config.maxNgramSize, effectiveContext.length); n >= 1; n--) {
+		for (
+			let n = Math.min(this.config.maxNgramSize, effectiveContext.length);
+			n >= 1;
+			n--
+		) {
 			const ngContext = effectiveContext.slice(-n);
 			const predictions = this.predictWithNgram(ngContext, n);
 
@@ -307,9 +315,7 @@ export class ShadowPredictor {
 	}): void {
 		for (const modelData of data.models) {
 			const model: NGramModel = {
-				counts: new Map(
-					modelData.counts.map(([k, v]) => [k, new Map(v)])
-				),
+				counts: new Map(modelData.counts.map(([k, v]) => [k, new Map(v)])),
 				totals: new Map(modelData.totals),
 				vocabulary: new Set(modelData.vocabulary),
 				totalSequences: modelData.totalSequences,
@@ -449,13 +455,17 @@ export class ShadowPredictor {
 				totalWeight += weight;
 				weightedProb += pred.probability * weight;
 				maxConfidence = Math.max(maxConfidence, pred.confidence);
-				if (pred.confidence > (preds.find((p) => p.ngramOrder === bestOrder)?.confidence ?? 0)) {
+				if (
+					pred.confidence >
+					(preds.find((p) => p.ngramOrder === bestOrder)?.confidence ?? 0)
+				) {
 					bestOrder = pred.ngramOrder;
 				}
 			}
 
 			const probability = weightedProb / totalWeight;
-			const bestPred = preds.find((p) => p.ngramOrder === bestOrder) ?? preds[0];
+			const bestPred =
+				preds.find((p) => p.ngramOrder === bestOrder) ?? preds[0];
 
 			merged.push({
 				tool,
@@ -505,7 +515,7 @@ export class ShadowPredictor {
  * Create a shadow predictor with optional configuration.
  */
 export function createShadowPredictor(
-	config: Partial<ShadowPredictorConfig> = {}
+	config: Partial<ShadowPredictorConfig> = {},
 ): ShadowPredictor {
 	return new ShadowPredictor(config);
 }

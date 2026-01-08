@@ -140,7 +140,9 @@ export class PromptOptimizer {
 	/**
 	 * Generate prompt optimizations from correction events.
 	 */
-	optimizeFromCorrections(corrections: CorrectionEvent[]): PromptOptimization[] {
+	optimizeFromCorrections(
+		corrections: CorrectionEvent[],
+	): PromptOptimization[] {
 		// Group corrections by trigger pattern
 		const grouped = this.groupCorrections(corrections);
 
@@ -163,7 +165,7 @@ export class PromptOptimizer {
 			// Generate optimization
 			const optimization = this.generateFromCorrectionGroup(
 				pattern,
-				correctionGroup
+				correctionGroup,
 			);
 			optimizations.push(optimization);
 		}
@@ -176,7 +178,7 @@ export class PromptOptimizer {
 	 */
 	generateConstraint(
 		constraintText: string,
-		evidence: CorrectionEvidence[]
+		evidence: CorrectionEvidence[],
 	): PromptOptimization {
 		return {
 			optimizationId: this.generateId(),
@@ -195,7 +197,7 @@ export class PromptOptimizer {
 	generateExample(
 		goodExample: string,
 		badExample: string,
-		evidence: CorrectionEvidence[]
+		evidence: CorrectionEvidence[],
 	): PromptOptimization {
 		const text = [
 			"## Example",
@@ -224,7 +226,7 @@ export class PromptOptimizer {
 	 */
 	generateWarning(
 		warningText: string,
-		evidence: CorrectionEvidence[]
+		evidence: CorrectionEvidence[],
 	): PromptOptimization {
 		return {
 			optimizationId: this.generateId(),
@@ -242,7 +244,7 @@ export class PromptOptimizer {
 	 */
 	toImprovement(
 		optimization: PromptOptimization,
-		patternId: string
+		patternId: string,
 	): Improvement {
 		const now = Date.now();
 
@@ -275,7 +277,7 @@ export class PromptOptimizer {
 	 */
 	applyOptimization(
 		existingPrompt: string,
-		optimization: PromptOptimization
+		optimization: PromptOptimization,
 	): string {
 		switch (optimization.insertionPoint) {
 			case "prepend":
@@ -288,7 +290,7 @@ export class PromptOptimizer {
 				if (optimization.originalSegment) {
 					return existingPrompt.replace(
 						optimization.originalSegment,
-						optimization.proposedText
+						optimization.proposedText,
 					);
 				}
 				return existingPrompt;
@@ -297,7 +299,7 @@ export class PromptOptimizer {
 				return this.insertSection(
 					existingPrompt,
 					optimization.sectionName ?? "Additional Guidance",
-					optimization.proposedText
+					optimization.proposedText,
 				);
 
 			default:
@@ -320,7 +322,7 @@ export class PromptOptimizer {
 	 * Generate optimization from pattern.
 	 */
 	private generateOptimization(
-		pattern: DetectedPattern
+		pattern: DetectedPattern,
 	): PromptOptimization | null {
 		const errorSignature = pattern.patternData.errorSignature;
 		const tools = pattern.patternData.tools ?? [];
@@ -342,28 +344,34 @@ export class PromptOptimizer {
 		if (errorSignature?.includes("permission")) {
 			return this.generateWarning(
 				`Check permissions before using ${tools.join(", ")}. Pattern observed ${pattern.occurrenceCount} times.`,
-				evidence
+				evidence,
 			);
 		}
 
-		if (errorSignature?.includes("validation") || errorSignature?.includes("invalid")) {
+		if (
+			errorSignature?.includes("validation") ||
+			errorSignature?.includes("invalid")
+		) {
 			return this.generateConstraint(
 				`Validate inputs before ${tools.join(", ")}. ${description}`,
-				evidence
+				evidence,
 			);
 		}
 
-		if (errorSignature?.includes("not found") || errorSignature?.includes("missing")) {
+		if (
+			errorSignature?.includes("not found") ||
+			errorSignature?.includes("missing")
+		) {
 			return this.generateConstraint(
 				`Verify resources exist before ${tools.join(", ")}. ${description}`,
-				evidence
+				evidence,
 			);
 		}
 
 		// Default: generate a general warning
 		return this.generateWarning(
 			`${description}. Observed ${pattern.occurrenceCount} times.`,
-			evidence
+			evidence,
 		);
 	}
 
@@ -371,7 +379,7 @@ export class PromptOptimizer {
 	 * Group corrections by trigger pattern.
 	 */
 	private groupCorrections(
-		corrections: CorrectionEvent[]
+		corrections: CorrectionEvent[],
 	): Map<string, CorrectionEvent[]> {
 		const groups = new Map<string, CorrectionEvent[]>();
 
@@ -419,7 +427,7 @@ export class PromptOptimizer {
 	 */
 	private generateFromCorrectionGroup(
 		patternKey: string,
-		corrections: CorrectionEvent[]
+		corrections: CorrectionEvent[],
 	): PromptOptimization {
 		// Extract common elements
 		const evidence: CorrectionEvidence[] = corrections
@@ -440,20 +448,20 @@ export class PromptOptimizer {
 			case "lexical":
 				return this.generateConstraint(
 					this.extractConstraintFromLexical(corrections),
-					evidence
+					evidence,
 				);
 
 			case "overwrite":
 				return this.generateExample(
 					this.extractGoodExample(corrections),
 					this.extractBadExample(corrections),
-					evidence
+					evidence,
 				);
 
 			case "pivot":
 				return this.generateWarning(
 					this.extractPivotWarning(corrections),
-					evidence
+					evidence,
 				);
 
 			case "reask":
@@ -486,7 +494,7 @@ export class PromptOptimizer {
 	 * Find dominant signal across corrections.
 	 */
 	private findDominantSignal(
-		corrections: CorrectionEvent[]
+		corrections: CorrectionEvent[],
 	): keyof CorrectionEvent["signals"] {
 		const totals = { lexical: 0, pivot: 0, overwrite: 0, reask: 0 };
 
@@ -517,7 +525,7 @@ export class PromptOptimizer {
 		// Find common words indicating constraint
 		const constraintWords = ["don't", "never", "always", "must", "should"];
 		const found = triggers.find((t) =>
-			constraintWords.some((w) => t.toLowerCase().includes(w))
+			constraintWords.some((w) => t.toLowerCase().includes(w)),
 		);
 
 		if (found) {
@@ -621,13 +629,16 @@ export class PromptOptimizer {
 	private insertSection(
 		prompt: string,
 		sectionName: string,
-		content: string
+		content: string,
 	): string {
 		// Check if section exists
 		const sectionRegex = new RegExp(`^##\\s*${sectionName}`, "im");
 		if (sectionRegex.test(prompt)) {
 			// Append to existing section
-			return prompt.replace(sectionRegex, `## ${sectionName}\n\n${content}\n\n##`);
+			return prompt.replace(
+				sectionRegex,
+				`## ${sectionName}\n\n${content}\n\n##`,
+			);
 		}
 
 		// Add new section at end
@@ -709,7 +720,7 @@ export class PromptOptimizer {
  * Create a prompt optimizer with optional configuration.
  */
 export function createPromptOptimizer(
-	config: Partial<PromptOptimizerConfig> = {}
+	config: Partial<PromptOptimizerConfig> = {},
 ): PromptOptimizer {
 	return new PromptOptimizer(config);
 }

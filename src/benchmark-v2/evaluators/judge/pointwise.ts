@@ -131,14 +131,13 @@ export class PointwiseJudgeEvaluator extends BaseEvaluator<EvaluationResult> {
 	async evaluate(
 		summary: GeneratedSummary,
 		codeUnit: BenchmarkCodeUnit,
-		_context: EvaluatorContext
+		_context: EvaluatorContext,
 	): Promise<EvaluationResult> {
 		if (!this.llmClient) {
 			throw new JudgeError(this.judgeModelId, "No LLM client provided");
 		}
 
-		const prompt = JUDGE_USER_PROMPT
-			.replace("{language}", codeUnit.language)
+		const prompt = JUDGE_USER_PROMPT.replace("{language}", codeUnit.language)
 			.replace("{code}", this.truncateCode(codeUnit.content))
 			.replace("{summary}", summary.summary);
 
@@ -151,7 +150,8 @@ export class PointwiseJudgeEvaluator extends BaseEvaluator<EvaluationResult> {
 			// Gemini Pro models use internal "thinking" tokens that count against max_tokens
 			// They need significantly more tokens (16000+) to complete responses
 			const modelLower = this.judgeModelId.toLowerCase();
-			const isGeminiPro = modelLower.includes("gemini") && modelLower.includes("pro");
+			const isGeminiPro =
+				modelLower.includes("gemini") && modelLower.includes("pro");
 			const isGemini = modelLower.includes("gemini");
 
 			const response = await this.llmClient.complete(messages, {
@@ -187,7 +187,7 @@ export class PointwiseJudgeEvaluator extends BaseEvaluator<EvaluationResult> {
 				this.judgeModelId,
 				error instanceof Error ? error.message : String(error),
 				{ summaryId: summary.id, codeUnitId: codeUnit.id },
-				error instanceof Error ? error : undefined
+				error instanceof Error ? error : undefined,
 			);
 		}
 	}
@@ -225,7 +225,7 @@ export class PointwiseJudgeEvaluator extends BaseEvaluator<EvaluationResult> {
 
 export function createPointwiseJudgeEvaluator(
 	llmClient: ILLMClient,
-	judgeModelId: string
+	judgeModelId: string,
 ): PointwiseJudgeEvaluator {
 	return new PointwiseJudgeEvaluator(llmClient, judgeModelId);
 }

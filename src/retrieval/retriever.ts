@@ -16,7 +16,10 @@ import type {
 } from "../types.js";
 import type { VectorStore } from "../core/store.js";
 import type { FileTracker } from "../core/tracker.js";
-import { createRepoMapGenerator, type RepoMapGenerator } from "../core/repo-map.js";
+import {
+	createRepoMapGenerator,
+	type RepoMapGenerator,
+} from "../core/repo-map.js";
 
 // ============================================================================
 // Default Weights
@@ -26,7 +29,10 @@ import { createRepoMapGenerator, type RepoMapGenerator } from "../core/repo-map.
  * Default weights per document type for each use case.
  * These can be overridden via project config or at search time.
  */
-export const DEFAULT_TYPE_WEIGHTS: Record<SearchUseCase, Partial<Record<DocumentType, number>>> = {
+export const DEFAULT_TYPE_WEIGHTS: Record<
+	SearchUseCase,
+	Partial<Record<DocumentType, number>>
+> = {
 	// FIM completion: prioritize code and examples
 	fim: {
 		code_chunk: 0.5,
@@ -163,10 +169,7 @@ export class EnrichedRetriever {
 		options: RetrieverOptions = {},
 	): Promise<RetrieverSearchResponse> {
 		const startTime = Date.now();
-		const {
-			includeRepoMap = true,
-			repoMapTokens = 500,
-		} = options;
+		const { includeRepoMap = true, repoMapTokens = 500 } = options;
 
 		// Execute base search
 		const results = await this.search(query, options);
@@ -235,7 +238,9 @@ export class EnrichedRetriever {
 	/**
 	 * Get type weights for a use case
 	 */
-	getTypeWeights(useCase: SearchUseCase): Partial<Record<DocumentType, number>> {
+	getTypeWeights(
+		useCase: SearchUseCase,
+	): Partial<Record<DocumentType, number>> {
 		return DEFAULT_TYPE_WEIGHTS[useCase] || DEFAULT_TYPE_WEIGHTS.search;
 	}
 

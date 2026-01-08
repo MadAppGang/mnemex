@@ -6,7 +6,12 @@
 
 export { LLMJudge } from "./llm-judge.js";
 export { ConsensusJudge, type AggregationMethod } from "./consensus-judge.js";
-export { BlindJudge, evaluateBlindly, type EvaluationCandidate, type BatchBlindResult } from "./blind-judge.js";
+export {
+	BlindJudge,
+	evaluateBlindly,
+	type EvaluationCandidate,
+	type BatchBlindResult,
+} from "./blind-judge.js";
 export {
 	createJudge,
 	createConsensusJudge,

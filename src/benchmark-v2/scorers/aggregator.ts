@@ -18,8 +18,14 @@ import type {
 import type { AggregatedRetrievalMetrics } from "../evaluators/retrieval/index.js";
 import { aggregateRetrievalResults } from "../evaluators/retrieval/index.js";
 import { aggregateTournamentResults } from "../evaluators/judge/pairwise.js";
-import { aggregateSelfEvaluationResults, type SelfEvaluationMetrics } from "../evaluators/self/index.js";
-import { aggregateIterativeResults, type IterativeMetrics } from "../evaluators/iterative/index.js";
+import {
+	aggregateSelfEvaluationResults,
+	type SelfEvaluationMetrics,
+} from "../evaluators/self/index.js";
+import {
+	aggregateIterativeResults,
+	type IterativeMetrics,
+} from "../evaluators/iterative/index.js";
 
 // ============================================================================
 // Types
@@ -129,23 +135,26 @@ export class ScoreAggregator {
 
 		for (const modelId of modelIds) {
 			const modelSummaryIds = new Set(
-				summaries.filter((s) => s.modelId === modelId).map((s) => s.id)
+				summaries.filter((s) => s.modelId === modelId).map((s) => s.id),
 			);
 
 			resultsByModel.set(
 				modelId,
-				evaluationResults.filter((r) => modelSummaryIds.has(r.summaryId))
+				evaluationResults.filter((r) => modelSummaryIds.has(r.summaryId)),
 			);
 
 			summariesByModel.set(
 				modelId,
-				summaries.filter((s) => s.modelId === modelId)
+				summaries.filter((s) => s.modelId === modelId),
 			);
 		}
 
 		// Calculate pairwise tournament scores ONCE with ALL models
 		// (must be done before per-model aggregation)
-		const tournamentScores = aggregateTournamentResults(pairwiseResults, modelIds);
+		const tournamentScores = aggregateTournamentResults(
+			pairwiseResults,
+			modelIds,
+		);
 
 		// Aggregate each model
 		const aggregations = new Map<string, ModelAggregation>();
@@ -154,11 +163,19 @@ export class ScoreAggregator {
 			const modelResults = resultsByModel.get(modelId) || [];
 
 			// Aggregate self-evaluation (if present)
-			const selfMetrics = aggregateSelfEvaluationResults(evaluationResults, modelId);
-			const hasSelfResults = selfMetrics.retrieval.count > 0 || selfMetrics.functionSelection.count > 0;
+			const selfMetrics = aggregateSelfEvaluationResults(
+				evaluationResults,
+				modelId,
+			);
+			const hasSelfResults =
+				selfMetrics.retrieval.count > 0 ||
+				selfMetrics.functionSelection.count > 0;
 
 			// Aggregate iterative refinement (if present)
-			const iterativeMetrics = aggregateIterativeResults(evaluationResults, modelId);
+			const iterativeMetrics = aggregateIterativeResults(
+				evaluationResults,
+				modelId,
+			);
 			const hasIterativeResults = iterativeMetrics.totalEvaluated > 0;
 
 			aggregations.set(modelId, {
@@ -183,7 +200,7 @@ export class ScoreAggregator {
 	 * Convert aggregations to final scores for storage
 	 */
 	toAggregatedScores(
-		aggregations: Map<string, ModelAggregation>
+		aggregations: Map<string, ModelAggregation>,
 	): AggregatedScore[] {
 		const scores: AggregatedScore[] = [];
 
@@ -209,28 +226,41 @@ export class ScoreAggregator {
 
 	private aggregateJudge(
 		results: EvaluationResult[],
-		tournamentScores: Map<string, { wins: number; losses: number; ties: number; winRate: number; btScore: number }>,
-		modelId: string
+		tournamentScores: Map<
+			string,
+			{
+				wins: number;
+				losses: number;
+				ties: number;
+				winRate: number;
+				btScore: number;
+			}
+		>,
+		modelId: string,
 	): JudgeAggregation {
 		const judgeResults = results.filter(
-			(r) => r.evaluationType === "judge" && r.judgeResults
+			(r) => r.evaluationType === "judge" && r.judgeResults,
 		);
 
 		// Aggregate pointwise scores
-		const accuracyScores = judgeResults.map((r) => r.judgeResults!.scores.accuracy);
+		const accuracyScores = judgeResults.map(
+			(r) => r.judgeResults!.scores.accuracy,
+		);
 		const completenessScores = judgeResults.map(
-			(r) => r.judgeResults!.scores.completeness
+			(r) => r.judgeResults!.scores.completeness,
 		);
 		const semanticRichnessScores = judgeResults.map(
-			(r) => r.judgeResults!.scores.semanticRichness
+			(r) => r.judgeResults!.scores.semanticRichness,
 		);
 		const abstractionScores = judgeResults.map(
-			(r) => r.judgeResults!.scores.abstraction
+			(r) => r.judgeResults!.scores.abstraction,
 		);
 		const concisenessScores = judgeResults.map(
-			(r) => r.judgeResults!.scores.conciseness
+			(r) => r.judgeResults!.scores.conciseness,
 		);
-		const overallScores = judgeResults.map((r) => r.judgeResults!.weightedAverage);
+		const overallScores = judgeResults.map(
+			(r) => r.judgeResults!.weightedAverage,
+		);
 
 		// Get pairwise score for this model (already calculated with all models)
 		const modelScore = tournamentScores.get(modelId) || {
@@ -254,35 +284,43 @@ export class ScoreAggregator {
 		};
 	}
 
-	private aggregateContrastive(results: EvaluationResult[]): ContrastiveAggregation {
+	private aggregateContrastive(
+		results: EvaluationResult[],
+	): ContrastiveAggregation {
 		const contrastiveResults = results.filter(
-			(r) => r.evaluationType === "contrastive" && r.contrastiveResults
+			(r) => r.evaluationType === "contrastive" && r.contrastiveResults,
 		);
 
 		const embeddingResults = contrastiveResults.filter(
-			(r) => r.contrastiveResults!.method === "embedding"
+			(r) => r.contrastiveResults!.method === "embedding",
 		);
 		const llmResults = contrastiveResults.filter(
-			(r) => r.contrastiveResults!.method === "llm"
+			(r) => r.contrastiveResults!.method === "llm",
 		);
 
 		const embeddingCorrect = embeddingResults.filter(
-			(r) => r.contrastiveResults!.correct
+			(r) => r.contrastiveResults!.correct,
 		).length;
 		const llmCorrect = llmResults.filter(
-			(r) => r.contrastiveResults!.correct
+			(r) => r.contrastiveResults!.correct,
 		).length;
 
 		const embeddingAccuracy =
-			embeddingResults.length > 0 ? embeddingCorrect / embeddingResults.length : 0;
+			embeddingResults.length > 0
+				? embeddingCorrect / embeddingResults.length
+				: 0;
 		const llmAccuracy =
 			llmResults.length > 0 ? llmCorrect / llmResults.length : 0;
 
 		// Calculate mean confidence gap for embedding results
 		// Higher gap = more distinguishing summaries = better quality
-		const avgConfidenceGap = embeddingResults.length > 0
-			? embeddingResults.reduce((sum, r) => sum + (r.contrastiveResults!.confidenceGap || 0), 0) / embeddingResults.length
-			: 0;
+		const avgConfidenceGap =
+			embeddingResults.length > 0
+				? embeddingResults.reduce(
+						(sum, r) => sum + (r.contrastiveResults!.confidenceGap || 0),
+						0,
+					) / embeddingResults.length
+				: 0;
 
 		// Score = accuracy * 0.6 + normalized confidence gap * 0.4
 		// This differentiates models even when all get 100% accuracy
@@ -309,7 +347,7 @@ export class ScoreAggregator {
 
 	private aggregateRetrieval(
 		results: EvaluationResult[],
-		kValues: number[]
+		kValues: number[],
 	): AggregatedRetrievalMetrics {
 		const retrievalResults = results
 			.filter((r) => r.evaluationType === "retrieval" && r.retrievalResults)
@@ -318,42 +356,48 @@ export class ScoreAggregator {
 		return aggregateRetrievalResults(retrievalResults, kValues);
 	}
 
-	private aggregateDownstream(results: EvaluationResult[]): DownstreamAggregation {
+	private aggregateDownstream(
+		results: EvaluationResult[],
+	): DownstreamAggregation {
 		const downstreamResults = results.filter(
-			(r) => r.evaluationType === "downstream" && r.downstreamResults
+			(r) => r.evaluationType === "downstream" && r.downstreamResults,
 		);
 
 		// Completion tasks
 		const completionResults = downstreamResults.filter(
-			(r) => r.downstreamResults!.taskType === "completion"
+			(r) => r.downstreamResults!.taskType === "completion",
 		);
 		const completionBleu =
 			completionResults.length > 0
-				? completionResults.reduce((sum, r) => sum + (r.downstreamResults!.bleuScore || 0), 0) /
-				  completionResults.length
+				? completionResults.reduce(
+						(sum, r) => sum + (r.downstreamResults!.bleuScore || 0),
+						0,
+					) / completionResults.length
 				: 0;
 		const completionExact =
 			completionResults.length > 0
 				? completionResults.filter((r) => r.downstreamResults!.success).length /
-				  completionResults.length
+					completionResults.length
 				: 0;
 
 		// Bug localization
 		const bugResults = downstreamResults.filter(
-			(r) => r.downstreamResults!.taskType === "bug_localization"
+			(r) => r.downstreamResults!.taskType === "bug_localization",
 		);
 		const bugAccuracy =
 			bugResults.length > 0
-				? bugResults.filter((r) => r.downstreamResults!.success).length / bugResults.length
+				? bugResults.filter((r) => r.downstreamResults!.success).length /
+					bugResults.length
 				: 0;
 
 		// Function selection
 		const funcResults = downstreamResults.filter(
-			(r) => r.downstreamResults!.taskType === "function_selection"
+			(r) => r.downstreamResults!.taskType === "function_selection",
 		);
 		const funcAccuracy =
 			funcResults.length > 0
-				? funcResults.filter((r) => r.downstreamResults!.success).length / funcResults.length
+				? funcResults.filter((r) => r.downstreamResults!.success).length /
+					funcResults.length
 				: 0;
 
 		// Overall downstream score
@@ -378,13 +422,15 @@ export class ScoreAggregator {
 		};
 	}
 
-	private calculateOverallScores(aggregations: Map<string, ModelAggregation>): void {
+	private calculateOverallScores(
+		aggregations: Map<string, ModelAggregation>,
+	): void {
 		const weights = this.scoringConfig.evalWeights;
 
 		// Use only core quality metrics: retrieval, contrastive, judge
 		// Operational metrics (iterative, self-eval, downstream) are reported separately
 		const retrievalWeight = weights.retrieval ?? 0.45;
-		const contrastiveWeight = weights.contrastive ?? 0.30;
+		const contrastiveWeight = weights.contrastive ?? 0.3;
 		const judgeWeight = weights.judge ?? 0.25;
 
 		// Normalize to ensure weights sum to 1.0
@@ -401,7 +447,8 @@ export class ScoreAggregator {
 			const judgeScore = agg.judge.pointwise.overall.mean / 5; // Normalize 1-5 to 0-1
 			const contrastiveScore = agg.contrastive.combined;
 			// Use win rate if available (cross-model competition), else fall back to MRR
-			const retrievalScore = agg.retrieval.winRate > 0 ? agg.retrieval.winRate : agg.retrieval.mrr;
+			const retrievalScore =
+				agg.retrieval.winRate > 0 ? agg.retrieval.winRate : agg.retrieval.mrr;
 
 			// Quality score = weighted combination of core metrics only
 			agg.overall.score =
@@ -414,13 +461,14 @@ export class ScoreAggregator {
 				agg.judge.pointwise.overall.count,
 				agg.contrastive.embedding.count + agg.contrastive.llm.count,
 			];
-			const avgSamples = sampleSizes.reduce((a, b) => a + b, 0) / sampleSizes.length;
+			const avgSamples =
+				sampleSizes.reduce((a, b) => a + b, 0) / sampleSizes.length;
 			agg.overall.confidence = Math.min(1, avgSamples / 100); // Cap at 100 samples
 		}
 
 		// Calculate rankings
 		const sorted = [...aggregations.entries()].sort(
-			(a, b) => b[1].overall.score - a[1].overall.score
+			(a, b) => b[1].overall.score - a[1].overall.score,
 		);
 
 		sorted.forEach(([modelId, _], index) => {
@@ -430,7 +478,9 @@ export class ScoreAggregator {
 
 	private calculateStats(values: number[]): CriterionStats {
 		// Filter out null/undefined/NaN values (can occur from failed evaluations)
-		const validValues = values.filter(v => v !== null && v !== undefined && !isNaN(v));
+		const validValues = values.filter(
+			(v) => v !== null && v !== undefined && !isNaN(v),
+		);
 
 		if (validValues.length === 0) {
 			return { mean: 0, median: 0, stdDev: 0, min: 0, max: 0, count: 0 };
@@ -440,11 +490,14 @@ export class ScoreAggregator {
 		const mean = validValues.reduce((a, b) => a + b, 0) / validValues.length;
 		const median =
 			validValues.length % 2 === 0
-				? (sorted[validValues.length / 2 - 1] + sorted[validValues.length / 2]) / 2
+				? (sorted[validValues.length / 2 - 1] +
+						sorted[validValues.length / 2]) /
+					2
 				: sorted[Math.floor(validValues.length / 2)];
 
 		const squaredDiffs = validValues.map((v) => Math.pow(v - mean, 2));
-		const variance = squaredDiffs.reduce((a, b) => a + b, 0) / validValues.length;
+		const variance =
+			squaredDiffs.reduce((a, b) => a + b, 0) / validValues.length;
 		const stdDev = Math.sqrt(variance);
 
 		return {
@@ -462,6 +515,8 @@ export class ScoreAggregator {
 // Factory Function
 // ============================================================================
 
-export function createScoreAggregator(config: BenchmarkConfig): ScoreAggregator {
+export function createScoreAggregator(
+	config: BenchmarkConfig,
+): ScoreAggregator {
 	return new ScoreAggregator(config);
 }

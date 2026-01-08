@@ -66,16 +66,19 @@ async function testModel(model: string): Promise<void> {
 
 	try {
 		const startTime = Date.now();
-		const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				"Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-				"HTTP-Referer": "https://github.com/claudemem",
-				"X-Title": "claudemem-test",
+		const response = await fetch(
+			"https://openrouter.ai/api/v1/chat/completions",
+			{
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+					"HTTP-Referer": "https://github.com/claudemem",
+					"X-Title": "claudemem-test",
+				},
+				body: JSON.stringify(body),
 			},
-			body: JSON.stringify(body),
-		});
+		);
 
 		const latency = Date.now() - startTime;
 
@@ -85,10 +88,12 @@ async function testModel(model: string): Promise<void> {
 		// Log all headers
 		console.log("\nResponse Headers:");
 		response.headers.forEach((value, key) => {
-			if (key.toLowerCase().includes("rate") ||
+			if (
+				key.toLowerCase().includes("rate") ||
 				key.toLowerCase().includes("limit") ||
 				key.toLowerCase().includes("retry") ||
-				key.toLowerCase().includes("x-")) {
+				key.toLowerCase().includes("x-")
+			) {
 				console.log(`  ${key}: ${value}`);
 			}
 		});
@@ -120,10 +125,14 @@ async function testModel(model: string): Promise<void> {
 			console.log(`\nChoice[0]:`);
 			console.log(`  finish_reason: ${choice.finish_reason}`);
 			console.log(`  message.role: ${choice.message?.role}`);
-			console.log(`  message.content length: ${choice.message?.content?.length || 0}`);
+			console.log(
+				`  message.content length: ${choice.message?.content?.length || 0}`,
+			);
 			console.log(`  message.content (first 500 chars):`);
 			const content = choice.message?.content || "(empty)";
-			console.log(`    "${content.slice(0, 500)}${content.length > 500 ? '...' : ''}"`);
+			console.log(
+				`    "${content.slice(0, 500)}${content.length > 500 ? "..." : ""}"`,
+			);
 
 			// Try to parse as JSON
 			if (content && content.trim()) {
@@ -135,7 +144,9 @@ async function testModel(model: string): Promise<void> {
 					console.log(`\nParsed JSON successfully:`);
 					console.log(JSON.stringify(parsed, null, 2));
 				} catch (e) {
-					console.log(`\nFailed to parse as JSON: ${e instanceof Error ? e.message : e}`);
+					console.log(
+						`\nFailed to parse as JSON: ${e instanceof Error ? e.message : e}`,
+					);
 				}
 			}
 		}
@@ -149,30 +160,35 @@ async function testModel(model: string): Promise<void> {
 
 		// Fetch generation stats for cost
 		if (data.id) {
-			await new Promise(r => setTimeout(r, 500)); // Wait for stats
+			await new Promise((r) => setTimeout(r, 500)); // Wait for stats
 			try {
 				const genResponse = await fetch(
 					`https://openrouter.ai/api/v1/generation?id=${data.id}`,
 					{
 						headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}` },
-					}
+					},
 				);
 				if (genResponse.ok) {
-					const genData = await genResponse.json() as any;
+					const genData = (await genResponse.json()) as any;
 					if (genData.data) {
 						console.log(`\nGeneration Stats:`);
-						console.log(`  total_cost: $${genData.data.total_cost?.toFixed(6) || 'N/A'}`);
+						console.log(
+							`  total_cost: $${genData.data.total_cost?.toFixed(6) || "N/A"}`,
+						);
 						console.log(`  tokens_prompt: ${genData.data.tokens_prompt}`);
-						console.log(`  tokens_completion: ${genData.data.tokens_completion}`);
+						console.log(
+							`  tokens_completion: ${genData.data.tokens_completion}`,
+						);
 					}
 				}
 			} catch {
 				// Ignore
 			}
 		}
-
 	} catch (error) {
-		console.log(`\nFetch Error: ${error instanceof Error ? error.message : error}`);
+		console.log(
+			`\nFetch Error: ${error instanceof Error ? error.message : error}`,
+		);
 	}
 }
 
@@ -209,24 +225,25 @@ Which summary is better? Respond with JSON:
 
 	const body = {
 		model,
-		messages: [
-			{ role: "user", content: PAIRWISE_PROMPT },
-		],
+		messages: [{ role: "user", content: PAIRWISE_PROMPT }],
 		max_tokens: 300,
 		temperature: 0.1,
 	};
 
 	try {
-		const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				"Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-				"HTTP-Referer": "https://github.com/claudemem",
-				"X-Title": "claudemem-test",
+		const response = await fetch(
+			"https://openrouter.ai/api/v1/chat/completions",
+			{
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+					"HTTP-Referer": "https://github.com/claudemem",
+					"X-Title": "claudemem-test",
+				},
+				body: JSON.stringify(body),
 			},
-			body: JSON.stringify(body),
-		});
+		);
 
 		console.log(`Status: ${response.status}`);
 
@@ -235,14 +252,13 @@ Which summary is better? Respond with JSON:
 			return;
 		}
 
-		const data = await response.json() as any;
+		const data = (await response.json()) as any;
 		const content = data.choices?.[0]?.message?.content || "(empty)";
 		const finishReason = data.choices?.[0]?.finish_reason;
 
 		console.log(`finish_reason: ${finishReason}`);
 		console.log(`content length: ${content.length}`);
 		console.log(`content: "${content}"`);
-
 	} catch (error) {
 		console.log(`Error: ${error instanceof Error ? error.message : error}`);
 	}
@@ -254,7 +270,7 @@ async function main() {
 
 	for (const model of MODELS_TO_TEST) {
 		await testModel(model);
-		await new Promise(r => setTimeout(r, 1000)); // Rate limit delay
+		await new Promise((r) => setTimeout(r, 1000)); // Rate limit delay
 	}
 
 	// Also test pairwise
@@ -264,7 +280,7 @@ async function main() {
 
 	for (const model of MODELS_TO_TEST) {
 		await runPairwiseTest(model);
-		await new Promise(r => setTimeout(r, 1000));
+		await new Promise((r) => setTimeout(r, 1000));
 	}
 
 	console.log("\n\nDone!");

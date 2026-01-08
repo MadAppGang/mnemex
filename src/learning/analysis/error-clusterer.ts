@@ -57,7 +57,12 @@ export interface ErrorCluster {
 	/** How often this error occurs */
 	frequency: number;
 	/** Suggested fix category */
-	suggestedCategory: "validation" | "logic" | "permission" | "timeout" | "unknown";
+	suggestedCategory:
+		| "validation"
+		| "logic"
+		| "permission"
+		| "timeout"
+		| "unknown";
 }
 
 export interface ClusteringResult {
@@ -99,12 +104,15 @@ export class ErrorClusterer {
 
 		// Calculate noise (unclustered errors)
 		const clusteredIds = new Set(
-			clusters.flatMap((c) => c.members.map((m) => m.toolUseId))
+			clusters.flatMap((c) => c.members.map((m) => m.toolUseId)),
 		);
 		const noise = errorInstances.filter((e) => !clusteredIds.has(e.toolUseId));
 
 		// Calculate clustering quality
-		const clusteringQuality = this.calculateQuality(clusters, errorInstances.length);
+		const clusteringQuality = this.calculateQuality(
+			clusters,
+			errorInstances.length,
+		);
 
 		return {
 			clusters,
@@ -128,7 +136,7 @@ export class ErrorClusterer {
 	 */
 	getClustersByType(
 		result: ClusteringResult,
-		errorType: string
+		errorType: string,
 	): ErrorCluster[] {
 		return result.clusters.filter((c) => c.errorType === errorType);
 	}
@@ -183,9 +191,11 @@ export class ErrorClusterer {
 	/**
 	 * Find the most similar pair of clusters.
 	 */
-	private findMostSimilarPair(
-		clusters: ErrorInstance[][]
-	): { i: number; j: number; similarity: number } {
+	private findMostSimilarPair(clusters: ErrorInstance[][]): {
+		i: number;
+		j: number;
+		similarity: number;
+	} {
 		let maxSimilarity = -1;
 		let bestI = 0;
 		let bestJ = 1;
@@ -209,7 +219,7 @@ export class ErrorClusterer {
 	 */
 	private clusterSimilarity(
 		cluster1: ErrorInstance[],
-		cluster2: ErrorInstance[]
+		cluster2: ErrorInstance[],
 	): number {
 		let totalSimilarity = 0;
 		let count = 0;
@@ -245,7 +255,10 @@ export class ErrorClusterer {
 
 		// Error message similarity
 		if (e1.errorMessage && e2.errorMessage) {
-			const messageSim = this.stringSimilarity(e1.errorMessage, e2.errorMessage);
+			const messageSim = this.stringSimilarity(
+				e1.errorMessage,
+				e2.errorMessage,
+			);
 			score += messageSim * 0.3;
 		}
 		weights += 0.3;
@@ -284,22 +297,26 @@ export class ErrorClusterer {
 				.toLowerCase()
 				.replace(/[^\w\s]/g, " ")
 				.split(/\s+/)
-				.filter((t) => t.length > 2)
+				.filter((t) => t.length > 2),
 		);
 	}
 
 	/**
 	 * Create an ErrorCluster from member instances.
 	 */
-	private createCluster(members: ErrorInstance[], totalErrors: number): ErrorCluster {
+	private createCluster(
+		members: ErrorInstance[],
+		totalErrors: number,
+	): ErrorCluster {
 		// Find most common error type
 		const typeCounts = new Map<string, number>();
 		for (const m of members) {
 			const type = m.errorType || "unknown";
 			typeCounts.set(type, (typeCounts.get(type) || 0) + 1);
 		}
-		const errorType = [...typeCounts.entries()]
-			.sort((a, b) => b[1] - a[1])[0]?.[0] || "unknown";
+		const errorType =
+			[...typeCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ||
+			"unknown";
 
 		// Find all tools involved
 		const tools = [...new Set(members.map((m) => m.toolName))];
@@ -368,7 +385,10 @@ export class ErrorClusterer {
 	/**
 	 * Calculate overall clustering quality.
 	 */
-	private calculateQuality(clusters: ErrorCluster[], totalErrors: number): number {
+	private calculateQuality(
+		clusters: ErrorCluster[],
+		totalErrors: number,
+	): number {
 		if (clusters.length === 0) return 1;
 
 		// Average cohesion weighted by cluster size
@@ -388,7 +408,7 @@ export class ErrorClusterer {
 	 */
 	private categorizeError(
 		errorType: string,
-		members: ErrorInstance[]
+		members: ErrorInstance[],
 	): "validation" | "logic" | "permission" | "timeout" | "unknown" {
 		// Check error type
 		if (errorType === "validation") return "validation";
@@ -401,16 +421,28 @@ export class ErrorClusterer {
 			.map((m) => m.errorMessage?.toLowerCase() || "")
 			.join(" ");
 
-		if (messages.includes("permission") || messages.includes("denied") || messages.includes("access")) {
+		if (
+			messages.includes("permission") ||
+			messages.includes("denied") ||
+			messages.includes("access")
+		) {
 			return "permission";
 		}
 		if (messages.includes("timeout") || messages.includes("timed out")) {
 			return "timeout";
 		}
-		if (messages.includes("invalid") || messages.includes("validation") || messages.includes("required")) {
+		if (
+			messages.includes("invalid") ||
+			messages.includes("validation") ||
+			messages.includes("required")
+		) {
 			return "validation";
 		}
-		if (messages.includes("error") || messages.includes("failed") || messages.includes("exception")) {
+		if (
+			messages.includes("error") ||
+			messages.includes("failed") ||
+			messages.includes("exception")
+		) {
 			return "logic";
 		}
 
@@ -426,7 +458,7 @@ export class ErrorClusterer {
  * Create an error clusterer with optional configuration.
  */
 export function createErrorClusterer(
-	config: Partial<ErrorClusterConfig> = {}
+	config: Partial<ErrorClusterConfig> = {},
 ): ErrorClusterer {
 	return new ErrorClusterer(config);
 }

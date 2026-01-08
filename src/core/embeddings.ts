@@ -17,10 +17,20 @@ import {
 	getVoyageApiKey,
 	loadGlobalConfig,
 } from "../config.js";
-import type { EmbeddingProgressCallback, EmbeddingProvider, EmbeddingResponse, EmbedResult, IEmbeddingsClient } from "../types.js";
+import type {
+	EmbeddingProgressCallback,
+	EmbeddingProvider,
+	EmbeddingResponse,
+	EmbedResult,
+	IEmbeddingsClient,
+} from "../types.js";
 
 /** Local embedding providers (no network API call to cloud) */
-const LOCAL_EMBEDDING_PROVIDERS: Set<EmbeddingProvider> = new Set(["ollama", "lmstudio", "local"]);
+const LOCAL_EMBEDDING_PROVIDERS: Set<EmbeddingProvider> = new Set([
+	"ollama",
+	"lmstudio",
+	"local",
+]);
 
 // ============================================================================
 // Constants
@@ -77,7 +87,7 @@ const MODEL_CONTEXT_LENGTHS: Record<string, number> = {
 	"snowflake-arctic-embed2": 8192,
 	"bge-m3": 8192,
 	"bge-large": 512,
-	"embeddinggemma": 2048,
+	embeddinggemma: 2048,
 };
 
 // ============================================================================
@@ -147,7 +157,10 @@ abstract class BaseEmbeddingsClient implements IEmbeddingsClient {
 		return LOCAL_EMBEDDING_PROVIDERS.has(this.provider);
 	}
 
-	abstract embed(texts: string[], onProgress?: EmbeddingProgressCallback): Promise<EmbedResult>;
+	abstract embed(
+		texts: string[],
+		onProgress?: EmbeddingProgressCallback,
+	): Promise<EmbedResult>;
 
 	async embedOne(text: string): Promise<number[]> {
 		const result = await this.embed([text]);
@@ -182,7 +195,10 @@ export class OpenRouterEmbeddingsClient extends BaseEmbeddingsClient {
 		this.apiKey = apiKey;
 	}
 
-	async embed(texts: string[], onProgress?: EmbeddingProgressCallback): Promise<EmbedResult> {
+	async embed(
+		texts: string[],
+		onProgress?: EmbeddingProgressCallback,
+	): Promise<EmbedResult> {
 		if (texts.length === 0) return { embeddings: [] };
 
 		// Split into batches
@@ -274,7 +290,10 @@ export class OpenRouterEmbeddingsClient extends BaseEmbeddingsClient {
 				lastError = error instanceof Error ? error : new Error(String(error));
 
 				// Don't retry on authentication errors
-				if (lastError.message.includes("401") || lastError.message.includes("403")) {
+				if (
+					lastError.message.includes("401") ||
+					lastError.message.includes("403")
+				) {
 					throw lastError;
 				}
 
@@ -309,7 +328,9 @@ export class OpenRouterEmbeddingsClient extends BaseEmbeddingsClient {
 
 			if (!response.ok) {
 				const errorText = await response.text();
-				throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+				throw new Error(
+					`OpenRouter API error: ${response.status} - ${errorText}`,
+				);
 			}
 
 			const data: OpenRouterEmbeddingResponse = await response.json();
@@ -340,15 +361,14 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 	private endpoint: string;
 
 	constructor(options: EmbeddingsClientOptions = {}) {
-		super(
-			options.model || DEFAULT_MODELS.ollama,
-			"ollama",
-			options.timeout,
-		);
+		super(options.model || DEFAULT_MODELS.ollama, "ollama", options.timeout);
 		this.endpoint = options.endpoint || DEFAULT_OLLAMA_ENDPOINT;
 	}
 
-	async embed(texts: string[], onProgress?: EmbeddingProgressCallback): Promise<EmbedResult> {
+	async embed(
+		texts: string[],
+		onProgress?: EmbeddingProgressCallback,
+	): Promise<EmbedResult> {
 		if (texts.length === 0) return { embeddings: [] };
 
 		// Ollama processes one text at a time
@@ -419,7 +439,9 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 
 					if (!response.ok) {
 						const errorText = await response.text();
-						throw new Error(`Ollama API error: ${response.status} - ${errorText}`);
+						throw new Error(
+							`Ollama API error: ${response.status} - ${errorText}`,
+						);
 					}
 
 					const data: OllamaEmbeddingResponse = await response.json();
@@ -457,21 +479,27 @@ export class LocalEmbeddingsClient extends BaseEmbeddingsClient {
 	// Smaller batch size for local models to show progress more frequently
 	private static readonly LOCAL_BATCH_SIZE = 10;
 
-	constructor(options: EmbeddingsClientOptions = {}, provider: "local" | "lmstudio" = "local") {
-		super(
-			options.model || DEFAULT_MODELS[provider],
-			provider,
-			options.timeout,
-		);
+	constructor(
+		options: EmbeddingsClientOptions = {},
+		provider: "local" | "lmstudio" = "local",
+	) {
+		super(options.model || DEFAULT_MODELS[provider], provider, options.timeout);
 		this.endpoint = options.endpoint || DEFAULT_LOCAL_ENDPOINT;
 	}
 
-	async embed(texts: string[], onProgress?: EmbeddingProgressCallback): Promise<EmbedResult> {
+	async embed(
+		texts: string[],
+		onProgress?: EmbeddingProgressCallback,
+	): Promise<EmbedResult> {
 		if (texts.length === 0) return { embeddings: [] };
 
 		// Split into batches for progress reporting
 		const batches: string[][] = [];
-		for (let i = 0; i < texts.length; i += LocalEmbeddingsClient.LOCAL_BATCH_SIZE) {
+		for (
+			let i = 0;
+			i < texts.length;
+			i += LocalEmbeddingsClient.LOCAL_BATCH_SIZE
+		) {
 			batches.push(texts.slice(i, i + LocalEmbeddingsClient.LOCAL_BATCH_SIZE));
 		}
 
@@ -524,7 +552,9 @@ export class LocalEmbeddingsClient extends BaseEmbeddingsClient {
 
 					if (!response.ok) {
 						const errorText = await response.text();
-						throw new Error(`Local API error: ${response.status} - ${errorText}`);
+						throw new Error(
+							`Local API error: ${response.status} - ${errorText}`,
+						);
 					}
 
 					const data: OpenRouterEmbeddingResponse = await response.json();
@@ -578,18 +608,14 @@ const VOYAGE_PRICING: Record<string, number> = {
 	"voyage-3-lite": 0.02,
 	// Older models
 	"voyage-large-2": 0.12,
-	"voyage-2": 0.10,
+	"voyage-2": 0.1,
 };
 
 export class VoyageEmbeddingsClient extends BaseEmbeddingsClient {
 	private apiKey: string;
 
 	constructor(options: EmbeddingsClientOptions = {}) {
-		super(
-			options.model || DEFAULT_MODELS.voyage,
-			"voyage",
-			options.timeout,
-		);
+		super(options.model || DEFAULT_MODELS.voyage, "voyage", options.timeout);
 
 		const apiKey = options.apiKey || getVoyageApiKey();
 		if (!apiKey) {
@@ -600,7 +626,10 @@ export class VoyageEmbeddingsClient extends BaseEmbeddingsClient {
 		this.apiKey = apiKey;
 	}
 
-	async embed(texts: string[], onProgress?: EmbeddingProgressCallback): Promise<EmbedResult> {
+	async embed(
+		texts: string[],
+		onProgress?: EmbeddingProgressCallback,
+	): Promise<EmbedResult> {
 		if (texts.length === 0) return { embeddings: [] };
 
 		// Voyage supports batching up to 128 texts, use smaller batches for progress
@@ -700,10 +729,12 @@ export class VoyageEmbeddingsClient extends BaseEmbeddingsClient {
 
 					if (!response.ok) {
 						const errorText = await response.text();
-						throw new Error(`Voyage API error: ${response.status} - ${errorText}`);
+						throw new Error(
+							`Voyage API error: ${response.status} - ${errorText}`,
+						);
 					}
 
-					const data = await response.json() as {
+					const data = (await response.json()) as {
 						data: Array<{ embedding: number[]; index: number }>;
 						usage?: { total_tokens: number };
 					};
@@ -726,7 +757,10 @@ export class VoyageEmbeddingsClient extends BaseEmbeddingsClient {
 				lastError = error instanceof Error ? error : new Error(String(error));
 
 				// Don't retry on authentication errors
-				if (lastError.message.includes("401") || lastError.message.includes("403")) {
+				if (
+					lastError.message.includes("401") ||
+					lastError.message.includes("403")
+				) {
 					throw lastError;
 				}
 
@@ -810,18 +844,27 @@ export function createEmbeddingsClient(
 
 		case "lmstudio":
 			// LM Studio uses OpenAI-compatible API
-			return new LocalEmbeddingsClient({
-				...options,
-				model,
-				endpoint: options?.endpoint || config.lmstudioEndpoint || "http://localhost:1234/v1",
-			}, "lmstudio");
+			return new LocalEmbeddingsClient(
+				{
+					...options,
+					model,
+					endpoint:
+						options?.endpoint ||
+						config.lmstudioEndpoint ||
+						"http://localhost:1234/v1",
+				},
+				"lmstudio",
+			);
 
 		case "local":
-			return new LocalEmbeddingsClient({
-				...options,
-				model,
-				endpoint: options?.endpoint || config.localEndpoint,
-			}, "local");
+			return new LocalEmbeddingsClient(
+				{
+					...options,
+					model,
+					endpoint: options?.endpoint || config.localEndpoint,
+				},
+				"local",
+			);
 
 		case "voyage":
 			return new VoyageEmbeddingsClient({ ...options, model });
@@ -887,7 +930,7 @@ export function getModelContextLength(modelId: string): number {
  */
 export function truncateForModel(texts: string[], modelId: string): string[] {
 	const maxTokens = getModelContextLength(modelId);
-	return texts.map(text => truncateToTokenLimit(text, maxTokens));
+	return texts.map((text) => truncateToTokenLimit(text, maxTokens));
 }
 
 /**

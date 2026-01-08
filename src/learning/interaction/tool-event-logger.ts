@@ -256,7 +256,11 @@ export class ToolEventLogger {
 			}
 
 			// Recursively sanitize nested objects
-			if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+			if (
+				typeof value === "object" &&
+				value !== null &&
+				!Array.isArray(value)
+			) {
 				sanitized[key] = this.sanitizeInput(value as Record<string, unknown>);
 			} else if (typeof value === "string") {
 				// Redact values that look like tokens/keys

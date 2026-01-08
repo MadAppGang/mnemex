@@ -39,6 +39,8 @@ const GRAMMAR_PACKAGES = [
 	// NEW: Config formats
 	{ pkg: "tree-sitter-json", wasm: ["tree-sitter-json.wasm"] },
 	{ pkg: "tree-sitter-yaml", wasm: ["tree-sitter-yaml.wasm"] },
+	// NEW: Dingo (pre-built WASM committed to repo)
+	{ pkg: "tree-sitter-dingo", wasm: ["tree-sitter-dingo.wasm"] },
 ];
 
 // Alternative: GitHub release URLs for pre-built WASM files

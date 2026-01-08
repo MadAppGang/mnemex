@@ -13,8 +13,14 @@ import type {
 	AggregatedScore,
 	PairwiseResult,
 } from "../types.js";
-import type { ModelAggregation, CriterionStats } from "../scorers/aggregator.js";
-import type { CorrelationMatrix, InterRaterAgreement } from "../scorers/statistics.js";
+import type {
+	ModelAggregation,
+	CriterionStats,
+} from "../scorers/aggregator.js";
+import type {
+	CorrelationMatrix,
+	InterRaterAgreement,
+} from "../scorers/statistics.js";
 
 // ============================================================================
 // Types
@@ -171,7 +177,12 @@ export class JSONReporter {
 			},
 		};
 
-		if (this.options.includeRawData && summaries && evaluationResults && pairwiseResults) {
+		if (
+			this.options.includeRawData &&
+			summaries &&
+			evaluationResults &&
+			pairwiseResults
+		) {
 			report.rawData = {
 				summaries,
 				evaluationResults,
@@ -219,7 +230,7 @@ export class JSONReporter {
 	private buildExecutiveSummary(
 		run: BenchmarkRun,
 		scores: AggregatedScore[],
-		aggregations: Map<string, ModelAggregation>
+		aggregations: Map<string, ModelAggregation>,
 	): ExecutiveSummary {
 		const topModel = scores.length > 0 ? scores[0] : null;
 
@@ -229,8 +240,12 @@ export class JSONReporter {
 			if (agg.judge.pointwise.overall.count > 0) {
 				if (!methodsUsed.includes("judge")) methodsUsed.push("judge");
 			}
-			if (agg.contrastive.embedding.count > 0 || agg.contrastive.llm.count > 0) {
-				if (!methodsUsed.includes("contrastive")) methodsUsed.push("contrastive");
+			if (
+				agg.contrastive.embedding.count > 0 ||
+				agg.contrastive.llm.count > 0
+			) {
+				if (!methodsUsed.includes("contrastive"))
+					methodsUsed.push("contrastive");
 			}
 			if (agg.retrieval.mrr > 0) {
 				if (!methodsUsed.includes("retrieval")) methodsUsed.push("retrieval");
@@ -279,7 +294,7 @@ export class JSONReporter {
 
 	private buildDetailedResults(
 		aggregations: Map<string, ModelAggregation>,
-		scores: AggregatedScore[]
+		scores: AggregatedScore[],
 	): DetailedModelResults[] {
 		const results: DetailedModelResults[] = [];
 
@@ -317,7 +332,7 @@ export class JSONReporter {
 // ============================================================================
 
 export function createJSONReporter(
-	options?: JSONReporterOptions
+	options?: JSONReporterOptions,
 ): JSONReporter {
 	return new JSONReporter(options);
 }

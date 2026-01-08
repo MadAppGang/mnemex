@@ -566,7 +566,9 @@ export type SupportedLanguage =
 	| "markdown"
 	| "rst"
 	| "asciidoc"
-	| "org";
+	| "org"
+	// NEW: Dingo (Go superset)
+	| "dingo";
 
 export interface LanguageConfig {
 	/** Language identifier */

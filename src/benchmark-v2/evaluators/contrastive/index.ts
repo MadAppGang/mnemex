@@ -10,7 +10,11 @@
  */
 
 import { randomUUID } from "crypto";
-import type { ILLMClient, IEmbeddingsClient, LLMMessage } from "../../../types.js";
+import type {
+	ILLMClient,
+	IEmbeddingsClient,
+	LLMMessage,
+} from "../../../types.js";
 import type {
 	BenchmarkCodeUnit,
 	GeneratedSummary,
@@ -21,7 +25,10 @@ import type {
 	EvaluatorContext,
 } from "../../types.js";
 import { BaseEvaluator } from "../base.js";
-import { ContrastiveError, InsufficientDistractorsError } from "../../errors.js";
+import {
+	ContrastiveError,
+	InsufficientDistractorsError,
+} from "../../errors.js";
 import type { PhaseContext, PhaseResult } from "../../pipeline/orchestrator.js";
 
 // ============================================================================
@@ -58,7 +65,7 @@ export function selectDistractors(
 	target: BenchmarkCodeUnit,
 	allUnits: BenchmarkCodeUnit[],
 	count: number = 9,
-	embeddings?: Map<string, number[]>
+	embeddings?: Map<string, number[]>,
 ): DistractorSet {
 	const distractors: BenchmarkCodeUnit[] = [];
 
@@ -67,17 +74,21 @@ export function selectDistractors(
 		(u) =>
 			u.id !== target.id &&
 			u.language === target.language &&
-			u.type === target.type
+			u.type === target.type,
 	);
 
 	if (candidates.length < count) {
 		// Relax type constraint if not enough candidates
 		const relaxedCandidates = allUnits.filter(
-			(u) => u.id !== target.id && u.language === target.language
+			(u) => u.id !== target.id && u.language === target.language,
 		);
 
 		if (relaxedCandidates.length < count) {
-			throw new InsufficientDistractorsError(target.id, count, relaxedCandidates.length);
+			throw new InsufficientDistractorsError(
+				target.id,
+				count,
+				relaxedCandidates.length,
+			);
 		}
 
 		// Use relaxed candidates
@@ -93,10 +104,13 @@ export function selectDistractors(
 				(c) =>
 					c.metadata.signature &&
 					!distractors.some((d) => d.id === c.id) &&
-					signatureSimilarity(c.metadata.signature, target.metadata.signature!) > 0.7
+					signatureSimilarity(
+						c.metadata.signature,
+						target.metadata.signature!,
+					) > 0.7,
 			);
 			distractors.push(
-				...shuffleAndTake(similarSig, Math.min(3, count - distractors.length))
+				...shuffleAndTake(similarSig, Math.min(3, count - distractors.length)),
 			);
 		}
 
@@ -120,7 +134,9 @@ export function selectDistractors(
 
 				// Prioritize MOST similar items - these are the hardest distractors
 				distractors.push(
-					...similarities.slice(0, count - distractors.length).map((s) => s.unit)
+					...similarities
+						.slice(0, count - distractors.length)
+						.map((s) => s.unit),
 				);
 			}
 		}
@@ -128,9 +144,11 @@ export function selectDistractors(
 		// TIER 4: Random padding if needed
 		if (distractors.length < count) {
 			const remaining = candidates.filter(
-				(c) => !distractors.some((d) => d.id === c.id)
+				(c) => !distractors.some((d) => d.id === c.id),
 			);
-			distractors.push(...shuffleAndTake(remaining, count - distractors.length));
+			distractors.push(
+				...shuffleAndTake(remaining, count - distractors.length),
+			);
 		}
 	}
 
@@ -156,7 +174,10 @@ function signatureSimilarity(sig1: string, sig2: string): number {
 
 	if (params1.length === 0 && params2.length === 0) return 1;
 
-	const countSim = 1 - Math.abs(params1.length - params2.length) / Math.max(params1.length, params2.length, 1);
+	const countSim =
+		1 -
+		Math.abs(params1.length - params2.length) /
+			Math.max(params1.length, params2.length, 1);
 
 	// Check for common parameter names
 	const common = params1.filter((p) => params2.includes(p)).length;
@@ -175,7 +196,10 @@ function extractParamNames(signature: string): string[] {
 		.filter((p) => p.length > 0);
 }
 
-function cosineSimilarity(a: number[] | undefined, b: number[] | undefined): number | null {
+function cosineSimilarity(
+	a: number[] | undefined,
+	b: number[] | undefined,
+): number | null {
 	if (!a || !b || a.length !== b.length) return null;
 
 	let dot = 0;
@@ -194,10 +218,12 @@ function cosineSimilarity(a: number[] | undefined, b: number[] | undefined): num
 
 function calculateDifficulty(
 	distractors: BenchmarkCodeUnit[],
-	target: BenchmarkCodeUnit
+	target: BenchmarkCodeUnit,
 ): DistractorDifficulty {
 	// More same-file distractors = harder
-	const sameFileCount = distractors.filter((d) => d.path === target.path).length;
+	const sameFileCount = distractors.filter(
+		(d) => d.path === target.path,
+	).length;
 
 	if (sameFileCount >= 3) return "hard";
 	if (sameFileCount >= 1) return "medium";
@@ -219,10 +245,10 @@ export class EmbeddingContrastiveEvaluator extends BaseEvaluator<EvaluationResul
 	async evaluate(
 		summary: GeneratedSummary,
 		codeUnit: BenchmarkCodeUnit,
-		context: EvaluatorContext
+		context: EvaluatorContext,
 	): Promise<EvaluationResult> {
 		const distractorSet = context.distractors?.find(
-			(d) => d.targetCodeUnitId === codeUnit.id
+			(d) => d.targetCodeUnitId === codeUnit.id,
 		);
 
 		if (!distractorSet) {
@@ -300,14 +326,14 @@ export class LLMContrastiveEvaluator extends BaseEvaluator<EvaluationResult> {
 	async evaluate(
 		summary: GeneratedSummary,
 		codeUnit: BenchmarkCodeUnit,
-		context: EvaluatorContext
+		context: EvaluatorContext,
 	): Promise<EvaluationResult> {
 		if (!this.llmClient) {
 			throw new ContrastiveError("No LLM client provided");
 		}
 
 		const distractorSet = context.distractors?.find(
-			(d) => d.targetCodeUnitId === codeUnit.id
+			(d) => d.targetCodeUnitId === codeUnit.id,
 		);
 
 		if (!distractorSet) {
@@ -323,20 +349,20 @@ export class LLMContrastiveEvaluator extends BaseEvaluator<EvaluationResult> {
 
 		// Randomize order of candidates
 		const candidates = [codeUnit, ...distractorUnits].sort(
-			() => Math.random() - 0.5
+			() => Math.random() - 0.5,
 		);
-		const targetPosition = candidates.findIndex((c) => c.id === codeUnit.id) + 1;
+		const targetPosition =
+			candidates.findIndex((c) => c.id === codeUnit.id) + 1;
 
 		// Build code options string
 		const codeOptions = candidates
 			.map(
 				(c, idx) =>
-					`### Option ${idx + 1}\n\`\`\`${c.language}\n${this.truncateCode(c.content, 1500)}\n\`\`\``
+					`### Option ${idx + 1}\n\`\`\`${c.language}\n${this.truncateCode(c.content, 1500)}\n\`\`\``,
 			)
 			.join("\n\n");
 
-		const prompt = CONTRASTIVE_LLM_PROMPT
-			.replace("{summary}", summary.summary)
+		const prompt = CONTRASTIVE_LLM_PROMPT.replace("{summary}", summary.summary)
 			.replace("{code_options}", codeOptions)
 			.replace(/{n}/g, String(candidates.length));
 
@@ -349,7 +375,7 @@ export class LLMContrastiveEvaluator extends BaseEvaluator<EvaluationResult> {
 			});
 
 			const parsed = this.parseJSONResponse<ContrastiveLLMResponse>(
-				response.content
+				response.content,
 			);
 
 			const correct = parsed.selected === targetPosition;
@@ -373,7 +399,7 @@ export class LLMContrastiveEvaluator extends BaseEvaluator<EvaluationResult> {
 			throw new ContrastiveError(
 				error instanceof Error ? error.message : String(error),
 				{ summaryId: summary.id, codeUnitId: codeUnit.id },
-				error instanceof Error ? error : undefined
+				error instanceof Error ? error : undefined,
 			);
 		}
 	}
@@ -388,13 +414,13 @@ export class LLMContrastiveEvaluator extends BaseEvaluator<EvaluationResult> {
 // ============================================================================
 
 export function createEmbeddingContrastiveEvaluator(
-	embeddingsClient: IEmbeddingsClient
+	embeddingsClient: IEmbeddingsClient,
 ): EmbeddingContrastiveEvaluator {
 	return new EmbeddingContrastiveEvaluator(embeddingsClient);
 }
 
 export function createLLMContrastiveEvaluator(
-	llmClient: ILLMClient
+	llmClient: ILLMClient,
 ): LLMContrastiveEvaluator {
 	return new LLMContrastiveEvaluator(llmClient);
 }
@@ -408,14 +434,18 @@ export function createLLMContrastiveEvaluator(
  */
 export function createContrastivePhaseExecutor(
 	llmClient?: ILLMClient,
-	embeddingsClient?: IEmbeddingsClient
+	embeddingsClient?: IEmbeddingsClient,
 ): (context: PhaseContext) => Promise<PhaseResult> {
 	return async (context: PhaseContext): Promise<PhaseResult> => {
 		const { db, run, config, stateMachine } = context;
 		const evalConfig = config.evaluation.contrastive;
 
 		if (!evalConfig.enabled) {
-			return { success: true, itemsProcessed: 0, skipReason: "disabled in config" };
+			return {
+				success: true,
+				itemsProcessed: 0,
+				skipReason: "disabled in config",
+			};
 		}
 
 		try {
@@ -445,21 +475,31 @@ export function createContrastivePhaseExecutor(
 			}
 
 			if (methods.length === 0) {
-				return { success: true, itemsProcessed: 0, skipReason: "no evaluation clients available" };
+				return {
+					success: true,
+					itemsProcessed: 0,
+					skipReason: "no evaluation clients available",
+				};
 			}
 
 			// Adaptive distractor count based on largest same-language group
 			// Distractors must be same language, so we need enough units per language
 			const languageCounts = new Map<string, number>();
 			for (const unit of codeUnits) {
-				languageCounts.set(unit.language, (languageCounts.get(unit.language) || 0) + 1);
+				languageCounts.set(
+					unit.language,
+					(languageCounts.get(unit.language) || 0) + 1,
+				);
 			}
 			const maxLanguageCount = Math.max(...languageCounts.values());
 
 			// Max possible distractors = largest language group - 1 (excluding target)
 			const maxPossibleDistractors = maxLanguageCount - 1;
 			const minDistractors = 4;
-			let actualDistractorCount = Math.min(evalConfig.distractorCount, maxPossibleDistractors);
+			let actualDistractorCount = Math.min(
+				evalConfig.distractorCount,
+				maxPossibleDistractors,
+			);
 
 			if (actualDistractorCount < minDistractors) {
 				const langInfo = Array.from(languageCounts.entries())
@@ -468,7 +508,7 @@ export function createContrastivePhaseExecutor(
 				return {
 					success: true,
 					itemsProcessed: 0,
-					skipReason: `largest language group has ${maxLanguageCount} units, need ${minDistractors + 1}+ (${langInfo})`
+					skipReason: `largest language group has ${maxLanguageCount} units, need ${minDistractors + 1}+ (${langInfo})`,
 				};
 			}
 
@@ -483,12 +523,12 @@ export function createContrastivePhaseExecutor(
 						"evaluation:contrastive",
 						0,
 						undefined,
-						`Embedding ${codeUnits.length} code units for semantic distractors...`
+						`Embedding ${codeUnits.length} code units for semantic distractors...`,
 					);
 
 					// Embed in batches for progress visibility
 					const BATCH_SIZE = 50;
-					const codeTexts = codeUnits.map(u => u.content);
+					const codeTexts = codeUnits.map((u) => u.content);
 					const allEmbeddings: number[][] = [];
 
 					for (let i = 0; i < codeTexts.length; i += BATCH_SIZE) {
@@ -499,7 +539,7 @@ export function createContrastivePhaseExecutor(
 							"evaluation:contrastive",
 							0,
 							undefined,
-							`Embedding code ${batchEnd}/${codeUnits.length}...`
+							`Embedding code ${batchEnd}/${codeUnits.length}...`,
 						);
 						const result = await embeddingsClient.embed(batchTexts);
 						allEmbeddings.push(...result.embeddings);
@@ -514,7 +554,7 @@ export function createContrastivePhaseExecutor(
 						"evaluation:contrastive",
 						0,
 						undefined,
-						"Generating distractor sets..."
+						"Generating distractor sets...",
 					);
 				} catch (error) {
 					// Fall back to non-semantic distractor selection (silent)
@@ -529,7 +569,7 @@ export function createContrastivePhaseExecutor(
 						codeUnit,
 						codeUnits,
 						actualDistractorCount,
-						codeEmbeddings  // Pass embeddings for TIER 3 selection
+						codeEmbeddings, // Pass embeddings for TIER 3 selection
 					);
 					distractorSets.push(set);
 				} catch (error) {
@@ -546,15 +586,19 @@ export function createContrastivePhaseExecutor(
 				return {
 					success: true,
 					itemsProcessed: 0,
-					skipReason: `no language has ${actualDistractorCount + 1}+ code units (${langInfo})`
+					skipReason: `no language has ${actualDistractorCount + 1}+ code units (${langInfo})`,
 				};
 			}
 
 			// Get code unit IDs that have valid distractor sets
-			const validCodeUnitIds = new Set(distractorSets.map(ds => ds.targetCodeUnitId));
+			const validCodeUnitIds = new Set(
+				distractorSets.map((ds) => ds.targetCodeUnitId),
+			);
 
 			// Filter summaries to only those with valid distractor sets
-			const validSummaries = summaries.filter(s => validCodeUnitIds.has(s.codeUnitId));
+			const validSummaries = summaries.filter((s) =>
+				validCodeUnitIds.has(s.codeUnitId),
+			);
 
 			// Only start phase after we know we have work to do
 			const totalItems = validSummaries.length * methods.length;
@@ -567,28 +611,37 @@ export function createContrastivePhaseExecutor(
 			const REQUEST_TIMEOUT_MS = 60_000; // 60 second timeout per request
 
 			// Timeout wrapper
-			const withTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+			const withTimeout = <T>(
+				promise: Promise<T>,
+				timeoutMs: number,
+			): Promise<T> => {
 				return Promise.race([
 					promise,
 					new Promise<T>((_, reject) =>
-						setTimeout(() => reject(new Error(`Request timeout after ${timeoutMs}ms`)), timeoutMs)
+						setTimeout(
+							() => reject(new Error(`Request timeout after ${timeoutMs}ms`)),
+							timeoutMs,
+						),
 					),
 				]);
 			};
 
 			// Build code unit map for faster lookups
-			const codeUnitMap = new Map(codeUnits.map(u => [u.id, u]));
+			const codeUnitMap = new Map(codeUnits.map((u) => [u.id, u]));
 
 			// Run methods in parallel
 			const methodPromises = methods.map(async (method) => {
-				const evaluator = method === "embedding"
-					? createEmbeddingContrastiveEvaluator(embeddingsClient!)
-					: createLLMContrastiveEvaluator(llmClient!);
+				const evaluator =
+					method === "embedding"
+						? createEmbeddingContrastiveEvaluator(embeddingsClient!)
+						: createLLMContrastiveEvaluator(llmClient!);
 
 				let methodCompleted = 0;
 				const inProgress = new Set<string>();
 
-				const processSummary = async (summary: typeof validSummaries[0]): Promise<void> => {
+				const processSummary = async (
+					summary: (typeof validSummaries)[0],
+				): Promise<void> => {
 					const codeUnit = codeUnitMap.get(summary.codeUnitId);
 					if (!codeUnit) return;
 
@@ -607,7 +660,7 @@ export function createContrastivePhaseExecutor(
 								allCodeUnits: codeUnits,
 								distractors: distractorSets,
 							}),
-							REQUEST_TIMEOUT_MS
+							REQUEST_TIMEOUT_MS,
 						);
 						db.insertEvaluationResult(run.id, result);
 					} catch (error) {
@@ -621,7 +674,7 @@ export function createContrastivePhaseExecutor(
 						"evaluation:contrastive",
 						methodCompleted,
 						summary.id,
-						`${method}: ${methodCompleted}/${validSummaries.length}/${inProgress.size}`
+						`${method}: ${methodCompleted}/${validSummaries.length}/${inProgress.size}`,
 					);
 				};
 
@@ -630,7 +683,7 @@ export function createContrastivePhaseExecutor(
 					"evaluation:contrastive",
 					0,
 					undefined,
-					`${method}: 0/${validSummaries.length}/0`
+					`${method}: 0/${validSummaries.length}/0`,
 				);
 
 				// Process in concurrent batches with allSettled (don't block on failures)

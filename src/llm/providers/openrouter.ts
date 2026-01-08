@@ -20,7 +20,11 @@
 
 import { BaseLLMClient, DEFAULT_LLM_MODELS } from "../client.js";
 import { combineAbortSignals } from "../abort.js";
-import type { LLMGenerateOptions, LLMMessage, LLMResponse } from "../../types.js";
+import type {
+	LLMGenerateOptions,
+	LLMMessage,
+	LLMResponse,
+} from "../../types.js";
 
 // ============================================================================
 // Types
@@ -104,8 +108,8 @@ export class MaxTokensError extends Error {
 			hasContent
 				? `Response truncated for ${model} (hit max_tokens=${requestedTokens}). Consider increasing max_tokens.`
 				: `${model} exhausted max_tokens=${requestedTokens} without producing output. ` +
-				  `This often happens with thinking models that use tokens for reasoning. ` +
-				  `Try increasing max_tokens significantly (e.g., 8192+).`
+						`This often happens with thinking models that use tokens for reasoning. ` +
+						`Try increasing max_tokens significantly (e.g., 8192+).`,
 		);
 		this.name = "MaxTokensError";
 		this.model = model;
@@ -121,7 +125,7 @@ export class ContentFilterError extends Error {
 	constructor(model: string, finishReason: string) {
 		super(
 			`Empty response from ${model} (finish_reason: ${finishReason}). ` +
-			`Content was likely filtered by the model provider.`
+				`Content was likely filtered by the model provider.`,
 		);
 		this.name = "ContentFilterError";
 		this.model = model;
@@ -137,8 +141,12 @@ export class RateLimitError extends Error {
 	constructor(retryAfterMs?: number, isFreeTier?: boolean) {
 		super(
 			`OpenRouter rate limit exceeded` +
-			(isFreeTier ? ` (free tier - consider adding credits for higher limits)` : "") +
-			(retryAfterMs ? `. Retry after ${Math.ceil(retryAfterMs / 1000)}s` : "")
+				(isFreeTier
+					? ` (free tier - consider adding credits for higher limits)`
+					: "") +
+				(retryAfterMs
+					? `. Retry after ${Math.ceil(retryAfterMs / 1000)}s`
+					: ""),
 		);
 		this.name = "RateLimitError";
 		this.retryAfterMs = retryAfterMs;
@@ -169,21 +177,29 @@ const CONTENT_FILTER_MAX_RETRIES = 2; // Only retry twice - if it's consistent, 
 // Fallback patterns for when API metadata is unavailable
 const THINKING_MODEL_FALLBACK_PATTERNS = [
 	// Explicit thinking/reasoning models
-	"thinking", "think", "reason",
+	"thinking",
+	"think",
+	"reason",
 	// Known reasoning models
-	"kimi", "o1-", "o3-", "deepseek-r1", "qwq",
+	"kimi",
+	"o1-",
+	"o3-",
+	"deepseek-r1",
+	"qwq",
 	// Models from error logs that use reasoning tokens
-	"nemotron", "trinity", "olmo",
+	"nemotron",
+	"trinity",
+	"olmo",
 	// Super/large variants that often do extended reasoning
-	"super", "ultra",
+	"super",
+	"ultra",
 	// Other models known to use reasoning tokens
-	"reflection", "cot",  // chain-of-thought
+	"reflection",
+	"cot", // chain-of-thought
 ];
 
 // Known instruct types that indicate reasoning models
-const REASONING_INSTRUCT_TYPES = [
-	"deepseek-r1",
-];
+const REASONING_INSTRUCT_TYPES = ["deepseek-r1"];
 
 // Thinking models need significantly more tokens - they use tokens for internal reasoning
 // before producing visible output. 8192 was not enough for trinity-mini and nemotron-super.
@@ -198,20 +214,23 @@ const MODEL_METADATA_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // Cache for 24 hours
 
 export class OpenRouterLLMClient extends BaseLLMClient {
 	private apiKey: string;
-	private cachedKeyInfo?: { data: OpenRouterKeyInfo["data"]; fetchedAt: number };
+	private cachedKeyInfo?: {
+		data: OpenRouterKeyInfo["data"];
+		fetchedAt: number;
+	};
 	private static readonly KEY_CACHE_TTL_MS = 60_000; // Cache key info for 1 minute
 
 	constructor(options: OpenRouterOptions = {}) {
 		super(
 			"openrouter",
 			options.model || DEFAULT_LLM_MODELS.openrouter,
-			options.timeout || 120000
+			options.timeout || 120000,
 		);
 
 		const apiKey = options.apiKey || process.env.OPENROUTER_API_KEY;
 		if (!apiKey) {
 			throw new Error(
-				"OpenRouter API key required. Set OPENROUTER_API_KEY environment variable or pass apiKey option."
+				"OpenRouter API key required. Set OPENROUTER_API_KEY environment variable or pass apiKey option.",
 			);
 		}
 		this.apiKey = apiKey;
@@ -223,7 +242,10 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 	 */
 	private async fetchModelMetadata(): Promise<void> {
 		// Check if cache is still valid
-		if (cachedModelMetadata && Date.now() - modelMetadataLastFetch < MODEL_METADATA_CACHE_TTL_MS) {
+		if (
+			cachedModelMetadata &&
+			Date.now() - modelMetadataLastFetch < MODEL_METADATA_CACHE_TTL_MS
+		) {
 			return;
 		}
 
@@ -236,14 +258,18 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 			try {
 				const response = await fetch(OPENROUTER_MODELS_URL);
 				if (response.ok) {
-					const data = await response.json() as { data: OpenRouterModelInfo[] };
+					const data = (await response.json()) as {
+						data: OpenRouterModelInfo[];
+					};
 					cachedModelMetadata = new Map();
 					for (const model of data.data) {
 						cachedModelMetadata.set(model.id, model);
 					}
 					modelMetadataLastFetch = Date.now();
 					if (process.env.DEBUG_OPENROUTER) {
-						console.log(`[OpenRouter] Cached metadata for ${cachedModelMetadata.size} models`);
+						console.log(
+							`[OpenRouter] Cached metadata for ${cachedModelMetadata.size} models`,
+						);
 					}
 				}
 			} catch (error) {
@@ -277,15 +303,21 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 			const modelInfo = cachedModelMetadata.get(normalizedId);
 			if (modelInfo) {
 				// Method 1: Check supported_parameters for reasoning
-				if (modelInfo.supported_parameters?.some(p =>
-					p === "reasoning" || p === "include_reasoning"
-				)) {
+				if (
+					modelInfo.supported_parameters?.some(
+						(p) => p === "reasoning" || p === "include_reasoning",
+					)
+				) {
 					return true;
 				}
 
 				// Method 2: Check instruct_type for known reasoning architectures
-				if (modelInfo.architecture?.instruct_type &&
-					REASONING_INSTRUCT_TYPES.includes(modelInfo.architecture.instruct_type)) {
+				if (
+					modelInfo.architecture?.instruct_type &&
+					REASONING_INSTRUCT_TYPES.includes(
+						modelInfo.architecture.instruct_type,
+					)
+				) {
 					return true;
 				}
 
@@ -313,7 +345,10 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 	 * For thinking models, enforces a minimum even if a lower value is requested,
 	 * because thinking models use tokens for internal reasoning before producing output.
 	 */
-	private getMaxTokensForModel(modelId: string, requestedTokens?: number): number {
+	private getMaxTokensForModel(
+		modelId: string,
+		requestedTokens?: number,
+	): number {
 		if (this.isThinkingModel(modelId)) {
 			// Enforce minimum for thinking models - they need tokens for reasoning
 			const minTokens = THINKING_MODEL_MIN_TOKENS;
@@ -321,7 +356,7 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 				if (process.env.DEBUG_OPENROUTER && requestedTokens) {
 					console.log(
 						`[OpenRouter] Bumping max_tokens from ${requestedTokens} to ${minTokens} ` +
-						`for thinking model ${modelId}`
+							`for thinking model ${modelId}`,
 					);
 				}
 				return minTokens;
@@ -343,7 +378,8 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 		// Return cached info if still valid
 		if (
 			this.cachedKeyInfo &&
-			Date.now() - this.cachedKeyInfo.fetchedAt < OpenRouterLLMClient.KEY_CACHE_TTL_MS
+			Date.now() - this.cachedKeyInfo.fetchedAt <
+				OpenRouterLLMClient.KEY_CACHE_TTL_MS
 		) {
 			return {
 				limitRemaining: this.cachedKeyInfo.data.limit_remaining,
@@ -375,7 +411,7 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 
 	async complete(
 		messages: LLMMessage[],
-		options?: LLMGenerateOptions
+		options?: LLMGenerateOptions,
 	): Promise<LLMResponse> {
 		const modelId = options?.model || this.model;
 
@@ -384,7 +420,10 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 
 		return this.withRateLimitRetry(async () => {
 			// Convert messages to OpenRouter format
-			const openRouterMessages = this.convertMessages(messages, options?.systemPrompt);
+			const openRouterMessages = this.convertMessages(
+				messages,
+				options?.systemPrompt,
+			);
 
 			// Determine max_tokens - use higher value for thinking models
 			const maxTokens = this.getMaxTokensForModel(modelId, options?.maxTokens);
@@ -394,13 +433,18 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 				model: modelId,
 				messages: openRouterMessages,
 				max_tokens: maxTokens,
-				...(options?.temperature !== undefined && { temperature: options.temperature }),
+				...(options?.temperature !== undefined && {
+					temperature: options.temperature,
+				}),
 			};
 
 			// Make API request
 			const controller = new AbortController();
 			const timeoutId = setTimeout(() => controller.abort(), this.timeout);
-			const signal = combineAbortSignals(controller.signal, options?.abortSignal);
+			const signal = combineAbortSignals(
+				controller.signal,
+				options?.abortSignal,
+			);
 
 			try {
 				const response = await fetch(OPENROUTER_API_URL, {
@@ -425,7 +469,9 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 					} else if (response.status === 429) {
 						// Parse retry-after header if available
 						const retryAfter = response.headers.get("retry-after");
-						const retryAfterMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : undefined;
+						const retryAfterMs = retryAfter
+							? parseInt(retryAfter, 10) * 1000
+							: undefined;
 						// Check if we're on free tier for better error messaging
 						const keyInfo = await this.checkRateLimitStatus();
 						throw new RateLimitError(retryAfterMs, keyInfo.isFreeTier);
@@ -433,7 +479,9 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 						throw new Error("OpenRouter payment required - check your credits");
 					}
 
-					throw new Error(`OpenRouter API error (${response.status}): ${errorBody}`);
+					throw new Error(
+						`OpenRouter API error (${response.status}): ${errorBody}`,
+					);
 				}
 
 				const data = (await response.json()) as OpenRouterResponse;
@@ -461,7 +509,7 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 					// Log but also provide structured error info
 					console.warn(
 						`[OpenRouter] Response truncated for ${body.model} ` +
-						`(max_tokens=${maxTokens}). Output may be incomplete.`
+							`(max_tokens=${maxTokens}). Output may be incomplete.`,
 					);
 					// Note: We still return the partial content - caller can decide what to do
 				}
@@ -472,10 +520,13 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 				let inputTokens = data.usage?.prompt_tokens;
 				let outputTokens = data.usage?.completion_tokens;
 
-				const fetchGenerationStats = async (retries = 3, delayMs = 300): Promise<void> => {
+				const fetchGenerationStats = async (
+					retries = 3,
+					delayMs = 300,
+				): Promise<void> => {
 					for (let attempt = 0; attempt < retries; attempt++) {
 						if (attempt > 0) {
-							await new Promise(resolve => setTimeout(resolve, delayMs));
+							await new Promise((resolve) => setTimeout(resolve, delayMs));
 						}
 						try {
 							const genResponse = await fetch(
@@ -484,11 +535,12 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 									headers: {
 										Authorization: `Bearer ${this.apiKey}`,
 									},
-								}
+								},
 							);
 
 							if (genResponse.ok) {
-								const genData = (await genResponse.json()) as OpenRouterGenerationResponse;
+								const genData =
+									(await genResponse.json()) as OpenRouterGenerationResponse;
 								if (genData.data?.total_cost !== undefined) {
 									cost = genData.data.total_cost;
 									// Use native token counts from generation endpoint (more accurate)
@@ -512,19 +564,22 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 				return {
 					content,
 					model: data.model,
-					usage: inputTokens !== undefined && outputTokens !== undefined
-						? {
-								inputTokens,
-								outputTokens,
-								cost,
-							}
-						: undefined,
+					usage:
+						inputTokens !== undefined && outputTokens !== undefined
+							? {
+									inputTokens,
+									outputTokens,
+									cost,
+								}
+							: undefined,
 				};
 			} catch (error) {
 				clearTimeout(timeoutId);
 
 				if (error instanceof Error && error.name === "AbortError") {
-					throw new Error(`OpenRouter API request timed out after ${this.timeout}ms`);
+					throw new Error(
+						`OpenRouter API request timed out after ${this.timeout}ms`,
+					);
 				}
 				throw error;
 			}
@@ -536,7 +591,7 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 	 */
 	private convertMessages(
 		messages: LLMMessage[],
-		systemPrompt?: string
+		systemPrompt?: string,
 	): OpenRouterMessage[] {
 		const result: OpenRouterMessage[] = [];
 
@@ -611,7 +666,7 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 					if (process.env.DEBUG_OPENROUTER) {
 						console.log(
 							`[OpenRouter] Content filter retry ${contentFilterAttempts}/${CONTENT_FILTER_MAX_RETRIES} ` +
-							`after ${delay}ms: ${lastError.message.slice(0, 80)}`
+								`after ${delay}ms: ${lastError.message.slice(0, 80)}`,
 						);
 					}
 					await this.sleep(delay);
@@ -634,8 +689,8 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 					if (process.env.DEBUG_OPENROUTER) {
 						console.log(
 							`[OpenRouter] Retry ${attempt + 1}/${RATE_LIMIT_MAX_RETRIES} ` +
-							`after ${delay}ms (${isRateLimit ? "rate limit" : "error"}): ` +
-							`${lastError.message.slice(0, 80)}`
+								`after ${delay}ms (${isRateLimit ? "rate limit" : "error"}): ` +
+								`${lastError.message.slice(0, 80)}`,
 						);
 					}
 
@@ -651,7 +706,11 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 	 * Check rate limits before a batch operation.
 	 * Returns true if we should proceed, false if we should wait.
 	 */
-	async shouldThrottle(): Promise<{ throttle: boolean; waitMs?: number; reason?: string }> {
+	async shouldThrottle(): Promise<{
+		throttle: boolean;
+		waitMs?: number;
+		reason?: string;
+	}> {
 		try {
 			const status = await this.checkRateLimitStatus();
 

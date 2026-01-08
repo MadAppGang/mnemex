@@ -8,7 +8,10 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { DetectedDependency, PackageEcosystem } from "./types.js";
-import { extractMajorVersion, parseVersionForEcosystem } from "./version-parser.js";
+import {
+	extractMajorVersion,
+	parseVersionForEcosystem,
+} from "./version-parser.js";
 
 // ============================================================================
 // Manifest File Detection
@@ -24,7 +27,11 @@ interface ManifestInfo {
 /** Known manifest files and their parsers */
 const MANIFEST_FILES: ManifestInfo[] = [
 	{ filename: "package.json", ecosystem: "npm", parser: parsePackageJson },
-	{ filename: "requirements.txt", ecosystem: "pypi", parser: parseRequirementsTxt },
+	{
+		filename: "requirements.txt",
+		ecosystem: "pypi",
+		parser: parseRequirementsTxt,
+	},
 	{ filename: "pyproject.toml", ecosystem: "pypi", parser: parsePyprojectToml },
 	{ filename: "go.mod", ecosystem: "go", parser: parseGoMod },
 	{ filename: "Cargo.toml", ecosystem: "cargo", parser: parseCargoToml },
@@ -127,7 +134,11 @@ function parseRequirementsTxt(content: string): DetectedDependency[] {
 		}
 
 		// Skip URLs and paths
-		if (trimmed.includes("://") || trimmed.startsWith(".") || trimmed.startsWith("/")) {
+		if (
+			trimmed.includes("://") ||
+			trimmed.startsWith(".") ||
+			trimmed.startsWith("/")
+		) {
 			continue;
 		}
 
@@ -155,7 +166,7 @@ function parsePyprojectToml(content: string): DetectedDependency[] {
 
 	// Match [project.dependencies] array format
 	const projectDepsMatch = content.match(
-		/\[project\][\s\S]*?dependencies\s*=\s*\[([\s\S]*?)\]/
+		/\[project\][\s\S]*?dependencies\s*=\s*\[([\s\S]*?)\]/,
 	);
 	if (projectDepsMatch) {
 		const depsArray = projectDepsMatch[1];
@@ -171,7 +182,7 @@ function parsePyprojectToml(content: string): DetectedDependency[] {
 
 	// Match [tool.poetry.dependencies] table format
 	const poetrySection = content.match(
-		/\[tool\.poetry\.dependencies\]([\s\S]*?)(?=\[|$)/
+		/\[tool\.poetry\.dependencies\]([\s\S]*?)(?=\[|$)/,
 	);
 	if (poetrySection) {
 		const lines = poetrySection[1].split("\n");
@@ -179,13 +190,17 @@ function parsePyprojectToml(content: string): DetectedDependency[] {
 			// Match: package = "^1.0.0" or package = {version = "^1.0.0", ...}
 			const simpleMatch = line.match(/^([a-zA-Z0-9_-]+)\s*=\s*"([^"]+)"/);
 			const tableMatch = line.match(
-				/^([a-zA-Z0-9_-]+)\s*=\s*\{.*version\s*=\s*"([^"]+)"/
+				/^([a-zA-Z0-9_-]+)\s*=\s*\{.*version\s*=\s*"([^"]+)"/,
 			);
 
 			if (simpleMatch) {
-				deps.push(createDependency(simpleMatch[1], simpleMatch[2], "pypi", false));
+				deps.push(
+					createDependency(simpleMatch[1], simpleMatch[2], "pypi", false),
+				);
 			} else if (tableMatch) {
-				deps.push(createDependency(tableMatch[1], tableMatch[2], "pypi", false));
+				deps.push(
+					createDependency(tableMatch[1], tableMatch[2], "pypi", false),
+				);
 			}
 		}
 	}
@@ -243,31 +258,41 @@ function parseCargoToml(content: string): DetectedDependency[] {
 			// Match: package = "1.0" or package = { version = "1.0", ... }
 			const simpleMatch = line.match(/^([a-zA-Z0-9_-]+)\s*=\s*"([^"]+)"/);
 			const tableMatch = line.match(
-				/^([a-zA-Z0-9_-]+)\s*=\s*\{.*version\s*=\s*"([^"]+)"/
+				/^([a-zA-Z0-9_-]+)\s*=\s*\{.*version\s*=\s*"([^"]+)"/,
 			);
 
 			if (simpleMatch) {
-				deps.push(createDependency(simpleMatch[1], simpleMatch[2], "cargo", false));
+				deps.push(
+					createDependency(simpleMatch[1], simpleMatch[2], "cargo", false),
+				);
 			} else if (tableMatch) {
-				deps.push(createDependency(tableMatch[1], tableMatch[2], "cargo", false));
+				deps.push(
+					createDependency(tableMatch[1], tableMatch[2], "cargo", false),
+				);
 			}
 		}
 	}
 
 	// Match [dev-dependencies] section
-	const devDepsSection = content.match(/\[dev-dependencies\]([\s\S]*?)(?=\[|$)/);
+	const devDepsSection = content.match(
+		/\[dev-dependencies\]([\s\S]*?)(?=\[|$)/,
+	);
 	if (devDepsSection) {
 		const lines = devDepsSection[1].split("\n");
 		for (const line of lines) {
 			const simpleMatch = line.match(/^([a-zA-Z0-9_-]+)\s*=\s*"([^"]+)"/);
 			const tableMatch = line.match(
-				/^([a-zA-Z0-9_-]+)\s*=\s*\{.*version\s*=\s*"([^"]+)"/
+				/^([a-zA-Z0-9_-]+)\s*=\s*\{.*version\s*=\s*"([^"]+)"/,
 			);
 
 			if (simpleMatch) {
-				deps.push(createDependency(simpleMatch[1], simpleMatch[2], "cargo", true));
+				deps.push(
+					createDependency(simpleMatch[1], simpleMatch[2], "cargo", true),
+				);
 			} else if (tableMatch) {
-				deps.push(createDependency(tableMatch[1], tableMatch[2], "cargo", true));
+				deps.push(
+					createDependency(tableMatch[1], tableMatch[2], "cargo", true),
+				);
 			}
 		}
 	}

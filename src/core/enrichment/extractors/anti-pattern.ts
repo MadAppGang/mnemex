@@ -71,7 +71,11 @@ export class AntiPatternExtractor extends BaseExtractor {
 
 			for (const antiPattern of response.antiPatterns) {
 				const content = this.buildContent(antiPattern);
-				const id = this.generateId(content, context.filePath, antiPattern.pattern);
+				const id = this.generateId(
+					content,
+					context.filePath,
+					antiPattern.pattern,
+				);
 
 				documents.push({
 					id,
@@ -103,7 +107,9 @@ export class AntiPatternExtractor extends BaseExtractor {
 	/**
 	 * Build searchable content from the anti-pattern
 	 */
-	private buildContent(antiPattern: AntiPatternLLMResponse["antiPatterns"][0]): string {
+	private buildContent(
+		antiPattern: AntiPatternLLMResponse["antiPatterns"][0],
+	): string {
 		return [
 			`Anti-pattern: ${antiPattern.pattern}`,
 			`Severity: ${antiPattern.severity}`,

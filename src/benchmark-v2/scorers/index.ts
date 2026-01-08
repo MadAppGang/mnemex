@@ -54,7 +54,7 @@ import { createScoreAggregator } from "./aggregator.js";
  * Create the scoring phase executor
  */
 export function createScoringPhaseExecutor(): (
-	context: PhaseContext
+	context: PhaseContext,
 ) => Promise<PhaseResult> {
 	return async (context: PhaseContext): Promise<PhaseResult> => {
 		const { db, run, config, stateMachine } = context;
@@ -62,17 +62,27 @@ export function createScoringPhaseExecutor(): (
 		try {
 			// Count models for progress tracking
 			const summaries = db.getSummaries(run.id);
-			const modelIds = new Set(summaries.map(s => s.modelId));
+			const modelIds = new Set(summaries.map((s) => s.modelId));
 			const totalSteps = modelIds.size + 1; // +1 for final save
 
 			stateMachine.startPhase("aggregation", totalSteps);
-			stateMachine.updateProgress("aggregation", 0, undefined, "Loading evaluation results...");
+			stateMachine.updateProgress(
+				"aggregation",
+				0,
+				undefined,
+				"Loading evaluation results...",
+			);
 
 			// Get all data
 			const evaluationResults = db.getEvaluationResults(run.id);
 			const pairwiseResults = db.getPairwiseResults(run.id);
 
-			stateMachine.updateProgress("aggregation", 0, undefined, "Aggregating scores...");
+			stateMachine.updateProgress(
+				"aggregation",
+				0,
+				undefined,
+				"Aggregating scores...",
+			);
 
 			// Aggregate scores
 			const aggregator = createScoreAggregator(config);
@@ -91,7 +101,10 @@ export function createScoringPhaseExecutor(): (
 					judge: {
 						pointwise: agg.judge.pointwise.overall.mean / 5,
 						pairwise: agg.judge.pairwise.btScore,
-						combined: (agg.judge.pointwise.overall.mean / 5 + agg.judge.pairwise.btScore) / 2,
+						combined:
+							(agg.judge.pointwise.overall.mean / 5 +
+								agg.judge.pairwise.btScore) /
+							2,
 					},
 					contrastive: {
 						embedding: agg.contrastive.embedding.accuracy,
@@ -105,7 +118,10 @@ export function createScoringPhaseExecutor(): (
 						winRate: agg.retrieval.winRate,
 						// Use win rate as primary metric (cross-model competition)
 						// Falls back to MRR if win rate not available (single model run)
-						combined: agg.retrieval.winRate > 0 ? agg.retrieval.winRate : agg.retrieval.mrr,
+						combined:
+							agg.retrieval.winRate > 0
+								? agg.retrieval.winRate
+								: agg.retrieval.mrr,
 					},
 					downstream: {
 						completion: agg.downstream.completion.bleuScore,
@@ -115,23 +131,37 @@ export function createScoringPhaseExecutor(): (
 					},
 					overall: agg.overall.score,
 					// Operational metrics (don't affect quality ranking)
-					iterative: agg.iterative ? {
-						avgRounds: agg.iterative.avgRounds,
-						successRate: agg.iterative.successRate,
-						avgRefinementScore: agg.iterative.avgRefinementScore,
-					} : undefined,
-					self: agg.self ? {
-						overall: agg.self.overall,
-						retrieval: agg.self.retrieval.accuracy,
-						functionSelection: agg.self.functionSelection.accuracy,
-					} : undefined,
+					iterative: agg.iterative
+						? {
+								avgRounds: agg.iterative.avgRounds,
+								successRate: agg.iterative.successRate,
+								avgRefinementScore: agg.iterative.avgRefinementScore,
+							}
+						: undefined,
+					self: agg.self
+						? {
+								overall: agg.self.overall,
+								retrieval: agg.self.retrieval.accuracy,
+								functionSelection: agg.self.functionSelection.accuracy,
+							}
+						: undefined,
 				};
 				db.saveAggregatedScores(run.id, modelId, normalizedScores);
 				savedCount++;
-				stateMachine.updateProgress("aggregation", savedCount, modelId, `Saved ${modelId}`);
+				stateMachine.updateProgress(
+					"aggregation",
+					savedCount,
+					modelId,
+					`Saved ${modelId}`,
+				);
 			}
 
-			stateMachine.updateProgress("aggregation", totalSteps, "complete", "Scoring complete");
+			stateMachine.updateProgress(
+				"aggregation",
+				totalSteps,
+				"complete",
+				"Scoring complete",
+			);
 
 			return {
 				success: true,

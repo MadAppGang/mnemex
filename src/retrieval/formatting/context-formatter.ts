@@ -10,7 +10,12 @@
  * information in the middle of long contexts is often overlooked.
  */
 
-import type { CodeUnit, FormattedContext, QueryIntent, RerankedSearchResult } from "../../types.js";
+import type {
+	CodeUnit,
+	FormattedContext,
+	QueryIntent,
+	RerankedSearchResult,
+} from "../../types.js";
 
 // ============================================================================
 // Types
@@ -46,9 +51,9 @@ export interface FormatInput {
 
 /** Token budget allocations */
 const TOKEN_ALLOCATIONS = {
-	primary: 0.5,    // 50% for primary results
+	primary: 0.5, // 50% for primary results
 	supporting: 0.25, // 25% for supporting context
-	summaries: 0.25,  // 25% for summaries
+	summaries: 0.25, // 25% for summaries
 };
 
 // ============================================================================
@@ -77,14 +82,21 @@ export class ContextFormatter {
 
 		// Calculate budgets
 		const primaryBudget = Math.floor(maxChars * TOKEN_ALLOCATIONS.primary);
-		const supportingBudget = Math.floor(maxChars * TOKEN_ALLOCATIONS.supporting);
+		const supportingBudget = Math.floor(
+			maxChars * TOKEN_ALLOCATIONS.supporting,
+		);
 		const summariesBudget = Math.floor(maxChars * TOKEN_ALLOCATIONS.summaries);
 
 		// Format each section
-		const primaryFormatted = this.formatCodeUnits(primary, primaryBudget, "primary");
-		const supportingFormatted = supporting.length > 0
-			? this.formatCodeUnits(supporting, supportingBudget, "supporting")
-			: undefined;
+		const primaryFormatted = this.formatCodeUnits(
+			primary,
+			primaryBudget,
+			"primary",
+		);
+		const supportingFormatted =
+			supporting.length > 0
+				? this.formatCodeUnits(supporting, supportingBudget, "supporting")
+				: undefined;
 		const summariesFormatted = this.formatSummaries(summaries, summariesBudget);
 
 		// Count unique files
@@ -101,9 +113,10 @@ export class ContextFormatter {
 				resultCount: primary.length + supporting.length,
 				fileCount: allPaths.size,
 				queryIntent,
-				tokenEstimate: this.estimateTokens(primaryFormatted)
-					+ this.estimateTokens(supportingFormatted || "")
-					+ this.estimateTokens(summariesFormatted),
+				tokenEstimate:
+					this.estimateTokens(primaryFormatted) +
+					this.estimateTokens(supportingFormatted || "") +
+					this.estimateTokens(summariesFormatted),
 			},
 		};
 	}
@@ -136,7 +149,11 @@ export class ContextFormatter {
 	/**
 	 * Format code units within token budget
 	 */
-	private formatCodeUnits(units: CodeUnit[], maxChars: number, section: string): string {
+	private formatCodeUnits(
+		units: CodeUnit[],
+		maxChars: number,
+		section: string,
+	): string {
 		const chunks: string[] = [];
 		let totalChars = 0;
 
@@ -184,9 +201,10 @@ export class ContextFormatter {
 	 * Format unit header
 	 */
 	private formatHeader(unit: CodeUnit): string {
-		const location = unit.startLine && unit.endLine
-			? `:${unit.startLine}-${unit.endLine}`
-			: "";
+		const location =
+			unit.startLine && unit.endLine
+				? `:${unit.startLine}-${unit.endLine}`
+				: "";
 
 		switch (this.options.style) {
 			case "xml":
@@ -208,7 +226,10 @@ export class ContextFormatter {
 		if (this.options.includeLineNumbers && unit.startLine) {
 			const lines = content.split("\n");
 			content = lines
-				.map((line, i) => `${(unit.startLine + i).toString().padStart(4)} | ${line}`)
+				.map(
+					(line, i) =>
+						`${(unit.startLine + i).toString().padStart(4)} | ${line}`,
+				)
 				.join("\n");
 		}
 
@@ -324,6 +345,8 @@ export class ContextFormatter {
 /**
  * Create a context formatter
  */
-export function createContextFormatter(options?: FormatterOptions): ContextFormatter {
+export function createContextFormatter(
+	options?: FormatterOptions,
+): ContextFormatter {
 	return new ContextFormatter(options);
 }

@@ -128,7 +128,7 @@ interface DetectionContext {
  * Detect codebase type from project path
  */
 export async function detectCodebaseType(
-	projectPath: string
+	projectPath: string,
 ): Promise<CodebaseType> {
 	const context = await buildDetectionContext(projectPath);
 
@@ -153,7 +153,7 @@ export async function detectCodebaseType(
 }
 
 async function buildDetectionContext(
-	projectPath: string
+	projectPath: string,
 ): Promise<DetectionContext> {
 	const context: DetectionContext = {
 		projectPath,
@@ -165,9 +165,7 @@ async function buildDetectionContext(
 	const packageJsonPath = join(projectPath, "package.json");
 	if (existsSync(packageJsonPath)) {
 		try {
-			context.packageJson = JSON.parse(
-				readFileSync(packageJsonPath, "utf-8")
-			);
+			context.packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
 		} catch {
 			// Ignore parse errors
 		}
@@ -212,65 +210,148 @@ function detectFromPackageJson(context: DetectionContext): CodebaseType | null {
 	const hasAnyDep = (...names: string[]) => names.some(hasDep);
 
 	// Determine language
-	const isTypeScript = hasDep("typescript") || context.files.includes("tsconfig.json");
+	const isTypeScript =
+		hasDep("typescript") || context.files.includes("tsconfig.json");
 	const language = isTypeScript ? "typescript" : "javascript";
 
 	// Detect specific stacks
-	const stacks: Array<{ stack: CodebaseStack; category: CodebaseCategory; confidence: number; tags: string[] }> = [];
+	const stacks: Array<{
+		stack: CodebaseStack;
+		category: CodebaseCategory;
+		confidence: number;
+		tags: string[];
+	}> = [];
 
 	// Frontend frameworks
 	if (hasAnyDep("next", "next.js")) {
-		stacks.push({ stack: "nextjs", category: "fullstack", confidence: 0.95, tags: ["react", "ssr"] });
+		stacks.push({
+			stack: "nextjs",
+			category: "fullstack",
+			confidence: 0.95,
+			tags: ["react", "ssr"],
+		});
 	}
 	if (hasAnyDep("nuxt", "nuxt3")) {
-		stacks.push({ stack: "nuxt", category: "fullstack", confidence: 0.95, tags: ["vue", "ssr"] });
+		stacks.push({
+			stack: "nuxt",
+			category: "fullstack",
+			confidence: 0.95,
+			tags: ["vue", "ssr"],
+		});
 	}
 	if (hasDep("react") && !hasAnyDep("next", "react-native", "expo")) {
-		stacks.push({ stack: "react", category: "frontend", confidence: 0.9, tags: ["spa"] });
+		stacks.push({
+			stack: "react",
+			category: "frontend",
+			confidence: 0.9,
+			tags: ["spa"],
+		});
 	}
 	if (hasDep("vue") && !hasDep("nuxt")) {
-		stacks.push({ stack: "vue", category: "frontend", confidence: 0.9, tags: ["spa"] });
+		stacks.push({
+			stack: "vue",
+			category: "frontend",
+			confidence: 0.9,
+			tags: ["spa"],
+		});
 	}
 	if (hasAnyDep("@angular/core", "angular")) {
-		stacks.push({ stack: "angular", category: "frontend", confidence: 0.9, tags: ["spa"] });
+		stacks.push({
+			stack: "angular",
+			category: "frontend",
+			confidence: 0.9,
+			tags: ["spa"],
+		});
 	}
 	if (hasDep("svelte")) {
-		stacks.push({ stack: "svelte", category: "frontend", confidence: 0.9, tags: ["spa"] });
+		stacks.push({
+			stack: "svelte",
+			category: "frontend",
+			confidence: 0.9,
+			tags: ["spa"],
+		});
 	}
 	if (hasDep("solid-js")) {
-		stacks.push({ stack: "solid", category: "frontend", confidence: 0.9, tags: ["spa"] });
+		stacks.push({
+			stack: "solid",
+			category: "frontend",
+			confidence: 0.9,
+			tags: ["spa"],
+		});
 	}
 
 	// Mobile
 	if (hasAnyDep("react-native", "expo")) {
-		stacks.push({ stack: hasDep("expo") ? "expo" : "react-native", category: "mobile", confidence: 0.95, tags: ["cross-platform"] });
+		stacks.push({
+			stack: hasDep("expo") ? "expo" : "react-native",
+			category: "mobile",
+			confidence: 0.95,
+			tags: ["cross-platform"],
+		});
 	}
 
 	// Backend frameworks
 	if (hasAnyDep("@nestjs/core", "nestjs")) {
-		stacks.push({ stack: "nestjs", category: "backend", confidence: 0.95, tags: ["api", "enterprise"] });
+		stacks.push({
+			stack: "nestjs",
+			category: "backend",
+			confidence: 0.95,
+			tags: ["api", "enterprise"],
+		});
 	}
 	if (hasDep("express") && !hasAnyDep("@nestjs/core", "next")) {
-		stacks.push({ stack: "express", category: "backend", confidence: 0.85, tags: ["api"] });
+		stacks.push({
+			stack: "express",
+			category: "backend",
+			confidence: 0.85,
+			tags: ["api"],
+		});
 	}
 	if (hasDep("fastify")) {
-		stacks.push({ stack: "fastify", category: "backend", confidence: 0.9, tags: ["api", "performance"] });
+		stacks.push({
+			stack: "fastify",
+			category: "backend",
+			confidence: 0.9,
+			tags: ["api", "performance"],
+		});
 	}
 	if (hasDep("hono")) {
-		stacks.push({ stack: "hono", category: "backend", confidence: 0.9, tags: ["api", "edge"] });
+		stacks.push({
+			stack: "hono",
+			category: "backend",
+			confidence: 0.9,
+			tags: ["api", "edge"],
+		});
 	}
 	if (hasDep("koa")) {
-		stacks.push({ stack: "koa", category: "backend", confidence: 0.85, tags: ["api"] });
+		stacks.push({
+			stack: "koa",
+			category: "backend",
+			confidence: 0.85,
+			tags: ["api"],
+		});
 	}
 
 	// CLI tools
 	if (hasAnyDep("commander", "yargs", "meow", "cac", "clipanion")) {
-		stacks.push({ stack: "commander", category: "cli", confidence: 0.85, tags: ["tool"] });
+		stacks.push({
+			stack: "commander",
+			category: "cli",
+			confidence: 0.85,
+			tags: ["tool"],
+		});
 	}
 
 	// AI/ML
-	if (hasAnyDep("langchain", "@langchain/core", "openai", "@anthropic-ai/sdk")) {
-		stacks.push({ stack: "langchain", category: "ml", confidence: 0.8, tags: ["ai", "llm"] });
+	if (
+		hasAnyDep("langchain", "@langchain/core", "openai", "@anthropic-ai/sdk")
+	) {
+		stacks.push({
+			stack: "langchain",
+			category: "ml",
+			confidence: 0.8,
+			tags: ["ai", "llm"],
+		});
 	}
 
 	// Pick highest confidence stack
@@ -291,7 +372,15 @@ function detectFromPackageJson(context: DetectionContext): CodebaseType | null {
 	if (context.files.includes("package.json")) {
 		// Check if it's a library
 		const hasMain = pkg.main || pkg.exports || pkg.module;
-		const hasNoApp = !hasAnyDep("express", "fastify", "koa", "hono", "react", "vue", "angular");
+		const hasNoApp = !hasAnyDep(
+			"express",
+			"fastify",
+			"koa",
+			"hono",
+			"react",
+			"vue",
+			"angular",
+		);
 
 		if (hasMain && hasNoApp) {
 			return {
@@ -320,9 +409,11 @@ function detectFromPackageJson(context: DetectionContext): CodebaseType | null {
 /**
  * Detect Python projects
  */
-function detectFromPythonProject(context: DetectionContext): CodebaseType | null {
+function detectFromPythonProject(
+	context: DetectionContext,
+): CodebaseType | null {
 	const hasPyProject = context.files.some((f) =>
-		["requirements.txt", "pyproject.toml", "setup.py", "Pipfile"].includes(f)
+		["requirements.txt", "pyproject.toml", "setup.py", "Pipfile"].includes(f),
 	);
 
 	if (!hasPyProject) return null;
@@ -334,7 +425,9 @@ function detectFromPythonProject(context: DetectionContext): CodebaseType | null
 	if (existsSync(reqPath)) {
 		try {
 			const content = readFileSync(reqPath, "utf-8");
-			deps = content.split("\n").map((line) => line.split("==")[0].split(">=")[0].trim().toLowerCase());
+			deps = content
+				.split("\n")
+				.map((line) => line.split("==")[0].split(">=")[0].trim().toLowerCase());
 		} catch {
 			// Ignore
 		}
@@ -450,7 +543,9 @@ function detectFromGoProject(context: DetectionContext): CodebaseType | null {
 	if (existsSync(goModPath)) {
 		try {
 			const content = readFileSync(goModPath, "utf-8");
-			deps = content.split("\n").filter((line) => line.includes("require") || line.startsWith("\t"));
+			deps = content
+				.split("\n")
+				.filter((line) => line.includes("require") || line.startsWith("\t"));
 		} catch {
 			// Ignore
 		}
@@ -594,11 +689,16 @@ function detectFromRustProject(context: DetectionContext): CodebaseType | null {
 /**
  * Detect from directory structure
  */
-function detectFromDirectoryStructure(context: DetectionContext): CodebaseType | null {
+function detectFromDirectoryStructure(
+	context: DetectionContext,
+): CodebaseType | null {
 	const dirs = context.directories;
 
 	// React/Vue patterns
-	if (dirs.includes("components") && (dirs.includes("pages") || dirs.includes("views"))) {
+	if (
+		dirs.includes("components") &&
+		(dirs.includes("pages") || dirs.includes("views"))
+	) {
 		return {
 			language: "javascript",
 			category: "frontend",
@@ -610,7 +710,11 @@ function detectFromDirectoryStructure(context: DetectionContext): CodebaseType |
 	}
 
 	// Backend patterns
-	if (dirs.includes("api") || dirs.includes("routes") || dirs.includes("controllers")) {
+	if (
+		dirs.includes("api") ||
+		dirs.includes("routes") ||
+		dirs.includes("controllers")
+	) {
 		return {
 			language: "unknown",
 			category: "backend",
@@ -642,7 +746,12 @@ function detectBasicLanguage(context: DetectionContext): CodebaseType {
 		};
 	}
 
-	if (files.some((f) => f.endsWith(".py") || f === "requirements.txt" || f === "pyproject.toml")) {
+	if (
+		files.some(
+			(f) =>
+				f.endsWith(".py") || f === "requirements.txt" || f === "pyproject.toml",
+		)
+	) {
 		return {
 			language: "python",
 			category: "unknown",

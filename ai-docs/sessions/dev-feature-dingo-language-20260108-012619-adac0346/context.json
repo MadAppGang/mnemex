@@ -1,0 +1,42 @@
+{
+  "detected_stack": "bun-typescript",
+  "mode": "backend",
+  "stacks": ["bun-typescript"],
+  "skill_paths": [
+    "${PLUGIN_ROOT}/skills/core/universal-patterns/SKILL.md",
+    "${PLUGIN_ROOT}/skills/core/testing-strategies/SKILL.md",
+    "${PLUGIN_ROOT}/skills/core/debugging-strategies/SKILL.md",
+    "${PLUGIN_ROOT}/skills/backend/bunjs/SKILL.md",
+    "${PLUGIN_ROOT}/skills/backend/typescript/SKILL.md",
+    "${PLUGIN_ROOT}/skills/backend/api-design/SKILL.md",
+    "${PLUGIN_ROOT}/skills/backend/database-patterns/SKILL.md"
+  ],
+  "quality_checks": {
+    "backend": [
+      "bun run typecheck",
+      "bun run lint",
+      "bun run format",
+      "bun test"
+    ]
+  },
+  "frameworks": {
+    "bun": ">=1.0.0",
+    "typescript": "5.7.2",
+    "node": ">=18.0.0"
+  },
+  "build_tools": {
+    "bundler": "bun",
+    "compiler": "typescript",
+    "linter": "biome",
+    "formatter": "biome",
+    "test_runner": "bun:test"
+  },
+  "key_dependencies": {
+    "runtime": ["@lancedb/lancedb", "better-sqlite3", "web-tree-sitter"],
+    "ai": ["@modelcontextprotocol/sdk", "@lmstudio/sdk"],
+    "cli": ["@inquirer/prompts", "@inquirer/search"],
+    "validation": ["zod"]
+  },
+  "project_type": "cli-tool",
+  "description": "CLI and MCP server for local code indexing with semantic search"
+}

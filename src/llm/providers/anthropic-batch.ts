@@ -8,7 +8,11 @@
  */
 
 import { BaseLLMClient, DEFAULT_LLM_MODELS } from "../client.js";
-import type { LLMGenerateOptions, LLMMessage, LLMResponse } from "../../types.js";
+import type {
+	LLMGenerateOptions,
+	LLMMessage,
+	LLMResponse,
+} from "../../types.js";
 
 // ============================================================================
 // Types
@@ -89,12 +93,15 @@ export class AnthropicBatchLLMClient extends BaseLLMClient {
 	private maxWaitTime: number;
 
 	// Queue of requests to be batched
-	private requestQueue: Map<string, {
-		messages: LLMMessage[];
-		options?: LLMGenerateOptions;
-		resolve: (response: LLMResponse) => void;
-		reject: (error: Error) => void;
-	}> = new Map();
+	private requestQueue: Map<
+		string,
+		{
+			messages: LLMMessage[];
+			options?: LLMGenerateOptions;
+			resolve: (response: LLMResponse) => void;
+			reject: (error: Error) => void;
+		}
+	> = new Map();
 
 	// Results cache
 	private resultsCache: Map<string, LLMResponse> = new Map();
@@ -103,13 +110,13 @@ export class AnthropicBatchLLMClient extends BaseLLMClient {
 		super(
 			"anthropic-batch",
 			options.model || DEFAULT_LLM_MODELS.anthropic,
-			600000 // 10 minute timeout for batch operations
+			600000, // 10 minute timeout for batch operations
 		);
 
 		const apiKey = options.apiKey || process.env.ANTHROPIC_API_KEY;
 		if (!apiKey) {
 			throw new Error(
-				"Anthropic API key required. Set ANTHROPIC_API_KEY environment variable or pass apiKey option."
+				"Anthropic API key required. Set ANTHROPIC_API_KEY environment variable or pass apiKey option.",
 			);
 		}
 		this.apiKey = apiKey;
@@ -123,7 +130,7 @@ export class AnthropicBatchLLMClient extends BaseLLMClient {
 	 */
 	async complete(
 		messages: LLMMessage[],
-		options?: LLMGenerateOptions
+		options?: LLMGenerateOptions,
 	): Promise<LLMResponse> {
 		const customId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
@@ -153,7 +160,10 @@ export class AnthropicBatchLLMClient extends BaseLLMClient {
 			// Build batch requests
 			const batchRequests: BatchRequest[] = [];
 			for (const [customId, { messages, options }] of this.requestQueue) {
-				const systemPrompt = this.extractSystemPrompt(messages, options?.systemPrompt);
+				const systemPrompt = this.extractSystemPrompt(
+					messages,
+					options?.systemPrompt,
+				);
 				const conversationMessages = this.convertMessages(messages);
 
 				batchRequests.push({
@@ -163,7 +173,9 @@ export class AnthropicBatchLLMClient extends BaseLLMClient {
 						max_tokens: options?.maxTokens || 4096,
 						messages: conversationMessages,
 						...(systemPrompt && { system: systemPrompt }),
-						...(options?.temperature !== undefined && { temperature: options.temperature }),
+						...(options?.temperature !== undefined && {
+							temperature: options.temperature,
+						}),
 					},
 				});
 			}
@@ -176,7 +188,9 @@ export class AnthropicBatchLLMClient extends BaseLLMClient {
 
 			// Retrieve results
 			if (completedBatch.results_url) {
-				const batchResults = await this.retrieveResults(completedBatch.results_url);
+				const batchResults = await this.retrieveResults(
+					completedBatch.results_url,
+				);
 
 				// Process results and resolve promises
 				for (const result of batchResults) {
@@ -197,7 +211,12 @@ export class AnthropicBatchLLMClient extends BaseLLMClient {
 								inputTokens: message.usage.input_tokens,
 								outputTokens: message.usage.output_tokens,
 								// Batch API is 50% cheaper
-								cost: this.calculateCost(message.usage.input_tokens, message.usage.output_tokens, message.model) * 0.5,
+								cost:
+									this.calculateCost(
+										message.usage.input_tokens,
+										message.usage.output_tokens,
+										message.model,
+									) * 0.5,
 							},
 						};
 
@@ -207,7 +226,7 @@ export class AnthropicBatchLLMClient extends BaseLLMClient {
 					} else {
 						const error = new Error(
 							result.result.error?.message ||
-							`Batch request ${result.result.type}: ${result.custom_id}`
+								`Batch request ${result.result.type}: ${result.custom_id}`,
 						);
 						queuedRequest.reject(error);
 						results.set(result.custom_id, error);
@@ -245,7 +264,9 @@ export class AnthropicBatchLLMClient extends BaseLLMClient {
 
 		if (!response.ok) {
 			const errorBody = await response.text();
-			throw new Error(`Failed to create batch (${response.status}): ${errorBody}`);
+			throw new Error(
+				`Failed to create batch (${response.status}): ${errorBody}`,
+			);
 		}
 
 		return response.json() as Promise<BatchResponse>;
@@ -268,10 +289,12 @@ export class AnthropicBatchLLMClient extends BaseLLMClient {
 
 			if (!response.ok) {
 				const errorBody = await response.text();
-				throw new Error(`Failed to get batch status (${response.status}): ${errorBody}`);
+				throw new Error(
+					`Failed to get batch status (${response.status}): ${errorBody}`,
+				);
 			}
 
-			const batch = await response.json() as BatchResponse;
+			const batch = (await response.json()) as BatchResponse;
 
 			if (batch.processing_status === "ended") {
 				return batch;
@@ -281,7 +304,9 @@ export class AnthropicBatchLLMClient extends BaseLLMClient {
 			await this.sleep(this.pollInterval);
 		}
 
-		throw new Error(`Batch ${batchId} did not complete within ${this.maxWaitTime}ms`);
+		throw new Error(
+			`Batch ${batchId} did not complete within ${this.maxWaitTime}ms`,
+		);
 	}
 
 	/**
@@ -298,7 +323,9 @@ export class AnthropicBatchLLMClient extends BaseLLMClient {
 
 		if (!response.ok) {
 			const errorBody = await response.text();
-			throw new Error(`Failed to retrieve results (${response.status}): ${errorBody}`);
+			throw new Error(
+				`Failed to retrieve results (${response.status}): ${errorBody}`,
+			);
 		}
 
 		// Results are returned as JSONL (one JSON object per line)
@@ -319,7 +346,7 @@ export class AnthropicBatchLLMClient extends BaseLLMClient {
 	 */
 	private extractSystemPrompt(
 		messages: LLMMessage[],
-		optionsSystemPrompt?: string
+		optionsSystemPrompt?: string,
 	): string | undefined {
 		const parts: string[] = [];
 
@@ -339,7 +366,9 @@ export class AnthropicBatchLLMClient extends BaseLLMClient {
 	/**
 	 * Convert messages to Anthropic format.
 	 */
-	private convertMessages(messages: LLMMessage[]): Array<{ role: "user" | "assistant"; content: string }> {
+	private convertMessages(
+		messages: LLMMessage[],
+	): Array<{ role: "user" | "assistant"; content: string }> {
 		return messages
 			.filter((msg) => msg.role !== "system")
 			.map((msg) => ({
@@ -351,7 +380,11 @@ export class AnthropicBatchLLMClient extends BaseLLMClient {
 	/**
 	 * Calculate cost for Anthropic models (before 50% batch discount).
 	 */
-	private calculateCost(inputTokens: number, outputTokens: number, model: string): number {
+	private calculateCost(
+		inputTokens: number,
+		outputTokens: number,
+		model: string,
+	): number {
 		// Pricing per 1M tokens (as of 2025)
 		const pricing: Record<string, { input: number; output: number }> = {
 			// Latest model aliases

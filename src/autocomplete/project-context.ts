@@ -29,11 +29,15 @@ export interface ProjectFacts {
 	sourceMtimeMs?: number;
 }
 
-function formatNodeFacts(pkg: { name?: string; dependencies?: Record<string, string>; devDependencies?: Record<string, string> }): string {
+function formatNodeFacts(pkg: {
+	name?: string;
+	dependencies?: Record<string, string>;
+	devDependencies?: Record<string, string>;
+}): string {
 	const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
-	const matches = KNOWN_NODE_LIBS
-		.filter((name) => deps[name])
-		.map((name) => `${name}@${deps[name]}`);
+	const matches = KNOWN_NODE_LIBS.filter((name) => deps[name]).map(
+		(name) => `${name}@${deps[name]}`,
+	);
 
 	const lines: string[] = [];
 	if (pkg.name) lines.push(`package: ${pkg.name}`);
@@ -64,4 +68,3 @@ export function loadProjectFacts(projectPath: string): ProjectFacts {
 		return { text: "" };
 	}
 }
-

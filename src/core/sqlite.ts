@@ -51,7 +51,9 @@ export function createDatabaseSync(path: string): SQLiteDatabase {
 						// Use the database's changes() method
 						return {
 							changes: db.query("SELECT changes() as c").get().c as number,
-							lastInsertRowid: db.query("SELECT last_insert_rowid() as id").get().id as number,
+							lastInsertRowid: db
+								.query("SELECT last_insert_rowid() as id")
+								.get().id as number,
 						};
 					},
 					get: (...params: unknown[]) => stmt.get(...params),

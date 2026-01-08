@@ -26,7 +26,7 @@ export class CompletenessScorer implements IScorer {
 	async score(
 		testCase: TestCase,
 		generation: GenerationResult<FileSummary | SymbolSummary>,
-		_judgment?: JudgmentResult
+		_judgment?: JudgmentResult,
 	): Promise<ScoreResult> {
 		const summary = generation.result;
 		const groundTruth = testCase.groundTruth;
@@ -36,12 +36,18 @@ export class CompletenessScorer implements IScorer {
 
 		if (testCase.type === "file_summary") {
 			const fileSummary = summary as FileSummary;
-			const result = this.scoreFileSummaryCompleteness(fileSummary, groundTruth);
+			const result = this.scoreFileSummaryCompleteness(
+				fileSummary,
+				groundTruth,
+			);
 			score = result.score;
 			details = result.details;
 		} else {
 			const symbolSummary = summary as SymbolSummary;
-			const result = this.scoreSymbolSummaryCompleteness(symbolSummary, groundTruth);
+			const result = this.scoreSymbolSummaryCompleteness(
+				symbolSummary,
+				groundTruth,
+			);
 			score = result.score;
 			details = result.details;
 		}
@@ -60,8 +66,9 @@ export class CompletenessScorer implements IScorer {
 	getCriterion(): ScoringCriterion {
 		return {
 			name: "completeness",
-			weight: 0.20,
-			description: "Are all important elements (params, exports, side effects) documented?",
+			weight: 0.2,
+			description:
+				"Are all important elements (params, exports, side effects) documented?",
 		};
 	}
 
@@ -70,7 +77,7 @@ export class CompletenessScorer implements IScorer {
 	 */
 	private scoreFileSummaryCompleteness(
 		summary: FileSummary,
-		groundTruth: TestCase["groundTruth"]
+		groundTruth: TestCase["groundTruth"],
 	): { score: number; details: Record<string, unknown> } {
 		const actualExports = groundTruth.exports || [];
 		const actualDeps = groundTruth.dependencies || [];
@@ -82,7 +89,7 @@ export class CompletenessScorer implements IScorer {
 		let exportCoverage = 100;
 		if (actualExports.length > 0) {
 			const coveredExports = actualExports.filter((actual) =>
-				mentionedExports.some((mentioned) => fuzzyMatch(mentioned, actual))
+				mentionedExports.some((mentioned) => fuzzyMatch(mentioned, actual)),
 			);
 			exportCoverage = (coveredExports.length / actualExports.length) * 100;
 		}
@@ -91,7 +98,7 @@ export class CompletenessScorer implements IScorer {
 		let depCoverage = 100;
 		if (actualDeps.length > 0) {
 			const coveredDeps = actualDeps.filter((actual) =>
-				mentionedDeps.some((mentioned) => fuzzyMatch(mentioned, actual))
+				mentionedDeps.some((mentioned) => fuzzyMatch(mentioned, actual)),
 			);
 			depCoverage = (coveredDeps.length / actualDeps.length) * 100;
 		}
@@ -99,11 +106,13 @@ export class CompletenessScorer implements IScorer {
 		// Check for essential fields (30% weight)
 		let fieldCompleteness = 0;
 		if (summary.summary && summary.summary.length > 20) fieldCompleteness += 50;
-		if (summary.responsibilities && summary.responsibilities.length > 0) fieldCompleteness += 30;
-		if (summary.patterns && summary.patterns.length > 0) fieldCompleteness += 20;
+		if (summary.responsibilities && summary.responsibilities.length > 0)
+			fieldCompleteness += 30;
+		if (summary.patterns && summary.patterns.length > 0)
+			fieldCompleteness += 20;
 
 		const score = Math.round(
-			exportCoverage * 0.4 + depCoverage * 0.3 + fieldCompleteness * 0.3
+			exportCoverage * 0.4 + depCoverage * 0.3 + fieldCompleteness * 0.3,
 		);
 
 		return {
@@ -126,17 +135,18 @@ export class CompletenessScorer implements IScorer {
 	 */
 	private scoreSymbolSummaryCompleteness(
 		summary: SymbolSummary,
-		groundTruth: TestCase["groundTruth"]
+		groundTruth: TestCase["groundTruth"],
 	): { score: number; details: Record<string, unknown> } {
 		const actualParams = groundTruth.parameters || [];
 		const mentionedParams = summary.parameters || [];
-		const hasSideEffects = groundTruth.sideEffects && groundTruth.sideEffects.length > 0;
+		const hasSideEffects =
+			groundTruth.sideEffects && groundTruth.sideEffects.length > 0;
 
 		// Calculate parameter coverage (50% weight)
 		let paramCoverage = 100;
 		if (actualParams.length > 0) {
 			const coveredParams = actualParams.filter((actual) =>
-				mentionedParams.some((mentioned) => mentioned.name === actual.name)
+				mentionedParams.some((mentioned) => mentioned.name === actual.name),
 			);
 			paramCoverage = (coveredParams.length / actualParams.length) * 100;
 		}
@@ -188,5 +198,4 @@ export class CompletenessScorer implements IScorer {
 			},
 		};
 	}
-
 }

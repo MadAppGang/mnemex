@@ -9,7 +9,11 @@
 
 import type { IEmbeddingsClient } from "../../../../types.js";
 import type { QualityTestResult, RefinementContext } from "../types.js";
-import { BaseRefinementStrategy, cosineSimilarity, truncateForFeedback } from "./base.js";
+import {
+	BaseRefinementStrategy,
+	cosineSimilarity,
+	truncateForFeedback,
+} from "./base.js";
 
 // ============================================================================
 // Retry Helper (for LMStudio model contention)
@@ -21,7 +25,7 @@ const RETRY_DELAY_MS = 1000;
 async function withRetry<T>(
 	fn: () => Promise<T>,
 	retries = MAX_RETRIES,
-	delay = RETRY_DELAY_MS
+	delay = RETRY_DELAY_MS,
 ): Promise<T> {
 	let lastError: Error | undefined;
 	for (let attempt = 0; attempt <= retries; attempt++) {
@@ -92,7 +96,7 @@ export class RetrievalRefinementStrategy extends BaseRefinementStrategy {
 	 */
 	async testQuality(
 		summary: string,
-		context: RefinementContext
+		context: RefinementContext,
 	): Promise<QualityTestResult> {
 		const { competitors = [], queries = [] } = context;
 
@@ -111,9 +115,7 @@ export class RetrievalRefinementStrategy extends BaseRefinementStrategy {
 
 		// If no queries provided, generate a simple one from the code
 		const testQueries =
-			queries.length > 0
-				? queries
-				: [this.generateSimpleQuery(context)];
+			queries.length > 0 ? queries : [this.generateSimpleQuery(context)];
 
 		// Use pre-computed embedding if available (for initial summary), otherwise embed
 		// This avoids re-embedding the initial summary which was already pre-embedded
@@ -121,13 +123,13 @@ export class RetrievalRefinementStrategy extends BaseRefinementStrategy {
 		if (!summaryEmbedding) {
 			// Embed the test summary (with retry for LMStudio model contention)
 			summaryEmbedding = await withRetry(() =>
-				this.embeddingsClient.embedOne(summary)
+				this.embeddingsClient.embedOne(summary),
 			);
 		}
 
 		// Embed competitors if not already embedded (with retry)
 		const competitorEmbeddings = await withRetry(() =>
-			this.embedCompetitors(competitors)
+			this.embedCompetitors(competitors),
 		);
 
 		// Test against each query and collect ranks
@@ -148,7 +150,7 @@ export class RetrievalRefinementStrategy extends BaseRefinementStrategy {
 			if (!queryEmbedding) {
 				// Embed the query (with retry for LMStudio model contention)
 				queryEmbedding = await withRetry(() =>
-					this.embeddingsClient.embedOne(query)
+					this.embeddingsClient.embedOne(query),
 				);
 			}
 
@@ -210,12 +212,14 @@ export class RetrievalRefinementStrategy extends BaseRefinementStrategy {
 		// This prevents trivial passes when there are only 2-3 candidates
 		const effectiveTargetRank = Math.min(
 			this.targetRank,
-			Math.max(1, Math.ceil(totalCandidates * 0.5))
+			Math.max(1, Math.ceil(totalCandidates * 0.5)),
 		);
 
 		// Debug log to verify fix is applied
 		if (process.env.DEBUG_ITERATIVE) {
-			console.log(`[DEBUG] rank=${roundedRank}, target=${this.targetRank}, effective=${effectiveTargetRank}, candidates=${totalCandidates}, passed=${roundedRank <= effectiveTargetRank}`);
+			console.log(
+				`[DEBUG] rank=${roundedRank}, target=${this.targetRank}, effective=${effectiveTargetRank}, candidates=${totalCandidates}, passed=${roundedRank <= effectiveTargetRank}`,
+			);
 		}
 
 		return {
@@ -237,10 +241,11 @@ export class RetrievalRefinementStrategy extends BaseRefinementStrategy {
 	 */
 	async generateFeedback(
 		result: QualityTestResult,
-		context: RefinementContext
+		context: RefinementContext,
 	): Promise<string> {
 		const { rank, details } = result;
-		const { totalCandidates, effectiveTargetRank, winningSummary, query } = details;
+		const { totalCandidates, effectiveTargetRank, winningSummary, query } =
+			details;
 
 		// Use effective target rank if available (accounts for small candidate pools)
 		const targetRank = effectiveTargetRank ?? this.targetRank;
@@ -248,7 +253,9 @@ export class RetrievalRefinementStrategy extends BaseRefinementStrategy {
 		const lines: string[] = [];
 
 		// Rank information
-		lines.push(`📊 Your summary ranked #${rank} out of ${totalCandidates} summaries.`);
+		lines.push(
+			`📊 Your summary ranked #${rank} out of ${totalCandidates} summaries.`,
+		);
 		lines.push(`🎯 Target: Rank in the top ${targetRank} to succeed.`);
 		lines.push("");
 
@@ -281,7 +288,7 @@ export class RetrievalRefinementStrategy extends BaseRefinementStrategy {
 	 * Embed competitors that don't have embeddings yet
 	 */
 	private async embedCompetitors(
-		competitors: RefinementContext["competitors"]
+		competitors: RefinementContext["competitors"],
 	): Promise<Array<{ embedding: number[] }>> {
 		if (!competitors || competitors.length === 0) {
 			return [];
@@ -333,7 +340,7 @@ export class RetrievalRefinementStrategy extends BaseRefinementStrategy {
 // ============================================================================
 
 export function createRetrievalStrategy(
-	options: RetrievalStrategyOptions
+	options: RetrievalStrategyOptions,
 ): RetrievalRefinementStrategy {
 	return new RetrievalRefinementStrategy(options);
 }

@@ -137,7 +137,7 @@ export class ABTestManager {
 	createExperiment(
 		improvement: Improvement,
 		name?: string,
-		trafficPercent?: number
+		trafficPercent?: number,
 	): Experiment {
 		const experimentId = `exp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -174,7 +174,10 @@ export class ABTestManager {
 	/**
 	 * Assign a session to an experiment (treatment or control).
 	 */
-	assignSession(sessionId: string, experimentId: string): "treatment" | "control" {
+	assignSession(
+		sessionId: string,
+		experimentId: string,
+	): "treatment" | "control" {
 		const experiment = this.experiments.get(experimentId);
 		if (!experiment || experiment.status !== "running") {
 			return "control";
@@ -182,7 +185,7 @@ export class ABTestManager {
 
 		// Deterministic assignment based on session ID hash
 		const hash = this.hashString(sessionId);
-		const inTreatment = (hash % 100) < experiment.trafficPercent;
+		const inTreatment = hash % 100 < experiment.trafficPercent;
 
 		if (inTreatment) {
 			this.sessionAssignments.set(sessionId, experimentId);
@@ -214,7 +217,7 @@ export class ABTestManager {
 	recordSessionMetrics(
 		experimentId: string,
 		group: "treatment" | "control",
-		metrics: Partial<ExperimentMetrics>
+		metrics: Partial<ExperimentMetrics>,
 	): void {
 		const experiment = this.experiments.get(experimentId);
 		if (!experiment || experiment.status !== "running") {
@@ -236,7 +239,8 @@ export class ABTestManager {
 			const totalDuration =
 				targetMetrics.avgSessionDurationMs * (targetMetrics.sessions - 1) +
 				metrics.avgSessionDurationMs;
-			targetMetrics.avgSessionDurationMs = totalDuration / targetMetrics.sessions;
+			targetMetrics.avgSessionDurationMs =
+				totalDuration / targetMetrics.sessions;
 		}
 
 		// Update custom metrics
@@ -287,7 +291,9 @@ export class ABTestManager {
 					confidence: 1 - result.pValue,
 					reason: `Significant improvement: ${(result.relativeImprovement * 100).toFixed(1)}% better (p=${result.pValue.toFixed(4)})`,
 				};
-			} else if (result.relativeImprovement <= -this.config.minImprovementPercent) {
+			} else if (
+				result.relativeImprovement <= -this.config.minImprovementPercent
+			) {
 				return {
 					action: "rollback",
 					confidence: 1 - result.pValue,
@@ -318,7 +324,7 @@ export class ABTestManager {
 	concludeExperiment(
 		experimentId: string,
 		status: "graduated" | "rolled_back" | "inconclusive",
-		reason?: string
+		reason?: string,
 	): boolean {
 		const experiment = this.experiments.get(experimentId);
 		if (!experiment || experiment.status !== "running") {
@@ -415,19 +421,22 @@ export class ABTestManager {
 		const treatment = experiment.treatmentMetrics;
 
 		// Use correction rate as primary metric
-		const controlRate = control.sessions > 0 ? control.corrections / control.sessions : 0;
-		const treatmentRate = treatment.sessions > 0 ? treatment.corrections / treatment.sessions : 0;
+		const controlRate =
+			control.sessions > 0 ? control.corrections / control.sessions : 0;
+		const treatmentRate =
+			treatment.sessions > 0 ? treatment.corrections / treatment.sessions : 0;
 
 		// Calculate relative improvement (negative = better for corrections)
 		const absoluteImprovement = controlRate - treatmentRate;
-		const relativeImprovement = controlRate > 0 ? absoluteImprovement / controlRate : 0;
+		const relativeImprovement =
+			controlRate > 0 ? absoluteImprovement / controlRate : 0;
 
 		// Two-proportion z-test
 		const { pValue, confidenceInterval } = this.proportionZTest(
 			treatment.corrections,
 			treatment.sessions,
 			control.corrections,
-			control.sessions
+			control.sessions,
 		);
 
 		return {
@@ -447,7 +456,7 @@ export class ABTestManager {
 		successes1: number,
 		n1: number,
 		successes2: number,
-		n2: number
+		n2: number,
 	): { pValue: number; confidenceInterval: [number, number] } {
 		// Handle edge cases
 		if (n1 === 0 || n2 === 0) {
@@ -472,9 +481,7 @@ export class ABTestManager {
 		const pValue = 2 * (1 - this.normalCDF(Math.abs(z)));
 
 		// 95% confidence interval
-		const seUnpooled = Math.sqrt(
-			(p1 * (1 - p1)) / n1 + (p2 * (1 - p2)) / n2
-		);
+		const seUnpooled = Math.sqrt((p1 * (1 - p1)) / n1 + (p2 * (1 - p2)) / n2);
 		const marginOfError = 1.96 * seUnpooled;
 		const diff = p1 - p2;
 		const confidenceInterval: [number, number] = [
@@ -517,7 +524,7 @@ export class ABTestManager {
  * Create an A/B test manager with optional configuration.
  */
 export function createABTestManager(
-	config: Partial<ABTestConfig> = {}
+	config: Partial<ABTestConfig> = {},
 ): ABTestManager {
 	return new ABTestManager(config);
 }

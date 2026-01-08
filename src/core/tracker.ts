@@ -144,11 +144,15 @@ export class FileTracker {
 	private migrateSchema(): void {
 		try {
 			// Check if enrichment_state column exists
-			const columns = this.db.prepare("PRAGMA table_info(files)").all() as Array<{ name: string }>;
+			const columns = this.db
+				.prepare("PRAGMA table_info(files)")
+				.all() as Array<{ name: string }>;
 			const columnNames = columns.map((c) => c.name);
 
 			if (!columnNames.includes("enrichment_state")) {
-				this.db.exec("ALTER TABLE files ADD COLUMN enrichment_state TEXT DEFAULT '{}'");
+				this.db.exec(
+					"ALTER TABLE files ADD COLUMN enrichment_state TEXT DEFAULT '{}'",
+				);
 			}
 			if (!columnNames.includes("enriched_at")) {
 				this.db.exec("ALTER TABLE files ADD COLUMN enriched_at TEXT");
@@ -236,11 +240,7 @@ export class FileTracker {
 	/**
 	 * Mark a file as indexed
 	 */
-	markIndexed(
-		filePath: string,
-		contentHash: string,
-		chunkIds: string[],
-	): void {
+	markIndexed(filePath: string, contentHash: string, chunkIds: string[]): void {
 		const relativePath = relative(this.projectRoot, filePath);
 
 		let mtime: number;
@@ -271,9 +271,7 @@ export class FileTracker {
 	getChunkIds(filePath: string): string[] {
 		const relativePath = relative(this.projectRoot, filePath);
 
-		const stmt = this.db.prepare(
-			"SELECT chunk_ids FROM files WHERE path = ?",
-		);
+		const stmt = this.db.prepare("SELECT chunk_ids FROM files WHERE path = ?");
 		const row = stmt.get(relativePath) as { chunk_ids: string } | undefined;
 
 		if (!row) {
@@ -356,9 +354,7 @@ export class FileTracker {
 	 * Get metadata value
 	 */
 	getMetadata(key: string): string | null {
-		const stmt = this.db.prepare(
-			"SELECT value FROM metadata WHERE key = ?",
-		);
+		const stmt = this.db.prepare("SELECT value FROM metadata WHERE key = ?");
 		const row = stmt.get(key) as { value: string } | undefined;
 		return row?.value || null;
 	}
@@ -429,7 +425,9 @@ export class FileTracker {
 		const stmt = this.db.prepare(
 			"SELECT enrichment_state FROM files WHERE path = ?",
 		);
-		const row = stmt.get(relativePath) as { enrichment_state: string } | undefined;
+		const row = stmt.get(relativePath) as
+			| { enrichment_state: string }
+			| undefined;
 
 		if (!row || !row.enrichment_state) {
 			return {};
@@ -471,10 +469,7 @@ export class FileTracker {
 	/**
 	 * Set all enrichment states for a file at once
 	 */
-	setAllEnrichmentStates(
-		filePath: string,
-		states: EnrichmentStateMap,
-	): void {
+	setAllEnrichmentStates(filePath: string, states: EnrichmentStateMap): void {
 		const relativePath = relative(this.projectRoot, filePath);
 
 		const hasComplete = Object.values(states).some((s) => s === "complete");
@@ -518,12 +513,17 @@ export class FileTracker {
 	 */
 	getFilesNeedingEnrichment(documentType: DocumentType): string[] {
 		const stmt = this.db.prepare("SELECT path, enrichment_state FROM files");
-		const rows = stmt.all() as Array<{ path: string; enrichment_state: string }>;
+		const rows = stmt.all() as Array<{
+			path: string;
+			enrichment_state: string;
+		}>;
 
 		const needsEnrichment: string[] = [];
 		for (const row of rows) {
 			try {
-				const state = JSON.parse(row.enrichment_state || "{}") as EnrichmentStateMap;
+				const state = JSON.parse(
+					row.enrichment_state || "{}",
+				) as EnrichmentStateMap;
 				if (state[documentType] !== "complete") {
 					needsEnrichment.push(row.path);
 				}
@@ -647,7 +647,9 @@ export class FileTracker {
 	 * Delete documents by type
 	 */
 	deleteDocumentsByType(documentType: DocumentType): void {
-		const stmt = this.db.prepare("DELETE FROM documents WHERE document_type = ?");
+		const stmt = this.db.prepare(
+			"DELETE FROM documents WHERE document_type = ?",
+		);
 		stmt.run(documentType);
 	}
 
@@ -672,9 +674,7 @@ export class FileTracker {
 	 * Update mtime for a file without changing other fields
 	 */
 	private updateMtime(relativePath: string, mtime: number): void {
-		const stmt = this.db.prepare(
-			"UPDATE files SET mtime = ? WHERE path = ?",
-		);
+		const stmt = this.db.prepare("UPDATE files SET mtime = ? WHERE path = ?");
 		stmt.run(mtime, relativePath);
 	}
 
@@ -742,14 +742,16 @@ export class FileTracker {
 			WHERE library = ? AND (version = ? OR (version IS NULL AND ? IS NULL))
 		`);
 
-		const row = stmt.get(library, version || null, version || null) as {
-			library: string;
-			version: string | null;
-			provider: string;
-			content_hash: string;
-			fetched_at: string;
-			chunk_ids: string;
-		} | undefined;
+		const row = stmt.get(library, version || null, version || null) as
+			| {
+					library: string;
+					version: string | null;
+					provider: string;
+					content_hash: string;
+					fetched_at: string;
+					chunk_ids: string;
+			  }
+			| undefined;
 
 		if (!row) return null;
 
@@ -810,7 +812,9 @@ export class FileTracker {
 			);
 			stmt.run(library, version, version);
 		} else {
-			const stmt = this.db.prepare("DELETE FROM indexed_docs WHERE library = ?");
+			const stmt = this.db.prepare(
+				"DELETE FROM indexed_docs WHERE library = ?",
+			);
 			stmt.run(library);
 		}
 	}
@@ -867,7 +871,10 @@ export class FileTracker {
 		const timeStmt = this.db.prepare(`
 			SELECT MIN(fetched_at) as oldest, MAX(fetched_at) as newest FROM indexed_docs
 		`);
-		const times = timeStmt.get() as { oldest: string | null; newest: string | null };
+		const times = timeStmt.get() as {
+			oldest: string | null;
+			newest: string | null;
+		};
 
 		return {
 			totalLibraries,
@@ -1090,12 +1097,14 @@ export class FileTracker {
 			: filePath;
 
 		// Delete references first (cascade would handle this, but be explicit)
-		this.db.prepare(
-			"DELETE FROM symbol_references WHERE file_path = ?",
-		).run(relativePath);
+		this.db
+			.prepare("DELETE FROM symbol_references WHERE file_path = ?")
+			.run(relativePath);
 
 		// Delete symbols
-		this.db.prepare("DELETE FROM symbols WHERE file_path = ?").run(relativePath);
+		this.db
+			.prepare("DELETE FROM symbols WHERE file_path = ?")
+			.run(relativePath);
 	}
 
 	/**
@@ -1234,7 +1243,8 @@ export class FileTracker {
 	 */
 	resolveReferencesByName(): number {
 		// Resolve references where target_name matches a symbol name exactly
-		const result = this.db.prepare(`
+		const result = this.db
+			.prepare(`
 			UPDATE symbol_references
 			SET to_symbol_id = (
 				SELECT s.id FROM symbols s
@@ -1249,7 +1259,8 @@ export class FileTracker {
 				WHERE s.name = symbol_references.to_symbol_name
 				AND s.is_exported = 1
 			)
-		`).run();
+		`)
+			.run();
 
 		return result.changes;
 	}
@@ -1262,9 +1273,9 @@ export class FileTracker {
 			? relative(this.projectRoot, filePath)
 			: filePath;
 
-		this.db.prepare(
-			"DELETE FROM symbol_references WHERE file_path = ?",
-		).run(relativePath);
+		this.db
+			.prepare("DELETE FROM symbol_references WHERE file_path = ?")
+			.run(relativePath);
 	}
 
 	/**
@@ -1360,15 +1371,19 @@ export class FileTracker {
 		).count;
 
 		const refCount = (
-			this.db.prepare("SELECT COUNT(*) as count FROM symbol_references").get() as {
+			this.db
+				.prepare("SELECT COUNT(*) as count FROM symbol_references")
+				.get() as {
 				count: number;
 			}
 		).count;
 
 		const resolvedCount = (
-			this.db.prepare(
-				"SELECT COUNT(*) as count FROM symbol_references WHERE is_resolved = 1",
-			).get() as { count: number }
+			this.db
+				.prepare(
+					"SELECT COUNT(*) as count FROM symbol_references WHERE is_resolved = 1",
+				)
+				.get() as { count: number }
 		).count;
 
 		// Symbols by kind
@@ -1397,7 +1412,8 @@ export class FileTracker {
 			resolvedReferences: resolvedCount,
 			symbolsByKind,
 			referencesByKind,
-			pagerankComputedAt: this.getGraphMetadata("pagerank_last_computed") || undefined,
+			pagerankComputedAt:
+				this.getGraphMetadata("pagerank_last_computed") || undefined,
 		};
 	}
 

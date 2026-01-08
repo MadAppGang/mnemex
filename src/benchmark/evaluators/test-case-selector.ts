@@ -46,7 +46,9 @@ export class TestCaseSelector {
 	/**
 	 * Select test cases from the indexed project.
 	 */
-	async selectTestCases(options: TestCaseSelectionOptions): Promise<TestCase[]> {
+	async selectTestCases(
+		options: TestCaseSelectionOptions,
+	): Promise<TestCase[]> {
 		// Get all indexed files
 		const fileStates = this.tracker.getAllFiles();
 		if (fileStates.length === 0) {
@@ -60,7 +62,9 @@ export class TestCaseSelector {
 		};
 
 		// Calculate target counts per type
-		const targetPerType = Math.ceil(options.maxTestCases / options.types.length);
+		const targetPerType = Math.ceil(
+			options.maxTestCases / options.types.length,
+		);
 
 		// Sort files for diversity if requested
 		let sortedFiles = [...fileStates];
@@ -84,11 +88,15 @@ export class TestCaseSelector {
 				const chunks = await chunkFileByPath(
 					fileContent,
 					fileState.path,
-					fileState.contentHash
+					fileState.contentHash,
 				);
 
 				// Extract ground truth
-				const groundTruth = await this.extractGroundTruth(fileContent, language, chunks);
+				const groundTruth = await this.extractGroundTruth(
+					fileContent,
+					language,
+					chunks,
+				);
 
 				// Add file summary test case
 				if (
@@ -112,7 +120,9 @@ export class TestCaseSelector {
 					const symbols = chunks.filter(
 						(c) =>
 							c.name &&
-							(c.chunkType === "function" || c.chunkType === "method" || c.chunkType === "class")
+							(c.chunkType === "function" ||
+								c.chunkType === "method" ||
+								c.chunkType === "class"),
 					);
 
 					for (const symbol of symbols) {
@@ -126,7 +136,7 @@ export class TestCaseSelector {
 						const symbolGroundTruth = await this.extractSymbolGroundTruth(
 							symbol,
 							fileContent,
-							language
+							language,
 						);
 
 						testCases.push({
@@ -206,7 +216,7 @@ export class TestCaseSelector {
 	private async extractGroundTruth(
 		fileContent: string,
 		language: string,
-		chunks: CodeChunk[]
+		chunks: CodeChunk[],
 	): Promise<ASTGroundTruth> {
 		// Extract exports from chunks
 		const exports = chunks
@@ -232,15 +242,14 @@ export class TestCaseSelector {
 	private async extractSymbolGroundTruth(
 		chunk: CodeChunk,
 		fileContent: string,
-		language: string
+		language: string,
 	): Promise<ASTGroundTruth> {
 		// Extract parameters from signature
 		const parameters = this.extractParameters(chunk.signature || chunk.content);
 
 		// Check if async
 		const isAsync = Boolean(
-			chunk.content.includes("async ") ||
-			chunk.signature?.includes("async ")
+			chunk.content.includes("async ") || chunk.signature?.includes("async "),
 		);
 
 		// Extract return type
@@ -265,9 +274,15 @@ export class TestCaseSelector {
 	private extractImports(content: string, language: string): string[] {
 		const imports: string[] = [];
 
-		if (language === "typescript" || language === "javascript" || language === "tsx" || language === "jsx") {
+		if (
+			language === "typescript" ||
+			language === "javascript" ||
+			language === "tsx" ||
+			language === "jsx"
+		) {
 			// ES imports
-			const importRegex = /import\s+(?:(?:\{[^}]+\}|[^{}\s]+)\s+from\s+)?['"]([^'"]+)['"]/g;
+			const importRegex =
+				/import\s+(?:(?:\{[^}]+\}|[^{}\s]+)\s+from\s+)?['"]([^'"]+)['"]/g;
 			let match;
 			while ((match = importRegex.exec(content)) !== null) {
 				imports.push(match[1]);
@@ -294,7 +309,7 @@ export class TestCaseSelector {
 	 * Extract parameters from function signature.
 	 */
 	private extractParameters(
-		signature: string
+		signature: string,
 	): Array<{ name: string; type?: string }> {
 		const params: Array<{ name: string; type?: string }> = [];
 
@@ -392,11 +407,19 @@ export class TestCaseSelector {
 		const effects: string[] = [];
 
 		if (content.includes("console.")) effects.push("console output");
-		if (content.includes("fetch(") || content.includes("axios")) effects.push("HTTP request");
-		if (content.includes("fs.") || content.includes("readFile") || content.includes("writeFile")) {
+		if (content.includes("fetch(") || content.includes("axios"))
+			effects.push("HTTP request");
+		if (
+			content.includes("fs.") ||
+			content.includes("readFile") ||
+			content.includes("writeFile")
+		) {
 			effects.push("file I/O");
 		}
-		if (content.includes("localStorage") || content.includes("sessionStorage")) {
+		if (
+			content.includes("localStorage") ||
+			content.includes("sessionStorage")
+		) {
 			effects.push("browser storage");
 		}
 		if (content.includes("setState") || content.includes("dispatch")) {

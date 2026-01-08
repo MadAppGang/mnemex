@@ -115,7 +115,13 @@ export interface GeneratedSummary {
 // ============================================================================
 
 /** Types of evaluations supported */
-export type EvaluationType = "judge" | "contrastive" | "retrieval" | "downstream" | "self" | "iterative";
+export type EvaluationType =
+	| "judge"
+	| "contrastive"
+	| "retrieval"
+	| "downstream"
+	| "self"
+	| "iterative";
 
 /** Scores from judge evaluation (1-5 scale) */
 export interface JudgeScores {
@@ -173,7 +179,10 @@ export interface RetrievalResults {
 }
 
 /** Downstream task types */
-export type DownstreamTaskType = "completion" | "bug_localization" | "function_selection";
+export type DownstreamTaskType =
+	| "completion"
+	| "bug_localization"
+	| "function_selection";
 
 /** Results from downstream task evaluation */
 export interface DownstreamResults {
@@ -186,7 +195,10 @@ export interface DownstreamResults {
 }
 
 /** Self-evaluation task types */
-export type SelfEvalTaskType = "retrieval" | "completion" | "function_selection";
+export type SelfEvalTaskType =
+	| "retrieval"
+	| "completion"
+	| "function_selection";
 
 /** Results from self-evaluation (model uses its own summaries) */
 export interface SelfEvaluationResults {
@@ -387,7 +399,7 @@ export interface DistractorSet {
 /** Default weights for combining judge scores */
 export const JUDGE_SCORE_WEIGHTS = {
 	accuracy: 0.25,
-	completeness: 0.20,
+	completeness: 0.2,
 	semanticRichness: 0.25,
 	abstraction: 0.15,
 	conciseness: 0.15,
@@ -427,7 +439,7 @@ export interface EvaluationWeights {
  */
 export const DEFAULT_EVALUATION_WEIGHTS: EvaluationWeights = {
 	retrieval: 0.45,
-	contrastive: 0.30,
+	contrastive: 0.3,
 	judge: 0.25,
 };
 
@@ -535,7 +547,15 @@ export interface NormalizedScores {
 // ============================================================================
 
 /** Supported model providers */
-export type ModelProvider = "anthropic" | "openai" | "google" | "openrouter" | "meta" | "mistral" | "local" | "unknown";
+export type ModelProvider =
+	| "anthropic"
+	| "openai"
+	| "google"
+	| "openrouter"
+	| "meta"
+	| "mistral"
+	| "local"
+	| "unknown";
 
 /** Configuration for a model under test */
 export interface ModelConfig {
@@ -656,7 +676,12 @@ export interface BenchmarkConfig {
 // ============================================================================
 
 /** Status of a benchmark run */
-export type BenchmarkStatus = "pending" | "running" | "completed" | "failed" | "paused";
+export type BenchmarkStatus =
+	| "pending"
+	| "running"
+	| "completed"
+	| "failed"
+	| "paused";
 
 /** Phase of the benchmark pipeline */
 export type BenchmarkPhase =
@@ -814,7 +839,7 @@ export type BenchmarkProgressCallback = (
 	phase: BenchmarkPhase,
 	completed: number,
 	total: number,
-	details?: string
+	details?: string,
 ) => void;
 
 // ============================================================================
@@ -826,7 +851,7 @@ export interface ISummaryGenerator {
 	/** Generate a summary for a code unit */
 	generateSummary(
 		codeUnit: BenchmarkCodeUnit,
-		promptVersion: string
+		promptVersion: string,
 	): Promise<GeneratedSummary>;
 	/** Get model info */
 	getModelInfo(): ModelConfig;
@@ -847,7 +872,7 @@ export interface IEvaluator<TResult> {
 	evaluate(
 		summary: GeneratedSummary,
 		codeUnit: BenchmarkCodeUnit,
-		context: EvaluatorContext
+		context: EvaluatorContext,
 	): Promise<TResult>;
 	/** Get evaluation type */
 	getType(): EvaluationType;

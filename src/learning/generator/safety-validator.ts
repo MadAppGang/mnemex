@@ -198,7 +198,7 @@ export class SafetyValidator {
 		const hasApprovalConstraint = skill.constraints.some(
 			(c) =>
 				c.toLowerCase().includes("approve") ||
-				c.toLowerCase().includes("confirm")
+				c.toLowerCase().includes("confirm"),
 		);
 		if (!hasApprovalConstraint) {
 			issues.push({
@@ -239,7 +239,7 @@ export class SafetyValidator {
 		// Check allowed tools
 		const dangerousTools = ["Bash", "Write", "Edit"];
 		const allowedDangerous = subagent.allowedTools.filter((t) =>
-			dangerousTools.includes(t)
+			dangerousTools.includes(t),
 		);
 		if (allowedDangerous.length > this.config.maxRestrictedTools) {
 			issues.push({
@@ -284,7 +284,7 @@ export class SafetyValidator {
 	 * Validate a prompt optimization directly.
 	 */
 	validatePromptOptimization(
-		optimization: PromptOptimization
+		optimization: PromptOptimization,
 	): ValidationResult {
 		const issues: ValidationIssue[] = [];
 		const baseScore = optimization.confidence * 0.8 + 0.2;
@@ -293,12 +293,12 @@ export class SafetyValidator {
 		this.checkDangerousPatterns(
 			optimization.proposedText,
 			"proposedText",
-			issues
+			issues,
 		);
 		this.checkCredentialPatterns(
 			optimization.proposedText,
 			"proposedText",
-			issues
+			issues,
 		);
 
 		// Prompt optimizations are generally safer
@@ -401,12 +401,20 @@ export class SafetyValidator {
 	 */
 	private validateSkillImprovement(
 		data: ImprovementData,
-		issues: ValidationIssue[]
+		issues: ValidationIssue[],
 	): void {
 		// Check implementation
 		if (data.implementation) {
-			this.checkDangerousPatterns(data.implementation, "implementation", issues);
-			this.checkCredentialPatterns(data.implementation, "implementation", issues);
+			this.checkDangerousPatterns(
+				data.implementation,
+				"implementation",
+				issues,
+			);
+			this.checkCredentialPatterns(
+				data.implementation,
+				"implementation",
+				issues,
+			);
 		}
 
 		// Check description
@@ -418,7 +426,7 @@ export class SafetyValidator {
 	 */
 	private validateSubagentImprovement(
 		data: ImprovementData,
-		issues: ValidationIssue[]
+		issues: ValidationIssue[],
 	): void {
 		// Check system prompt
 		if (data.systemPrompt) {
@@ -435,7 +443,7 @@ export class SafetyValidator {
 	 */
 	private validatePromptImprovement(
 		data: ImprovementData,
-		issues: ValidationIssue[]
+		issues: ValidationIssue[],
 	): void {
 		// Check revised prompt
 		if (data.revisedPrompt) {
@@ -448,7 +456,7 @@ export class SafetyValidator {
 			// Check for drastic changes
 			const similarity = this.calculateSimilarity(
 				data.originalPrompt,
-				data.revisedPrompt
+				data.revisedPrompt,
 			);
 			if (similarity < 0.3) {
 				issues.push({
@@ -469,7 +477,7 @@ export class SafetyValidator {
 	private checkDangerousPatterns(
 		text: string,
 		location: string,
-		issues: ValidationIssue[]
+		issues: ValidationIssue[],
 	): void {
 		// Prevent ReDoS by limiting input length for regex operations
 		if (!this.isInputLengthSafe(text)) {
@@ -517,7 +525,7 @@ export class SafetyValidator {
 	private checkCredentialPatterns(
 		text: string,
 		location: string,
-		issues: ValidationIssue[]
+		issues: ValidationIssue[],
 	): void {
 		// Prevent ReDoS by limiting input length for regex operations
 		if (!this.isInputLengthSafe(text)) {
@@ -568,7 +576,7 @@ export class SafetyValidator {
 	 */
 	private determineRecommendation(
 		safetyScore: number,
-		issues: ValidationIssue[]
+		issues: ValidationIssue[],
 	): ValidationResult["recommendation"] {
 		// Critical issues always require rejection
 		const hasCritical = issues.some((i) => i.severity === "critical");
@@ -603,32 +611,28 @@ export class SafetyValidator {
 			switch (issue.category) {
 				case "dangerous_command":
 					suggestions.push(
-						`Remove or sandbox dangerous command: ${issue.description}`
+						`Remove or sandbox dangerous command: ${issue.description}`,
 					);
 					break;
 				case "credential_exposure":
 					suggestions.push(
-						`Remove credential reference and use environment variables instead`
+						`Remove credential reference and use environment variables instead`,
 					);
 					break;
 				case "destructive_operation":
 					suggestions.push(
-						`Add user confirmation before destructive operation`
+						`Add user confirmation before destructive operation`,
 					);
 					break;
 				case "unbounded_resource":
-					suggestions.push(
-						`Limit resource access or add rate limiting`
-					);
+					suggestions.push(`Limit resource access or add rate limiting`);
 					break;
 				case "irreversible":
-					suggestions.push(
-						`Add backup/restore capability or undo mechanism`
-					);
+					suggestions.push(`Add backup/restore capability or undo mechanism`);
 					break;
 				case "missing_constraint":
 					suggestions.push(
-						`Add safety constraint: user approval, reversibility, or logging`
+						`Add safety constraint: user approval, reversibility, or logging`,
 					);
 					break;
 			}
@@ -647,7 +651,7 @@ export class SafetyValidator {
  * Create a safety validator with optional configuration.
  */
 export function createSafetyValidator(
-	config: Partial<SafetyValidatorConfig> = {}
+	config: Partial<SafetyValidatorConfig> = {},
 ): SafetyValidator {
 	return new SafetyValidator(config);
 }

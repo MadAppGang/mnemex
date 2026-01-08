@@ -1,0 +1,95 @@
+{
+	"detected_stack": "bun-typescript",
+	"mode": "backend",
+	"stacks": ["bun-typescript"],
+	"skill_paths": [
+		"${PLUGIN_ROOT}/skills/core/universal-patterns/SKILL.md",
+		"${PLUGIN_ROOT}/skills/core/testing-strategies/SKILL.md",
+		"${PLUGIN_ROOT}/skills/core/debugging-strategies/SKILL.md",
+		"${PLUGIN_ROOT}/skills/backend/bunjs/SKILL.md",
+		"${PLUGIN_ROOT}/skills/backend/api-design/SKILL.md",
+		"${PLUGIN_ROOT}/skills/backend/typescript-patterns/SKILL.md"
+	],
+	"quality_checks": {
+		"backend": [
+			"bun run typecheck",
+			"bun run lint",
+			"bun run format",
+			"bun test"
+		]
+	},
+	"frameworks": {
+		"bun": "1.3.2",
+		"typescript": "5.7.2"
+	},
+	"key_dependencies": {
+		"runtime": "bun",
+		"language": "typescript",
+		"vector_database": "@lancedb/lancedb",
+		"sqlite": "better-sqlite3",
+		"ast_parsing": "web-tree-sitter",
+		"mcp_server": "@modelcontextprotocol/sdk",
+		"llm_integration": "@lmstudio/sdk",
+		"validation": "zod",
+		"pattern_matching": "minimatch"
+	},
+	"entry_points": [
+		"/Users/jack/mag/claudemem/src/index.ts",
+		"/Users/jack/mag/claudemem/src/cli.ts",
+		"/Users/jack/mag/claudemem/src/mcp-server.ts",
+		"/Users/jack/mag/claudemem/src/autocomplete/server.ts"
+	],
+	"build_commands": [
+		"bun run build",
+		"bun run build:binary",
+		"bun run build:binary:linux",
+		"bun run build:binary:mac"
+	],
+	"test_commands": ["bun test", "bun test:integration", "bun test:watch"],
+	"project_structure": {
+		"src/core": "Core indexing, analysis, and enrichment modules",
+		"src/retrieval": "Hybrid search (vector + BM25) and reranking",
+		"src/llm": "LLM provider integrations (Anthropic, Claude Code)",
+		"src/benchmark": "Benchmark system for evaluating retrieval quality",
+		"src/benchmark-v2": "Advanced benchmark pipeline with storage",
+		"src/autocomplete": "Autocomplete server for IDE integration",
+		"src/git": "Git hook management for auto-indexing",
+		"src/parsers": "Tree-sitter parser management",
+		"src/ui": "CLI table rendering utilities"
+	},
+	"key_technologies": {
+		"ast_parsing": "tree-sitter for intelligent code chunking",
+		"embeddings": "OpenRouter/Ollama for semantic similarity",
+		"graph_analysis": "Symbol graph with PageRank for importance ranking",
+		"vector_store": "LanceDB for local vector storage",
+		"sqlite": "better-sqlite3 for metadata and benchmarking",
+		"mcp": "Model Context Protocol server for Claude Code",
+		"file_watching": "Native fs.watch for auto-reindexing"
+	},
+	"development_patterns": {
+		"module_system": "ESNext with .js imports",
+		"strict_mode": true,
+		"target": "ES2022",
+		"moduleResolution": "bundler",
+		"testing_framework": "bun test",
+		"linting": "biome",
+		"formatting": "biome"
+	},
+	"commands_available": [
+		"map [query]",
+		"symbol <name>",
+		"callers <name>",
+		"callees <name>",
+		"context <name>",
+		"dead-code",
+		"test-gaps",
+		"impact <name>",
+		"watch",
+		"hooks install"
+	],
+	"ai_integration": {
+		"ai_instructions": "src/ai-instructions.ts (role-based prompts)",
+		"ai_skills": "src/ai-skill.ts (skill documents for embedding)",
+		"roles": ["architect", "developer", "tester", "debugger"]
+	}
+}

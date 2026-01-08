@@ -135,10 +135,18 @@ Respond with JSON only:
  * Format candidates for reranking prompt
  */
 export function formatCandidatesForReranking(
-	candidates: Array<{ name: string; type: string; path: string; summary: string }>,
+	candidates: Array<{
+		name: string;
+		type: string;
+		path: string;
+		summary: string;
+	}>,
 ): string {
 	return candidates
-		.map((c, i) => `[${i + 1}] ${c.name} (${c.type}) - ${c.path}\nSummary: ${c.summary}\n---`)
+		.map(
+			(c, i) =>
+				`[${i + 1}] ${c.name} (${c.type}) - ${c.path}\nSummary: ${c.summary}\n---`,
+		)
 		.join("\n");
 }
 
@@ -148,5 +156,7 @@ export function formatCandidatesForReranking(
 export function formatContextForFiltering(
 	items: Array<{ name: string; description: string }>,
 ): string {
-	return items.map((item, i) => `[${i + 1}] ${item.name} - ${item.description}`).join("\n");
+	return items
+		.map((item, i) => `[${i + 1}] ${item.name} - ${item.description}`)
+		.join("\n");
 }

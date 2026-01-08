@@ -79,7 +79,7 @@ export class ScoreNormalizer {
 
 		// Calculate normalized rankings
 		const sortedByNormalizedScore = [...results].sort(
-			(a, b) => b.overallScore - a.overallScore
+			(a, b) => b.overallScore - a.overallScore,
 		);
 		sortedByNormalizedScore.forEach((result, index) => {
 			result.normalizedRank = index + 1;
@@ -117,13 +117,15 @@ export class ScoreNormalizer {
 
 		if (range === 0) {
 			// All values are the same
-			return values.map(() => (this.options.targetMin! + this.options.targetMax!) / 2);
+			return values.map(
+				() => (this.options.targetMin! + this.options.targetMax!) / 2,
+			);
 		}
 
 		const targetRange = this.options.targetMax! - this.options.targetMin!;
 
 		return values.map(
-			(v) => this.options.targetMin! + ((v - min) / range) * targetRange
+			(v) => this.options.targetMin! + ((v - min) / range) * targetRange,
 		);
 	}
 
@@ -176,7 +178,7 @@ export class ScoreNormalizer {
  */
 export function calculateConfidenceInterval(
 	values: number[],
-	confidence: number = 0.95
+	confidence: number = 0.95,
 ): { lower: number; upper: number; margin: number } {
 	if (values.length === 0) {
 		return { lower: 0, upper: 0, margin: 0 };
@@ -208,7 +210,10 @@ export function calculateConfidenceInterval(
 /**
  * Calculate effect size (Cohen's d) between two groups
  */
-export function calculateEffectSize(group1: number[], group2: number[]): number {
+export function calculateEffectSize(
+	group1: number[],
+	group2: number[],
+): number {
 	if (group1.length === 0 || group2.length === 0) return 0;
 
 	const mean1 = group1.reduce((a, b) => a + b, 0) / group1.length;
@@ -234,7 +239,7 @@ export function calculateEffectSize(group1: number[], group2: number[]): number 
 // ============================================================================
 
 export function createScoreNormalizer(
-	options?: Partial<NormalizationOptions>
+	options?: Partial<NormalizationOptions>,
 ): ScoreNormalizer {
 	return new ScoreNormalizer(options);
 }

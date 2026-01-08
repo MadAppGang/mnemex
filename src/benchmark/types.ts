@@ -57,14 +57,14 @@ export interface ISummaryGenerator {
 		filePath: string,
 		fileContent: string,
 		language: string,
-		codeChunks: CodeChunk[]
+		codeChunks: CodeChunk[],
 	): Promise<GenerationResult<FileSummary>>;
 
 	/** Generate SymbolSummary for a code chunk */
 	generateSymbolSummary(
 		chunk: CodeChunk,
 		fileContent: string,
-		language: string
+		language: string,
 	): Promise<GenerationResult<SymbolSummary>>;
 
 	/** Get generator info */
@@ -126,7 +126,7 @@ export interface IJudge {
 	/** Judge a generated summary */
 	judge(
 		generated: FileSummary | SymbolSummary,
-		context: JudgeContext
+		context: JudgeContext,
 	): Promise<JudgmentResult>;
 
 	/** Get judge info */
@@ -167,7 +167,7 @@ export interface IScorer {
 	score(
 		testCase: TestCase,
 		generation: GenerationResult<FileSummary | SymbolSummary>,
-		judgment?: JudgmentResult
+		judgment?: JudgmentResult,
 	): Promise<ScoreResult>;
 
 	/** Get the criterion this scorer evaluates */
@@ -360,12 +360,12 @@ export interface IReporter {
 
 /** Default scoring weights */
 export const DEFAULT_WEIGHTS: Record<string, number> = {
-	correctness: 0.30,
-	completeness: 0.20,
-	usefulness: 0.20,
-	conciseness: 0.10,
-	speed: 0.10,
-	cost: 0.10,
+	correctness: 0.3,
+	completeness: 0.2,
+	usefulness: 0.2,
+	conciseness: 0.1,
+	speed: 0.1,
+	cost: 0.1,
 };
 
 /** Benchmark configuration */
@@ -395,7 +395,7 @@ export type BenchmarkProgressCallback = (
 	phase: BenchmarkPhase,
 	completed: number,
 	total: number,
-	details?: string
+	details?: string,
 ) => void;
 
 /** Phases of the benchmark process */

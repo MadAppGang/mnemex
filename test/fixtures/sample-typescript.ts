@@ -67,7 +67,7 @@ export class UserService extends EventEmitter {
 	listUsers(role?: UserRole): User[] {
 		const allUsers = Array.from(this.users.values());
 		if (role) {
-			return allUsers.filter(u => u.role === role);
+			return allUsers.filter((u) => u.role === role);
 		}
 		return allUsers;
 	}

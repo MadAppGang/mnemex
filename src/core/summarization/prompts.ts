@@ -61,7 +61,9 @@ export interface FunctionSummaryInput {
 	code: string;
 }
 
-export function buildFunctionSummaryPrompt(input: FunctionSummaryInput): string {
+export function buildFunctionSummaryPrompt(
+	input: FunctionSummaryInput,
+): string {
 	const parts: string[] = [
 		`Write a summary for this ${input.language} ${input.unitType}.`,
 		"",
@@ -250,7 +252,9 @@ export interface GoFunctionSummaryInput extends FunctionSummaryInput {
 	errorInfo?: string;
 }
 
-export function buildGoFunctionSummaryPrompt(input: GoFunctionSummaryInput): string {
+export function buildGoFunctionSummaryPrompt(
+	input: GoFunctionSummaryInput,
+): string {
 	const parts: string[] = [
 		`Write a summary for this Go function.`,
 		"",

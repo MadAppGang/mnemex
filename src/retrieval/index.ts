@@ -25,15 +25,28 @@ export type {
 
 // Query routing
 export { QueryRouter, createQueryRouter } from "./routing/query-router.js";
-export type { QueryRouterOptions, RouteResult, RetrievalStrategy } from "./routing/query-router.js";
+export type {
+	QueryRouterOptions,
+	RouteResult,
+	RetrievalStrategy,
+} from "./routing/query-router.js";
 
 // Reranking
 export { LLMReranker, createLLMReranker } from "./reranking/llm-reranker.js";
-export type { RerankerOptions, RerankableResult } from "./reranking/llm-reranker.js";
+export type {
+	RerankerOptions,
+	RerankableResult,
+} from "./reranking/llm-reranker.js";
 
 // Context formatting
-export { ContextFormatter, createContextFormatter } from "./formatting/context-formatter.js";
-export type { FormatterOptions, FormatInput } from "./formatting/context-formatter.js";
+export {
+	ContextFormatter,
+	createContextFormatter,
+} from "./formatting/context-formatter.js";
+export type {
+	FormatterOptions,
+	FormatInput,
+} from "./formatting/context-formatter.js";
 
 // Prompts
 export {

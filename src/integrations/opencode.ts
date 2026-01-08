@@ -7,7 +7,13 @@
  * @see https://opencode.ai/docs/plugins/
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	writeFileSync,
+	unlinkSync,
+} from "node:fs";
 import { join, dirname, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -310,7 +316,10 @@ export class OpenCodeIntegrationManager {
 	 * Check if this is an OpenCode project
 	 */
 	isOpenCodeProject(): boolean {
-		return existsSync(this.configPath) || existsSync(join(this.projectPath, ".opencode"));
+		return (
+			existsSync(this.configPath) ||
+			existsSync(join(this.projectPath, ".opencode"))
+		);
 	}
 
 	/**
@@ -336,7 +345,7 @@ export class OpenCodeIntegrationManager {
 		const plugins = config.plugin as string[];
 
 		// Remove any existing claudemem plugins
-		const filtered = plugins.filter(p => !p.includes("claudemem"));
+		const filtered = plugins.filter((p) => !p.includes("claudemem"));
 
 		// Add our plugins with absolute file:// paths (required by OpenCode)
 		// Use pathToFileURL for cross-platform compatibility (handles Windows backslashes)
@@ -344,13 +353,19 @@ export class OpenCodeIntegrationManager {
 			filtered.push(pathToFileURL(join(this.pluginDir, "claudemem.ts")).href);
 		}
 		if (type === "tools" || type === "both") {
-			filtered.push(pathToFileURL(join(this.pluginDir, "claudemem-tools.ts")).href);
+			filtered.push(
+				pathToFileURL(join(this.pluginDir, "claudemem-tools.ts")).href,
+			);
 		}
 
 		config.plugin = filtered;
 
 		// Write updated config
-		writeFileSync(this.configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+		writeFileSync(
+			this.configPath,
+			JSON.stringify(config, null, 2) + "\n",
+			"utf-8",
+		);
 	}
 
 	/**
@@ -365,10 +380,16 @@ export class OpenCodeIntegrationManager {
 			const config = JSON.parse(readFileSync(this.configPath, "utf-8"));
 
 			if (Array.isArray(config.plugin)) {
-				config.plugin = config.plugin.filter((p: string) => !p.includes("claudemem"));
+				config.plugin = config.plugin.filter(
+					(p: string) => !p.includes("claudemem"),
+				);
 			}
 
-			writeFileSync(this.configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+			writeFileSync(
+				this.configPath,
+				JSON.stringify(config, null, 2) + "\n",
+				"utf-8",
+			);
 		} catch {
 			// Ignore errors
 		}
@@ -379,6 +400,8 @@ export class OpenCodeIntegrationManager {
 // Factory Function
 // ============================================================================
 
-export function createOpenCodeIntegration(projectPath: string): OpenCodeIntegrationManager {
+export function createOpenCodeIntegration(
+	projectPath: string,
+): OpenCodeIntegrationManager {
 	return new OpenCodeIntegrationManager(projectPath);
 }

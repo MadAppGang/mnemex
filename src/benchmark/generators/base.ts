@@ -40,14 +40,19 @@ export class SummaryGenerator implements ISummaryGenerator {
 		this.info = info;
 		this.fileSummaryExtractor = new FileSummaryExtractor();
 		this.symbolSummaryExtractor = new SymbolSummaryExtractor();
-		this.accumulatedUsage = { inputTokens: 0, outputTokens: 0, cost: 0, calls: 0 };
+		this.accumulatedUsage = {
+			inputTokens: 0,
+			outputTokens: 0,
+			cost: 0,
+			calls: 0,
+		};
 	}
 
 	async generateFileSummary(
 		filePath: string,
 		fileContent: string,
 		language: string,
-		codeChunks: CodeChunk[]
+		codeChunks: CodeChunk[],
 	): Promise<GenerationResult<FileSummary>> {
 		// Reset LLM client usage tracking
 		this.llmClient.resetAccumulatedUsage();
@@ -63,7 +68,7 @@ export class SummaryGenerator implements ISummaryGenerator {
 					codeChunks,
 					projectPath: "",
 				},
-				this.llmClient
+				this.llmClient,
 			);
 
 			const durationMs = Date.now() - startTime;
@@ -95,7 +100,7 @@ export class SummaryGenerator implements ISummaryGenerator {
 			throw new Error(
 				`Failed to generate file summary for ${filePath}: ${
 					error instanceof Error ? error.message : String(error)
-				}`
+				}`,
 			);
 		}
 	}
@@ -103,7 +108,7 @@ export class SummaryGenerator implements ISummaryGenerator {
 	async generateSymbolSummary(
 		chunk: CodeChunk,
 		fileContent: string,
-		language: string
+		language: string,
 	): Promise<GenerationResult<SymbolSummary>> {
 		// Reset LLM client usage tracking
 		this.llmClient.resetAccumulatedUsage();
@@ -119,7 +124,7 @@ export class SummaryGenerator implements ISummaryGenerator {
 					codeChunks: [chunk],
 					projectPath: "",
 				},
-				this.llmClient
+				this.llmClient,
 			);
 
 			const durationMs = Date.now() - startTime;
@@ -151,7 +156,7 @@ export class SummaryGenerator implements ISummaryGenerator {
 			throw new Error(
 				`Failed to generate symbol summary for ${chunk.name}: ${
 					error instanceof Error ? error.message : String(error)
-				}`
+				}`,
 			);
 		}
 	}
@@ -165,10 +170,20 @@ export class SummaryGenerator implements ISummaryGenerator {
 	}
 
 	resetUsage(): void {
-		this.accumulatedUsage = { inputTokens: 0, outputTokens: 0, cost: 0, calls: 0 };
+		this.accumulatedUsage = {
+			inputTokens: 0,
+			outputTokens: 0,
+			cost: 0,
+			calls: 0,
+		};
 	}
 
-	private accumulateUsage(usage: { inputTokens: number; outputTokens: number; cost: number; calls: number }): void {
+	private accumulateUsage(usage: {
+		inputTokens: number;
+		outputTokens: number;
+		cost: number;
+		calls: number;
+	}): void {
 		this.accumulatedUsage.inputTokens += usage.inputTokens;
 		this.accumulatedUsage.outputTokens += usage.outputTokens;
 		this.accumulatedUsage.cost += usage.cost;

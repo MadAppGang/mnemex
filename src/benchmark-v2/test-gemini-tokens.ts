@@ -31,30 +31,36 @@ SUMMARY B:
 Which summary is better? Respond ONLY with JSON, no markdown:
 {"winner": "A" or "B", "confidence": "high/medium/low", "reasoning": "brief"}`;
 
-async function testWithTokenLimit(model: string, maxTokens: number): Promise<void> {
+async function testWithTokenLimit(
+	model: string,
+	maxTokens: number,
+): Promise<void> {
 	console.log(`\n${model} with max_tokens=${maxTokens}:`);
 
-	const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-			"Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-			"HTTP-Referer": "https://github.com/claudemem",
+	const response = await fetch(
+		"https://openrouter.ai/api/v1/chat/completions",
+		{
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+				"HTTP-Referer": "https://github.com/claudemem",
+			},
+			body: JSON.stringify({
+				model,
+				messages: [{ role: "user", content: PAIRWISE_PROMPT }],
+				max_tokens: maxTokens,
+				temperature: 0,
+			}),
 		},
-		body: JSON.stringify({
-			model,
-			messages: [{ role: "user", content: PAIRWISE_PROMPT }],
-			max_tokens: maxTokens,
-			temperature: 0,
-		}),
-	});
+	);
 
 	if (!response.ok) {
 		console.log(`  ERROR: ${response.status} - ${await response.text()}`);
 		return;
 	}
 
-	const data = await response.json() as any;
+	const data = (await response.json()) as any;
 	const content = data.choices?.[0]?.message?.content || "(empty)";
 	const finishReason = data.choices?.[0]?.finish_reason;
 	const completionTokens = data.usage?.completion_tokens;
@@ -62,7 +68,9 @@ async function testWithTokenLimit(model: string, maxTokens: number): Promise<voi
 	console.log(`  finish_reason: ${finishReason}`);
 	console.log(`  completion_tokens: ${completionTokens}`);
 	console.log(`  content length: ${content.length}`);
-	console.log(`  content: "${content.slice(0, 200)}${content.length > 200 ? '...' : ''}"`);
+	console.log(
+		`  content: "${content.slice(0, 200)}${content.length > 200 ? "..." : ""}"`,
+	);
 }
 
 async function main() {
@@ -88,7 +96,7 @@ async function main() {
 			} catch (e) {
 				console.log(`  FETCH ERROR: ${e}`);
 			}
-			await new Promise(r => setTimeout(r, 500));
+			await new Promise((r) => setTimeout(r, 500));
 		}
 	}
 

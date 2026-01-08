@@ -87,11 +87,12 @@ Which function should be used? Respond with JSON:
  */
 export function generateCompletionTasks(
 	codeUnits: BenchmarkCodeUnit[],
-	count: number = 10
+	count: number = 10,
 ): CompletionTask[] {
 	// Select function/method units
 	const candidates = codeUnits.filter(
-		(u) => (u.type === "function" || u.type === "method") && u.content.length > 100
+		(u) =>
+			(u.type === "function" || u.type === "method") && u.content.length > 100,
 	);
 
 	const selected = candidates
@@ -102,12 +103,13 @@ export function generateCompletionTasks(
 		// Create partial code by removing the body
 		const lines = unit.content.split("\n");
 		const signatureEndLine = lines.findIndex(
-			(l) => l.includes("{") || l.includes(":")
+			(l) => l.includes("{") || l.includes(":"),
 		);
 
 		const partialCode =
 			signatureEndLine >= 0
-				? lines.slice(0, signatureEndLine + 1).join("\n") + "\n    // TODO: implement"
+				? lines.slice(0, signatureEndLine + 1).join("\n") +
+					"\n    // TODO: implement"
 				: lines.slice(0, Math.ceil(lines.length / 3)).join("\n");
 
 		return {
@@ -127,7 +129,7 @@ export function generateCompletionTasks(
  */
 export function generateBugLocalizationTasks(
 	codeUnits: BenchmarkCodeUnit[],
-	count: number = 5
+	count: number = 5,
 ): BugLocalizationTask[] {
 	// Group by file
 	const fileUnits = codeUnits.filter((u) => u.type === "file");
@@ -173,11 +175,11 @@ export function generateBugLocalizationTasks(
  */
 export function generateFunctionSelectionTasks(
 	codeUnits: BenchmarkCodeUnit[],
-	count: number = 10
+	count: number = 10,
 ): FunctionSelectionTask[] {
 	// Select function units
 	const functions = codeUnits.filter(
-		(u) => u.type === "function" && u.name && u.name.length > 3
+		(u) => u.type === "function" && u.name && u.name.length > 3,
 	);
 
 	if (functions.length < 4) return [];
@@ -228,11 +230,11 @@ export class DownstreamEvaluator extends BaseEvaluator<EvaluationResult> {
 	async evaluate(
 		summary: GeneratedSummary,
 		_codeUnit: BenchmarkCodeUnit,
-		context: EvaluatorContext
+		context: EvaluatorContext,
 	): Promise<EvaluationResult> {
 		// This method evaluates all downstream tasks for a summary
 		throw new Error(
-			"Use evaluateTask methods instead for specific downstream tasks"
+			"Use evaluateTask methods instead for specific downstream tasks",
 		);
 	}
 
@@ -242,36 +244,40 @@ export class DownstreamEvaluator extends BaseEvaluator<EvaluationResult> {
 	async evaluateCompletion(
 		task: CompletionTask,
 		summaries: GeneratedSummary[],
-		modelId: string
+		modelId: string,
 	): Promise<EvaluationResult> {
 		if (!this.llmClient) {
 			throw new DownstreamError(
 				"completion",
 				task.id,
-				"No LLM client provided"
+				"No LLM client provided",
 			);
 		}
 
 		// Get relevant summaries
 		const relevantSummaryObjs = summaries.filter((s) =>
-			task.relevantSummaryIds.includes(s.codeUnitId)
+			task.relevantSummaryIds.includes(s.codeUnitId),
 		);
 		const relevantSummaryText = relevantSummaryObjs
 			.map((s) => s.summary)
 			.join("\n\n---\n\n");
 
 		// Find the primary summary for this task (for the foreign key)
-		const primarySummary = summaries.find((s) => s.codeUnitId === task.codeUnitId);
+		const primarySummary = summaries.find(
+			(s) => s.codeUnitId === task.codeUnitId,
+		);
 		if (!primarySummary) {
 			throw new DownstreamError(
 				"completion",
 				task.id,
-				`No summary found for code unit ${task.codeUnitId}`
+				`No summary found for code unit ${task.codeUnitId}`,
 			);
 		}
 
-		const prompt = COMPLETION_PROMPT
-			.replace("{summaries}", relevantSummaryText || "No context available")
+		const prompt = COMPLETION_PROMPT.replace(
+			"{summaries}",
+			relevantSummaryText || "No context available",
+		)
 			.replace("{language}", task.language)
 			.replace("{partial_code}", task.partialCode)
 			.replace("{requirements}", task.requirements);
@@ -312,7 +318,7 @@ export class DownstreamEvaluator extends BaseEvaluator<EvaluationResult> {
 				task.id,
 				error instanceof Error ? error.message : String(error),
 				{ modelId },
-				error instanceof Error ? error : undefined
+				error instanceof Error ? error : undefined,
 			);
 		}
 	}
@@ -324,13 +330,13 @@ export class DownstreamEvaluator extends BaseEvaluator<EvaluationResult> {
 		task: BugLocalizationTask,
 		summaries: GeneratedSummary[],
 		codeUnits: BenchmarkCodeUnit[],
-		modelId: string
+		modelId: string,
 	): Promise<EvaluationResult> {
 		if (!this.llmClient) {
 			throw new DownstreamError(
 				"bug_localization",
 				task.id,
-				"No LLM client provided"
+				"No LLM client provided",
 			);
 		}
 
@@ -340,7 +346,7 @@ export class DownstreamEvaluator extends BaseEvaluator<EvaluationResult> {
 			throw new DownstreamError(
 				"bug_localization",
 				task.id,
-				"No summaries available for model"
+				"No summaries available for model",
 			);
 		}
 
@@ -353,9 +359,10 @@ export class DownstreamEvaluator extends BaseEvaluator<EvaluationResult> {
 			})
 			.join("\n\n");
 
-		const prompt = BUG_LOCALIZATION_PROMPT
-			.replace("{bug_description}", task.bugDescription)
-			.replace("{file_summaries}", fileSummaries);
+		const prompt = BUG_LOCALIZATION_PROMPT.replace(
+			"{bug_description}",
+			task.bugDescription,
+		).replace("{file_summaries}", fileSummaries);
 
 		const messages: LLMMessage[] = [{ role: "user", content: prompt }];
 
@@ -398,7 +405,7 @@ export class DownstreamEvaluator extends BaseEvaluator<EvaluationResult> {
 				task.id,
 				error instanceof Error ? error.message : String(error),
 				{ modelId },
-				error instanceof Error ? error : undefined
+				error instanceof Error ? error : undefined,
 			);
 		}
 	}
@@ -410,13 +417,13 @@ export class DownstreamEvaluator extends BaseEvaluator<EvaluationResult> {
 		task: FunctionSelectionTask,
 		summaries: GeneratedSummary[],
 		codeUnits: BenchmarkCodeUnit[],
-		modelId: string
+		modelId: string,
 	): Promise<EvaluationResult> {
 		if (!this.llmClient) {
 			throw new DownstreamError(
 				"function_selection",
 				task.id,
-				"No LLM client provided"
+				"No LLM client provided",
 			);
 		}
 
@@ -426,7 +433,7 @@ export class DownstreamEvaluator extends BaseEvaluator<EvaluationResult> {
 			throw new DownstreamError(
 				"function_selection",
 				task.id,
-				"No summaries available for model"
+				"No summaries available for model",
 			);
 		}
 
@@ -439,9 +446,10 @@ export class DownstreamEvaluator extends BaseEvaluator<EvaluationResult> {
 			})
 			.join("\n\n");
 
-		const prompt = FUNCTION_SELECTION_PROMPT
-			.replace("{task_description}", task.taskDescription)
-			.replace("{function_summaries}", functionSummaries);
+		const prompt = FUNCTION_SELECTION_PROMPT.replace(
+			"{task_description}",
+			task.taskDescription,
+		).replace("{function_summaries}", functionSummaries);
 
 		const messages: LLMMessage[] = [{ role: "user", content: prompt }];
 
@@ -484,7 +492,7 @@ export class DownstreamEvaluator extends BaseEvaluator<EvaluationResult> {
 				task.id,
 				error instanceof Error ? error.message : String(error),
 				{ modelId },
-				error instanceof Error ? error : undefined
+				error instanceof Error ? error : undefined,
 			);
 		}
 	}
@@ -498,10 +506,17 @@ export class DownstreamEvaluator extends BaseEvaluator<EvaluationResult> {
 		return codeMatch ? codeMatch[1].trim() : response.trim();
 	}
 
-	private calculateCompletionScore(generated: string, original: string): number {
+	private calculateCompletionScore(
+		generated: string,
+		original: string,
+	): number {
 		// Simple token overlap score
-		const genTokens = new Set(generated.toLowerCase().split(/\W+/).filter(Boolean));
-		const origTokens = new Set(original.toLowerCase().split(/\W+/).filter(Boolean));
+		const genTokens = new Set(
+			generated.toLowerCase().split(/\W+/).filter(Boolean),
+		);
+		const origTokens = new Set(
+			original.toLowerCase().split(/\W+/).filter(Boolean),
+		);
 
 		if (origTokens.size === 0) return 0;
 
@@ -519,7 +534,7 @@ export class DownstreamEvaluator extends BaseEvaluator<EvaluationResult> {
 // ============================================================================
 
 export function createDownstreamEvaluator(
-	llmClient: ILLMClient
+	llmClient: ILLMClient,
 ): DownstreamEvaluator {
 	return new DownstreamEvaluator(llmClient);
 }
@@ -532,14 +547,15 @@ export function createDownstreamEvaluator(
  * Create the downstream evaluation phase executor
  */
 export function createDownstreamPhaseExecutor(
-	llmClient: ILLMClient
+	llmClient: ILLMClient,
 ): (context: PhaseContext) => Promise<PhaseResult> {
 	return async (context: PhaseContext): Promise<PhaseResult> => {
 		const { db, run, config, stateMachine } = context;
 		const evalConfig = config.evaluation.downstream;
 
 		// Check if downstream evaluation is enabled and has any tasks
-		const hasAnyTask = evalConfig.tasks.codeCompletion ||
+		const hasAnyTask =
+			evalConfig.tasks.codeCompletion ||
 			evalConfig.tasks.bugLocalization ||
 			evalConfig.tasks.functionSelection;
 
@@ -622,21 +638,21 @@ export function createDownstreamPhaseExecutor(
 						result = await evaluator.evaluateCompletion(
 							item.task as CompletionTask,
 							item.modelSummaries,
-							item.modelId
+							item.modelId,
 						);
 					} else if (item.type === "bugLoc") {
 						result = await evaluator.evaluateBugLocalization(
 							item.task as BugLocalizationTask,
 							item.modelSummaries,
 							codeUnits,
-							item.modelId
+							item.modelId,
 						);
 					} else {
 						result = await evaluator.evaluateFunctionSelection(
 							item.task as FunctionSelectionTask,
 							item.modelSummaries,
 							codeUnits,
-							item.modelId
+							item.modelId,
 						);
 					}
 					db.insertEvaluationResult(run.id, result);
@@ -649,7 +665,7 @@ export function createDownstreamPhaseExecutor(
 					"evaluation:downstream",
 					completed,
 					item.task.id,
-					`downstream: ${completed}/${totalTasks}`
+					`downstream: ${completed}/${totalTasks}`,
 				);
 			};
 

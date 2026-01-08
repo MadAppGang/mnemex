@@ -1,0 +1,26 @@
+// Test file for Dingo
+package main
+
+import "testing"
+
+func TestProcessData(t *testing.T) {
+    result := processData("test")
+    match result {
+        Ok(val) => {
+            if val != 42 {
+                t.Errorf("expected 42, got %d", val)
+            }
+        },
+        Err(e) => {
+            t.Errorf("unexpected error: %s", e)
+        },
+    }
+}
+
+func TestHandleResult(t *testing.T) {
+    let result = Result.Ok(42)
+    let val = handleResult(result)
+    if val != 42 {
+        t.Errorf("expected 42, got %d", val)
+    }
+}

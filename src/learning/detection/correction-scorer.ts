@@ -11,7 +11,10 @@
  * a correction occurred. Higher scores = more likely correction.
  */
 
-import type { CorrectionSignals, CorrectionEvent } from "../interaction/types.js";
+import type {
+	CorrectionSignals,
+	CorrectionEvent,
+} from "../interaction/types.js";
 
 // ============================================================================
 // Configuration
@@ -291,7 +294,7 @@ export class CorrectionScorer {
 		// Different tool after failure = stronger signal
 		const isRelatedTool = this.areToolsRelated(
 			context.previousTool,
-			context.currentTool
+			context.currentTool,
 		);
 
 		if (isRelatedTool) {
@@ -311,7 +314,7 @@ export class CorrectionScorer {
 
 		// Find agent edits to same file
 		const sameFileEdits = context.recentAgentEdits.filter(
-			(edit) => edit.filePath === context.filePath
+			(edit) => edit.filePath === context.filePath,
 		);
 
 		if (sameFileEdits.length === 0) {
@@ -338,7 +341,10 @@ export class CorrectionScorer {
 	 * Score reask signal - user repeating similar request.
 	 */
 	scoreReask(context: ScoringContext): number {
-		if (!context.recentUserMessages || context.recentUserMessages.length === 0) {
+		if (
+			!context.recentUserMessages ||
+			context.recentUserMessages.length === 0
+		) {
 			return 0;
 		}
 
@@ -440,7 +446,7 @@ export class CorrectionScorer {
 	 */
 	private linesOverlap(
 		range1: { startLine?: number; endLine?: number },
-		range2: { startLine?: number; endLine?: number }
+		range2: { startLine?: number; endLine?: number },
 	): boolean {
 		const start1 = range1.startLine ?? 0;
 		const end1 = range1.endLine ?? range1.startLine ?? Infinity;
@@ -491,7 +497,7 @@ export class CorrectionScorer {
  * Create a correction scorer with optional configuration.
  */
 export function createCorrectionScorer(
-	config: Partial<CorrectionScorerConfig> = {}
+	config: Partial<CorrectionScorerConfig> = {},
 ): CorrectionScorer {
 	return new CorrectionScorer(config);
 }

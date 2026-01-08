@@ -7,7 +7,11 @@
 
 import { BaseLLMClient, DEFAULT_LLM_MODELS } from "../client.js";
 import { combineAbortSignals } from "../abort.js";
-import type { LLMGenerateOptions, LLMMessage, LLMResponse } from "../../types.js";
+import type {
+	LLMGenerateOptions,
+	LLMMessage,
+	LLMResponse,
+} from "../../types.js";
 
 // ============================================================================
 // Types
@@ -62,13 +66,13 @@ export class AnthropicLLMClient extends BaseLLMClient {
 		super(
 			"anthropic",
 			options.model || DEFAULT_LLM_MODELS.anthropic,
-			options.timeout || 120000
+			options.timeout || 120000,
 		);
 
 		const apiKey = options.apiKey || process.env.ANTHROPIC_API_KEY;
 		if (!apiKey) {
 			throw new Error(
-				"Anthropic API key required. Set ANTHROPIC_API_KEY environment variable or pass apiKey option."
+				"Anthropic API key required. Set ANTHROPIC_API_KEY environment variable or pass apiKey option.",
 			);
 		}
 		this.apiKey = apiKey;
@@ -76,11 +80,14 @@ export class AnthropicLLMClient extends BaseLLMClient {
 
 	async complete(
 		messages: LLMMessage[],
-		options?: LLMGenerateOptions
+		options?: LLMGenerateOptions,
 	): Promise<LLMResponse> {
 		return this.withRetry(async () => {
 			// Separate system message from conversation
-			const systemPrompt = this.extractSystemPrompt(messages, options?.systemPrompt);
+			const systemPrompt = this.extractSystemPrompt(
+				messages,
+				options?.systemPrompt,
+			);
 			const conversationMessages = this.convertMessages(messages);
 
 			// Build request body
@@ -89,13 +96,18 @@ export class AnthropicLLMClient extends BaseLLMClient {
 				max_tokens: options?.maxTokens || 4096,
 				messages: conversationMessages,
 				...(systemPrompt && { system: systemPrompt }),
-				...(options?.temperature !== undefined && { temperature: options.temperature }),
+				...(options?.temperature !== undefined && {
+					temperature: options.temperature,
+				}),
 			};
 
 			// Make API request
 			const controller = new AbortController();
 			const timeoutId = setTimeout(() => controller.abort(), this.timeout);
-			const signal = combineAbortSignals(controller.signal, options?.abortSignal);
+			const signal = combineAbortSignals(
+				controller.signal,
+				options?.abortSignal,
+			);
 
 			try {
 				const response = await fetch(ANTHROPIC_API_URL, {
@@ -130,7 +142,9 @@ export class AnthropicLLMClient extends BaseLLMClient {
 						throw new Error(`Anthropic API error: ${errorMessage}`);
 					}
 
-					throw new Error(`Anthropic API error (${response.status}): ${errorMessage}`);
+					throw new Error(
+						`Anthropic API error (${response.status}): ${errorMessage}`,
+					);
 				}
 
 				const data = (await response.json()) as AnthropicResponse;
@@ -153,7 +167,9 @@ export class AnthropicLLMClient extends BaseLLMClient {
 				clearTimeout(timeoutId);
 
 				if (error instanceof Error && error.name === "AbortError") {
-					throw new Error(`Anthropic API request timed out after ${this.timeout}ms`);
+					throw new Error(
+						`Anthropic API request timed out after ${this.timeout}ms`,
+					);
 				}
 				throw error;
 			}
@@ -165,7 +181,7 @@ export class AnthropicLLMClient extends BaseLLMClient {
 	 */
 	private extractSystemPrompt(
 		messages: LLMMessage[],
-		optionsSystemPrompt?: string
+		optionsSystemPrompt?: string,
 	): string | undefined {
 		const parts: string[] = [];
 

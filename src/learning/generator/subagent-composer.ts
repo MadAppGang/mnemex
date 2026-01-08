@@ -12,7 +12,11 @@
  * - Safety constraints
  */
 
-import type { DetectedPattern, Improvement, ImprovementData } from "../interaction/types.js";
+import type {
+	DetectedPattern,
+	Improvement,
+	ImprovementData,
+} from "../interaction/types.js";
 import type { ErrorCluster } from "../analysis/error-clusterer.js";
 
 // ============================================================================
@@ -86,7 +90,8 @@ export class SubagentComposer {
 	 */
 	composeFromClusters(clusters: ErrorCluster[]): SubagentCompositionResult {
 		const subagents: GeneratedSubagent[] = [];
-		const skippedClusters: Array<{ cluster: ErrorCluster; reason: string }> = [];
+		const skippedClusters: Array<{ cluster: ErrorCluster; reason: string }> =
+			[];
 
 		for (const cluster of clusters) {
 			// Check cluster size
@@ -120,7 +125,11 @@ export class SubagentComposer {
 	 */
 	composeFromPatterns(patterns: DetectedPattern[]): GeneratedSubagent[] {
 		return patterns
-			.filter((p) => p.patternType === "error" && p.occurrenceCount >= this.config.minClusterSize)
+			.filter(
+				(p) =>
+					p.patternType === "error" &&
+					p.occurrenceCount >= this.config.minClusterSize,
+			)
 			.map((p) => this.composeFromPattern(p));
 	}
 
@@ -128,14 +137,15 @@ export class SubagentComposer {
 	 * Generate specialized subagents for specific error categories.
 	 */
 	composeSpecialized(
-		category: "validation" | "permission" | "timeout" | "logic"
+		category: "validation" | "permission" | "timeout" | "logic",
 	): GeneratedSubagent {
 		const templates: Record<string, Partial<GeneratedSubagent>> = {
 			validation: {
 				name: "input-validator",
 				role: "validator",
 				systemPrompt: this.buildValidationPrompt(),
-				triggerCondition: "Before Write, Edit, or Bash tools with user-provided data",
+				triggerCondition:
+					"Before Write, Edit, or Bash tools with user-provided data",
 				allowedTools: ["Read", "Glob", "Grep"],
 				restrictedTools: ["Write", "Edit", "Bash"],
 			},
@@ -306,7 +316,7 @@ export class SubagentComposer {
 	 */
 	private generateSystemPrompt(
 		cluster: ErrorCluster,
-		role: GeneratedSubagent["role"]
+		role: GeneratedSubagent["role"],
 	): string {
 		const lines: string[] = [
 			`# ${role.charAt(0).toUpperCase() + role.slice(1)} Subagent`,
@@ -330,21 +340,21 @@ export class SubagentComposer {
 				lines.push(
 					"1. Validate all inputs before tool execution",
 					"2. Check preconditions are met",
-					"3. Reject invalid operations with clear explanation"
+					"3. Reject invalid operations with clear explanation",
 				);
 				break;
 			case "reviewer":
 				lines.push(
 					"1. Review proposed changes for potential issues",
 					"2. Flag risky operations",
-					"3. Suggest safer alternatives when possible"
+					"3. Suggest safer alternatives when possible",
 				);
 				break;
 			case "fixer":
 				lines.push(
 					"1. Detect when the error pattern occurs",
 					"2. Apply automatic fix if safe",
-					"3. Escalate to user if fix requires confirmation"
+					"3. Escalate to user if fix requires confirmation",
 				);
 				break;
 			case "assistant":
@@ -352,7 +362,7 @@ export class SubagentComposer {
 				lines.push(
 					"1. Monitor for error conditions",
 					"2. Provide guidance to prevent errors",
-					"3. Help recover if error occurs"
+					"3. Help recover if error occurs",
 				);
 		}
 
@@ -361,7 +371,7 @@ export class SubagentComposer {
 			"## Constraints",
 			"- Always explain your reasoning",
 			"- Request user confirmation for destructive actions",
-			"- Log decisions for continuous learning"
+			"- Log decisions for continuous learning",
 		);
 
 		const prompt = lines.join("\n");
@@ -470,7 +480,7 @@ export class SubagentComposer {
 		// Reduce score for write-capable subagents
 		const writeTools = ["Write", "Edit", "Bash"];
 		const hasWriteTools = subagent.allowedTools.some((t) =>
-			writeTools.includes(t)
+			writeTools.includes(t),
 		);
 		if (hasWriteTools) {
 			score *= 0.8;
@@ -602,7 +612,7 @@ Return review result:
  * Create a subagent composer with optional configuration.
  */
 export function createSubagentComposer(
-	config: Partial<SubagentComposerConfig> = {}
+	config: Partial<SubagentComposerConfig> = {},
 ): SubagentComposer {
 	return new SubagentComposer(config);
 }

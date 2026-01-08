@@ -21,7 +21,12 @@ import { BaseExtractor } from "./base.js";
 // Types
 // ============================================================================
 
-type DocCategory = "architecture" | "getting_started" | "api" | "contributing" | "standards";
+type DocCategory =
+	| "architecture"
+	| "getting_started"
+	| "api"
+	| "contributing"
+	| "standards";
 
 interface ProjectDocLLMResponse {
 	title: string;
@@ -160,10 +165,7 @@ export class ProjectDocExtractor extends BaseExtractor {
 	 * Build searchable content from the doc
 	 */
 	private buildContent(response: ProjectDocLLMResponse): string {
-		const parts = [
-			`# ${response.title}`,
-			`Category: ${response.category}`,
-		];
+		const parts = [`# ${response.title}`, `Category: ${response.category}`];
 
 		for (const section of response.sections) {
 			parts.push(`\n## ${section.heading}`);

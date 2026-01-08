@@ -6,13 +6,14 @@
  * fallback and version matching.
  */
 
-import {
-	getContext7ApiKey,
-	getDocsConfig,
-	isDocsEnabled,
-} from "../config.js";
+import { getContext7ApiKey, getDocsConfig, isDocsEnabled } from "../config.js";
 import type { DocProviderType, DocsConfig } from "../types.js";
-import type { DocChunk, DocProvider, FetchedDoc, FetchOptions } from "./types.js";
+import type {
+	DocChunk,
+	DocProvider,
+	FetchedDoc,
+	FetchOptions,
+} from "./types.js";
 import { DocChunker, createDocChunker } from "./doc-chunker.js";
 import { LibraryMapper, createLibraryMapper } from "./library-mapper.js";
 import {

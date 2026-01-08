@@ -69,7 +69,7 @@ export class BenchmarkDatabase {
 			// Load and execute schema from SQL file
 			const schemaPath = join(
 				dirname(fileURLToPath(import.meta.url)),
-				"schema.sql"
+				"schema.sql",
 			);
 			const schema = readFileSync(schemaPath, "utf-8");
 			this.db.exec(schema);
@@ -77,7 +77,7 @@ export class BenchmarkDatabase {
 			throw new DatabaseError(
 				"initialize",
 				"Failed to initialize database schema",
-				error instanceof Error ? error : undefined
+				error instanceof Error ? error : undefined,
 			);
 		}
 	}
@@ -101,7 +101,7 @@ export class BenchmarkDatabase {
 			config.name,
 			config.description ?? null,
 			JSON.stringify(config),
-			now
+			now,
 		);
 
 		return {
@@ -140,7 +140,7 @@ export class BenchmarkDatabase {
 		runId: string,
 		status: BenchmarkStatus,
 		phase?: BenchmarkPhase,
-		error?: string
+		error?: string,
 	): void {
 		const updates: string[] = ["status = ?"];
 		const params: (string | null)[] = [status];
@@ -231,7 +231,7 @@ export class BenchmarkDatabase {
 				"benchmark_run",
 				row.id,
 				"Failed to parse JSON fields",
-				error instanceof Error ? error : undefined
+				error instanceof Error ? error : undefined,
 			);
 		}
 	}
@@ -257,7 +257,7 @@ export class BenchmarkDatabase {
 			codeUnit.language,
 			codeUnit.content,
 			JSON.stringify(codeUnit.metadata),
-			JSON.stringify(codeUnit.relationships)
+			JSON.stringify(codeUnit.relationships),
 		);
 	}
 
@@ -280,7 +280,7 @@ export class BenchmarkDatabase {
 					unit.language,
 					unit.content,
 					JSON.stringify(unit.metadata),
-					JSON.stringify(unit.relationships)
+					JSON.stringify(unit.relationships),
 				);
 			}
 		});
@@ -331,7 +331,7 @@ export class BenchmarkDatabase {
 				"code_unit",
 				row.id,
 				"Failed to parse JSON fields",
-				error instanceof Error ? error : undefined
+				error instanceof Error ? error : undefined,
 			);
 		}
 	}
@@ -353,7 +353,7 @@ export class BenchmarkDatabase {
 			summary.codeUnitId,
 			summary.modelId,
 			summary.summary,
-			JSON.stringify(summary.generationMetadata)
+			JSON.stringify(summary.generationMetadata),
 		);
 	}
 
@@ -372,7 +372,7 @@ export class BenchmarkDatabase {
 					summary.codeUnitId,
 					summary.modelId,
 					summary.summary,
-					JSON.stringify(summary.generationMetadata)
+					JSON.stringify(summary.generationMetadata),
 				);
 			}
 		});
@@ -405,7 +405,8 @@ export class BenchmarkDatabase {
 	}
 
 	getSummaryCount(runId: string, modelId?: string): number {
-		let query = "SELECT COUNT(*) as count FROM generated_summaries WHERE run_id = ?";
+		let query =
+			"SELECT COUNT(*) as count FROM generated_summaries WHERE run_id = ?";
 		const params: string[] = [runId];
 
 		if (modelId) {
@@ -424,7 +425,7 @@ export class BenchmarkDatabase {
 	updateSummary(
 		runId: string,
 		summaryId: string,
-		updates: { summary?: string; generationMetadata?: GenerationMetadata }
+		updates: { summary?: string; generationMetadata?: GenerationMetadata },
 	): void {
 		const setClause: string[] = [];
 		const params: (string | null)[] = [];
@@ -464,7 +465,7 @@ export class BenchmarkDatabase {
 				"generated_summary",
 				row.id,
 				"Failed to parse JSON fields",
-				error instanceof Error ? error : undefined
+				error instanceof Error ? error : undefined,
 			);
 		}
 	}
@@ -511,13 +512,13 @@ export class BenchmarkDatabase {
 			result.summaryId,
 			result.evaluationType,
 			resultsJson,
-			result.evaluatedAt
+			result.evaluatedAt,
 		);
 	}
 
 	getEvaluationResults(
 		runId: string,
-		evaluationType?: string
+		evaluationType?: string,
 	): EvaluationResult[] {
 		let query = "SELECT * FROM evaluation_results WHERE run_id = ?";
 		const params: string[] = [runId];
@@ -564,7 +565,7 @@ export class BenchmarkDatabase {
 				"evaluation_result",
 				row.id,
 				"Failed to parse JSON fields",
-				error instanceof Error ? error : undefined
+				error instanceof Error ? error : undefined,
 			);
 		}
 	}
@@ -592,7 +593,9 @@ export class BenchmarkDatabase {
 			result.confidence,
 			result.positionSwapped ? 1 : 0,
 			result.reasoning ?? null,
-			result.criteriaBreakdown ? JSON.stringify(result.criteriaBreakdown) : null
+			result.criteriaBreakdown
+				? JSON.stringify(result.criteriaBreakdown)
+				: null,
 		);
 	}
 
@@ -620,7 +623,7 @@ export class BenchmarkDatabase {
 					result.criteriaBreakdown
 						? JSON.stringify(result.criteriaBreakdown)
 						: null,
-					result.cost ?? null
+					result.cost ?? null,
 				);
 			}
 		});
@@ -671,7 +674,7 @@ export class BenchmarkDatabase {
 					query.codeUnitId,
 					query.type,
 					query.query,
-					query.shouldFind ? 1 : 0
+					query.shouldFind ? 1 : 0,
 				);
 			}
 		});
@@ -710,7 +713,7 @@ export class BenchmarkDatabase {
 					runId,
 					set.targetCodeUnitId,
 					JSON.stringify(set.distractorIds),
-					set.difficulty
+					set.difficulty,
 				);
 			}
 		});
@@ -758,13 +761,16 @@ export class BenchmarkDatabase {
 					task.requirements,
 					task.language,
 					JSON.stringify(task.relevantSummaryIds),
-					task.testCases ? JSON.stringify(task.testCases) : null
+					task.testCases ? JSON.stringify(task.testCases) : null,
 				);
 			}
 		});
 	}
 
-	insertBugLocalizationTasks(runId: string, tasks: BugLocalizationTask[]): void {
+	insertBugLocalizationTasks(
+		runId: string,
+		tasks: BugLocalizationTask[],
+	): void {
 		const stmt = this.db.prepare(`
 			INSERT INTO bug_localization_tasks (
 				id, run_id, bug_description, actual_buggy_file, candidate_files_json
@@ -778,7 +784,7 @@ export class BenchmarkDatabase {
 					runId,
 					task.bugDescription,
 					task.actualBuggyFile,
-					JSON.stringify(task.candidateFiles)
+					JSON.stringify(task.candidateFiles),
 				);
 			}
 		});
@@ -786,7 +792,7 @@ export class BenchmarkDatabase {
 
 	insertFunctionSelectionTasks(
 		runId: string,
-		tasks: FunctionSelectionTask[]
+		tasks: FunctionSelectionTask[],
 	): void {
 		const stmt = this.db.prepare(`
 			INSERT INTO function_selection_tasks (
@@ -801,7 +807,7 @@ export class BenchmarkDatabase {
 					runId,
 					task.taskDescription,
 					task.correctFunction,
-					JSON.stringify(task.candidateFunctions)
+					JSON.stringify(task.candidateFunctions),
 				);
 			}
 		});
@@ -811,7 +817,11 @@ export class BenchmarkDatabase {
 	// Aggregated Scores Operations
 	// ==========================================================================
 
-	saveAggregatedScores(runId: string, modelId: string, scores: NormalizedScores): void {
+	saveAggregatedScores(
+		runId: string,
+		modelId: string,
+		scores: NormalizedScores,
+	): void {
 		const stmt = this.db.prepare(`
 			INSERT OR REPLACE INTO aggregated_scores (
 				id, run_id, model_id, scores_json
@@ -859,7 +869,7 @@ export class BenchmarkDatabase {
 		runId: string,
 		phase: BenchmarkPhase,
 		completedItems: number,
-		lastProcessedId?: string
+		lastProcessedId?: string,
 	): void {
 		const stmt = this.db.prepare(`
 			UPDATE phase_progress
@@ -882,7 +892,7 @@ export class BenchmarkDatabase {
 
 	getPhaseProgress(
 		runId: string,
-		phase: BenchmarkPhase
+		phase: BenchmarkPhase,
 	): {
 		total: number;
 		completed: number;
@@ -941,7 +951,7 @@ export function createBenchmarkDatabase(dbPath: string): BenchmarkDatabase {
 
 /** Create a benchmark database in the project's .claudemem directory */
 export function createProjectBenchmarkDatabase(
-	projectPath: string
+	projectPath: string,
 ): BenchmarkDatabase {
 	const dbPath = join(projectPath, ".claudemem", "benchmark.db");
 	return createBenchmarkDatabase(dbPath);

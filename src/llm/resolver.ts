@@ -77,7 +77,10 @@ const PROVIDER_DISPLAY_NAMES: Record<LLMProvider, string> = {
 };
 
 /** Custom user-defined aliases */
-const customAliases = new Map<string, { provider: LLMProvider; model: string }>();
+const customAliases = new Map<
+	string,
+	{ provider: LLMProvider; model: string }
+>();
 
 // ============================================================================
 // LLM Resolver Class
@@ -114,7 +117,10 @@ export class LLMResolver {
 			return {
 				provider: customAlias.provider,
 				model: customAlias.model,
-				displayName: this.formatDisplayName(customAlias.provider, customAlias.model),
+				displayName: this.formatDisplayName(
+					customAlias.provider,
+					customAlias.model,
+				),
 			};
 		}
 
@@ -224,7 +230,11 @@ export class LLMResolver {
 		const normalized = modelOrSpec.toLowerCase();
 
 		// Check explicit provider prefixes first
-		if (normalized.startsWith("openai/") || normalized.startsWith("google/") || normalized.startsWith("meta-llama/")) {
+		if (
+			normalized.startsWith("openai/") ||
+			normalized.startsWith("google/") ||
+			normalized.startsWith("meta-llama/")
+		) {
 			return "openrouter";
 		}
 
@@ -234,14 +244,23 @@ export class LLMResolver {
 		}
 
 		// Check for Claude model short names - default to claude-code for subscription usage
-		if (normalized === "opus" || normalized.startsWith("opus-") ||
-			normalized === "sonnet" || normalized.startsWith("sonnet-") ||
-			normalized === "haiku" || normalized.startsWith("haiku-")) {
+		if (
+			normalized === "opus" ||
+			normalized.startsWith("opus-") ||
+			normalized === "sonnet" ||
+			normalized.startsWith("sonnet-") ||
+			normalized === "haiku" ||
+			normalized.startsWith("haiku-")
+		) {
 			return "claude-code";
 		}
 
 		// Check for OpenAI models via OpenRouter
-		if (normalized.includes("gpt") || normalized.includes("o1-") || normalized.startsWith("o1")) {
+		if (
+			normalized.includes("gpt") ||
+			normalized.includes("o1-") ||
+			normalized.startsWith("o1")
+		) {
 			return "openrouter";
 		}
 
@@ -251,7 +270,12 @@ export class LLMResolver {
 		}
 
 		// Check for local models
-		if (normalized.includes("llama") || normalized.includes("mistral") || normalized.includes("codellama") || normalized.includes("qwen")) {
+		if (
+			normalized.includes("llama") ||
+			normalized.includes("mistral") ||
+			normalized.includes("codellama") ||
+			normalized.includes("qwen")
+		) {
 			return "local";
 		}
 
@@ -300,7 +324,11 @@ export class LLMResolver {
 	 * Register a custom alias for user-defined shortcuts.
 	 * E.g., registerAlias("fast", "anthropic", "claude-haiku-4-5")
 	 */
-	static registerAlias(alias: string, provider: LLMProvider, model: string): void {
+	static registerAlias(
+		alias: string,
+		provider: LLMProvider,
+		model: string,
+	): void {
 		customAliases.set(alias.toLowerCase(), { provider, model });
 	}
 
@@ -333,7 +361,10 @@ export class LLMResolver {
 	 * const client = await LLMResolver.createClient("cc/sonnet");
 	 * const client = await LLMResolver.createClient("or/openai/gpt-4o");
 	 */
-	static async createClient(spec: string, options?: Partial<LLMClientOptions>): Promise<ILLMClient> {
+	static async createClient(
+		spec: string,
+		options?: Partial<LLMClientOptions>,
+	): Promise<ILLMClient> {
 		const parsed = this.parseSpec(spec);
 
 		return createLLMClient({
@@ -351,14 +382,17 @@ export class LLMResolver {
 	 * Useful for consensus judges or multi-generator benchmarks.
 	 */
 	static parseSpecs(specs: string[]): LLMSpec[] {
-		return specs.map(spec => this.parseSpec(spec));
+		return specs.map((spec) => this.parseSpec(spec));
 	}
 
 	/**
 	 * Create multiple clients from specs.
 	 */
-	static async createClients(specs: string[], options?: Partial<LLMClientOptions>): Promise<ILLMClient[]> {
-		return Promise.all(specs.map(spec => this.createClient(spec, options)));
+	static async createClients(
+		specs: string[],
+		options?: Partial<LLMClientOptions>,
+	): Promise<ILLMClient[]> {
+		return Promise.all(specs.map((spec) => this.createClient(spec, options)));
 	}
 
 	// ========== Utility Methods ==========

@@ -11,7 +11,11 @@
  * - Misuse patterns (tool combinations that often fail)
  */
 
-import type { ToolEvent, DetectedPattern, PatternData } from "../interaction/types.js";
+import type {
+	ToolEvent,
+	DetectedPattern,
+	PatternData,
+} from "../interaction/types.js";
 
 // ============================================================================
 // Types
@@ -140,7 +144,9 @@ class FPTree {
 	/**
 	 * Get conditional pattern base for an item.
 	 */
-	getConditionalPatternBase(item: string): Array<{ path: string[]; count: number }> {
+	getConditionalPatternBase(
+		item: string,
+	): Array<{ path: string[]; count: number }> {
 		const patterns: Array<{ path: string[]; count: number }> = [];
 		let node = this.headerTable.get(item);
 
@@ -178,10 +184,7 @@ export class PatternMiner {
 	/**
 	 * Mine patterns from tool events.
 	 */
-	minePatterns(
-		events: ToolEvent[],
-		sessionIds: string[]
-	): MinedPatterns {
+	minePatterns(events: ToolEvent[], sessionIds: string[]): MinedPatterns {
 		// Group events by session
 		const sessionEvents = this.groupBySession(events);
 		const totalSessions = sessionIds.length;
@@ -193,7 +196,10 @@ export class PatternMiner {
 		const frequentItemsets = this.fpGrowth(transactions, totalSessions);
 
 		// Generate association rules
-		const associationRules = this.generateRules(frequentItemsets, totalSessions);
+		const associationRules = this.generateRules(
+			frequentItemsets,
+			totalSessions,
+		);
 
 		// Extract sequences for PrefixSpan
 		const sequences = this.extractSequences(sessionEvents);
@@ -205,11 +211,11 @@ export class PatternMiner {
 		const errorPatterns = this.identifyErrorPatterns(
 			frequentItemsets,
 			associationRules,
-			events
+			events,
 		);
 		const workflowPatterns = this.identifyWorkflowPatterns(
 			sequentialPatterns,
-			events
+			events,
 		);
 
 		return {
@@ -226,7 +232,7 @@ export class PatternMiner {
 	 */
 	private fpGrowth(
 		transactions: string[][],
-		totalSessions: number
+		totalSessions: number,
 	): FrequentItemset[] {
 		const minSupportCount = Math.ceil(this.config.minSupport * totalSessions);
 		const results: FrequentItemset[] = [];
@@ -253,23 +259,14 @@ export class PatternMiner {
 			// Filter and sort transaction items
 			const filteredItems = transaction
 				.filter((item) => frequentItemsSet.has(item))
-				.sort(
-					(a, b) =>
-						frequentItems.indexOf(a) - frequentItems.indexOf(b)
-				);
+				.sort((a, b) => frequentItems.indexOf(a) - frequentItems.indexOf(b));
 			if (filteredItems.length > 0) {
 				tree.insert(filteredItems);
 			}
 		}
 
 		// Mine patterns recursively
-		this.mineTree(
-			tree,
-			[],
-			minSupportCount,
-			totalSessions,
-			results
-		);
+		this.mineTree(tree, [], minSupportCount, totalSessions, results);
 
 		return results;
 	}
@@ -282,7 +279,7 @@ export class PatternMiner {
 		prefix: string[],
 		minSupportCount: number,
 		totalSessions: number,
-		results: FrequentItemset[]
+		results: FrequentItemset[],
 	): void {
 		// Process items in reverse frequency order
 		const items = [...tree.headerTable.keys()].reverse();
@@ -316,7 +313,7 @@ export class PatternMiner {
 							newPattern,
 							minSupportCount,
 							totalSessions,
-							results
+							results,
 						);
 					}
 				}
@@ -329,7 +326,7 @@ export class PatternMiner {
 	 */
 	private generateRules(
 		itemsets: FrequentItemset[],
-		totalSessions: number
+		totalSessions: number,
 	): AssociationRule[] {
 		const rules: AssociationRule[] = [];
 		const itemsetMap = new Map<string, FrequentItemset>();
@@ -348,12 +345,15 @@ export class PatternMiner {
 			const subsets = this.generateSubsets(itemset.items);
 
 			for (const antecedent of subsets) {
-				if (antecedent.length === 0 || antecedent.length === itemset.items.length) {
+				if (
+					antecedent.length === 0 ||
+					antecedent.length === itemset.items.length
+				) {
 					continue;
 				}
 
 				const consequent = itemset.items.filter(
-					(item) => !antecedent.includes(item)
+					(item) => !antecedent.includes(item),
 				);
 
 				const antecedentKey = antecedent.slice().sort().join("|");
@@ -392,7 +392,7 @@ export class PatternMiner {
 	 */
 	private prefixSpan(
 		sequences: Array<{ items: string[]; duration: number }>,
-		totalSessions: number
+		totalSessions: number,
 	): SequentialPattern[] {
 		const minSupportCount = Math.ceil(this.config.minSupport * totalSessions);
 		const results: SequentialPattern[] = [];
@@ -420,12 +420,12 @@ export class PatternMiner {
 				sequences,
 				minSupportCount,
 				totalSessions,
-				results
+				results,
 			);
 		}
 
 		return results.filter(
-			(p) => p.sequence.length >= this.config.minSequenceLength
+			(p) => p.sequence.length >= this.config.minSequenceLength,
 		);
 	}
 
@@ -437,7 +437,7 @@ export class PatternMiner {
 		sequences: Array<{ items: string[]; duration: number }>,
 		minSupportCount: number,
 		totalSessions: number,
-		results: SequentialPattern[]
+		results: SequentialPattern[],
 	): void {
 		// Project sequences with the prefix
 		const projected = this.projectSequences(prefix, sequences);
@@ -479,7 +479,7 @@ export class PatternMiner {
 						projected,
 						minSupportCount,
 						totalSessions,
-						results
+						results,
 					);
 				}
 			}
@@ -491,7 +491,7 @@ export class PatternMiner {
 	 */
 	private projectSequences(
 		prefix: string[],
-		sequences: Array<{ items: string[]; duration: number }>
+		sequences: Array<{ items: string[]; duration: number }>,
 	): Array<{ items: string[]; duration: number }> {
 		const projected: Array<{ items: string[]; duration: number }> = [];
 
@@ -552,7 +552,7 @@ export class PatternMiner {
 	 * Extract itemsets (tool+outcome) from session events.
 	 */
 	private extractTransactions(
-		sessionEvents: Map<string, ToolEvent[]>
+		sessionEvents: Map<string, ToolEvent[]>,
 	): string[][] {
 		const transactions: string[][] = [];
 
@@ -584,7 +584,7 @@ export class PatternMiner {
 	 * Extract sequences for sequential pattern mining.
 	 */
 	private extractSequences(
-		sessionEvents: Map<string, ToolEvent[]>
+		sessionEvents: Map<string, ToolEvent[]>,
 	): Array<{ items: string[]; duration: number }> {
 		const sequences: Array<{ items: string[]; duration: number }> = [];
 
@@ -623,7 +623,7 @@ export class PatternMiner {
 	private identifyErrorPatterns(
 		itemsets: FrequentItemset[],
 		rules: AssociationRule[],
-		events: ToolEvent[]
+		events: ToolEvent[],
 	): DetectedPattern[] {
 		const patterns: DetectedPattern[] = [];
 
@@ -669,7 +669,10 @@ export class PatternMiner {
 				patterns.push({
 					patternId: `rule_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
 					patternType: "error",
-					patternHash: this.hashPattern([...rule.antecedent, ...rule.consequent]),
+					patternHash: this.hashPattern([
+						...rule.antecedent,
+						...rule.consequent,
+					]),
 					patternData: {
 						description: `${antecedentTools.join(" + ")} → ${errorTypes.join(", ")} (${(rule.confidence * 100).toFixed(0)}% confidence)`,
 						tools: antecedentTools,
@@ -694,7 +697,7 @@ export class PatternMiner {
 	 */
 	private identifyWorkflowPatterns(
 		sequences: SequentialPattern[],
-		events: ToolEvent[]
+		events: ToolEvent[],
 	): DetectedPattern[] {
 		const patterns: DetectedPattern[] = [];
 
@@ -725,7 +728,7 @@ export class PatternMiner {
 		return patterns.sort(
 			(a, b) =>
 				((b.patternData as PatternData).automationPotential ?? 0) -
-				((a.patternData as PatternData).automationPotential ?? 0)
+				((a.patternData as PatternData).automationPotential ?? 0),
 		);
 	}
 
@@ -747,7 +750,10 @@ export class PatternMiner {
 			seq.sequence.includes("Read") || seq.sequence.includes("Edit");
 		const fileScore = hasFileOps ? 1.2 : 1;
 
-		return Math.min(1, (supportScore + lengthScore + timingScore) * fileScore / 3);
+		return Math.min(
+			1,
+			((supportScore + lengthScore + timingScore) * fileScore) / 3,
+		);
 	}
 
 	/**
@@ -767,7 +773,7 @@ export class PatternMiner {
  * Create a pattern miner with optional configuration.
  */
 export function createPatternMiner(
-	config: Partial<PatternMinerConfig> = {}
+	config: Partial<PatternMinerConfig> = {},
 ): PatternMiner {
 	return new PatternMiner(config);
 }

@@ -126,7 +126,7 @@ export class ContextEncoder {
 
 		// Convert to strings and vector
 		const featureStrings = features.map(
-			(f) => `${f.category}:${f.name}=${f.value}`
+			(f) => `${f.category}:${f.name}=${f.value}`,
 		);
 		const featureNames = features.map((f) => `${f.category}:${f.name}`);
 		const vector = this.featuresToVector(features);
@@ -145,7 +145,7 @@ export class ContextEncoder {
 	 */
 	encodeFile(filePath: string): string[] {
 		return this.encodeFileFeatures(filePath).map(
-			(f) => `${f.category}:${f.name}=${f.value}`
+			(f) => `${f.category}:${f.name}=${f.value}`,
 		);
 	}
 
@@ -154,7 +154,7 @@ export class ContextEncoder {
 	 */
 	encodeToolHistory(tools: string[]): string[] {
 		return this.encodeToolFeatures(tools).map(
-			(f) => `${f.category}:${f.name}=${f.value}`
+			(f) => `${f.category}:${f.name}=${f.value}`,
 		);
 	}
 
@@ -272,7 +272,7 @@ export class ContextEncoder {
 
 		// Most common recent tool
 		const [mostCommon] = [...toolCounts.entries()].sort(
-			(a, b) => b[1] - a[1]
+			(a, b) => b[1] - a[1],
 		)[0] ?? ["none", 0];
 		features.push({
 			name: "frequent",
@@ -379,7 +379,7 @@ export class ContextEncoder {
 	 * Encode custom features.
 	 */
 	private encodeCustomFeatures(
-		custom: Record<string, string>
+		custom: Record<string, string>,
 	): ContextFeature[] {
 		return Object.entries(custom).map(([name, value]) => ({
 			name,
@@ -423,7 +423,7 @@ export class ContextEncoder {
 				(f) =>
 					f.startsWith("file:type") ||
 					f.startsWith("project:type") ||
-					f.startsWith("tool:last")
+					f.startsWith("tool:last"),
 			)
 			.slice(0, 3);
 
@@ -457,7 +457,7 @@ export class ContextEncoder {
 		const ext = this.getFileExtension(filePath);
 
 		for (const [category, extensions] of Object.entries(
-			this.config.fileTypeCategories
+			this.config.fileTypeCategories,
 		)) {
 			if (extensions.some((e) => ext.endsWith(e) || filePath.endsWith(e))) {
 				return category;
@@ -476,7 +476,7 @@ export class ContextEncoder {
 			(pattern) =>
 				filePath.includes(pattern) ||
 				filePath.includes("__tests__") ||
-				filePath.includes("/test/")
+				filePath.includes("/test/"),
 		);
 	}
 
@@ -549,7 +549,7 @@ export class ContextEncoder {
  * Create a context encoder with optional configuration.
  */
 export function createContextEncoder(
-	config: Partial<ContextEncoderConfig> = {}
+	config: Partial<ContextEncoderConfig> = {},
 ): ContextEncoder {
 	return new ContextEncoder(config);
 }

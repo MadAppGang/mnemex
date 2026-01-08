@@ -213,7 +213,11 @@ export class Context7Provider extends BaseDocProvider {
 		const docs: FetchedDoc[] = [];
 		const sections = markdown.split(/^-{20,}$/m);
 
-		for (let i = 0; i < sections.length && (!maxDocs || docs.length < maxDocs); i++) {
+		for (
+			let i = 0;
+			i < sections.length && (!maxDocs || docs.length < maxDocs);
+			i++
+		) {
 			const section = sections[i].trim();
 			if (!section) continue;
 
@@ -290,7 +294,8 @@ export class Context7Provider extends BaseDocProvider {
 					if (error instanceof RateLimitError) return true;
 					if (error instanceof TypeError) return true;
 					// Retry on timeout (AbortError)
-					if (error instanceof Error && error.name === "AbortError") return true;
+					if (error instanceof Error && error.name === "AbortError")
+						return true;
 					return false;
 				},
 			},
@@ -346,7 +351,8 @@ export class Context7Provider extends BaseDocProvider {
 					if (error instanceof RateLimitError) return true;
 					if (error instanceof TypeError) return true;
 					// Retry on timeout (AbortError)
-					if (error instanceof Error && error.name === "AbortError") return true;
+					if (error instanceof Error && error.name === "AbortError")
+						return true;
 					return false;
 				},
 			},

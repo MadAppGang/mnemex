@@ -98,7 +98,11 @@ export class AdaptiveRanker {
 		if (learned.feedbackCount >= this.config.minSamples) {
 			// Optionally blend with defaults based on confidence
 			if (this.optimizer && learned.confidence < 1.0) {
-				return this.optimizer.blend(learned, DEFAULT_WEIGHTS, learned.confidence);
+				return this.optimizer.blend(
+					learned,
+					DEFAULT_WEIGHTS,
+					learned.confidence,
+				);
 			}
 			return learned;
 		}
@@ -110,7 +114,10 @@ export class AdaptiveRanker {
 	/**
 	 * Get RRF weights (vector and BM25).
 	 */
-	getRRFWeights(useCase?: SearchUseCase): { vectorWeight: number; bm25Weight: number } {
+	getRRFWeights(useCase?: SearchUseCase): {
+		vectorWeight: number;
+		bm25Weight: number;
+	} {
 		const weights = this.getActiveWeights(useCase);
 		return {
 			vectorWeight: weights.vectorWeight,
@@ -160,8 +167,10 @@ export class AdaptiveRanker {
 			const fileBoost = weights.fileBoosts.get(result.filePath) ?? 1.0;
 
 			// Get document type boost (relative to default)
-			const defaultTypeWeight = DEFAULT_WEIGHTS.documentTypeWeights[result.documentType] ?? 0.1;
-			const learnedTypeWeight = weights.documentTypeWeights[result.documentType] ?? 0.1;
+			const defaultTypeWeight =
+				DEFAULT_WEIGHTS.documentTypeWeights[result.documentType] ?? 0.1;
+			const learnedTypeWeight =
+				weights.documentTypeWeights[result.documentType] ?? 0.1;
 			const typeBoost = learnedTypeWeight / defaultTypeWeight;
 
 			// Calculate adjusted score
@@ -239,7 +248,9 @@ export class AdaptiveRanker {
 	): Array<{ filePath: string; boost: number }> {
 		const entries = Array.from(weights.fileBoosts.entries());
 		entries.sort((a, b) => b[1] - a[1]);
-		return entries.slice(0, limit).map(([filePath, boost]) => ({ filePath, boost }));
+		return entries
+			.slice(0, limit)
+			.map(([filePath, boost]) => ({ filePath, boost }));
 	}
 }
 

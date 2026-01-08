@@ -15,7 +15,10 @@ import { join } from "node:path";
 import { createIndexer } from "./core/indexer.js";
 import { createCodeAnalyzer } from "./core/analysis/index.js";
 import { FileTracker } from "./core/tracker.js";
-import { discoverEmbeddingModels, formatModelInfo } from "./models/model-discovery.js";
+import {
+	discoverEmbeddingModels,
+	formatModelInfo,
+} from "./models/model-discovery.js";
 import { createLearningSystem } from "./learning/index.js";
 
 /**
@@ -64,7 +67,9 @@ async function main() {
 			enableEnrichment: z
 				.boolean()
 				.optional()
-				.describe("Enable LLM enrichment to generate summaries, idioms, and examples (default: true)"),
+				.describe(
+					"Enable LLM enrichment to generate summaries, idioms, and examples (default: true)",
+				),
 		},
 		async ({ path, force, model, enableEnrichment }) => {
 			try {
@@ -87,7 +92,8 @@ async function main() {
 				// Show enrichment stats if available
 				if ("enrichment" in result && result.enrichment) {
 					const enrichment = result.enrichment;
-					const totalDocs = enrichment.documentsCreated + enrichment.documentsUpdated;
+					const totalDocs =
+						enrichment.documentsCreated + enrichment.documentsUpdated;
 					response += `- **Enriched documents**: ${totalDocs}`;
 					if (enrichment.documentsUpdated > 0) {
 						response += ` (${enrichment.documentsCreated} new, ${enrichment.documentsUpdated} updated)`;
@@ -147,7 +153,9 @@ async function main() {
 			useCase: z
 				.enum(["fim", "search", "navigation"])
 				.optional()
-				.describe("Search preset: 'fim' for code completion, 'search' for general queries (default), 'navigation' for codebase exploration"),
+				.describe(
+					"Search preset: 'fim' for code completion, 'search' for general queries (default), 'navigation' for codebase exploration",
+				),
 		},
 		async ({ query, limit, language, path, autoIndex, useCase }) => {
 			try {
@@ -160,7 +168,9 @@ async function main() {
 					const indexResult = await indexer.index(false); // incremental
 					autoIndexed = indexResult.filesIndexed;
 					if (autoIndexed > 0) {
-						console.error(`[claudemem] Auto-indexed ${autoIndexed} changed files`);
+						console.error(
+							`[claudemem] Auto-indexed ${autoIndexed} changed files`,
+						);
 					}
 				}
 
@@ -189,7 +199,9 @@ async function main() {
 						});
 
 						if (refinement) {
-							console.error(`[claudemem] Detected query refinement from "${refinement.originalQuery}"`);
+							console.error(
+								`[claudemem] Detected query refinement from "${refinement.originalQuery}"`,
+							);
 						}
 
 						// Apply file boosts if we have learned data
@@ -269,7 +281,7 @@ async function main() {
 				// Add footer with feedback hint
 				response += `---\n`;
 				response += `*To improve future searches, call \`report_search_feedback\` with the chunk IDs of helpful results.*\n`;
-				response += `*Chunk IDs: ${chunkIds.map(id => id.slice(0, 8)).join(", ")}*\n`;
+				response += `*Chunk IDs: ${chunkIds.map((id) => id.slice(0, 8)).join(", ")}*\n`;
 
 				return { content: [{ type: "text", text: response }] };
 			} catch (error) {
@@ -393,10 +405,7 @@ async function main() {
 		"list_embedding_models",
 		"List available embedding models from OpenRouter for code indexing.",
 		{
-			freeOnly: z
-				.boolean()
-				.optional()
-				.describe("Show only free models"),
+			freeOnly: z.boolean().optional().describe("Show only free models"),
 		},
 		async ({ freeOnly }) => {
 			try {
@@ -588,7 +597,12 @@ async function main() {
 				for (const r of results) {
 					const file = r.symbol.filePath.split("/").pop();
 					const pageRank = r.symbol.pagerankScore;
-					const priority = pageRank > 0.05 ? "🔴 HIGH" : pageRank > 0.02 ? "🟠 MEDIUM" : "🟡 LOW";
+					const priority =
+						pageRank > 0.05
+							? "🔴 HIGH"
+							: pageRank > 0.02
+								? "🟠 MEDIUM"
+								: "🟡 LOW";
 					response += `| \`${r.symbol.name}\` | ${file} | ${pageRank.toFixed(4)} | ${priority} |\n`;
 				}
 
@@ -616,7 +630,9 @@ async function main() {
 		"analyze_impact",
 		"Analyze the blast radius of changing a symbol. Shows all transitive callers grouped by file.",
 		{
-			symbol: z.string().describe("Symbol name to analyze (e.g., 'MyClass', 'processData')"),
+			symbol: z
+				.string()
+				.describe("Symbol name to analyze (e.g., 'MyClass', 'processData')"),
 			path: z
 				.string()
 				.optional()
@@ -723,9 +739,7 @@ async function main() {
 		"report_search_feedback",
 		"Report feedback on search results to improve future rankings. Call this after using search results to indicate which were helpful. This helps claudemem learn and improve over time.",
 		{
-			query: z
-				.string()
-				.describe("The search query that was executed"),
+			query: z.string().describe("The search query that was executed"),
 			allResultIds: z
 				.array(z.string())
 				.describe("All chunk IDs that were returned from the search"),
@@ -740,7 +754,9 @@ async function main() {
 			sessionId: z
 				.string()
 				.optional()
-				.describe("Session identifier to group related searches (auto-generated if not provided)"),
+				.describe(
+					"Session identifier to group related searches (auto-generated if not provided)",
+				),
 			useCase: z
 				.enum(["fim", "search", "navigation"])
 				.optional()
@@ -750,7 +766,15 @@ async function main() {
 				.optional()
 				.describe("Project path (default: current directory)"),
 		},
-		async ({ query, allResultIds, helpfulIds, unhelpfulIds, sessionId, useCase, path }) => {
+		async ({
+			query,
+			allResultIds,
+			helpfulIds,
+			unhelpfulIds,
+			sessionId,
+			useCase,
+			path,
+		}) => {
 			try {
 				const projectPath = path || process.cwd();
 				const tracker = getFileTracker(projectPath);

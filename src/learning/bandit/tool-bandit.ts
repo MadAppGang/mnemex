@@ -110,7 +110,10 @@ export class ToolBandit {
 	/**
 	 * Get a recommendation using Thompson Sampling.
 	 */
-	recommend(availableTools: string[], context?: string[]): BanditRecommendation {
+	recommend(
+		availableTools: string[],
+		context?: string[],
+	): BanditRecommendation {
 		if (availableTools.length === 0) {
 			throw new Error("No tools available for recommendation");
 		}
@@ -136,7 +139,8 @@ export class ToolBandit {
 		// Calculate uncertainty (std dev of Beta)
 		const variance =
 			(bestArm.alpha * bestArm.beta) /
-			((bestArm.alpha + bestArm.beta) ** 2 * (bestArm.alpha + bestArm.beta + 1));
+			((bestArm.alpha + bestArm.beta) ** 2 *
+				(bestArm.alpha + bestArm.beta + 1));
 		const uncertainty = Math.sqrt(variance);
 
 		// Determine if this is exploration
@@ -154,7 +158,7 @@ export class ToolBandit {
 				score: s.score,
 				uncertainty: Math.sqrt(
 					(s.arm.alpha * s.arm.beta) /
-						((s.arm.alpha + s.arm.beta) ** 2 * (s.arm.alpha + s.arm.beta + 1))
+						((s.arm.alpha + s.arm.beta) ** 2 * (s.arm.alpha + s.arm.beta + 1)),
 				),
 			})),
 		};
@@ -182,8 +186,7 @@ export class ToolBandit {
 
 		// Update recent success rate (exponential moving average)
 		const successValue = success ? 1 : 0;
-		arm.recentSuccessRate =
-			0.9 * arm.recentSuccessRate + 0.1 * successValue;
+		arm.recentSuccessRate = 0.9 * arm.recentSuccessRate + 0.1 * successValue;
 
 		// Track totals
 		this.totalPulls++;
@@ -196,8 +199,10 @@ export class ToolBandit {
 			const contextKey = this.createContextKey(context);
 			const contextualArm = this.getOrCreateContextualArm(tool, context);
 
-			contextualArm.alpha = 1 + (contextualArm.alpha - 1) * this.config.discountFactor;
-			contextualArm.beta = 1 + (contextualArm.beta - 1) * this.config.discountFactor;
+			contextualArm.alpha =
+				1 + (contextualArm.alpha - 1) * this.config.discountFactor;
+			contextualArm.beta =
+				1 + (contextualArm.beta - 1) * this.config.discountFactor;
 
 			if (success) {
 				contextualArm.alpha += 1;
@@ -257,19 +262,20 @@ export class ToolBandit {
 
 		// Find best tool
 		const sortedByRate = [...tools].sort(
-			(a, b) =>
-				b.alpha / (b.alpha + b.beta) - a.alpha / (a.alpha + a.beta)
+			(a, b) => b.alpha / (b.alpha + b.beta) - a.alpha / (a.alpha + a.beta),
 		);
 		const bestTool = sortedByRate[0]
 			? {
 					tool: sortedByRate[0].tool,
-					successRate: sortedByRate[0].alpha / (sortedByRate[0].alpha + sortedByRate[0].beta),
+					successRate:
+						sortedByRate[0].alpha /
+						(sortedByRate[0].alpha + sortedByRate[0].beta),
 				}
 			: null;
 
 		// Find most explored
 		const sortedByPulls = [...tools].sort(
-			(a, b) => b.totalPulls - a.totalPulls
+			(a, b) => b.totalPulls - a.totalPulls,
 		);
 		const mostExplored = sortedByPulls[0]
 			? { tool: sortedByPulls[0].tool, pulls: sortedByPulls[0].totalPulls }
@@ -341,7 +347,7 @@ export class ToolBandit {
 	}): void {
 		this.arms = new Map(data.arms.map((a) => [a.tool, a]));
 		this.contextualArms = new Map(
-			data.contextualArms.map((a) => [`${a.tool}::${a.contextKey}`, a])
+			data.contextualArms.map((a) => [`${a.tool}::${a.contextKey}`, a]),
 		);
 		this.explorationPulls = data.explorationPulls;
 		this.totalPulls = data.totalPulls;
@@ -390,7 +396,7 @@ export class ToolBandit {
 	 */
 	private getOrCreateContextualArm(
 		tool: string,
-		context: string[]
+		context: string[],
 	): ContextualArm {
 		const contextKey = this.createContextKey(context);
 		const key = `${tool}::${contextKey}`;
@@ -429,8 +435,7 @@ export class ToolBandit {
 
 		return {
 			tool: contextual.tool,
-			alpha:
-				contextWeight * contextual.alpha + globalWeight * global.alpha,
+			alpha: contextWeight * contextual.alpha + globalWeight * global.alpha,
 			beta: contextWeight * contextual.beta + globalWeight * global.beta,
 			totalPulls: contextual.totalPulls,
 			recentSuccessRate:
@@ -504,7 +509,7 @@ export class ToolBandit {
  * Create a tool bandit with optional configuration.
  */
 export function createToolBandit(
-	config: Partial<ToolBanditConfig> = {}
+	config: Partial<ToolBanditConfig> = {},
 ): ToolBandit {
 	return new ToolBandit(config);
 }

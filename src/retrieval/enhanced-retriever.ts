@@ -20,9 +20,17 @@ import type {
 	UnitType,
 } from "../types.js";
 import type { VectorStore } from "../core/store.js";
-import { QueryRouter, createQueryRouter, type RouteResult } from "./routing/query-router.js";
+import {
+	QueryRouter,
+	createQueryRouter,
+	type RouteResult,
+} from "./routing/query-router.js";
 import { LLMReranker, createLLMReranker } from "./reranking/llm-reranker.js";
-import { ContextFormatter, createContextFormatter, type FormatInput } from "./formatting/context-formatter.js";
+import {
+	ContextFormatter,
+	createContextFormatter,
+	type FormatInput,
+} from "./formatting/context-formatter.js";
 
 // ============================================================================
 // Types
@@ -102,7 +110,7 @@ export class EnhancedRetriever {
 
 		this.options = {
 			useQueryRouting: options.useQueryRouting ?? true,
-			useReranking: options.useReranking ?? (llmClient !== null),
+			useReranking: options.useReranking ?? llmClient !== null,
 			initialLimit: options.initialLimit ?? 30,
 			finalLimit: options.finalLimit ?? 10,
 			minRerankScore: options.minRerankScore ?? 3,
@@ -111,11 +119,15 @@ export class EnhancedRetriever {
 		};
 
 		// Initialize components
-		this.queryRouter = createQueryRouter(llmClient, { useLLM: this.options.useQueryRouting });
-		this.reranker = llmClient ? createLLMReranker(llmClient, {
-			maxCandidates: this.options.initialLimit,
-			minScore: this.options.minRerankScore,
-		}) : null;
+		this.queryRouter = createQueryRouter(llmClient, {
+			useLLM: this.options.useQueryRouting,
+		});
+		this.reranker = llmClient
+			? createLLMReranker(llmClient, {
+					maxCandidates: this.options.initialLimit,
+					minScore: this.options.minRerankScore,
+				})
+			: null;
 		this.formatter = createContextFormatter({
 			maxTokens: this.options.maxContextTokens,
 			style: this.options.formatStyle,
@@ -125,7 +137,10 @@ export class EnhancedRetriever {
 	/**
 	 * Full pipeline search with routing, reranking, and formatting
 	 */
-	async search(query: string, options: SearchOptions = {}): Promise<EnhancedSearchResult> {
+	async search(
+		query: string,
+		options: SearchOptions = {},
+	): Promise<EnhancedSearchResult> {
 		const startTime = Date.now();
 		const {
 			limit = this.options.finalLimit,
@@ -139,14 +154,14 @@ export class EnhancedRetriever {
 		// Step 1: Route query
 		const routing = forceIntent
 			? {
-				classification: {
-					intent: forceIntent,
-					confidence: 1.0,
-					extractedEntities: [],
-					reasoning: "Forced intent",
-				},
-				strategy: this.queryRouter.buildStrategyForIntent(forceIntent),
-			}
+					classification: {
+						intent: forceIntent,
+						confidence: 1.0,
+						extractedEntities: [],
+						reasoning: "Forced intent",
+					},
+					strategy: this.queryRouter.buildStrategyForIntent(forceIntent),
+				}
 			: await this.queryRouter.route(query);
 
 		// Step 2: Execute search based on strategy
@@ -160,9 +175,17 @@ export class EnhancedRetriever {
 		let finalResults: Array<CodeUnit & { score: number; rerankScore?: number }>;
 		let usedReranking = false;
 
-		if (this.options.useReranking && this.reranker && !skipReranking && initialResults.length > 0) {
+		if (
+			this.options.useReranking &&
+			this.reranker &&
+			!skipReranking &&
+			initialResults.length > 0
+		) {
 			try {
-				const reranked = await this.reranker.rerankCodeUnits(query, initialResults);
+				const reranked = await this.reranker.rerankCodeUnits(
+					query,
+					initialResults,
+				);
 				finalResults = reranked.slice(0, limit);
 				usedReranking = true;
 			} catch (error) {
@@ -174,7 +197,8 @@ export class EnhancedRetriever {
 		}
 
 		// Step 4: Get summaries for context (if requested)
-		const summaries: Array<{ name: string; summary: string; path: string }> = [];
+		const summaries: Array<{ name: string; summary: string; path: string }> =
+			[];
 		if (includeSummaries && finalResults.length > 0) {
 			const uniqueFiles = [...new Set(finalResults.map((r) => r.filePath))];
 			for (const filePath of uniqueFiles.slice(0, 5)) {
@@ -212,7 +236,10 @@ export class EnhancedRetriever {
 	/**
 	 * Search and return formatted context string for direct LLM use
 	 */
-	async searchForLLM(query: string, options: SearchOptions = {}): Promise<string> {
+	async searchForLLM(
+		query: string,
+		options: SearchOptions = {},
+	): Promise<string> {
 		const result = await this.search(query, options);
 		return this.formatter.formatForLLM({
 			primary: result.results.slice(0, Math.ceil(result.results.length * 0.6)),
@@ -278,9 +305,12 @@ export class EnhancedRetriever {
 			if (units.length > 0) {
 				const fileUnit = units[0];
 				// Prefer LLM-generated summary from metadata if available
-				const summary = (fileUnit.metadata as Record<string, unknown>)?.summary as string | undefined
-					|| fileUnit.metadata?.docstring
-					|| this.generateBriefFileSummary(fileUnit, filePath);
+				const summary =
+					((fileUnit.metadata as Record<string, unknown>)?.summary as
+						| string
+						| undefined) ||
+					fileUnit.metadata?.docstring ||
+					this.generateBriefFileSummary(fileUnit, filePath);
 
 				return {
 					name: fileUnit.name || filePath.split("/").pop() || "unknown",
@@ -297,7 +327,10 @@ export class EnhancedRetriever {
 	/**
 	 * Generate a brief file summary from available metadata when no LLM summary exists
 	 */
-	private generateBriefFileSummary(fileUnit: CodeUnit, filePath: string): string {
+	private generateBriefFileSummary(
+		fileUnit: CodeUnit,
+		filePath: string,
+	): string {
 		const fileName = filePath.split("/").pop() || "unknown";
 		const lines = fileUnit.content.split("\n").length;
 		const language = fileUnit.language || "unknown";

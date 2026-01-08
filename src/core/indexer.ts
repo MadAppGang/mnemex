@@ -22,7 +22,11 @@ import {
 } from "../config.js";
 import { createLLMClient } from "../llm/client.js";
 import type { ILLMClient } from "../types.js";
-import { createEnricher, type Enricher, type FileToEnrich } from "./enrichment/index.js";
+import {
+	createEnricher,
+	type Enricher,
+	type FileToEnrich,
+} from "./enrichment/index.js";
 import { getParserManager } from "../parsers/parser-manager.js";
 import type {
 	ChunkWithEmbedding,
@@ -65,12 +69,12 @@ export class EmbeddingModelMismatchError extends Error {
 	) {
 		super(
 			`Embedding model mismatch!\n` +
-			`  Index was created with: ${storedModel}\n` +
-			`  You're trying to use: ${requestedModel}\n\n` +
-			`Solutions:\n` +
-			`  1. Use the same model: claudemem search --model ${storedModel} "query"\n` +
-			`  2. Reindex with new model: claudemem index --force --model ${requestedModel}\n` +
-			`  3. Let claudemem auto-detect: claudemem search "query" (uses stored model)`
+				`  Index was created with: ${storedModel}\n` +
+				`  You're trying to use: ${requestedModel}\n\n` +
+				`Solutions:\n` +
+				`  1. Use the same model: claudemem search --model ${storedModel} "query"\n` +
+				`  2. Reindex with new model: claudemem index --force --model ${requestedModel}\n` +
+				`  3. Let claudemem auto-detect: claudemem search "query" (uses stored model)`,
 		);
 		this.name = "EmbeddingModelMismatchError";
 	}
@@ -85,18 +89,22 @@ export class IndexLockError extends Error {
 		public runningFor: number | undefined,
 		public reason: "already_running" | "timeout" | "error",
 	) {
-		const runningForSec = runningFor !== undefined ? Math.round(runningFor / 1000) : 0;
+		const runningForSec =
+			runningFor !== undefined ? Math.round(runningFor / 1000) : 0;
 		let message: string;
 		if (reason === "error") {
-			message = `Failed to acquire index lock.\n` +
+			message =
+				`Failed to acquire index lock.\n` +
 				`  There may be a filesystem error or permissions issue.\n` +
 				`  Try running with --force-unlock to clear any stale locks.`;
 		} else if (reason === "timeout") {
-			message = `Timed out waiting for indexing to complete.\n` +
+			message =
+				`Timed out waiting for indexing to complete.\n` +
 				`  Another process (PID ${holderPid}) has been indexing for ${runningForSec}s.\n` +
 				`  If the process is stuck, use --force-unlock to clear the lock.`;
 		} else {
-			message = `Another process (PID ${holderPid}) is currently indexing.\n` +
+			message =
+				`Another process (PID ${holderPid}) is currently indexing.\n` +
 				`  It has been running for ${runningForSec}s.\n` +
 				`  Use --wait to wait for it to finish, or --force-unlock if it's stuck.`;
 		}
@@ -119,7 +127,12 @@ interface IndexerOptions {
 	/** Include only these patterns */
 	includePatterns?: string[];
 	/** Progress callback (inProgress = items currently being processed, for animation) */
-	onProgress?: (current: number, total: number, file: string, inProgress?: number) => void;
+	onProgress?: (
+		current: number,
+		total: number,
+		file: string,
+		inProgress?: number,
+	) => void;
 	/** Force re-index all files */
 	force?: boolean;
 	/** Enable LLM enrichment (default: from config) */
@@ -142,7 +155,12 @@ export class Indexer {
 	private modelExplicitlySet: boolean;
 	private excludePatterns: string[];
 	private includePatterns: string[];
-	private onProgress?: (current: number, total: number, file: string, inProgress?: number) => void;
+	private onProgress?: (
+		current: number,
+		total: number,
+		file: string,
+		inProgress?: number,
+	) => void;
 	private enableEnrichment: boolean;
 	private enrichmentConcurrency: number;
 	private vectorEnabled: boolean;
@@ -172,12 +190,14 @@ export class Indexer {
 		];
 		// Get config options
 		const projectConfig = loadProjectConfig(options.projectPath);
-		this.includePatterns = options.includePatterns || projectConfig?.includePatterns || [];
+		this.includePatterns =
+			options.includePatterns || projectConfig?.includePatterns || [];
 
 		this.onProgress = options.onProgress;
 
 		// Enrichment enabled by default (from config), can be overridden
-		this.enableEnrichment = options.enableEnrichment ?? isEnrichmentEnabled(options.projectPath);
+		this.enableEnrichment =
+			options.enableEnrichment ?? isEnrichmentEnabled(options.projectPath);
 		this.enrichmentConcurrency = options.enrichmentConcurrency ?? 10;
 
 		// Vector embeddings enabled by default (from config)
@@ -303,14 +323,19 @@ export class Indexer {
 	/**
 	 * Internal indexing logic (called after lock acquired)
 	 */
-	private async indexInternal(force: boolean, startTime: number): Promise<EnrichedIndexResult> {
+	private async indexInternal(
+		force: boolean,
+		startTime: number,
+	): Promise<EnrichedIndexResult> {
 		await this.initialize();
 
 		// Check if embedding model changed - requires full reindex
 		const previousModel = this.fileTracker!.getMetadata("embeddingModel");
 		const modelChanged = previousModel && previousModel !== this.model;
 		if (modelChanged) {
-			console.log(`\n⚠️  Embedding model changed: ${previousModel} → ${this.model}`);
+			console.log(
+				`\n⚠️  Embedding model changed: ${previousModel} → ${this.model}`,
+			);
 			console.log("   Clearing old index (vector dimensions may differ)...\n");
 			await this.vectorStore!.clear();
 			this.fileTracker!.clear();
@@ -361,13 +386,15 @@ export class Indexer {
 			// This allows us to reuse embeddings for unchanged content
 			for (const modifiedFile of changes.modifiedFiles) {
 				// Chunks are stored with absolute paths, so use absolute path for lookups
-				const oldChunks = await this.vectorStore!.getChunksWithVectors(modifiedFile);
+				const oldChunks =
+					await this.vectorStore!.getChunksWithVectors(modifiedFile);
 				if (oldChunks.length > 0) {
 					// Store old chunks indexed by contentHash for O(1) lookup
 					// Key by absolute path to match during embedding phase
 					const oldChunksMap = new Map<string, number[]>();
 					for (const chunk of oldChunks) {
-						if (chunk.contentHash && chunk.vector.length > 1) { // >1 to exclude placeholder [0]
+						if (chunk.contentHash && chunk.vector.length > 1) {
+							// >1 to exclude placeholder [0]
 							oldChunksMap.set(chunk.contentHash, chunk.vector);
 						}
 					}
@@ -393,21 +420,31 @@ export class Indexer {
 
 		// PARALLEL MODE: Run AST extraction and enrichment in parallel
 		// Conditions: embedding is local (uses GPU/CPU) AND LLM is cloud (uses network)
-		const canParallelizeEnrichment = this.enableEnrichment &&
+		const canParallelizeEnrichment =
+			this.enableEnrichment &&
 			this.enricher &&
 			this.vectorEnabled &&
 			this.embeddingsClient?.isLocal() &&
 			this.llmClient?.isCloud();
 
-		const totalBatches = Math.ceil(filesToIndex.length / Indexer.FILES_PER_BATCH);
+		const totalBatches = Math.ceil(
+			filesToIndex.length / Indexer.FILES_PER_BATCH,
+		);
 
 		for (let batchNum = 0; batchNum < totalBatches; batchNum++) {
 			const batchStart = batchNum * Indexer.FILES_PER_BATCH;
-			const batchEnd = Math.min(batchStart + Indexer.FILES_PER_BATCH, filesToIndex.length);
+			const batchEnd = Math.min(
+				batchStart + Indexer.FILES_PER_BATCH,
+				filesToIndex.length,
+			);
 			const batchFiles = filesToIndex.slice(batchStart, batchEnd);
 
 			// Phase 1: Parse and chunk batch of files
-			const batchChunks: Array<{ chunk: CodeChunk; filePath: string; fileHash: string }> = [];
+			const batchChunks: Array<{
+				chunk: CodeChunk;
+				filePath: string;
+				fileHash: string;
+			}> = [];
 
 			for (let i = 0; i < batchFiles.length; i++) {
 				const filePath = batchFiles[i];
@@ -416,10 +453,17 @@ export class Indexer {
 
 				// Report progress (parsing phase) - show "X/Y" with filename, or just "X/Y files" at completion
 				if (this.onProgress) {
-					const batchInfo = totalBatches > 1 ? ` [batch ${batchNum + 1}/${totalBatches}]` : "";
+					const batchInfo =
+						totalBatches > 1 ? ` [batch ${batchNum + 1}/${totalBatches}]` : "";
 					const isLast = globalIndex === filesToIndex.length;
-					const detail = isLast ? `${globalIndex}/${filesToIndex.length} files` : `${globalIndex}/${filesToIndex.length} ${relativePath}`;
-					this.onProgress(globalIndex, filesToIndex.length, `[parsing]${batchInfo} ${detail}`);
+					const detail = isLast
+						? `${globalIndex}/${filesToIndex.length} files`
+						: `${globalIndex}/${filesToIndex.length} ${relativePath}`;
+					this.onProgress(
+						globalIndex,
+						filesToIndex.length,
+						`[parsing]${batchInfo} ${detail}`,
+					);
 				}
 
 				try {
@@ -435,7 +479,8 @@ export class Indexer {
 						}
 					}
 				} catch (error) {
-					const errorMsg = error instanceof Error ? error.message : String(error);
+					const errorMsg =
+						error instanceof Error ? error.message : String(error);
 					errors.push({ file: relativePath, error: errorMsg });
 				}
 			}
@@ -447,20 +492,40 @@ export class Indexer {
 
 			// Phase 2: Embed batch chunks (skip if vector mode disabled)
 			// SMART INCREMENTAL: Reuse vectors from cache for unchanged chunks
-			const batchInfo = totalBatches > 1 ? ` [batch ${batchNum + 1}/${totalBatches}]` : "";
-			let validChunks: Array<{ chunk: CodeChunk; filePath: string; fileHash: string; vector: number[] }>;
+			const batchInfo =
+				totalBatches > 1 ? ` [batch ${batchNum + 1}/${totalBatches}]` : "";
+			let validChunks: Array<{
+				chunk: CodeChunk;
+				filePath: string;
+				fileHash: string;
+				vector: number[];
+			}>;
 
 			if (this.vectorEnabled) {
 				// Separate chunks into: cached (reuse vector) vs new (need embedding)
-				const chunksNeedingEmbedding: Array<{ chunk: CodeChunk; filePath: string; fileHash: string; originalIndex: number }> = [];
-				const cachedChunks: Array<{ chunk: CodeChunk; filePath: string; fileHash: string; vector: number[] }> = [];
+				const chunksNeedingEmbedding: Array<{
+					chunk: CodeChunk;
+					filePath: string;
+					fileHash: string;
+					originalIndex: number;
+				}> = [];
+				const cachedChunks: Array<{
+					chunk: CodeChunk;
+					filePath: string;
+					fileHash: string;
+					vector: number[];
+				}> = [];
 
 				for (let i = 0; i < batchChunks.length; i++) {
 					const { chunk, filePath, fileHash } = batchChunks[i];
 					// Cache is keyed by absolute path (filePath is already absolute)
 					const cachedVectors = this.oldChunksCache.get(filePath);
 
-					if (cachedVectors && chunk.contentHash && cachedVectors.has(chunk.contentHash)) {
+					if (
+						cachedVectors &&
+						chunk.contentHash &&
+						cachedVectors.has(chunk.contentHash)
+					) {
 						// REUSE: Same content found in cache - skip embedding API call!
 						cachedChunks.push({
 							chunk,
@@ -470,7 +535,12 @@ export class Indexer {
 						});
 					} else {
 						// NEW: Content changed or new chunk - needs embedding
-						chunksNeedingEmbedding.push({ chunk, filePath, fileHash, originalIndex: i });
+						chunksNeedingEmbedding.push({
+							chunk,
+							filePath,
+							fileHash,
+							originalIndex: i,
+						});
 					}
 				}
 
@@ -479,26 +549,49 @@ export class Indexer {
 
 				if (this.onProgress) {
 					const reuseInfo = reusedCount > 0 ? ` (${reusedCount} reused)` : "";
-					this.onProgress(0, batchChunks.length, `[embedding]${batchInfo} ${newCount} new${reuseInfo}...`);
+					this.onProgress(
+						0,
+						batchChunks.length,
+						`[embedding]${batchInfo} ${newCount} new${reuseInfo}...`,
+					);
 				}
 
 				// Only call embedding API for chunks that actually need it
-				let newlyEmbeddedChunks: Array<{ chunk: CodeChunk; filePath: string; fileHash: string; vector: number[] }> = [];
+				let newlyEmbeddedChunks: Array<{
+					chunk: CodeChunk;
+					filePath: string;
+					fileHash: string;
+					vector: number[];
+				}> = [];
 
 				if (chunksNeedingEmbedding.length > 0) {
 					const texts = chunksNeedingEmbedding.map((c) => c.chunk.content);
-					let embedResult: { embeddings: number[][]; cost?: number; totalTokens?: number };
+					let embedResult: {
+						embeddings: number[][];
+						cost?: number;
+						totalTokens?: number;
+					};
 
 					try {
 						// Pass progress callback to track embedding progress
-						embedResult = await this.embeddingsClient!.embed(texts, (completed, total, inProgress) => {
-							if (this.onProgress) {
-								const reuseInfo = reusedCount > 0 ? ` (${reusedCount} reused)` : "";
-								this.onProgress(completed + reusedCount, total + reusedCount, `[embedding]${batchInfo} ${completed}/${total} new${reuseInfo}`, inProgress);
-							}
-						});
+						embedResult = await this.embeddingsClient!.embed(
+							texts,
+							(completed, total, inProgress) => {
+								if (this.onProgress) {
+									const reuseInfo =
+										reusedCount > 0 ? ` (${reusedCount} reused)` : "";
+									this.onProgress(
+										completed + reusedCount,
+										total + reusedCount,
+										`[embedding]${batchInfo} ${completed}/${total} new${reuseInfo}`,
+										inProgress,
+									);
+								}
+							},
+						);
 					} catch (error) {
-						const errorMsg = error instanceof Error ? error.message : String(error);
+						const errorMsg =
+							error instanceof Error ? error.message : String(error);
 						throw new Error(`Embedding generation failed: ${errorMsg}`);
 					}
 
@@ -536,14 +629,21 @@ export class Indexer {
 			}
 
 			// Phase 3: Store batch chunks
-			const chunksWithEmbeddings: ChunkWithEmbedding[] = validChunks.map((c) => ({
-				...c.chunk,
-				vector: c.vector,
-			}));
+			const chunksWithEmbeddings: ChunkWithEmbedding[] = validChunks.map(
+				(c) => ({
+					...c.chunk,
+					vector: c.vector,
+				}),
+			);
 
 			if (this.onProgress) {
-				const batchInfo = totalBatches > 1 ? ` [batch ${batchNum + 1}/${totalBatches}]` : "";
-				this.onProgress(0, chunksWithEmbeddings.length, `[storing]${batchInfo} ${chunksWithEmbeddings.length} chunks...`);
+				const batchInfo =
+					totalBatches > 1 ? ` [batch ${batchNum + 1}/${totalBatches}]` : "";
+				this.onProgress(
+					0,
+					chunksWithEmbeddings.length,
+					`[storing]${batchInfo} ${chunksWithEmbeddings.length} chunks...`,
+				);
 			}
 			await this.vectorStore!.addChunks(chunksWithEmbeddings);
 
@@ -560,7 +660,10 @@ export class Indexer {
 			}
 
 			// Phase 4: Update file tracker for this batch (only for successfully stored chunks)
-			const fileChunkMap = new Map<string, { fileHash: string; chunkIds: string[] }>();
+			const fileChunkMap = new Map<
+				string,
+				{ fileHash: string; chunkIds: string[] }
+			>();
 			for (const { chunk, filePath, fileHash } of validChunks) {
 				if (!fileChunkMap.has(filePath)) {
 					fileChunkMap.set(filePath, { fileHash, chunkIds: [] });
@@ -578,7 +681,10 @@ export class Indexer {
 			// Collect files for enrichment
 			if (this.enableEnrichment && this.enricher) {
 				// Group chunks by file for enrichment
-				const fileChunksMap = new Map<string, { content: string; chunks: CodeChunk[]; language: string }>();
+				const fileChunksMap = new Map<
+					string,
+					{ content: string; chunks: CodeChunk[]; language: string }
+				>();
 
 				for (const { chunk, filePath } of validChunks) {
 					if (!fileChunksMap.has(filePath)) {
@@ -610,20 +716,35 @@ export class Indexer {
 		let enrichmentResult: EnrichmentResult | undefined;
 
 		const runEnrichment = async (): Promise<void> => {
-			if (!this.enableEnrichment || !this.enricher || fileChunksForEnrichment.length === 0) {
+			if (
+				!this.enableEnrichment ||
+				!this.enricher ||
+				fileChunksForEnrichment.length === 0
+			) {
 				return;
 			}
 			try {
-				enrichmentResult = await this.enricher.enrichFiles(fileChunksForEnrichment, {
-					concurrency: this.enrichmentConcurrency,
-					onProgress: (completed, total, phase, status, inProgress) => {
-						if (this.onProgress) {
-							this.onProgress(completed, total, `[${phase}] ${status}`, inProgress);
-						}
+				enrichmentResult = await this.enricher.enrichFiles(
+					fileChunksForEnrichment,
+					{
+						concurrency: this.enrichmentConcurrency,
+						onProgress: (completed, total, phase, status, inProgress) => {
+							if (this.onProgress) {
+								this.onProgress(
+									completed,
+									total,
+									`[${phase}] ${status}`,
+									inProgress,
+								);
+							}
+						},
 					},
-				});
+				);
 			} catch (error) {
-				console.warn("⚠️  Enrichment failed:", error instanceof Error ? error.message : error);
+				console.warn(
+					"⚠️  Enrichment failed:",
+					error instanceof Error ? error.message : error,
+				);
 			}
 		};
 
@@ -665,14 +786,8 @@ export class Indexer {
 		}
 
 		// Save metadata
-		this.fileTracker!.setMetadata(
-			"embeddingModel",
-			this.model,
-		);
-		this.fileTracker!.setMetadata(
-			"lastIndexed",
-			new Date().toISOString(),
-		);
+		this.fileTracker!.setMetadata("embeddingModel", this.model);
+		this.fileTracker!.setMetadata("lastIndexed", new Date().toISOString());
 
 		// Clean up: Release cached old chunks to free memory
 		this.oldChunksCache.clear();
@@ -712,7 +827,10 @@ export class Indexer {
 		}
 
 		// Search
-		return this.vectorStore!.search(query, queryVector, { ...options, keywordOnly: useKeywordOnly });
+		return this.vectorStore!.search(query, queryVector, {
+			...options,
+			keywordOnly: useKeywordOnly,
+		});
 	}
 
 	/**
@@ -762,7 +880,11 @@ export class Indexer {
 	/**
 	 * Check if another process is currently indexing this project
 	 */
-	isIndexingInProgress(): { inProgress: boolean; holderPid?: number; runningFor?: number } {
+	isIndexingInProgress(): {
+		inProgress: boolean;
+		holderPid?: number;
+		runningFor?: number;
+	} {
 		const lock = createIndexLock(this.projectPath);
 		const status = lock.isLocked();
 		return {
@@ -908,7 +1030,10 @@ export class Indexer {
 	 * Extract symbol graph from indexed files
 	 * Phase 4.5 of the indexing pipeline
 	 */
-	private async extractSymbolGraph(filesToIndex: string[], force: boolean): Promise<void> {
+	private async extractSymbolGraph(
+		filesToIndex: string[],
+		force: boolean,
+	): Promise<void> {
 		const symbolExtractor = createSymbolExtractor();
 		const graphManager = createReferenceGraphManager(this.fileTracker!);
 		const parserManager = getParserManager();
@@ -925,7 +1050,11 @@ export class Indexer {
 
 		// Extract symbols and references from each file
 		if (this.onProgress) {
-			this.onProgress(0, filesToIndex.length, "[analyzing] extracting symbols...");
+			this.onProgress(
+				0,
+				filesToIndex.length,
+				"[analyzing] extracting symbols...",
+			);
 		}
 
 		let processedFiles = 0;
@@ -995,7 +1124,10 @@ export class Indexer {
 		const repoMapGen = createRepoMapGenerator(this.fileTracker!);
 		const repoMap = repoMapGen.generate({ maxTokens: 4000 });
 		this.fileTracker!.setMetadata("repoMap", repoMap);
-		this.fileTracker!.setMetadata("repoMapGeneratedAt", new Date().toISOString());
+		this.fileTracker!.setMetadata(
+			"repoMapGeneratedAt",
+			new Date().toISOString(),
+		);
 
 		// Store graph stats
 		const stats = this.fileTracker!.getSymbolGraphStats();
@@ -1016,8 +1148,17 @@ export class Indexer {
 	 *
 	 * Uses parallel fetching for better performance when fetching many libraries.
 	 */
-	private async fetchExternalDocs(): Promise<{ librariesFetched: number; chunksAdded: number; cost?: number }> {
-		if (!this.docsFetcher || !this.embeddingsClient || !this.vectorStore || !this.fileTracker) {
+	private async fetchExternalDocs(): Promise<{
+		librariesFetched: number;
+		chunksAdded: number;
+		cost?: number;
+	}> {
+		if (
+			!this.docsFetcher ||
+			!this.embeddingsClient ||
+			!this.vectorStore ||
+			!this.fileTracker
+		) {
 			return { librariesFetched: 0, chunksAdded: 0 };
 		}
 
@@ -1032,18 +1173,30 @@ export class Indexer {
 
 		// Filter to dependencies that need refresh
 		const depsToFetch = deps.filter((dep) =>
-			this.fileTracker!.needsDocsRefresh(dep.name, dep.majorVersion, cacheTTLMs),
+			this.fileTracker!.needsDocsRefresh(
+				dep.name,
+				dep.majorVersion,
+				cacheTTLMs,
+			),
 		);
 
 		if (depsToFetch.length === 0) {
 			if (this.onProgress) {
-				this.onProgress(deps.length, deps.length, `[docs] ${deps.length} libraries up-to-date`);
+				this.onProgress(
+					deps.length,
+					deps.length,
+					`[docs] ${deps.length} libraries up-to-date`,
+				);
 			}
 			return { librariesFetched: 0, chunksAdded: 0 };
 		}
 
 		if (this.onProgress) {
-			this.onProgress(0, depsToFetch.length, `[docs] fetching ${depsToFetch.length} libraries...`);
+			this.onProgress(
+				0,
+				depsToFetch.length,
+				`[docs] fetching ${depsToFetch.length} libraries...`,
+			);
 		}
 
 		// Thread-safe counters (JS is single-threaded for sync ops)
@@ -1055,7 +1208,7 @@ export class Indexer {
 		const concurrency = this.enrichmentConcurrency; // Use same concurrency as enrichment
 
 		// Process a single dependency
-		const processDep = async (dep: typeof depsToFetch[0]): Promise<void> => {
+		const processDep = async (dep: (typeof depsToFetch)[0]): Promise<void> => {
 			inProgress.add(dep.name);
 
 			// Report progress with active items
@@ -1097,21 +1250,22 @@ export class Indexer {
 
 				// Add chunks to vector store
 				const fileHash = computeHash(chunks.map((c) => c.content).join(""));
-				const chunksWithEmbeddings: import("../types.js").ChunkWithEmbedding[] = chunks.map((chunk, idx) => ({
-					id: chunk.id,
-					content: chunk.content,
-					filePath: docsPath,
-					startLine: 0,
-					endLine: 0,
-					language: "markdown",
-					chunkType: "module" as const, // Use module for docs
-					contentHash: computeHash(chunk.content),
-					fileHash,
-					vector: embedResult.embeddings[idx],
-					// Store doc-specific metadata in name field for now
-					name: chunk.title,
-					signature: chunk.sourceUrl,
-				}));
+				const chunksWithEmbeddings: import("../types.js").ChunkWithEmbedding[] =
+					chunks.map((chunk, idx) => ({
+						id: chunk.id,
+						content: chunk.content,
+						filePath: docsPath,
+						startLine: 0,
+						endLine: 0,
+						language: "markdown",
+						chunkType: "module" as const, // Use module for docs
+						contentHash: computeHash(chunk.content),
+						fileHash,
+						vector: embedResult.embeddings[idx],
+						// Store doc-specific metadata in name field for now
+						name: chunk.title,
+						signature: chunk.sourceUrl,
+					}));
 
 				await this.vectorStore!.addChunks(chunksWithEmbeddings);
 

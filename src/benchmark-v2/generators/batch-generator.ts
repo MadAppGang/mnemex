@@ -12,7 +12,10 @@ import type {
 	GeneratedSummary,
 	ModelConfig,
 } from "../types.js";
-import { SummaryGenerator, createSummaryGenerator } from "./summary-generator.js";
+import {
+	SummaryGenerator,
+	createSummaryGenerator,
+} from "./summary-generator.js";
 import type { PhaseContext, PhaseResult } from "../pipeline/orchestrator.js";
 
 // ============================================================================
@@ -47,7 +50,14 @@ export interface BatchGenerationOptions {
 	 */
 	largeModelThreshold?: number;
 	/** Progress callback with inProgress, failures count, and last error for animated progress bars */
-	onProgress?: (model: string, completed: number, total: number, inProgress: number, failures: number, lastError?: string) => void;
+	onProgress?: (
+		model: string,
+		completed: number,
+		total: number,
+		inProgress: number,
+		failures: number,
+		lastError?: string,
+	) => void;
 }
 
 export interface BatchGenerationResult {
@@ -92,7 +102,7 @@ export class BatchGenerator {
 					createSummaryGenerator({
 						llmClient: client,
 						modelConfig: model,
-					})
+					}),
 				);
 			}
 		}
@@ -102,7 +112,7 @@ export class BatchGenerator {
 	 * Generate summaries for all code units across all models
 	 */
 	async generate(
-		codeUnits: BenchmarkCodeUnit[]
+		codeUnits: BenchmarkCodeUnit[],
 	): Promise<BatchGenerationResult> {
 		const result: BatchGenerationResult = {
 			summaries: new Map(),
@@ -151,8 +161,8 @@ export class BatchGenerator {
 			if (this.options.parallelModels && cloudModels.length > 1) {
 				const cloudResults = await Promise.all(
 					cloudModels.map(([modelId, generator]) =>
-						this.generateForModel(modelId, generator, codeUnits)
-					)
+						this.generateForModel(modelId, generator, codeUnits),
+					),
 				);
 				for (const modelResult of cloudResults) {
 					collectResult(modelResult);
@@ -160,7 +170,11 @@ export class BatchGenerator {
 			} else {
 				// Run cloud models sequentially if parallelModels is false
 				for (const [modelId, generator] of cloudModels) {
-					const modelResult = await this.generateForModel(modelId, generator, codeUnits);
+					const modelResult = await this.generateForModel(
+						modelId,
+						generator,
+						codeUnits,
+					);
 					collectResult(modelResult);
 				}
 			}
@@ -174,12 +188,15 @@ export class BatchGenerator {
 			const largeModelThreshold = this.options.largeModelThreshold ?? 20; // Default 20B
 
 			// Helper to run a local model
-			const runLocalModel = async ([modelId, generator]: [string, SummaryGenerator]) => {
+			const runLocalModel = async ([modelId, generator]: [
+				string,
+				SummaryGenerator,
+			]) => {
 				const modelResult = await this.generateForModel(
 					modelId,
 					generator,
 					codeUnits,
-					1 // Force concurrency=1 for code units within each local model
+					1, // Force concurrency=1 for code units within each local model
 				);
 				collectResult(modelResult);
 			};
@@ -205,7 +222,10 @@ export class BatchGenerator {
 			// Query model sizes to separate large from small models
 			const modelSizes = new Map<string, number | undefined>();
 			const debug = process.env.DEBUG_MODEL_SIZE === "1";
-			if (debug) console.error(`[BatchGenerator] Querying sizes for ${localModels.length} local models, threshold=${largeModelThreshold}B`);
+			if (debug)
+				console.error(
+					`[BatchGenerator] Querying sizes for ${localModels.length} local models, threshold=${largeModelThreshold}B`,
+				);
 
 			await Promise.all(
 				localModels.map(async ([modelId]) => {
@@ -214,16 +234,23 @@ export class BatchGenerator {
 						try {
 							const size = await client.getModelSizeB();
 							modelSizes.set(modelId, size);
-							if (debug) console.error(`[BatchGenerator] ${modelId} → ${size ?? "unknown"}B ${size !== undefined && size >= largeModelThreshold ? "(LARGE)" : "(small)"}`);
+							if (debug)
+								console.error(
+									`[BatchGenerator] ${modelId} → ${size ?? "unknown"}B ${size !== undefined && size >= largeModelThreshold ? "(LARGE)" : "(small)"}`,
+								);
 						} catch (e) {
 							// Failed to get size - treat as unknown
 							modelSizes.set(modelId, undefined);
-							if (debug) console.error(`[BatchGenerator] ${modelId} → ERROR: ${e}`);
+							if (debug)
+								console.error(`[BatchGenerator] ${modelId} → ERROR: ${e}`);
 						}
 					} else {
-						if (debug) console.error(`[BatchGenerator] ${modelId} → no getModelSizeB method`);
+						if (debug)
+							console.error(
+								`[BatchGenerator] ${modelId} → no getModelSizeB method`,
+							);
 					}
-				})
+				}),
 			);
 
 			// Separate large models (>= threshold) from small models
@@ -277,7 +304,7 @@ export class BatchGenerator {
 		modelId: string,
 		generator: SummaryGenerator,
 		codeUnits: BenchmarkCodeUnit[],
-		concurrencyOverride?: number
+		concurrencyOverride?: number,
 	): Promise<{
 		modelId: string;
 		summaries: GeneratedSummary[];
@@ -286,7 +313,11 @@ export class BatchGenerator {
 		tokens: number;
 	}> {
 		const summaries: GeneratedSummary[] = [];
-		const failures: Array<{ modelId: string; codeUnitId: string; error: string }> = [];
+		const failures: Array<{
+			modelId: string;
+			codeUnitId: string;
+			error: string;
+		}> = [];
 		const concurrency = concurrencyOverride ?? this.options.concurrency ?? 5;
 
 		// Track in-progress items for animated progress
@@ -296,16 +327,29 @@ export class BatchGenerator {
 		const inProgress = new Set<string>();
 
 		// Process a single code unit with retries
-		const processCodeUnit = async (codeUnit: BenchmarkCodeUnit): Promise<void> => {
+		const processCodeUnit = async (
+			codeUnit: BenchmarkCodeUnit,
+		): Promise<void> => {
 			inProgress.add(codeUnit.id);
 
 			// Report progress with inProgress count
 			if (this.options.onProgress) {
-				this.options.onProgress(modelId, completed, codeUnits.length, inProgress.size, failureCount, lastErrorMsg);
+				this.options.onProgress(
+					modelId,
+					completed,
+					codeUnits.length,
+					inProgress.size,
+					failureCount,
+					lastErrorMsg,
+				);
 			}
 
 			let lastError: Error | null = null;
-			for (let attempt = 0; attempt < (this.options.maxRetries ?? 3); attempt++) {
+			for (
+				let attempt = 0;
+				attempt < (this.options.maxRetries ?? 3);
+				attempt++
+			) {
 				try {
 					const summary = await generator.generateSummary(codeUnit);
 					summaries.push(summary);
@@ -316,7 +360,8 @@ export class BatchGenerator {
 
 					// Handle rate limits with exponential backoff
 					if (isRateLimitError(error)) {
-						const backoff = (error as RateLimitError).retryAfterMs ??
+						const backoff =
+							(error as RateLimitError).retryAfterMs ??
 							Math.pow(2, attempt) * 1000;
 						await this.delay(backoff);
 						continue;
@@ -349,7 +394,14 @@ export class BatchGenerator {
 
 			// Report progress after completion (with failure info if any)
 			if (this.options.onProgress) {
-				this.options.onProgress(modelId, completed, codeUnits.length, inProgress.size, failureCount, lastErrorMsg);
+				this.options.onProgress(
+					modelId,
+					completed,
+					codeUnits.length,
+					inProgress.size,
+					failureCount,
+					lastErrorMsg,
+				);
 			}
 		};
 
@@ -364,7 +416,10 @@ export class BatchGenerator {
 			await Promise.all(batch.map(processCodeUnit));
 
 			// Rate limiting delay between batches
-			if (this.options.delayBetweenRequests && i + concurrency < codeUnits.length) {
+			if (
+				this.options.delayBetweenRequests &&
+				i + concurrency < codeUnits.length
+			) {
 				await this.delay(this.options.delayBetweenRequests);
 			}
 		}
@@ -396,7 +451,7 @@ export class BatchGenerator {
 // ============================================================================
 
 export function createBatchGenerator(
-	options: BatchGenerationOptions
+	options: BatchGenerationOptions,
 ): BatchGenerator {
 	return new BatchGenerator(options);
 }
@@ -409,7 +464,7 @@ export function createBatchGenerator(
  * Create the generation phase executor
  */
 export function createGenerationPhaseExecutor(
-	clients: Map<string, ILLMClient>
+	clients: Map<string, ILLMClient>,
 ): (context: PhaseContext) => Promise<PhaseResult> {
 	return async (context: PhaseContext): Promise<PhaseResult> => {
 		const { db, run, config, stateMachine } = context;
@@ -439,7 +494,14 @@ export function createGenerationPhaseExecutor(
 				concurrency: 20, // Process 20 code units in parallel per model
 				localModelParallelism: config.localModelParallelism ?? 1,
 				largeModelThreshold: config.largeModelThreshold ?? 20,
-				onProgress: (model, completed, total, inProgress, failures, lastError) => {
+				onProgress: (
+					model,
+					completed,
+					total,
+					inProgress,
+					failures,
+					lastError,
+				) => {
 					const overallCompleted = startIndex + completed;
 					// Encode progress info for CLI to parse: model: completed/total/inProgress/failures|error
 					const errorPart = failures > 0 && lastError ? `|${lastError}` : "";
@@ -447,7 +509,7 @@ export function createGenerationPhaseExecutor(
 						"generation",
 						overallCompleted,
 						`${model}:${completed}`,
-						`${model}: ${completed}/${total}/${inProgress}/${failures}${errorPart}`
+						`${model}: ${completed}/${total}/${inProgress}/${failures}${errorPart}`,
 					);
 				},
 			});
@@ -467,7 +529,10 @@ export function createGenerationPhaseExecutor(
 			}
 
 			// Group failures by model for detailed reporting
-			const failuresByModel = new Map<string, { count: number; errors: string[] }>();
+			const failuresByModel = new Map<
+				string,
+				{ count: number; errors: string[] }
+			>();
 			for (const f of result.failures) {
 				if (!failuresByModel.has(f.modelId)) {
 					failuresByModel.set(f.modelId, { count: 0, errors: [] });
@@ -480,20 +545,23 @@ export function createGenerationPhaseExecutor(
 			}
 
 			// Convert to array for PhaseResult
-			const failures = Array.from(failuresByModel.entries()).map(([model, data]) => ({
-				model,
-				count: data.count,
-				error: data.errors.join("; "),
-			}));
+			const failures = Array.from(failuresByModel.entries()).map(
+				([model, data]) => ({
+					model,
+					count: data.count,
+					error: data.errors.join("; "),
+				}),
+			);
 
 			// Continue with partial results - don't fail the whole benchmark
 			// Only fail if we have zero summaries
 			return {
 				success: totalSummaries > 0,
 				itemsProcessed: totalSummaries,
-				error: result.failures.length > 0 && totalSummaries === 0
-					? `All ${result.failures.length} summaries failed to generate`
-					: undefined,
+				error:
+					result.failures.length > 0 && totalSummaries === 0
+						? `All ${result.failures.length} summaries failed to generate`
+						: undefined,
 				failures: failures.length > 0 ? failures : undefined,
 			};
 		} catch (error) {

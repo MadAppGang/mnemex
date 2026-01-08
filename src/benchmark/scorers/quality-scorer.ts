@@ -29,10 +29,11 @@ export class UsefulnessScorer implements IScorer {
 	async score(
 		_testCase: TestCase,
 		_generation: GenerationResult<FileSummary | SymbolSummary>,
-		judgment?: JudgmentResult
+		judgment?: JudgmentResult,
 	): Promise<ScoreResult> {
 		// If no judgment available, return 0 (not fake 50%)
-		const hasJudgment = judgment !== undefined && judgment.judgedBy !== "no judge";
+		const hasJudgment =
+			judgment !== undefined && judgment.judgedBy !== "no judge";
 		const score = hasJudgment ? judgment.usefulness : 0;
 
 		const criterion = this.getCriterion();
@@ -53,7 +54,7 @@ export class UsefulnessScorer implements IScorer {
 	getCriterion(): ScoringCriterion {
 		return {
 			name: "usefulness",
-			weight: 0.20,
+			weight: 0.2,
 			description: "Does the summary help a developer understand the code?",
 		};
 	}
@@ -71,10 +72,11 @@ export class ConcisenessScorer implements IScorer {
 	async score(
 		_testCase: TestCase,
 		_generation: GenerationResult<FileSummary | SymbolSummary>,
-		judgment?: JudgmentResult
+		judgment?: JudgmentResult,
 	): Promise<ScoreResult> {
 		// If no judgment available, return 0 (not fake 50%)
-		const hasJudgment = judgment !== undefined && judgment.judgedBy !== "no judge";
+		const hasJudgment =
+			judgment !== undefined && judgment.judgedBy !== "no judge";
 		const score = hasJudgment ? judgment.conciseness : 0;
 
 		const criterion = this.getCriterion();
@@ -95,8 +97,9 @@ export class ConcisenessScorer implements IScorer {
 	getCriterion(): ScoringCriterion {
 		return {
 			name: "conciseness",
-			weight: 0.10,
-			description: "Is the summary information-dense without unnecessary verbosity?",
+			weight: 0.1,
+			description:
+				"Is the summary information-dense without unnecessary verbosity?",
 		};
 	}
 }
@@ -113,10 +116,11 @@ export class QualityScorer implements IScorer {
 	async score(
 		_testCase: TestCase,
 		_generation: GenerationResult<FileSummary | SymbolSummary>,
-		judgment?: JudgmentResult
+		judgment?: JudgmentResult,
 	): Promise<ScoreResult> {
 		// If no judgment available, return 0 (not fake 50%)
-		const hasJudgment = judgment !== undefined && judgment.judgedBy !== "no judge";
+		const hasJudgment =
+			judgment !== undefined && judgment.judgedBy !== "no judge";
 
 		const usefulness = hasJudgment ? judgment.usefulness : 0;
 		const conciseness = hasJudgment ? judgment.conciseness : 0;
@@ -148,8 +152,9 @@ export class QualityScorer implements IScorer {
 	getCriterion(): ScoringCriterion {
 		return {
 			name: "quality",
-			weight: 0.30, // Combined weight of usefulness (20%) + conciseness (10%)
-			description: "Overall subjective quality from LLM judge (usefulness, conciseness, clarity)",
+			weight: 0.3, // Combined weight of usefulness (20%) + conciseness (10%)
+			description:
+				"Overall subjective quality from LLM judge (usefulness, conciseness, clarity)",
 		};
 	}
 }

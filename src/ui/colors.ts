@@ -41,7 +41,10 @@ export function colorize(text: string, color: keyof typeof colors): string {
 /**
  * Apply multiple styles
  */
-export function styled(text: string, ...styles: (keyof typeof colors)[]): string {
+export function styled(
+	text: string,
+	...styles: (keyof typeof colors)[]
+): string {
 	const prefix = styles.map((s) => colors[s]).join("");
 	return `${prefix}${text}${colors.reset}`;
 }

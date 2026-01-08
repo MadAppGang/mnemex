@@ -12,59 +12,61 @@ import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 interface PlatformInfo {
-  checksum: string;
-  size: number;
+	checksum: string;
+	size: number;
 }
 
 interface Manifest {
-  version: string;
-  buildDate: string;
-  platforms: Record<string, PlatformInfo>;
+	version: string;
+	buildDate: string;
+	platforms: Record<string, PlatformInfo>;
 }
 
 const PLATFORM_MAP: Record<string, string> = {
-  "claudemem-darwin-arm64": "darwin-arm64",
-  "claudemem-darwin-x64": "darwin-x64",
-  "claudemem-linux-x64": "linux-x64",
-  "claudemem-linux-arm64": "linux-arm64",
+	"claudemem-darwin-arm64": "darwin-arm64",
+	"claudemem-darwin-x64": "darwin-x64",
+	"claudemem-linux-x64": "linux-x64",
+	"claudemem-linux-arm64": "linux-arm64",
 };
 
 function computeSha256(filePath: string): string {
-  const content = readFileSync(filePath);
-  return createHash("sha256").update(content).digest("hex");
+	const content = readFileSync(filePath);
+	return createHash("sha256").update(content).digest("hex");
 }
 
 function generateManifest(version: string, releaseDir: string): Manifest {
-  const platforms: Record<string, PlatformInfo> = {};
+	const platforms: Record<string, PlatformInfo> = {};
 
-  const files = readdirSync(releaseDir);
+	const files = readdirSync(releaseDir);
 
-  for (const file of files) {
-    const platform = PLATFORM_MAP[file];
-    if (!platform) continue;
+	for (const file of files) {
+		const platform = PLATFORM_MAP[file];
+		if (!platform) continue;
 
-    const filePath = join(releaseDir, file);
-    const stats = statSync(filePath);
+		const filePath = join(releaseDir, file);
+		const stats = statSync(filePath);
 
-    platforms[platform] = {
-      checksum: computeSha256(filePath),
-      size: stats.size,
-    };
-  }
+		platforms[platform] = {
+			checksum: computeSha256(filePath),
+			size: stats.size,
+		};
+	}
 
-  return {
-    version,
-    buildDate: new Date().toISOString(),
-    platforms,
-  };
+	return {
+		version,
+		buildDate: new Date().toISOString(),
+		platforms,
+	};
 }
 
 // Main
 const args = process.argv.slice(2);
 
 if (args.length < 2) {
-  console.error("Usage: bun scripts/generate-manifest.ts <version> <release-dir>");
-  process.exit(1);
+	console.error(
+		"Usage: bun scripts/generate-manifest.ts <version> <release-dir>",
+	);
+	process.exit(1);
 }
 
 const [version, releaseDir] = args;
@@ -81,9 +83,11 @@ console.log(JSON.stringify(manifest, null, 2));
 // Also write checksums.txt for backwards compatibility
 const checksumsPath = join(releaseDir, "checksums.txt");
 const checksums = Object.entries(PLATFORM_MAP)
-  .filter(([file]) => manifest.platforms[PLATFORM_MAP[file]])
-  .map(([file, platform]) => `${manifest.platforms[platform].checksum}  ${file}`)
-  .join("\n");
+	.filter(([file]) => manifest.platforms[PLATFORM_MAP[file]])
+	.map(
+		([file, platform]) => `${manifest.platforms[platform].checksum}  ${file}`,
+	)
+	.join("\n");
 
 writeFileSync(checksumsPath, checksums + "\n");
 console.log("\nGenerated checksums.txt");

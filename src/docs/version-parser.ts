@@ -138,7 +138,9 @@ export function parseGoVersion(version: string): VersionConstraint | null {
  * Parse Cargo-style version constraint
  * Handles: "1.0", "^1.0", "~1.0", ">=1.0, <2.0", etc.
  */
-export function parseCargoVersion(constraint: string): VersionConstraint | null {
+export function parseCargoVersion(
+	constraint: string,
+): VersionConstraint | null {
 	// Cargo defaults to ^ if no operator specified
 	const parts = constraint.split(",");
 	const first = parts[0].trim();

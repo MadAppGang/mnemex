@@ -27,10 +27,11 @@ export async function createGenerator(
 	provider: LLMProvider,
 	model?: string,
 	displayName?: string,
-	endpoint?: string
+	endpoint?: string,
 ): Promise<ISummaryGenerator> {
 	const resolvedModel = model || DEFAULT_LLM_MODELS[provider];
-	const resolvedDisplayName = displayName || LLMResolver.formatDisplayName(provider, resolvedModel);
+	const resolvedDisplayName =
+		displayName || LLMResolver.formatDisplayName(provider, resolvedModel);
 
 	const info: GeneratorInfo = {
 		provider,
@@ -40,7 +41,9 @@ export async function createGenerator(
 
 	// Special handling for batch provider
 	if (provider === "anthropic-batch") {
-		const { AnthropicBatchLLMClient } = await import("../../llm/providers/anthropic-batch.js");
+		const { AnthropicBatchLLMClient } = await import(
+			"../../llm/providers/anthropic-batch.js"
+		);
 		const { BatchSummaryGenerator } = await import("./batch.js");
 
 		const batchClient = new AnthropicBatchLLMClient({ model: resolvedModel });
@@ -66,14 +69,14 @@ export async function createGenerator(
  */
 export async function createGeneratorFromSpec(
 	spec: string,
-	displayName?: string
+	displayName?: string,
 ): Promise<ISummaryGenerator> {
 	const parsed = LLMResolver.parseSpec(spec);
 	return createGenerator(
 		parsed.provider,
 		parsed.model,
 		displayName || parsed.displayName,
-		parsed.endpoint
+		parsed.endpoint,
 	);
 }
 
@@ -81,12 +84,22 @@ export async function createGeneratorFromSpec(
  * Create multiple generators from a list of configurations.
  */
 export async function createGenerators(
-	configs: Array<{ provider: LLMProvider; model?: string; displayName?: string; endpoint?: string }>
+	configs: Array<{
+		provider: LLMProvider;
+		model?: string;
+		displayName?: string;
+		endpoint?: string;
+	}>,
 ): Promise<ISummaryGenerator[]> {
 	const generators = await Promise.all(
 		configs.map((config) =>
-			createGenerator(config.provider, config.model, config.displayName, config.endpoint)
-		)
+			createGenerator(
+				config.provider,
+				config.model,
+				config.displayName,
+				config.endpoint,
+			),
+		),
 	);
 	return generators;
 }
@@ -94,8 +107,10 @@ export async function createGenerators(
 /**
  * Create multiple generators from spec strings.
  */
-export async function createGeneratorsFromSpecs(specs: string[]): Promise<ISummaryGenerator[]> {
-	return Promise.all(specs.map(spec => createGeneratorFromSpec(spec)));
+export async function createGeneratorsFromSpecs(
+	specs: string[],
+): Promise<ISummaryGenerator[]> {
+	return Promise.all(specs.map((spec) => createGeneratorFromSpec(spec)));
 }
 
 /**
@@ -114,7 +129,11 @@ export async function createGeneratorsFromSpecs(specs: string[]): Promise<ISumma
  * - "ollama/llama3.2" -> local provider with Ollama endpoint
  * - "lmstudio/model" -> local provider with LM Studio endpoint
  */
-export function parseGeneratorSpec(spec: string): { provider: LLMProvider; model?: string; endpoint?: string } {
+export function parseGeneratorSpec(spec: string): {
+	provider: LLMProvider;
+	model?: string;
+	endpoint?: string;
+} {
 	const parsed = LLMResolver.parseSpec(spec);
 	return {
 		provider: parsed.provider,
@@ -128,17 +147,49 @@ export function parseGeneratorSpec(spec: string): { provider: LLMProvider; model
 // ============================================================================
 
 /** Default generators for quick benchmarking */
-export const DEFAULT_GENERATORS: Array<{ provider: LLMProvider; model?: string; displayName?: string }> = [
-	{ provider: "anthropic", model: "claude-sonnet-4-5", displayName: "Claude Sonnet 4.5" },
+export const DEFAULT_GENERATORS: Array<{
+	provider: LLMProvider;
+	model?: string;
+	displayName?: string;
+}> = [
+	{
+		provider: "anthropic",
+		model: "claude-sonnet-4-5",
+		displayName: "Claude Sonnet 4.5",
+	},
 ];
 
 /** Popular model configurations for comprehensive benchmarking */
-export const POPULAR_GENERATORS: Array<{ provider: LLMProvider; model?: string; displayName?: string }> = [
-	{ provider: "anthropic", model: "claude-sonnet-4-5", displayName: "Claude Sonnet 4.5" },
-	{ provider: "anthropic", model: "claude-haiku-4-5", displayName: "Claude Haiku 4.5" },
+export const POPULAR_GENERATORS: Array<{
+	provider: LLMProvider;
+	model?: string;
+	displayName?: string;
+}> = [
+	{
+		provider: "anthropic",
+		model: "claude-sonnet-4-5",
+		displayName: "Claude Sonnet 4.5",
+	},
+	{
+		provider: "anthropic",
+		model: "claude-haiku-4-5",
+		displayName: "Claude Haiku 4.5",
+	},
 	{ provider: "openrouter", model: "openai/gpt-4o", displayName: "GPT-4o" },
-	{ provider: "openrouter", model: "openai/gpt-4o-mini", displayName: "GPT-4o Mini" },
-	{ provider: "openrouter", model: "google/gemini-pro-1.5", displayName: "Gemini Pro 1.5" },
-	{ provider: "openrouter", model: "meta-llama/llama-3.3-70b-instruct", displayName: "Llama 3.3 70B" },
+	{
+		provider: "openrouter",
+		model: "openai/gpt-4o-mini",
+		displayName: "GPT-4o Mini",
+	},
+	{
+		provider: "openrouter",
+		model: "google/gemini-pro-1.5",
+		displayName: "Gemini Pro 1.5",
+	},
+	{
+		provider: "openrouter",
+		model: "meta-llama/llama-3.3-70b-instruct",
+		displayName: "Llama 3.3 70B",
+	},
 	{ provider: "local", model: "llama3.2", displayName: "Llama 3.2 (Local)" },
 ];

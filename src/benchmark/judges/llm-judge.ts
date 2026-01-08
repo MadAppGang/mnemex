@@ -5,12 +5,13 @@
  * Scores: usefulness, conciseness, clarity.
  */
 
+import type { FileSummary, ILLMClient, SymbolSummary } from "../../types.js";
 import type {
-	FileSummary,
-	ILLMClient,
-	SymbolSummary,
-} from "../../types.js";
-import type { IJudge, JudgeContext, JudgeInfo, JudgmentResult } from "../types.js";
+	IJudge,
+	JudgeContext,
+	JudgeInfo,
+	JudgmentResult,
+} from "../types.js";
 
 // ============================================================================
 // Constants
@@ -69,7 +70,7 @@ export class LLMJudge implements IJudge {
 
 	async judge(
 		generated: FileSummary | SymbolSummary,
-		context: JudgeContext
+		context: JudgeContext,
 	): Promise<JudgmentResult> {
 		const startTime = Date.now();
 
@@ -82,7 +83,7 @@ export class LLMJudge implements IJudge {
 					systemPrompt: JUDGE_SYSTEM_PROMPT,
 					temperature: 0.1, // Low temperature for consistent scoring
 					maxTokens: 500,
-				}
+				},
 			);
 
 			const durationMs = Date.now() - startTime;
@@ -94,7 +95,7 @@ export class LLMJudge implements IJudge {
 
 			// Calculate overall quality score (weighted average)
 			const qualityScore = Math.round(
-				usefulness * 0.5 + conciseness * 0.25 + clarity * 0.25
+				usefulness * 0.5 + conciseness * 0.25 + clarity * 0.25,
 			);
 
 			return {
@@ -132,7 +133,7 @@ export class LLMJudge implements IJudge {
 
 	private buildPrompt(
 		generated: FileSummary | SymbolSummary,
-		context: JudgeContext
+		context: JudgeContext,
 	): string {
 		const summaryType = "symbolName" in generated ? "symbol" : "file";
 		const summaryContent = this.formatSummary(generated);
@@ -181,7 +182,7 @@ Respond with JSON:
 				parts.push(
 					`**Parameters:**\n${summary.parameters
 						.map((p) => `  - ${p.name}: ${p.description}`)
-						.join("\n")}`
+						.join("\n")}`,
 				);
 			}
 
@@ -209,7 +210,7 @@ Respond with JSON:
 				parts.push(
 					`**Responsibilities:**\n${summary.responsibilities
 						.map((r) => `  - ${r}`)
-						.join("\n")}`
+						.join("\n")}`,
 				);
 			}
 

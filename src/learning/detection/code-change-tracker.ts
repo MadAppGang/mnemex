@@ -108,7 +108,7 @@ export class CodeChangeTracker {
 
 	constructor(
 		store: InteractionStore,
-		config: Partial<CodeChangeTrackerConfig> = {}
+		config: Partial<CodeChangeTrackerConfig> = {},
 	) {
 		this.store = store;
 		this.config = { ...DEFAULT_TRACKER_CONFIG, ...config };
@@ -139,9 +139,7 @@ export class CodeChangeTracker {
 	/**
 	 * Track a user edit and check for corrections.
 	 */
-	trackUserEdit(
-		edit: Omit<TrackedEdit, "author" | "timestamp">
-	): {
+	trackUserEdit(edit: Omit<TrackedEdit, "author" | "timestamp">): {
 		trackedEdit: TrackedEdit;
 		correction?: CorrectionGapResult;
 	} {
@@ -166,10 +164,7 @@ export class CodeChangeTracker {
 	/**
 	 * Get recent agent edits for a file.
 	 */
-	getRecentAgentEdits(
-		filePath: string,
-		sessionId?: string
-	): TrackedEdit[] {
+	getRecentAgentEdits(filePath: string, sessionId?: string): TrackedEdit[] {
 		const now = Date.now();
 		const results: TrackedEdit[] = [];
 
@@ -224,7 +219,7 @@ export class CodeChangeTracker {
 			const recentAgentEdits = agentEdits.filter(
 				(ae) =>
 					ae.filePath === userEdit.filePath &&
-					userEdit.timestamp - ae.timestamp < this.config.correctionWindowMs
+					userEdit.timestamp - ae.timestamp < this.config.correctionWindowMs,
 			);
 
 			for (const agentEdit of recentAgentEdits) {
@@ -248,7 +243,7 @@ export class CodeChangeTracker {
 
 		const modifiedByUser = corrections.size;
 		const undone = [...corrections.values()].filter(
-			(c) => c.correctionType === "undo"
+			(c) => c.correctionType === "undo",
 		).length;
 		const adoptedAsIs = agentEdits.length - modifiedByUser;
 
@@ -284,7 +279,7 @@ export class CodeChangeTracker {
 
 		for (const [sessionId, edits] of this.sessionEdits) {
 			const filtered = edits.filter(
-				(e) => now - e.timestamp < this.config.correctionWindowMs * 2
+				(e) => now - e.timestamp < this.config.correctionWindowMs * 2,
 			);
 			if (filtered.length !== edits.length) {
 				cleaned += edits.length - filtered.length;
@@ -332,10 +327,12 @@ export class CodeChangeTracker {
 	/**
 	 * Detect if user edit is a correction of agent edit.
 	 */
-	private detectCorrection(userEdit: TrackedEdit): CorrectionGapResult | undefined {
+	private detectCorrection(
+		userEdit: TrackedEdit,
+	): CorrectionGapResult | undefined {
 		const recentAgentEdits = this.getRecentAgentEdits(
 			userEdit.filePath,
-			userEdit.sessionId
+			userEdit.sessionId,
 		);
 
 		for (const agentEdit of recentAgentEdits) {
@@ -360,10 +357,7 @@ export class CodeChangeTracker {
 	 */
 	private calculateOverlap(edit1: TrackedEdit, edit2: TrackedEdit): number {
 		// If no line info, check content hash
-		if (
-			edit1.startLine === undefined ||
-			edit2.startLine === undefined
-		) {
+		if (edit1.startLine === undefined || edit2.startLine === undefined) {
 			// Same file is minimum overlap
 			return edit1.filePath === edit2.filePath ? 0.5 : 0;
 		}
@@ -394,7 +388,7 @@ export class CodeChangeTracker {
 	 */
 	private classifyCorrection(
 		agentEdit: TrackedEdit,
-		userEdit: TrackedEdit
+		userEdit: TrackedEdit,
 	): CorrectionType {
 		// If user removed lines and added nothing, it's an undo
 		if (userEdit.linesAdded === 0 && userEdit.linesRemoved > 0) {
@@ -424,7 +418,7 @@ export class CodeChangeTracker {
 	 */
 	private persistEdit(
 		edit: TrackedEdit,
-		correction?: CorrectionGapResult
+		correction?: CorrectionGapResult,
 	): void {
 		const codeChange: Omit<CodeChange, "id"> = {
 			sessionId: edit.sessionId,
@@ -468,7 +462,7 @@ export class CodeChangeTracker {
  */
 export function createCodeChangeTracker(
 	store: InteractionStore,
-	config: Partial<CodeChangeTrackerConfig> = {}
+	config: Partial<CodeChangeTrackerConfig> = {},
 ): CodeChangeTracker {
 	return new CodeChangeTracker(store, config);
 }

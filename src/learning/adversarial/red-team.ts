@@ -208,7 +208,7 @@ export class RedTeam {
 				payload: { input: "αβγ\x00\n\r\t🔥" },
 				expectedVulnerability: "Encoding errors or injection",
 				severity: 0.7,
-			}
+			},
 		);
 
 		// Injection attacks
@@ -249,7 +249,7 @@ export class RedTeam {
 					payload: { input: "${process.env.SECRET}" },
 					expectedVulnerability: "Code execution via template",
 					severity: 0.9,
-				}
+				},
 			);
 		}
 
@@ -282,7 +282,7 @@ export class RedTeam {
 					payload: { parameters: { allocSize: 1000000000 } },
 					expectedVulnerability: "Memory exhaustion",
 					severity: 0.7,
-				}
+				},
 			);
 		}
 
@@ -314,7 +314,7 @@ export class RedTeam {
 				payload: { toolSequence: ["step1", "step1", "step1"] },
 				expectedVulnerability: "Duplicate operations",
 				severity: 0.4,
-			}
+			},
 		);
 
 		// Boundary violation attacks
@@ -336,7 +336,7 @@ export class RedTeam {
 				payload: { parameters: { value: Number.MAX_SAFE_INTEGER + 1 } },
 				expectedVulnerability: "Integer overflow",
 				severity: 0.4,
-			}
+			},
 		);
 
 		// State corruption attacks
@@ -358,7 +358,7 @@ export class RedTeam {
 				payload: { parameters: { failAt: "middle" } },
 				expectedVulnerability: "Inconsistent state",
 				severity: 0.5,
-			}
+			},
 		);
 
 		return attacks;
@@ -371,24 +371,22 @@ export class RedTeam {
 		const selected: Attack[] = [];
 
 		// Include edge cases always
-		selected.push(
-			...this.attackLibrary.filter((a) => a.type === "edge_case")
-		);
+		selected.push(...this.attackLibrary.filter((a) => a.type === "edge_case"));
 
 		// Include injection attacks if skill has Bash
 		const hasBash = skill.implementation.some(
-			(s) => s.includes("Bash") || s.includes("command")
+			(s) => s.includes("Bash") || s.includes("command"),
 		);
 		if (hasBash) {
 			selected.push(
-				...this.attackLibrary.filter((a) => a.type === "injection")
+				...this.attackLibrary.filter((a) => a.type === "injection"),
 			);
 		}
 
 		// Include sequence attacks for multi-step skills
 		if (skill.implementation.length > 2) {
 			selected.push(
-				...this.attackLibrary.filter((a) => a.type === "sequence_manipulation")
+				...this.attackLibrary.filter((a) => a.type === "sequence_manipulation"),
 			);
 		}
 
@@ -403,25 +401,23 @@ export class RedTeam {
 		const selected: Attack[] = [];
 
 		// Include edge cases always
-		selected.push(
-			...this.attackLibrary.filter((a) => a.type === "edge_case")
-		);
+		selected.push(...this.attackLibrary.filter((a) => a.type === "edge_case"));
 
 		// Include injection attacks if subagent has Bash access
 		if (subagent.allowedTools.includes("Bash")) {
 			selected.push(
-				...this.attackLibrary.filter((a) => a.type === "injection")
+				...this.attackLibrary.filter((a) => a.type === "injection"),
 			);
 		}
 
 		// Include resource attacks for subagents (they run autonomously)
 		selected.push(
-			...this.attackLibrary.filter((a) => a.type === "resource_exhaustion")
+			...this.attackLibrary.filter((a) => a.type === "resource_exhaustion"),
 		);
 
 		// Include state attacks
 		selected.push(
-			...this.attackLibrary.filter((a) => a.type === "state_corruption")
+			...this.attackLibrary.filter((a) => a.type === "state_corruption"),
 		);
 
 		return this.applyIntensityFilter(selected);
@@ -436,7 +432,7 @@ export class RedTeam {
 			(a) =>
 				a.type === "edge_case" ||
 				a.type === "boundary_violation" ||
-				(this.config.securityFocus && a.type === "injection")
+				(this.config.securityFocus && a.type === "injection"),
 		);
 
 		return this.applyIntensityFilter(selected);
@@ -457,7 +453,7 @@ export class RedTeam {
 	private runAttacks(
 		targetId: string,
 		attacks: Attack[],
-		target: unknown
+		target: unknown,
 	): RedTeamReport {
 		const outcomes: AttackOutcome[] = [];
 		const criticalVulnerabilities: string[] = [];
@@ -468,7 +464,7 @@ export class RedTeam {
 
 			if (outcome.result === "vulnerable" && attack.severity >= 0.8) {
 				criticalVulnerabilities.push(
-					`${attack.name}: ${attack.expectedVulnerability}`
+					`${attack.name}: ${attack.expectedVulnerability}`,
 				);
 			}
 		}
@@ -488,7 +484,7 @@ export class RedTeam {
 					: o.result === "partial"
 						? o.attack.severity * 0.3
 						: 0),
-			0
+			0,
 		);
 		const maxWeight = outcomes.reduce((sum, o) => sum + o.attack.severity, 0);
 		const vulnerabilityScore = maxWeight > 0 ? totalWeight / maxWeight : 0;
@@ -525,7 +521,8 @@ export class RedTeam {
 				attack,
 				result,
 				details: this.getResultDetails(result, attack),
-				evidence: result === "vulnerable" ? this.getEvidence(attack) : undefined,
+				evidence:
+					result === "vulnerable" ? this.getEvidence(attack) : undefined,
 				durationMs: Date.now() - startTime,
 				timedOut: false,
 			};
@@ -656,7 +653,9 @@ export class RedTeam {
 			recommendations.push("Add bounds checking for numeric inputs");
 		}
 		if (vulnerableTypes.has("state_corruption")) {
-			recommendations.push("Add transaction-like rollback for partial failures");
+			recommendations.push(
+				"Add transaction-like rollback for partial failures",
+			);
 		}
 
 		return recommendations;

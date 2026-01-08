@@ -152,10 +152,7 @@ export function logToolCompletion(input: HookInput): void {
 	});
 
 	// Log code changes for Write/Edit tools
-	if (
-		(input.tool_name === "Write" || input.tool_name === "Edit") &&
-		success
-	) {
+	if ((input.tool_name === "Write" || input.tool_name === "Edit") && success) {
 		const filePath = extractFilePath(input.tool_input, input.tool_response);
 		if (filePath && system.logger.isCodeFile(filePath)) {
 			const { linesAdded, linesRemoved } = estimateChangeSize(

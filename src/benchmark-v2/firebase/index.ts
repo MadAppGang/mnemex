@@ -21,7 +21,8 @@ const CLOUD_FUNCTION_BASE_URL =
 	"https://us-central1-claudish-6da10.cloudfunctions.net";
 
 // API key for authenticated uploads (provides basic abuse protection)
-const API_KEY = process.env.CLAUDEMEM_API_KEY || "6QgFCtDx9l9alTpb813ZbgHoy2yZBfHc";
+const API_KEY =
+	process.env.CLAUDEMEM_API_KEY || "6QgFCtDx9l9alTpb813ZbgHoy2yZBfHc";
 
 // ============================================================================
 // Types
@@ -139,7 +140,7 @@ export async function uploadBenchmarkResults(
 	totalCost: number,
 	scores: Map<string, NormalizedScores>,
 	latencyByModel: Map<string, number>,
-	costByModel: Map<string, number>
+	costByModel: Map<string, number>,
 ): Promise<{ success: boolean; docId?: string; error?: string }> {
 	const UPLOAD_TIMEOUT_MS = 30_000;
 
@@ -217,15 +218,18 @@ export async function uploadBenchmarkResults(
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
 
-		const response = await fetch(`${CLOUD_FUNCTION_BASE_URL}/uploadBenchmarkResults`, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				"X-API-Key": API_KEY,
+		const response = await fetch(
+			`${CLOUD_FUNCTION_BASE_URL}/uploadBenchmarkResults`,
+			{
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"X-API-Key": API_KEY,
+				},
+				body: JSON.stringify(payload),
+				signal: controller.signal,
 			},
-			body: JSON.stringify(payload),
-			signal: controller.signal,
-		});
+		);
 
 		clearTimeout(timeoutId);
 
@@ -233,7 +237,8 @@ export async function uploadBenchmarkResults(
 			const errorData = await response.json().catch(() => ({}));
 			return {
 				success: false,
-				error: errorData.error || `HTTP ${response.status}: ${response.statusText}`,
+				error:
+					errorData.error || `HTTP ${response.status}: ${response.statusText}`,
 			};
 		}
 
@@ -256,7 +261,7 @@ export async function uploadBenchmarkResults(
 export async function getLeaderboard(topN = 20): Promise<LeaderboardEntry[]> {
 	try {
 		const response = await fetch(
-			`${CLOUD_FUNCTION_BASE_URL}/getLeaderboard?limit=${topN}`
+			`${CLOUD_FUNCTION_BASE_URL}/getLeaderboard?limit=${topN}`,
 		);
 
 		if (!response.ok) {
@@ -276,11 +281,11 @@ export async function getLeaderboard(topN = 20): Promise<LeaderboardEntry[]> {
  * Get recent benchmark runs
  */
 export async function getRecentRuns(
-	limitCount = 10
+	limitCount = 10,
 ): Promise<BenchmarkRunDocument[]> {
 	try {
 		const response = await fetch(
-			`${CLOUD_FUNCTION_BASE_URL}/getRecentRuns?limit=${limitCount}`
+			`${CLOUD_FUNCTION_BASE_URL}/getRecentRuns?limit=${limitCount}`,
 		);
 
 		if (!response.ok) {

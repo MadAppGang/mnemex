@@ -1,10 +1,17 @@
 import { performance } from "node:perf_hooks";
 import { basename } from "node:path";
-import { ensureProjectDir, getIndexDbPath, getVectorStorePath } from "../config.js";
+import {
+	ensureProjectDir,
+	getIndexDbPath,
+	getVectorStorePath,
+} from "../config.js";
 import { createEmbeddingsClient } from "../core/embeddings.js";
 import { createVectorStore, type VectorStore } from "../core/store.js";
 import { createFileTracker, type FileTracker } from "../core/tracker.js";
-import { createEnrichedRetriever, type EnrichedRetriever } from "../retrieval/index.js";
+import {
+	createEnrichedRetriever,
+	type EnrichedRetriever,
+} from "../retrieval/index.js";
 import { createLLMClient, type ILLMClient } from "../llm/client.js";
 import { getParserManager } from "../parsers/parser-manager.js";
 import type { SupportedLanguage } from "../types.js";
@@ -16,7 +23,10 @@ import {
 	truncateAtSuffixHint,
 } from "./prompt.js";
 import { loadProjectFacts } from "./project-context.js";
-import type { AutocompleteCompleteParams, AutocompleteCompleteResult } from "./protocol.js";
+import type {
+	AutocompleteCompleteParams,
+	AutocompleteCompleteResult,
+} from "./protocol.js";
 
 function offsetAt(text: string, line: number, character: number): number {
 	if (line <= 0) return Math.min(character, text.length);
@@ -34,7 +44,12 @@ function offsetAt(text: string, line: number, character: number): number {
 	return Math.min(idx + character, text.length);
 }
 
-function windowAround(text: string, offset: number, maxPrefixChars: number, maxSuffixChars: number) {
+function windowAround(
+	text: string,
+	offset: number,
+	maxPrefixChars: number,
+	maxSuffixChars: number,
+) {
 	const start = Math.max(0, offset - maxPrefixChars);
 	const end = Math.min(text.length, offset + maxSuffixChars);
 	return {
@@ -55,13 +70,19 @@ function buildFimQuery(filePath: string, prefix: string): string {
 		"code completion",
 		fileName,
 		lastLine ? `line: ${lastLine}` : undefined,
-		identifiers.length ? `symbols: ${identifiers.slice(-10).join(" ")}` : undefined,
+		identifiers.length
+			? `symbols: ${identifiers.slice(-10).join(" ")}`
+			: undefined,
 	].filter(Boolean);
 
 	return parts.join(" | ");
 }
 
-function extractAstContext(args: { filePath: string; text: string; offset: number }): Promise<string | undefined> {
+function extractAstContext(args: {
+	filePath: string;
+	text: string;
+	offset: number;
+}): Promise<string | undefined> {
 	return (async () => {
 		const parserManager = getParserManager();
 		const language = parserManager.getLanguage(args.filePath);
@@ -131,8 +152,15 @@ export class AutocompleteEngine {
 
 		try {
 			const indexedEmbeddingModel = this.tracker.getMetadata("embeddingModel");
-			const embeddings = createEmbeddingsClient({ model: indexedEmbeddingModel || undefined });
-			this.retriever = createEnrichedRetriever(this.store, embeddings, "fim", this.tracker);
+			const embeddings = createEmbeddingsClient({
+				model: indexedEmbeddingModel || undefined,
+			});
+			this.retriever = createEnrichedRetriever(
+				this.store,
+				embeddings,
+				"fim",
+				this.tracker,
+			);
 		} catch {
 			// Retrieval is optional for autocomplete; fall back to pure FIM prompting.
 			this.retriever = null;
@@ -149,12 +177,17 @@ export class AutocompleteEngine {
 
 	private refreshProjectFactsIfNeeded(): void {
 		const facts = loadProjectFacts(this.projectPath);
-		if (facts.sourceMtimeMs && facts.sourceMtimeMs !== this.projectFacts.mtimeMs) {
+		if (
+			facts.sourceMtimeMs &&
+			facts.sourceMtimeMs !== this.projectFacts.mtimeMs
+		) {
 			this.projectFacts = { text: facts.text, mtimeMs: facts.sourceMtimeMs };
 		}
 	}
 
-	async complete(params: AutocompleteCompleteParams & { abortSignal?: AbortSignal }): Promise<AutocompleteCompleteResult> {
+	async complete(
+		params: AutocompleteCompleteParams & { abortSignal?: AbortSignal },
+	): Promise<AutocompleteCompleteResult> {
 		await this.initialize();
 		this.refreshProjectFactsIfNeeded();
 
@@ -177,8 +210,17 @@ export class AutocompleteEngine {
 
 		if (params.text && params.position) {
 			astText = params.text;
-			astOffset = offsetAt(params.text, params.position.line, params.position.character);
-			const w = windowAround(params.text, astOffset, maxPrefixChars, maxSuffixChars);
+			astOffset = offsetAt(
+				params.text,
+				params.position.line,
+				params.position.character,
+			);
+			const w = windowAround(
+				params.text,
+				astOffset,
+				maxPrefixChars,
+				maxSuffixChars,
+			);
 			prefix = w.prefix;
 			suffix = w.suffix;
 			styleText = params.text;
@@ -189,7 +231,9 @@ export class AutocompleteEngine {
 			astText = params.prefix;
 			astOffset = params.prefix.length;
 		} else {
-			throw new Error("Invalid complete params: provide either {text, position} or {prefix, suffix}");
+			throw new Error(
+				"Invalid complete params: provide either {text, position} or {prefix, suffix}",
+			);
 		}
 
 		const parserLanguage = getParserManager().getLanguage(params.filePath);
@@ -197,7 +241,9 @@ export class AutocompleteEngine {
 
 		const fimQuery = buildFimQuery(params.filePath, prefix);
 
-		let retrievedResults: Awaited<ReturnType<EnrichedRetriever["searchWithContext"]>> | null = null;
+		let retrievedResults: Awaited<
+			ReturnType<EnrichedRetriever["searchWithContext"]>
+		> | null = null;
 		if (this.retriever) {
 			try {
 				retrievedResults = await this.retriever.searchWithContext(fimQuery, {
@@ -212,17 +258,25 @@ export class AutocompleteEngine {
 			}
 		}
 
-		const astContext = await extractAstContext({ filePath: params.filePath, text: astText, offset: astOffset });
+		const astContext = await extractAstContext({
+			filePath: params.filePath,
+			text: astText,
+			offset: astOffset,
+		});
 		const styleHints = inferStyleHints(styleText);
 
 		const prompt = buildAutocompletePrompt({
 			filePath: params.filePath,
-			language: language === "unknown" ? (params.languageId || "unknown") : language,
+			language:
+				language === "unknown" ? params.languageId || "unknown" : language,
 			projectFacts: this.projectFacts.text,
 			styleHints,
 			astContext,
 			retrieval: retrievedResults
-				? { repoMapContext: retrievedResults.repoMapContext, results: retrievedResults.results }
+				? {
+						repoMapContext: retrievedResults.repoMapContext,
+						results: retrievedResults.results,
+					}
 				: undefined,
 			prefix,
 			suffix,

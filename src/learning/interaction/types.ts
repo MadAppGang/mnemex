@@ -17,7 +17,12 @@
 export type SessionOutcome = "success" | "partial" | "failure" | "abandoned";
 
 /** Tool error classification */
-export type ToolErrorType = "timeout" | "permission" | "validation" | "logic" | "unknown";
+export type ToolErrorType =
+	| "timeout"
+	| "permission"
+	| "validation"
+	| "logic"
+	| "unknown";
 
 /** Correction classification based on user behavior */
 export type CorrectionType = "undo" | "enhance" | "independent";

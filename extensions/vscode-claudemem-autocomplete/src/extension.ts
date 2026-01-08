@@ -44,18 +44,27 @@ function getConfig() {
 class JsonlRpcClient implements vscode.Disposable {
 	private proc: ChildProcessWithoutNullStreams;
 	private rl: readline.Interface;
-	private pending = new Map<string, { resolve: (v: any) => void; reject: (e: any) => void }>();
+	private pending = new Map<
+		string,
+		{ resolve: (v: any) => void; reject: (e: any) => void }
+	>();
 
 	constructor(
 		args: { binaryPath: string; projectPath: string; env: NodeJS.ProcessEnv },
 		private readonly output: vscode.OutputChannel,
 	) {
-		this.proc = spawn(args.binaryPath, ["--autocomplete-server", "--project", args.projectPath], {
-			env: args.env,
-			stdio: "pipe",
-		});
+		this.proc = spawn(
+			args.binaryPath,
+			["--autocomplete-server", "--project", args.projectPath],
+			{
+				env: args.env,
+				stdio: "pipe",
+			},
+		);
 
-		this.output.appendLine(`[spawn] ${args.binaryPath} --autocomplete-server --project ${args.projectPath}`);
+		this.output.appendLine(
+			`[spawn] ${args.binaryPath} --autocomplete-server --project ${args.projectPath}`,
+		);
 
 		this.proc.on("error", (err) => {
 			for (const { reject } of this.pending.values()) reject(err);
@@ -63,7 +72,9 @@ class JsonlRpcClient implements vscode.Disposable {
 		});
 
 		this.proc.on("exit", (code, signal) => {
-			const err = new Error(`claudemem autocomplete server exited (${code ?? "null"} / ${signal ?? "null"})`);
+			const err = new Error(
+				`claudemem autocomplete server exited (${code ?? "null"} / ${signal ?? "null"})`,
+			);
 			for (const { reject } of this.pending.values()) reject(err);
 			this.pending.clear();
 		});
@@ -72,7 +83,10 @@ class JsonlRpcClient implements vscode.Disposable {
 			this.output.appendLine(chunk.toString());
 		});
 
-		this.rl = readline.createInterface({ input: this.proc.stdout, crlfDelay: Number.POSITIVE_INFINITY });
+		this.rl = readline.createInterface({
+			input: this.proc.stdout,
+			crlfDelay: Number.POSITIVE_INFINITY,
+		});
 		this.rl.on("line", (line) => {
 			let msg: RpcResponse;
 			try {
@@ -89,7 +103,11 @@ class JsonlRpcClient implements vscode.Disposable {
 		});
 	}
 
-	request<T = any>(method: string, params: any, requestId?: string): Promise<T> {
+	request<T = any>(
+		method: string,
+		params: any,
+		requestId?: string,
+	): Promise<T> {
 		const id = requestId || randomUUID();
 		const payload = JSON.stringify({ id, method, params });
 
@@ -106,7 +124,9 @@ class JsonlRpcClient implements vscode.Disposable {
 
 	cancel(targetId: string): void {
 		const id = randomUUID();
-		this.proc.stdin.write(JSON.stringify({ id, method: "cancel", params: { id: targetId } }) + "\n");
+		this.proc.stdin.write(
+			JSON.stringify({ id, method: "cancel", params: { id: targetId } }) + "\n",
+		);
 	}
 
 	dispose(): void {
@@ -140,14 +160,19 @@ class ClientManager implements vscode.Disposable {
 		if (cfg.llmModel) env.CLAUDEMEM_LLM_MODEL = cfg.llmModel;
 		if (cfg.llmEndpoint) env.CLAUDEMEM_LLM_ENDPOINT = cfg.llmEndpoint;
 
-		const openRouterKey = await this.context.secrets.get("claudemem.openrouterApiKey");
+		const openRouterKey = await this.context.secrets.get(
+			"claudemem.openrouterApiKey",
+		);
 		if (openRouterKey) env.OPENROUTER_API_KEY = openRouterKey;
 
-		const client = new JsonlRpcClient({
-			binaryPath: cfg.binaryPath,
-			projectPath: folder.uri.fsPath,
-			env,
-		}, this.output);
+		const client = new JsonlRpcClient(
+			{
+				binaryPath: cfg.binaryPath,
+				projectPath: folder.uri.fsPath,
+				env,
+			},
+			this.output,
+		);
 
 		this.clients.set(key, client);
 		try {
@@ -179,28 +204,41 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(manager);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand("claudememAutocomplete.restartServer", async () => {
-			manager.restartAll();
-			vscode.window.showInformationMessage("claudemem autocomplete server restarted.");
-		}),
+		vscode.commands.registerCommand(
+			"claudememAutocomplete.restartServer",
+			async () => {
+				manager.restartAll();
+				vscode.window.showInformationMessage(
+					"claudemem autocomplete server restarted.",
+				);
+			},
+		),
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand("claudememAutocomplete.setOpenRouterKey", async () => {
-			const value = await vscode.window.showInputBox({
-				title: "OpenRouter API Key",
-				password: true,
-				ignoreFocusOut: true,
-				placeHolder: "sk-or-v1-…",
-			});
-			if (!value) return;
-			await context.secrets.store("claudemem.openrouterApiKey", value);
-			manager.restartAll();
-			vscode.window.showInformationMessage("OpenRouter API key saved (VS Code Secret Storage).");
-		}),
+		vscode.commands.registerCommand(
+			"claudememAutocomplete.setOpenRouterKey",
+			async () => {
+				const value = await vscode.window.showInputBox({
+					title: "OpenRouter API Key",
+					password: true,
+					ignoreFocusOut: true,
+					placeHolder: "sk-or-v1-…",
+				});
+				if (!value) return;
+				await context.secrets.store("claudemem.openrouterApiKey", value);
+				manager.restartAll();
+				vscode.window.showInformationMessage(
+					"OpenRouter API key saved (VS Code Secret Storage).",
+				);
+			},
+		),
 	);
 
-	const inFlightByDoc = new Map<string, { requestId: string; client: JsonlRpcClient }>();
+	const inFlightByDoc = new Map<
+		string,
+		{ requestId: string; client: JsonlRpcClient }
+	>();
 
 	const provider: vscode.InlineCompletionItemProvider = {
 		async provideInlineCompletionItems(document, position, _ctx, token) {
@@ -217,10 +255,19 @@ export function activate(context: vscode.ExtensionContext) {
 
 			const offset = document.offsetAt(position);
 			const startOffset = Math.max(0, offset - cfg.maxPrefixChars);
-			const endOffset = Math.min(document.getText().length, offset + cfg.maxSuffixChars);
+			const endOffset = Math.min(
+				document.getText().length,
+				offset + cfg.maxSuffixChars,
+			);
 
-			const prefixRange = new vscode.Range(document.positionAt(startOffset), position);
-			const suffixRange = new vscode.Range(position, document.positionAt(endOffset));
+			const prefixRange = new vscode.Range(
+				document.positionAt(startOffset),
+				position,
+			);
+			const suffixRange = new vscode.Range(
+				position,
+				document.positionAt(endOffset),
+			);
 
 			const prefix = document.getText(prefixRange);
 			const suffix = document.getText(suffixRange);
@@ -244,19 +291,23 @@ export function activate(context: vscode.ExtensionContext) {
 
 			let result: CompletionResult;
 			try {
-				result = await client.request("complete", {
-					projectPath: folder.uri.fsPath,
-					filePath: document.uri.fsPath,
-					languageId: document.languageId,
-					prefix,
-					suffix,
-					options: {
-						maxPrefixChars: cfg.maxPrefixChars,
-						maxSuffixChars: cfg.maxSuffixChars,
-						maxTokens: cfg.maxTokens,
-						temperature: cfg.temperature,
+				result = await client.request(
+					"complete",
+					{
+						projectPath: folder.uri.fsPath,
+						filePath: document.uri.fsPath,
+						languageId: document.languageId,
+						prefix,
+						suffix,
+						options: {
+							maxPrefixChars: cfg.maxPrefixChars,
+							maxSuffixChars: cfg.maxSuffixChars,
+							maxTokens: cfg.maxTokens,
+							temperature: cfg.temperature,
+						},
 					},
-				}, requestId);
+					requestId,
+				);
 			} catch {
 				return;
 			} finally {
@@ -266,12 +317,20 @@ export function activate(context: vscode.ExtensionContext) {
 			const text = (result?.completion || "").toString();
 			if (!text.trim()) return;
 
-			const item = new vscode.InlineCompletionItem(text, new vscode.Range(position, position));
+			const item = new vscode.InlineCompletionItem(
+				text,
+				new vscode.Range(position, position),
+			);
 			return [item];
 		},
 	};
 
-	context.subscriptions.push(vscode.languages.registerInlineCompletionItemProvider({ pattern: "**" }, provider));
+	context.subscriptions.push(
+		vscode.languages.registerInlineCompletionItemProvider(
+			{ pattern: "**" },
+			provider,
+		),
+	);
 }
 
 export function deactivate() {}

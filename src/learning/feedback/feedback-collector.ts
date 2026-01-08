@@ -128,8 +128,7 @@ export class FeedbackCollector {
 		const similarity = this.computeQuerySimilarity(query, mostRecent.query);
 
 		if (similarity >= this.config.refinementSimilarityThreshold) {
-			const timeDelta =
-				Date.now() - new Date(mostRecent.timestamp).getTime();
+			const timeDelta = Date.now() - new Date(mostRecent.timestamp).getTime();
 
 			return {
 				originalQuery: mostRecent.query,

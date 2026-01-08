@@ -30,7 +30,7 @@ export abstract class BaseRefinementStrategy implements IRefinementStrategy {
 	 */
 	abstract testQuality(
 		summary: string,
-		context: RefinementContext
+		context: RefinementContext,
 	): Promise<QualityTestResult>;
 
 	/**
@@ -38,7 +38,7 @@ export abstract class BaseRefinementStrategy implements IRefinementStrategy {
 	 */
 	abstract generateFeedback(
 		result: QualityTestResult,
-		context: RefinementContext
+		context: RefinementContext,
 	): Promise<string>;
 
 	/**
@@ -95,7 +95,7 @@ export function cosineSimilarity(a: number[], b: number[]): number {
  */
 export function rankBySimilarity<T>(
 	queryEmbedding: number[],
-	items: Array<{ embedding: number[]; item: T }>
+	items: Array<{ embedding: number[]; item: T }>,
 ): Array<{ rank: number; score: number; item: T }> {
 	const scored = items.map(({ embedding, item }) => ({
 		score: cosineSimilarity(queryEmbedding, embedding),
@@ -116,7 +116,10 @@ export function rankBySimilarity<T>(
 /**
  * Truncate text for display in feedback
  */
-export function truncateForFeedback(text: string, maxLength: number = 200): string {
+export function truncateForFeedback(
+	text: string,
+	maxLength: number = 200,
+): string {
 	if (text.length <= maxLength) {
 		return text;
 	}

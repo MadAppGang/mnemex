@@ -77,7 +77,18 @@ export function createBenchmarkProgress(itemIds: string[]) {
 
 		for (const itemId of itemIds) {
 			const state = itemState.get(itemId)!;
-			const { completed, total, inProgress, failures, phase, done, started, error, startTime, endTime } = state;
+			const {
+				completed,
+				total,
+				inProgress,
+				failures,
+				phase,
+				done,
+				started,
+				error,
+				startTime,
+				endTime,
+			} = state;
 
 			// Calculate elapsed time (frozen when done/error, or show 00:00 if not started)
 			const elapsedMs = started ? (endTime || Date.now()) - startTime : 0;
@@ -85,7 +96,8 @@ export function createBenchmarkProgress(itemIds: string[]) {
 
 			// Short display name (last part after /)
 			const shortName = itemId.split("/").pop() || itemId;
-			const displayName = shortName.length > 25 ? shortName.slice(0, 22) + "..." : shortName;
+			const displayName =
+				shortName.length > 25 ? shortName.slice(0, 22) + "..." : shortName;
 
 			// Build progress bar and status
 			const width = 20;
@@ -97,7 +109,8 @@ export function createBenchmarkProgress(itemIds: string[]) {
 				bar = `${c.red}${"✗".repeat(width)}${c.reset}`;
 				percent = 0;
 				// Show truncated error message
-				const truncatedError = error.length > 40 ? error.slice(0, 37) + "..." : error;
+				const truncatedError =
+					error.length > 40 ? error.slice(0, 37) + "..." : error;
 				status = `${c.red}✗ ${truncatedError}${c.reset}`;
 			} else if (done) {
 				bar = `${c.green}${"█".repeat(width)}${c.reset}`;
@@ -114,7 +127,10 @@ export function createBenchmarkProgress(itemIds: string[]) {
 				const inProgressRatio = total > 0 ? inProgress / total : 0;
 
 				const filledWidth = Math.round(filledRatio * width);
-				const inProgressWidth = Math.min(Math.round(inProgressRatio * width), width - filledWidth);
+				const inProgressWidth = Math.min(
+					Math.round(inProgressRatio * width),
+					width - filledWidth,
+				);
 				const emptyWidth = width - filledWidth - inProgressWidth;
 
 				const filled = "█".repeat(filledWidth);
@@ -133,7 +149,9 @@ export function createBenchmarkProgress(itemIds: string[]) {
 				}
 			}
 
-			process.stdout.write(`\x1b[2K\r⏱ ${elapsed} │ ${bar} ${percent.toString().padStart(3)}% │ ${displayName.padEnd(25)} │ ${status}\n`);
+			process.stdout.write(
+				`\x1b[2K\r⏱ ${elapsed} │ ${bar} ${percent.toString().padStart(3)}% │ ${displayName.padEnd(25)} │ ${status}\n`,
+			);
 		}
 	}
 
@@ -156,7 +174,14 @@ export function createBenchmarkProgress(itemIds: string[]) {
 		},
 
 		/** Update progress for an item */
-		update(itemId: string, completed: number, total: number, inProgress = 0, phase = "processing", failures = 0) {
+		update(
+			itemId: string,
+			completed: number,
+			total: number,
+			inProgress = 0,
+			phase = "processing",
+			failures = 0,
+		) {
 			const state = itemState.get(itemId);
 			if (state) {
 				// Start the timer on first update (when item actually begins)
@@ -256,7 +281,9 @@ export function createSimpleProgress(label: string, total: number) {
 		const width = 20; // Match multi-item progress bar width
 		const filled = Math.round((current / total) * width);
 		const bar = "█".repeat(filled) + "░".repeat(width - filled);
-		process.stdout.write(`\r⏱ ${elapsed} │ ${bar} ${percent.toString().padStart(3)}% │ ${label}: ${current}/${total}\x1b[K`);
+		process.stdout.write(
+			`\r⏱ ${elapsed} │ ${bar} ${percent.toString().padStart(3)}% │ ${label}: ${current}/${total}\x1b[K`,
+		);
 	}
 
 	return {

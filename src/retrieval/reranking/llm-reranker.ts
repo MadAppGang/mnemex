@@ -56,7 +56,9 @@ export interface RerankingScores {
 }
 
 /** Result with reranking scores added (intersection type for proper generic handling) */
-export type RerankedRerankableResult<T extends RerankableResult = RerankableResult> = T & RerankingScores;
+export type RerankedRerankableResult<
+	T extends RerankableResult = RerankableResult,
+> = T & RerankingScores;
 
 // ============================================================================
 // Constants
@@ -112,7 +114,10 @@ export class LLMReranker {
 	 * Rerank search results using LLM
 	 * Returns results extended with rerankScore, finalScore, and optional rerankReason
 	 */
-	async rerank<T extends RerankableResult>(query: string, results: T[]): Promise<RerankedRerankableResult<T>[]> {
+	async rerank<T extends RerankableResult>(
+		query: string,
+		results: T[],
+	): Promise<RerankedRerankableResult<T>[]> {
 		if (results.length === 0) {
 			return [];
 		}
@@ -126,9 +131,10 @@ export class LLMReranker {
 			.join("\n");
 
 		// Build prompt
-		const prompt = RERANK_PROMPT
-			.replace("{query}", query)
-			.replace("{candidates}", candidatesFormatted);
+		const prompt = RERANK_PROMPT.replace("{query}", query).replace(
+			"{candidates}",
+			candidatesFormatted,
+		);
 
 		// Call LLM
 		const messages: LLMMessage[] = [{ role: "user", content: prompt }];
@@ -141,7 +147,10 @@ export class LLMReranker {
 			// Build score map
 			const scoreMap = new Map<number, { score: number; reason: string }>();
 			for (const ranking of response.rankings) {
-				scoreMap.set(ranking.index, { score: ranking.score, reason: ranking.reason });
+				scoreMap.set(ranking.index, {
+					score: ranking.score,
+					reason: ranking.reason,
+				});
 			}
 
 			// Apply scores and filter (with validation to clamp scores to 0-10 range)
@@ -154,7 +163,9 @@ export class LLMReranker {
 					return {
 						...result,
 						rerankScore,
-						rerankReason: this.options.includeReasoning ? ranking?.reason : undefined,
+						rerankReason: this.options.includeReasoning
+							? ranking?.reason
+							: undefined,
 						// Combine original score with rerank score
 						finalScore: this.combineScores(result.originalScore, rerankScore),
 					};
@@ -221,7 +232,9 @@ export class LLMReranker {
 	async rerankCodeUnits(
 		query: string,
 		units: Array<CodeUnit & { score: number }>,
-	): Promise<Array<CodeUnit & { score: number; rerankScore: number; finalScore: number }>> {
+	): Promise<
+		Array<CodeUnit & { score: number; rerankScore: number; finalScore: number }>
+	> {
 		if (units.length === 0) {
 			return [];
 		}
@@ -267,7 +280,8 @@ Summary: ${result.summary}
 		const metadata = result.document.metadata;
 		if (metadata && typeof metadata === "object") {
 			if ("name" in metadata && metadata.name) return String(metadata.name);
-			if ("symbolName" in metadata && metadata.symbolName) return String(metadata.symbolName);
+			if ("symbolName" in metadata && metadata.symbolName)
+				return String(metadata.symbolName);
 		}
 		// Fall back to extracting from content or path
 		const path = result.document.filePath || "";
@@ -291,6 +305,9 @@ Summary: ${result.summary}
 /**
  * Create an LLM reranker
  */
-export function createLLMReranker(llmClient: ILLMClient, options?: RerankerOptions): LLMReranker {
+export function createLLMReranker(
+	llmClient: ILLMClient,
+	options?: RerankerOptions,
+): LLMReranker {
 	return new LLMReranker(llmClient, options);
 }

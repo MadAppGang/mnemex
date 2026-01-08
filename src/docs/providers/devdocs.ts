@@ -161,7 +161,9 @@ export class DevDocsProvider extends BaseDocProvider {
 						signal: controller.signal,
 					});
 					if (!response.ok) {
-						throw new Error(`Failed to fetch DevDocs index: ${response.status}`);
+						throw new Error(
+							`Failed to fetch DevDocs index: ${response.status}`,
+						);
 					}
 					return response.json() as Promise<DevDocsIndexEntry[]>;
 				} finally {
@@ -190,9 +192,12 @@ export class DevDocsProvider extends BaseDocProvider {
 				const timeoutId = setTimeout(() => controller.abort(), 10000);
 
 				try {
-					const response = await fetch(`${DEVDOCS_API_URL}/docs/${slug}/db.json`, {
-						signal: controller.signal,
-					});
+					const response = await fetch(
+						`${DEVDOCS_API_URL}/docs/${slug}/db.json`,
+						{
+							signal: controller.signal,
+						},
+					);
 					if (!response.ok) {
 						throw new Error(`Failed to fetch DevDocs db: ${response.status}`);
 					}

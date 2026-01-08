@@ -135,11 +135,8 @@ export class SafetyScorer {
 
 		// Red team score
 		if (context.redTeamReport) {
-			componentScores.redTeam =
-				1 - context.redTeamReport.vulnerabilityScore;
-			factors.push(
-				...this.analyzeRedTeamFactors(context.redTeamReport)
-			);
+			componentScores.redTeam = 1 - context.redTeamReport.vulnerabilityScore;
+			factors.push(...this.analyzeRedTeamFactors(context.redTeamReport));
 		} else {
 			componentScores.redTeam = 0.5; // Unknown = neutral
 			factors.push({
@@ -153,9 +150,7 @@ export class SafetyScorer {
 		// Blue team score
 		if (context.defenseReport) {
 			componentScores.blueTeam = context.defenseReport.safetyScore;
-			factors.push(
-				...this.analyzeBlueTeamFactors(context.defenseReport)
-			);
+			factors.push(...this.analyzeBlueTeamFactors(context.defenseReport));
 		} else {
 			componentScores.blueTeam = 0.5;
 			factors.push({
@@ -173,11 +168,9 @@ export class SafetyScorer {
 		// Historical score
 		if (context.historicalData) {
 			componentScores.history = this.scoreHistoricalData(
-				context.historicalData
+				context.historicalData,
 			);
-			factors.push(
-				...this.analyzeHistoricalFactors(context.historicalData)
-			);
+			factors.push(...this.analyzeHistoricalFactors(context.historicalData));
 		} else {
 			componentScores.history = 0.5;
 			factors.push({
@@ -201,20 +194,20 @@ export class SafetyScorer {
 		const decision = this.determineDecision(
 			overallScore,
 			allComponentsPresent,
-			factors
+			factors,
 		);
 
 		// Calculate confidence
 		const confidence = this.calculateConfidence(
 			componentScores,
-			allComponentsPresent
+			allComponentsPresent,
 		);
 
 		// Generate recommendations
 		const recommendations = this.generateRecommendations(
 			decision,
 			factors,
-			componentScores
+			componentScores,
 		);
 
 		const result: SafetyScoreResult = {
@@ -251,7 +244,7 @@ export class SafetyScorer {
 	 */
 	getRequiredActions(
 		improvement: Improvement,
-		context: ScoringContext
+		context: ScoringContext,
 	): string[] {
 		const result = this.score(improvement, context);
 		const actions: string[] = [];
@@ -349,11 +342,11 @@ export class SafetyScorer {
 	private determineDecision(
 		score: number,
 		allComponentsPresent: boolean,
-		factors: SafetyFactor[]
+		factors: SafetyFactor[],
 	): DeploymentDecision {
 		// Check for critical negative factors
 		const hasCriticalNegative = factors.some(
-			(f) => f.type === "negative" && f.impact < -0.3
+			(f) => f.type === "negative" && f.impact < -0.3,
 		);
 
 		if (hasCriticalNegative) {
@@ -383,8 +376,13 @@ export class SafetyScorer {
 	 * Calculate confidence in decision.
 	 */
 	private calculateConfidence(
-		scores: { redTeam: number; blueTeam: number; pattern: number; history: number },
-		allComponentsPresent: boolean
+		scores: {
+			redTeam: number;
+			blueTeam: number;
+			pattern: number;
+			history: number;
+		},
+		allComponentsPresent: boolean,
 	): number {
 		// Base confidence from score consistency
 		const values = Object.values(scores);
@@ -505,7 +503,7 @@ export class SafetyScorer {
 
 		// Mitigations applied
 		const successfulMitigations = report.mitigationsApplied.filter(
-			(m) => m.success
+			(m) => m.success,
 		).length;
 		if (successfulMitigations > 0) {
 			factors.push({
@@ -625,13 +623,20 @@ export class SafetyScorer {
 	private generateRecommendations(
 		decision: DeploymentDecision,
 		factors: SafetyFactor[],
-		scores: { redTeam: number; blueTeam: number; pattern: number; history: number }
+		scores: {
+			redTeam: number;
+			blueTeam: number;
+			pattern: number;
+			history: number;
+		},
 	): string[] {
 		const recommendations: string[] = [];
 
 		// Based on decision
 		if (decision === "reject") {
-			recommendations.push("Address critical safety concerns before deployment");
+			recommendations.push(
+				"Address critical safety concerns before deployment",
+			);
 		}
 
 		// Based on low component scores
@@ -642,9 +647,7 @@ export class SafetyScorer {
 			recommendations.push("Add more safety mitigations");
 		}
 		if (scores.pattern < 0.6) {
-			recommendations.push(
-				"Wait for more observations before deploying"
-			);
+			recommendations.push("Wait for more observations before deploying");
 		}
 		if (scores.history < 0.6) {
 			recommendations.push("Consider extended A/B testing first");
@@ -668,7 +671,7 @@ export class SafetyScorer {
  * Create a safety scorer with optional configuration.
  */
 export function createSafetyScorer(
-	config: Partial<SafetyScorerConfig> = {}
+	config: Partial<SafetyScorerConfig> = {},
 ): SafetyScorer {
 	return new SafetyScorer(config);
 }

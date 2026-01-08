@@ -135,7 +135,7 @@ export class DeviationDetector {
 
 	constructor(
 		predictor: ShadowPredictor,
-		config: Partial<DeviationDetectorConfig> = {}
+		config: Partial<DeviationDetectorConfig> = {},
 	) {
 		this.config = { ...DEFAULT_DEVIATION_CONFIG, ...config };
 		this.predictor = predictor;
@@ -162,7 +162,7 @@ export class DeviationDetector {
 			actualTool,
 			prediction,
 			actualProbability,
-			sessionId
+			sessionId,
 		);
 
 		// Check for alerts
@@ -175,7 +175,7 @@ export class DeviationDetector {
 			// Clean old timestamps
 			const cutoff = Date.now() - this.config.deviationWindowMs;
 			this.recentDeviationTimestamps = this.recentDeviationTimestamps.filter(
-				(t) => t > cutoff
+				(t) => t > cutoff,
 			);
 
 			alert = this.checkForAlert(deviation);
@@ -222,13 +222,13 @@ export class DeviationDetector {
 
 			unexpectedCounts.set(
 				deviation.actualTool,
-				(unexpectedCounts.get(deviation.actualTool) ?? 0) + 1
+				(unexpectedCounts.get(deviation.actualTool) ?? 0) + 1,
 			);
 
 			if (deviation.expectedTool) {
 				skippedCounts.set(
 					deviation.expectedTool,
-					(skippedCounts.get(deviation.expectedTool) ?? 0) + 1
+					(skippedCounts.get(deviation.expectedTool) ?? 0) + 1,
 				);
 			}
 		}
@@ -301,8 +301,10 @@ export class DeviationDetector {
 	 */
 	isUnusualBehavior(): boolean {
 		return (
-			this.consecutiveDeviations >= this.config.consecutiveDeviationsThreshold ||
-			this.recentDeviationTimestamps.length >= this.config.maxDeviationsPerWindow
+			this.consecutiveDeviations >=
+				this.config.consecutiveDeviationsThreshold ||
+			this.recentDeviationTimestamps.length >=
+				this.config.maxDeviationsPerWindow
 		);
 	}
 
@@ -338,7 +340,7 @@ export class DeviationDetector {
 		actualTool: string,
 		prediction: PredictionResult,
 		actualProbability: number,
-		sessionId?: string
+		sessionId?: string,
 	): Deviation | null {
 		const expected = prediction.topPrediction;
 
@@ -353,7 +355,7 @@ export class DeviationDetector {
 				0,
 				prediction.predictions.map((p) => p.tool),
 				`Novel tool usage: ${actualTool} with no prior context`,
-				sessionId
+				sessionId,
 			);
 		}
 
@@ -382,7 +384,7 @@ export class DeviationDetector {
 				expected.probability,
 				expected.context,
 				`Low probability tool: ${actualTool} (${(actualProbability * 100).toFixed(1)}%) instead of ${expected.tool} (${(expected.probability * 100).toFixed(1)}%)`,
-				sessionId
+				sessionId,
 			);
 		}
 
@@ -397,7 +399,7 @@ export class DeviationDetector {
 				expected.probability,
 				expected.context,
 				`Unexpected tool: ${actualTool} instead of highly expected ${expected.tool}`,
-				sessionId
+				sessionId,
 			);
 		}
 
@@ -416,7 +418,7 @@ export class DeviationDetector {
 		expectedProbability: number,
 		context: string[],
 		description: string,
-		sessionId?: string
+		sessionId?: string,
 	): Deviation {
 		return {
 			deviationId: `dev_${Date.now()}_${++this.deviationCounter}`,
@@ -442,7 +444,7 @@ export class DeviationDetector {
 			this.consecutiveDeviations >= this.config.consecutiveDeviationsThreshold
 		) {
 			const recentDeviations = this.deviations.slice(
-				-this.consecutiveDeviations
+				-this.consecutiveDeviations,
 			);
 
 			return this.createAlert(
@@ -450,7 +452,7 @@ export class DeviationDetector {
 				"warning",
 				recentDeviations,
 				`${this.consecutiveDeviations} consecutive deviations detected`,
-				"Consider pausing to review agent behavior"
+				"Consider pausing to review agent behavior",
 			);
 		}
 
@@ -460,7 +462,7 @@ export class DeviationDetector {
 			this.config.maxDeviationsPerWindow
 		) {
 			const recentDeviations = this.deviations.filter(
-				(d) => d.timestamp > Date.now() - this.config.deviationWindowMs
+				(d) => d.timestamp > Date.now() - this.config.deviationWindowMs,
 			);
 
 			return this.createAlert(
@@ -468,7 +470,7 @@ export class DeviationDetector {
 				"alert",
 				recentDeviations,
 				`High deviation rate: ${recentDeviations.length} in ${Math.round(this.config.deviationWindowMs / 60000)} minutes`,
-				"Agent behavior may be unstable or task may be outside training distribution"
+				"Agent behavior may be unstable or task may be outside training distribution",
 			);
 		}
 
@@ -483,7 +485,7 @@ export class DeviationDetector {
 		severity: DeviationSeverity,
 		deviations: Deviation[],
 		message: string,
-		recommendation: string
+		recommendation: string,
 	): DeviationAlert {
 		const alert: DeviationAlert = {
 			alertId: `alert_${Date.now()}_${++this.alertCounter}`,
@@ -514,7 +516,7 @@ export class DeviationDetector {
  */
 export function createDeviationDetector(
 	predictor: ShadowPredictor,
-	config: Partial<DeviationDetectorConfig> = {}
+	config: Partial<DeviationDetectorConfig> = {},
 ): DeviationDetector {
 	return new DeviationDetector(predictor, config);
 }

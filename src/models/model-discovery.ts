@@ -229,9 +229,7 @@ async function fetchModelsFromAPI(): Promise<EmbeddingModel[]> {
 				name: model.name,
 				provider: model.id.split("/")[0],
 				contextLength:
-					model.context_length ||
-					model.top_provider?.context_length ||
-					8192,
+					model.context_length || model.top_provider?.context_length || 8192,
 				pricePerMillion,
 				isFree: pricePerMillion === 0,
 			};

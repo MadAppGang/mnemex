@@ -124,7 +124,10 @@ export class FeedbackStore {
 
 		if (!entry || now > entry.resetAt) {
 			// New window or expired - reset counter
-			this.rateLimiter.set(sessionId, { count: 1, resetAt: now + this.RATE_WINDOW_MS });
+			this.rateLimiter.set(sessionId, {
+				count: 1,
+				resetAt: now + this.RATE_WINDOW_MS,
+			});
 			return;
 		}
 
@@ -357,9 +360,10 @@ export class FeedbackStore {
 	/**
 	 * Get boost factor with sample count for a file.
 	 */
-	getFileBoostWithSamples(
-		filePath: string,
-	): { boost: number; sampleCount: number } {
+	getFileBoostWithSamples(filePath: string): {
+		boost: number;
+		sampleCount: number;
+	} {
 		const stmt = this.db.prepare(
 			"SELECT boost_factor, sample_count FROM file_boosts WHERE file_path = ?",
 		);
@@ -465,7 +469,13 @@ export class FeedbackStore {
 			VALUES (?, ?, ?, ?, ?)
 		`);
 
-		stmt.run(pattern, intent, confidence, sampleCount, new Date().toISOString());
+		stmt.run(
+			pattern,
+			intent,
+			confidence,
+			sampleCount,
+			new Date().toISOString(),
+		);
 	}
 
 	// ========================================================================
@@ -477,7 +487,9 @@ export class FeedbackStore {
 	 */
 	getStatistics(): LearningStatistics {
 		const totalEvents = (
-			this.db.prepare("SELECT COUNT(*) as count FROM search_feedback").get() as {
+			this.db
+				.prepare("SELECT COUNT(*) as count FROM search_feedback")
+				.get() as {
 				count: number;
 			}
 		).count;
@@ -643,11 +655,7 @@ export class FeedbackStore {
 	 * Safely parse JSON with error handling.
 	 * Returns defaultValue if parsing fails instead of crashing.
 	 */
-	private safeJsonParse<T>(
-		json: string,
-		defaultValue: T,
-		context: string,
-	): T {
+	private safeJsonParse<T>(json: string, defaultValue: T, context: string): T {
 		try {
 			return JSON.parse(json);
 		} catch (error) {
@@ -658,15 +666,25 @@ export class FeedbackStore {
 		}
 	}
 
-	private rowToFeedbackEvent(row: Record<string, unknown>): SearchFeedbackEvent {
+	private rowToFeedbackEvent(
+		row: Record<string, unknown>,
+	): SearchFeedbackEvent {
 		return {
 			id: row.id as number,
 			query: row.query as string,
 			queryHash: row.query_hash as string,
 			sessionId: row.session_id as string,
 			resultIds: this.safeJsonParse(row.result_ids as string, [], "result_ids"),
-			acceptedIds: this.safeJsonParse(row.accepted_ids as string, [], "accepted_ids"),
-			rejectedIds: this.safeJsonParse(row.rejected_ids as string, [], "rejected_ids"),
+			acceptedIds: this.safeJsonParse(
+				row.accepted_ids as string,
+				[],
+				"accepted_ids",
+			),
+			rejectedIds: this.safeJsonParse(
+				row.rejected_ids as string,
+				[],
+				"rejected_ids",
+			),
 			feedbackType: row.feedback_type as FeedbackType,
 			feedbackSource: row.feedback_source as "mcp" | "cli" | "api",
 			useCase: row.use_case as SearchUseCase | undefined,

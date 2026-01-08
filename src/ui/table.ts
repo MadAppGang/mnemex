@@ -59,7 +59,10 @@ export function formatContextLength(ctx: number): string {
 /**
  * Apply cell highlighting based on best/worst
  */
-function applyCellHighlight(value: string, highlight?: "best" | "worst" | "neutral"): string {
+function applyCellHighlight(
+	value: string,
+	highlight?: "best" | "worst" | "neutral",
+): string {
 	if (highlight === "best") return `${c.green}${value}${c.reset}`;
 	if (highlight === "worst") return `${c.red}${value}${c.reset}`;
 	return value;
@@ -70,13 +73,15 @@ function applyCellHighlight(value: string, highlight?: "best" | "worst" | "neutr
  */
 export function renderTable(
 	columns: TableColumn[],
-	rows: Array<{ cells: CellValue[]; error?: string }>
+	rows: Array<{ cells: CellValue[]; error?: string }>,
 ): void {
 	// Calculate total width
 	const totalWidth = columns.reduce((sum, col) => sum + col.width + 1, 0) - 1;
 
 	// Print header
-	const headerLine = columns.map((col) => col.header.padEnd(col.width)).join(" ");
+	const headerLine = columns
+		.map((col) => col.header.padEnd(col.width))
+		.join(" ");
 	console.log(`  ${headerLine}`);
 	console.log("  " + "─".repeat(totalWidth));
 
@@ -84,16 +89,19 @@ export function renderTable(
 	for (const row of rows) {
 		if (row.error) {
 			const firstCell = row.cells[0]?.value || "Unknown";
-			console.log(`  ${c.red}${truncate(firstCell, columns[0]?.width || 28).padEnd(columns[0]?.width || 28)} ERROR${c.reset}`);
+			console.log(
+				`  ${c.red}${truncate(firstCell, columns[0]?.width || 28).padEnd(columns[0]?.width || 28)} ERROR${c.reset}`,
+			);
 			console.log(`    ${c.dim}${row.error}${c.reset}`);
 			continue;
 		}
 
 		const cells = row.cells.map((cell, i) => {
 			const col = columns[i];
-			const value = col.align === "right"
-				? cell.value.padStart(col.width)
-				: cell.value.padEnd(col.width);
+			const value =
+				col.align === "right"
+					? cell.value.padStart(col.width)
+					: cell.value.padEnd(col.width);
 			return applyCellHighlight(value, cell.highlight);
 		});
 
@@ -108,7 +116,7 @@ export function getHighlight(
 	value: number,
 	min: number,
 	max: number,
-	higherIsBetter: boolean
+	higherIsBetter: boolean,
 ): "best" | "worst" | "neutral" {
 	if (min === max) return "neutral";
 	const best = higherIsBetter ? max : min;
@@ -121,10 +129,14 @@ export function getHighlight(
 /**
  * Print a summary section
  */
-export function renderSummary(items: Array<{ emoji: string; label: string; value: string }>): void {
+export function renderSummary(
+	items: Array<{ emoji: string; label: string; value: string }>,
+): void {
 	console.log(`\n${c.bold}Summary:${c.reset}`);
 	for (const item of items) {
-		console.log(`  ${c.green}${item.emoji} ${item.label}:${c.reset} ${item.value}`);
+		console.log(
+			`  ${c.green}${item.emoji} ${item.label}:${c.reset} ${item.value}`,
+		);
 	}
 }
 

@@ -85,7 +85,11 @@ export class RepoMapGenerator {
 
 		for (const filePath of sortedFiles) {
 			const fileSymbols = fileMap.get(filePath)!;
-			const fileLines = this.formatFile(filePath, fileSymbols, includeSignatures);
+			const fileLines = this.formatFile(
+				filePath,
+				fileSymbols,
+				includeSignatures,
+			);
 			const fileChars = fileLines.join("\n").length;
 			const fileTokens = fileChars / CHARS_PER_TOKEN;
 
@@ -153,10 +157,7 @@ export class RepoMapGenerator {
 	 * Generate a focused repo map for a specific query
 	 * Returns symbols most relevant to the query terms
 	 */
-	generateForQuery(
-		query: string,
-		options: RepoMapOptions = {},
-	): string {
+	generateForQuery(query: string, options: RepoMapOptions = {}): string {
 		const { maxTokens = 500 } = options;
 
 		// Extract terms from query
@@ -238,7 +239,9 @@ export class RepoMapGenerator {
 	/**
 	 * Group symbols by file path
 	 */
-	private groupByFile(symbols: SymbolDefinition[]): Map<string, SymbolDefinition[]> {
+	private groupByFile(
+		symbols: SymbolDefinition[],
+	): Map<string, SymbolDefinition[]> {
 		const map = new Map<string, SymbolDefinition[]>();
 
 		for (const symbol of symbols) {

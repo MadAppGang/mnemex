@@ -4,7 +4,11 @@
  * One JSON object per line over stdin/stdout.
  */
 
-export type AutocompleteMethod = "initialize" | "complete" | "cancel" | "shutdown";
+export type AutocompleteMethod =
+	| "initialize"
+	| "complete"
+	| "cancel"
+	| "shutdown";
 
 export interface AutocompletePosition {
 	/** 0-based line */
@@ -71,4 +75,6 @@ export interface AutocompleteErrorResponse {
 	error: { message: string };
 }
 
-export type AutocompleteResponse = AutocompleteSuccessResponse | AutocompleteErrorResponse;
+export type AutocompleteResponse =
+	| AutocompleteSuccessResponse
+	| AutocompleteErrorResponse;

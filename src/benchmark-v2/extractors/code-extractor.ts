@@ -16,7 +16,11 @@ import {
 	createCodeUnitExtractor,
 } from "../../core/ast/code-unit-extractor.js";
 import type { CodeUnit, SupportedLanguage } from "../../types.js";
-import { ExtractionError, FileParseError, UnsupportedLanguageError } from "../errors.js";
+import {
+	ExtractionError,
+	FileParseError,
+	UnsupportedLanguageError,
+} from "../errors.js";
 import type {
 	BenchmarkCodeUnit,
 	BenchmarkConfig,
@@ -112,7 +116,7 @@ export class BenchmarkCodeExtractor {
 	 * Extract all code units from the project
 	 */
 	async extractAll(
-		options: ExtractionOptions
+		options: ExtractionOptions,
 	): Promise<{ codeUnits: BenchmarkCodeUnit[]; codebaseInfo: CodebaseInfo }> {
 		const {
 			projectPath,
@@ -127,7 +131,11 @@ export class BenchmarkCodeExtractor {
 		} = options;
 
 		// Find all matching files
-		const files = await this.findFiles(projectPath, includePatterns, excludePatterns);
+		const files = await this.findFiles(
+			projectPath,
+			includePatterns,
+			excludePatterns,
+		);
 
 		// Filter by language if specified
 		const filteredFiles = languages
@@ -157,7 +165,7 @@ export class BenchmarkCodeExtractor {
 				const units = await this.extractFromFile(
 					join(projectPath, file),
 					file,
-					language
+					language,
 				);
 
 				// Filter by type and size
@@ -179,7 +187,7 @@ export class BenchmarkCodeExtractor {
 				// Track language stats
 				languageStats.set(
 					language,
-					(languageStats.get(language) || 0) + filtered.length
+					(languageStats.get(language) || 0) + filtered.length,
 				);
 
 				allCodeUnits.push(...filtered);
@@ -206,7 +214,7 @@ export class BenchmarkCodeExtractor {
 	async extractFromFile(
 		absolutePath: string,
 		relativePath: string,
-		language: SupportedLanguage
+		language: SupportedLanguage,
 	): Promise<BenchmarkCodeUnit[]> {
 		try {
 			const content = await readFile(absolutePath, "utf-8");
@@ -217,7 +225,7 @@ export class BenchmarkCodeExtractor {
 				content,
 				relativePath,
 				language,
-				fileHash
+				fileHash,
 			);
 
 			// Convert to BenchmarkCodeUnit format
@@ -227,7 +235,7 @@ export class BenchmarkCodeExtractor {
 				relativePath,
 				language,
 				error instanceof Error ? error.message : String(error),
-				error instanceof Error ? error : undefined
+				error instanceof Error ? error : undefined,
 			);
 		}
 	}
@@ -238,7 +246,7 @@ export class BenchmarkCodeExtractor {
 	sampleCodeUnits(
 		units: BenchmarkCodeUnit[],
 		sampleSize: number,
-		strategy: SamplingStrategy
+		strategy: SamplingStrategy,
 	): BenchmarkCodeUnit[] {
 		if (sampleSize >= units.length || strategy === "all") {
 			return units;
@@ -259,7 +267,7 @@ export class BenchmarkCodeExtractor {
 	 */
 	private randomSample(
 		units: BenchmarkCodeUnit[],
-		sampleSize: number
+		sampleSize: number,
 	): BenchmarkCodeUnit[] {
 		const shuffled = [...units].sort(() => Math.random() - 0.5);
 		return shuffled.slice(0, sampleSize);
@@ -270,7 +278,7 @@ export class BenchmarkCodeExtractor {
 	 */
 	private stratifiedSample(
 		units: BenchmarkCodeUnit[],
-		sampleSize: number
+		sampleSize: number,
 	): BenchmarkCodeUnit[] {
 		// Group by language and type
 		const groups = new Map<string, BenchmarkCodeUnit[]>();
@@ -284,11 +292,13 @@ export class BenchmarkCodeExtractor {
 
 		// Calculate per-group sample size (proportional)
 		const result: BenchmarkCodeUnit[] = [];
-		const groupSizes = Array.from(groups.entries()).map(([key, groupUnits]) => ({
-			key,
-			units: groupUnits,
-			proportion: groupUnits.length / units.length,
-		}));
+		const groupSizes = Array.from(groups.entries()).map(
+			([key, groupUnits]) => ({
+				key,
+				units: groupUnits,
+				proportion: groupUnits.length / units.length,
+			}),
+		);
 
 		// Allocate samples proportionally
 		let remaining = sampleSize;
@@ -296,7 +306,7 @@ export class BenchmarkCodeExtractor {
 			const groupSampleSize = Math.min(
 				Math.ceil(sampleSize * group.proportion),
 				group.units.length,
-				remaining
+				remaining,
 			);
 			const sampled = this.randomSample(group.units, groupSampleSize);
 			result.push(...sampled);
@@ -321,7 +331,7 @@ export class BenchmarkCodeExtractor {
 	private async findFiles(
 		projectPath: string,
 		includePatterns: string[],
-		excludePatterns: string[]
+		excludePatterns: string[],
 	): Promise<string[]> {
 		const files: string[] = [];
 
@@ -335,7 +345,7 @@ export class BenchmarkCodeExtractor {
 
 					// Check exclude patterns
 					const isExcluded = excludePatterns.some((pattern) =>
-						minimatch(relativePath, pattern, { dot: true })
+						minimatch(relativePath, pattern, { dot: true }),
 					);
 					if (isExcluded) continue;
 
@@ -344,7 +354,7 @@ export class BenchmarkCodeExtractor {
 					} else if (entry.isFile()) {
 						// Check include patterns
 						const isIncluded = includePatterns.some((pattern) =>
-							minimatch(relativePath, pattern, { dot: true })
+							minimatch(relativePath, pattern, { dot: true }),
 						);
 						if (isIncluded) {
 							files.push(relativePath);
@@ -408,7 +418,11 @@ export class BenchmarkCodeExtractor {
 					optional: false, // Default to non-optional since source doesn't track this
 				})),
 				returnType: unit.metadata?.returnType,
-				visibility: unit.metadata?.visibility as "public" | "private" | "protected" | undefined,
+				visibility: unit.metadata?.visibility as
+					| "public"
+					| "private"
+					| "protected"
+					| undefined,
 				decorators: unit.metadata?.decorators,
 				dependencies: unit.metadata?.importsUsed || [],
 				exports: [],
@@ -465,7 +479,7 @@ import type { PhaseContext, PhaseResult } from "../pipeline/orchestrator.js";
  * Create the extraction phase executor
  */
 export function createExtractionPhaseExecutor(
-	projectPathOverride?: string
+	projectPathOverride?: string,
 ): (context: PhaseContext) => Promise<PhaseResult> {
 	return async (context: PhaseContext): Promise<PhaseResult> => {
 		const { db, run, config, stateMachine } = context;
@@ -491,7 +505,7 @@ export function createExtractionPhaseExecutor(
 			const sampled = extractor.sampleCodeUnits(
 				codeUnits,
 				config.sampleSize,
-				config.samplingStrategy
+				config.samplingStrategy,
 			);
 
 			// Update codebase info with sample count
@@ -502,7 +516,12 @@ export function createExtractionPhaseExecutor(
 			db.updateCodebaseInfo(run.id, codebaseInfo);
 
 			// Update progress
-			stateMachine.updateProgress("extraction", 1, undefined, `Extracted ${sampled.length} code units`);
+			stateMachine.updateProgress(
+				"extraction",
+				1,
+				undefined,
+				`Extracted ${sampled.length} code units`,
+			);
 
 			return {
 				success: true,

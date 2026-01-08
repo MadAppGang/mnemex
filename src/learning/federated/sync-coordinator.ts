@@ -141,7 +141,7 @@ export class SyncCoordinator {
 
 	constructor(
 		hasher: PatternHasher,
-		config: Partial<SyncCoordinatorConfig> = {}
+		config: Partial<SyncCoordinatorConfig> = {},
 	) {
 		this.config = { ...DEFAULT_SYNC_CONFIG, ...config };
 		this.hasher = hasher;
@@ -309,7 +309,8 @@ export class SyncCoordinator {
 				if (peer.patternsReceived > 0) {
 					peer.trustScore = Math.min(
 						1,
-						peer.trustScore * 0.9 + (peer.patternsUseful / peer.patternsReceived) * 0.1
+						peer.trustScore * 0.9 +
+							(peer.patternsUseful / peer.patternsReceived) * 0.1,
 					);
 				}
 			}
@@ -345,7 +346,7 @@ export class SyncCoordinator {
 		const totalReceived = peers.reduce((sum, p) => sum + p.patternsReceived, 0);
 		const totalIntegrated = this.syncHistory.reduce(
 			(sum, r) => sum + r.patternsIntegrated,
-			0
+			0,
 		);
 		const avgTrustScore =
 			peers.length > 0
@@ -527,7 +528,9 @@ export class SyncCoordinator {
 
 			// Update confidence
 			merged.aggregatedData.avgConfidence =
-				(merged.aggregatedData.avgConfidence + pattern.anonymizedData.noisyConfidence) / 2;
+				(merged.aggregatedData.avgConfidence +
+					pattern.anonymizedData.noisyConfidence) /
+				2;
 
 			// Update total observations
 			merged.aggregatedData.totalObservations += pattern.noisyCount;
@@ -535,7 +538,7 @@ export class SyncCoordinator {
 			// Increase merge confidence with more sources
 			merged.mergeConfidence = Math.min(
 				1,
-				merged.mergeConfidence + 0.1 * (1 - merged.mergeConfidence)
+				merged.mergeConfidence + 0.1 * (1 - merged.mergeConfidence),
 			);
 		}
 
@@ -552,7 +555,7 @@ export class SyncCoordinator {
  */
 export function createSyncCoordinator(
 	hasher: PatternHasher,
-	config: Partial<SyncCoordinatorConfig> = {}
+	config: Partial<SyncCoordinatorConfig> = {},
 ): SyncCoordinator {
 	return new SyncCoordinator(hasher, config);
 }

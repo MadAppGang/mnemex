@@ -5,7 +5,14 @@
  * Supports post-commit hook that runs claudemem index after each commit.
  */
 
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync, chmodSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	unlinkSync,
+	writeFileSync,
+	chmodSync,
+} from "node:fs";
 import { join } from "node:path";
 
 // ============================================================================
@@ -128,7 +135,11 @@ export class GitHookManager {
 
 				if (inOurSection) {
 					// Skip until we hit a blank line followed by non-claudemem content
-					if (line.trim() === "" || line.startsWith("# ") || line.includes("claudemem")) {
+					if (
+						line.trim() === "" ||
+						line.startsWith("# ") ||
+						line.includes("claudemem")
+					) {
 						continue;
 					}
 					inOurSection = false;

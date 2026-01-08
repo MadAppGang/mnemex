@@ -8,7 +8,10 @@
 import { createHash } from "node:crypto";
 import type { Node, Tree, QueryCapture } from "web-tree-sitter";
 import { Query } from "web-tree-sitter";
-import { getParserManager, type ParserManager } from "../parsers/parser-manager.js";
+import {
+	getParserManager,
+	type ParserManager,
+} from "../parsers/parser-manager.js";
 import type {
 	SymbolDefinition,
 	SymbolReference,
@@ -115,7 +118,12 @@ export class SymbolExtractor {
 			const docstring = this.extractDocstring(node, source);
 
 			// Create symbol ID
-			const id = this.createSymbolId(filePath, name, kind, node.startPosition.row + 1);
+			const id = this.createSymbolId(
+				filePath,
+				name,
+				kind,
+				node.startPosition.row + 1,
+			);
 
 			symbols.push({
 				id,
@@ -226,7 +234,10 @@ export class SymbolExtractor {
 	/**
 	 * Extract symbol name from AST node
 	 */
-	private extractName(node: Node, language: SupportedLanguage): string | undefined {
+	private extractName(
+		node: Node,
+		language: SupportedLanguage,
+	): string | undefined {
 		// Try direct children with common name patterns
 		const namePatterns = ["name", "declarator"];
 
@@ -357,7 +368,10 @@ export class SymbolExtractor {
 		language: SupportedLanguage,
 	): string | undefined {
 		// For methods, find enclosing class
-		if (node.type === "method_definition" || node.type === "method_declaration") {
+		if (
+			node.type === "method_definition" ||
+			node.type === "method_declaration"
+		) {
 			let parent = node.parent;
 			while (parent) {
 				if (
@@ -401,7 +415,11 @@ export class SymbolExtractor {
 
 		// For multi-line signatures, get until opening brace or closing paren
 		if (!sig.includes("{") && !sig.endsWith(")") && !sig.endsWith(":")) {
-			for (let i = startLine + 1; i < Math.min(startLine + 5, lines.length); i++) {
+			for (
+				let i = startLine + 1;
+				i < Math.min(startLine + 5, lines.length);
+				i++
+			) {
 				const nextLine = lines[i].trim();
 				sig += " " + nextLine;
 				if (sig.includes("{") || sig.endsWith(")") || sig.endsWith(":")) {

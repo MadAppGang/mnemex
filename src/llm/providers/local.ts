@@ -7,7 +7,11 @@
 
 import { BaseLLMClient, DEFAULT_LLM_MODELS } from "../client.js";
 import { combineAbortSignals } from "../abort.js";
-import type { LLMGenerateOptions, LLMMessage, LLMResponse } from "../../types.js";
+import type {
+	LLMGenerateOptions,
+	LLMMessage,
+	LLMResponse,
+} from "../../types.js";
 
 // ============================================================================
 // LMStudio Model Contention Handler
@@ -85,7 +89,7 @@ export function parseParameterSize(sizeStr: string): number | undefined {
  */
 async function getOllamaModelInfo(
 	modelName: string,
-	baseEndpoint: string
+	baseEndpoint: string,
 ): Promise<LocalModelInfo | undefined> {
 	try {
 		const response = await fetch(`${baseEndpoint}/api/show`, {
@@ -164,7 +168,7 @@ async function getLMStudioModelSizeMap(): Promise<Map<string, string>> {
  */
 async function getLMStudioModelInfo(
 	modelName: string,
-	_baseEndpoint: string
+	_baseEndpoint: string,
 ): Promise<LocalModelInfo | undefined> {
 	try {
 		const { LMStudioClient } = await import("@lmstudio/sdk");
@@ -176,7 +180,9 @@ async function getLMStudioModelInfo(
 		const debug = process.env.DEBUG_MODEL_SIZE === "1";
 		if (debug) {
 			console.error(`[getLMStudioModelInfo] Looking for: ${modelName}`);
-			console.error(`[getLMStudioModelInfo] Available models: ${llmModels.map(m => m.modelKey).join(", ")}`);
+			console.error(
+				`[getLMStudioModelInfo] Available models: ${llmModels.map((m) => m.modelKey).join(", ")}`,
+			);
 		}
 
 		// Normalize the input model name for matching
@@ -192,23 +198,32 @@ async function getLMStudioModelInfo(
 
 		if (!match) {
 			// Try: modelKey contains the modelName (case-insensitive)
-			match = llmModels.find((m) => m.modelKey.toLowerCase().includes(normalizedInput));
+			match = llmModels.find((m) =>
+				m.modelKey.toLowerCase().includes(normalizedInput),
+			);
 		}
 
 		if (!match) {
 			// Try: Extract base name and match (handles quantization suffixes)
 			// e.g., "qwq-32b" should match "qwen/qwq-32b-instruct-q4_k_m"
-			const baseName = normalizedInput.replace(/-q\d.*$/, "").replace(/-instruct.*$/, "");
-			match = llmModels.find((m) => m.modelKey.toLowerCase().includes(baseName));
+			const baseName = normalizedInput
+				.replace(/-q\d.*$/, "")
+				.replace(/-instruct.*$/, "");
+			match = llmModels.find((m) =>
+				m.modelKey.toLowerCase().includes(baseName),
+			);
 		}
 
 		if (!match) {
-			if (debug) console.error(`[getLMStudioModelInfo] No match found for ${modelName}`);
+			if (debug)
+				console.error(`[getLMStudioModelInfo] No match found for ${modelName}`);
 			return undefined;
 		}
 
 		if (debug) {
-			console.error(`[getLMStudioModelInfo] Matched: ${match.modelKey} → ${match.paramsString}`);
+			console.error(
+				`[getLMStudioModelInfo] Matched: ${match.modelKey} → ${match.paramsString}`,
+			);
 		}
 
 		const info: LocalModelInfo = {
@@ -242,7 +257,7 @@ async function getLMStudioModelInfo(
  */
 export async function getLocalModelInfo(
 	modelName: string,
-	endpoint = "http://localhost:11434"
+	endpoint = "http://localhost:11434",
 ): Promise<LocalModelInfo | undefined> {
 	// Check cache first
 	const cacheKey = `${endpoint}:${modelName}`;
@@ -322,7 +337,7 @@ export class LocalLLMClient extends BaseLLMClient {
 		super(
 			"local",
 			options.model || DEFAULT_LLM_MODELS.local,
-			options.timeout || 300000 // Longer timeout for local models
+			options.timeout || 300000, // Longer timeout for local models
 		);
 
 		this.endpoint = options.endpoint || DEFAULT_ENDPOINT;
@@ -335,7 +350,7 @@ export class LocalLLMClient extends BaseLLMClient {
 
 	async complete(
 		messages: LLMMessage[],
-		options?: LLMGenerateOptions
+		options?: LLMGenerateOptions,
 	): Promise<LLMResponse> {
 		return this.withRetry(async () => {
 			return this.completeWithModelRetry(messages, options, 0);
@@ -349,17 +364,22 @@ export class LocalLLMClient extends BaseLLMClient {
 	private async completeWithModelRetry(
 		messages: LLMMessage[],
 		options: LLMGenerateOptions | undefined,
-		attempt: number
+		attempt: number,
 	): Promise<LLMResponse> {
 		// Convert messages to OpenAI format
-		const openAIMessages = this.convertMessages(messages, options?.systemPrompt);
+		const openAIMessages = this.convertMessages(
+			messages,
+			options?.systemPrompt,
+		);
 
 		// Build request body
 		const body = {
 			model: options?.model || this.model,
 			messages: openAIMessages,
 			...(options?.maxTokens && { max_tokens: options.maxTokens }),
-			...(options?.temperature !== undefined && { temperature: options.temperature }),
+			...(options?.temperature !== undefined && {
+				temperature: options.temperature,
+			}),
 			stream: false,
 		};
 
@@ -385,7 +405,10 @@ export class LocalLLMClient extends BaseLLMClient {
 				const errorBody = await response.text();
 
 				// Check for model contention errors (LMStudio swapping models)
-				if (isModelContentionError(errorBody) && attempt < MODEL_RETRY_DELAYS.length) {
+				if (
+					isModelContentionError(errorBody) &&
+					attempt < MODEL_RETRY_DELAYS.length
+				) {
 					const delay = MODEL_RETRY_DELAYS[attempt];
 					await new Promise((r) => setTimeout(r, delay));
 					return this.completeWithModelRetry(messages, options, attempt + 1);
@@ -393,11 +416,13 @@ export class LocalLLMClient extends BaseLLMClient {
 
 				if (response.status === 404) {
 					throw new Error(
-						`Local model "${this.model}" not found. Make sure it's available on your local server.`
+						`Local model "${this.model}" not found. Make sure it's available on your local server.`,
 					);
 				}
 
-				throw new Error(`Local LLM API error (${response.status}): ${errorBody}`);
+				throw new Error(
+					`Local LLM API error (${response.status}): ${errorBody}`,
+				);
 			}
 
 			const data = (await response.json()) as OpenAIResponse;
@@ -423,17 +448,22 @@ export class LocalLLMClient extends BaseLLMClient {
 
 			if (error instanceof Error) {
 				if (error.name === "AbortError") {
-					throw new Error(`Local LLM request timed out after ${this.timeout}ms`);
+					throw new Error(
+						`Local LLM request timed out after ${this.timeout}ms`,
+					);
 				}
 				// Connection refused - server not running
 				if (error.message.includes("ECONNREFUSED")) {
 					throw new Error(
 						`Cannot connect to local LLM at ${this.endpoint}. ` +
-							"Make sure Ollama or LM Studio is running."
+							"Make sure Ollama or LM Studio is running.",
 					);
 				}
 				// Check for model contention in thrown errors too
-				if (isModelContentionError(error.message) && attempt < MODEL_RETRY_DELAYS.length) {
+				if (
+					isModelContentionError(error.message) &&
+					attempt < MODEL_RETRY_DELAYS.length
+				) {
 					const delay = MODEL_RETRY_DELAYS[attempt];
 					await new Promise((r) => setTimeout(r, delay));
 					return this.completeWithModelRetry(messages, options, attempt + 1);
@@ -451,7 +481,7 @@ export class LocalLLMClient extends BaseLLMClient {
 			// Try a minimal completion
 			const response = await this.complete(
 				[{ role: "user", content: "Say 'ok'" }],
-				{ maxTokens: 10 }
+				{ maxTokens: 10 },
 			);
 			return response.content.length > 0;
 		} catch (error) {
@@ -472,7 +502,9 @@ export class LocalLLMClient extends BaseLLMClient {
 	async getModelSizeB(): Promise<number | undefined> {
 		const info = await getLocalModelInfo(this.model, this.endpoint);
 		if (process.env.DEBUG_MODEL_SIZE) {
-			console.error(`[getModelSizeB] model=${this.model} endpoint=${this.endpoint} → ${info?.parameterSizeB ?? "unknown"}B`);
+			console.error(
+				`[getModelSizeB] model=${this.model} endpoint=${this.endpoint} → ${info?.parameterSizeB ?? "unknown"}B`,
+			);
 		}
 		return info?.parameterSizeB;
 	}
@@ -482,7 +514,7 @@ export class LocalLLMClient extends BaseLLMClient {
 	 */
 	private convertMessages(
 		messages: LLMMessage[],
-		systemPrompt?: string
+		systemPrompt?: string,
 	): OpenAIMessage[] {
 		const result: OpenAIMessage[] = [];
 

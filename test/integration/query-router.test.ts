@@ -91,7 +91,9 @@ describe("QueryRouter", () => {
 			// Entity extraction extracts file paths with code extensions (.ts, .js, .py, .go, etc.)
 			const result = await router.route("find src/config.ts");
 			// Path with code file extension is extracted as entity
-			expect(result.classification.extractedEntities).toContain("src/config.ts");
+			expect(result.classification.extractedEntities).toContain(
+				"src/config.ts",
+			);
 		});
 
 		test("strategy uses path primary for location", async () => {
@@ -156,22 +158,30 @@ describe("QueryRouter", () => {
 		test("extracts PascalCase entities", async () => {
 			const result = await router.route("find UserService and PaymentHandler");
 			expect(result.classification.extractedEntities).toContain("UserService");
-			expect(result.classification.extractedEntities).toContain("PaymentHandler");
+			expect(result.classification.extractedEntities).toContain(
+				"PaymentHandler",
+			);
 		});
 
 		test("extracts camelCase entities", async () => {
 			const result = await router.route("where is handlePayment used");
-			expect(result.classification.extractedEntities).toContain("handlePayment");
+			expect(result.classification.extractedEntities).toContain(
+				"handlePayment",
+			);
 		});
 
 		test("extracts snake_case entities", async () => {
 			const result = await router.route("find process_payment function");
-			expect(result.classification.extractedEntities).toContain("process_payment");
+			expect(result.classification.extractedEntities).toContain(
+				"process_payment",
+			);
 		});
 
 		test("extracts file paths", async () => {
 			const result = await router.route("look at src/auth/handler.ts");
-			expect(result.classification.extractedEntities).toContain("src/auth/handler.ts");
+			expect(result.classification.extractedEntities).toContain(
+				"src/auth/handler.ts",
+			);
 		});
 	});
 

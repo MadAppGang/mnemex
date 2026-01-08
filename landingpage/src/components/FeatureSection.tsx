@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { RESEARCH_LEVELS, COMPARISON_MATRIX } from "../constants";
 import { TerminalWindow } from "./TerminalWindow";
 import { PipelineVisualizer } from "./PipelineVisualizer";
+import { ArchitectureDiagram } from "./ArchitectureDiagram";
 
 const FeatureSection: React.FC = () => {
 	return (
@@ -9,6 +10,7 @@ const FeatureSection: React.FC = () => {
 			<ProblemStorySection />
 			<ProblemSynthesisSection />
 			<GranularitySection />
+			<ArchitectureDiagram />
 			<PipelineVisualizer />
 			<FeatureDeepDive />
 			<ContextWinSection />

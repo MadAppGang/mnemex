@@ -9,7 +9,14 @@
  * - location: Path-based queries
  */
 
-import type { ILLMClient, LLMMessage, QueryClassification, QueryIntent, UnitType, Visibility } from "../../types.js";
+import type {
+	ILLMClient,
+	LLMMessage,
+	QueryClassification,
+	QueryIntent,
+	UnitType,
+	Visibility,
+} from "../../types.js";
 
 // ============================================================================
 // Types
@@ -91,11 +98,11 @@ const CLASSIFICATION_PATTERNS: Array<{
 		// Symbol lookup: specific names, function/class keywords
 		intent: "symbol_lookup",
 		patterns: [
-			/^[A-Z][a-zA-Z0-9]*$/,  // PascalCase name
-			/^[a-z][a-zA-Z0-9]*$/,  // camelCase name
+			/^[A-Z][a-zA-Z0-9]*$/, // PascalCase name
+			/^[a-z][a-zA-Z0-9]*$/, // camelCase name
 			/\b(function|class|type|interface|enum)\s+\w+/i,
-			/\bdef\s+\w+/,  // Python function
-			/\bfunc\s+\w+/,  // Go function
+			/\bdef\s+\w+/, // Python function
+			/\bfunc\s+\w+/, // Go function
 		],
 		confidence: 0.85,
 	},
@@ -118,7 +125,7 @@ const CLASSIFICATION_PATTERNS: Array<{
 			/\b(in|under|inside)\s+(the\s+)?(\w+\/|\w+\s+folder|\w+\s+directory)/i,
 			/\b(tests?|specs?)\s+for\b/i,
 			/\b(files?|modules?)\s+(in|under)\b/i,
-			/\.(ts|js|py|go|rs|java)$/,  // File extension
+			/\.(ts|js|py|go|rs|java)$/, // File extension
 		],
 		confidence: 0.75,
 	},
@@ -158,7 +165,11 @@ export class QueryRouter {
 		const ruleClassification = this.classifyWithRules(query);
 
 		// If high confidence or no LLM available, use rules
-		if (ruleClassification.confidence >= 0.85 || !this.llmClient || !this.options.useLLM) {
+		if (
+			ruleClassification.confidence >= 0.85 ||
+			!this.llmClient ||
+			!this.options.useLLM
+		) {
 			return {
 				classification: ruleClassification,
 				strategy: this.buildStrategy(ruleClassification),
@@ -213,7 +224,8 @@ export class QueryRouter {
 			intent: "semantic",
 			confidence: 0.5,
 			extractedEntities: this.extractEntities(trimmedQuery),
-			reasoning: "No specific pattern matched, treating as natural language query",
+			reasoning:
+				"No specific pattern matched, treating as natural language query",
 		};
 	}
 
@@ -271,7 +283,9 @@ export class QueryRouter {
 		if (snakeMatches) entities.push(...snakeMatches);
 
 		// Extract file paths
-		const pathMatches = query.match(/[\w\/.-]+\.(ts|js|py|go|rs|java|cpp|c|h)\b/g);
+		const pathMatches = query.match(
+			/[\w\/.-]+\.(ts|js|py|go|rs|java|cpp|c|h)\b/g,
+		);
 		if (pathMatches) entities.push(...pathMatches);
 
 		return [...new Set(entities)]; // Deduplicate
@@ -281,13 +295,19 @@ export class QueryRouter {
 	 * Build strategy for a forced intent (public helper for enhanced retriever)
 	 */
 	buildStrategyForIntent(intent: QueryIntent): RetrievalStrategy {
-		return this.buildStrategy({ intent, confidence: 1.0, extractedEntities: [] });
+		return this.buildStrategy({
+			intent,
+			confidence: 1.0,
+			extractedEntities: [],
+		});
 	}
 
 	/**
 	 * Build retrieval strategy based on classification
 	 */
-	private buildStrategy(classification: QueryClassification): RetrievalStrategy {
+	private buildStrategy(
+		classification: QueryClassification,
+	): RetrievalStrategy {
 		switch (classification.intent) {
 			case "symbol_lookup":
 				return {
@@ -310,7 +330,9 @@ export class QueryRouter {
 					primary: "path",
 					useHybrid: false,
 					filters: {
-						pathPattern: this.extractPathPattern(classification.extractedEntities),
+						pathPattern: this.extractPathPattern(
+							classification.extractedEntities,
+						),
 					},
 				};
 
@@ -352,6 +374,9 @@ export class QueryRouter {
 /**
  * Create a query router
  */
-export function createQueryRouter(llmClient: ILLMClient | null, options?: QueryRouterOptions): QueryRouter {
+export function createQueryRouter(
+	llmClient: ILLMClient | null,
+	options?: QueryRouterOptions,
+): QueryRouter {
 	return new QueryRouter(llmClient, options);
 }

@@ -26,7 +26,8 @@ export type SupportedLanguage =
 	| "rust"
 	| "java"
 	| "c"
-	| "cpp";
+	| "cpp"
+	| "dingo";
 
 // ============================================================================
 // Language-Specific Test Patterns
@@ -40,12 +41,7 @@ const TEST_PATTERNS: Record<SupportedLanguage, TestPattern> = {
 			/_test\.[tj]sx?$/,
 			/_spec\.[tj]sx?$/,
 		],
-		dirPatterns: [
-			/__tests__\//,
-			/\/test\//,
-			/\/tests\//,
-			/\/testing\//,
-		],
+		dirPatterns: [/__tests__\//, /\/test\//, /\/tests\//, /\/testing\//],
 		symbolPatterns: [
 			/^test_/i,
 			/^it$/,
@@ -63,57 +59,23 @@ const TEST_PATTERNS: Record<SupportedLanguage, TestPattern> = {
 			/_test\.jsx?$/,
 			/_spec\.jsx?$/,
 		],
-		dirPatterns: [
-			/__tests__\//,
-			/\/test\//,
-			/\/tests\//,
-			/\/testing\//,
-		],
-		symbolPatterns: [
-			/^test_/i,
-			/^it$/,
-			/^describe$/,
-		],
+		dirPatterns: [/__tests__\//, /\/test\//, /\/tests\//, /\/testing\//],
+		symbolPatterns: [/^test_/i, /^it$/, /^describe$/],
 	},
 	python: {
-		filePatterns: [
-			/^test_.*\.py$/,
-			/.*_test\.py$/,
-			/test\.py$/,
-		],
-		dirPatterns: [
-			/\/tests?\//,
-			/\/testing\//,
-		],
-		symbolPatterns: [
-			/^test_/,
-			/^Test[A-Z]/,
-		],
+		filePatterns: [/^test_.*\.py$/, /.*_test\.py$/, /test\.py$/],
+		dirPatterns: [/\/tests?\//, /\/testing\//],
+		symbolPatterns: [/^test_/, /^Test[A-Z]/],
 	},
 	go: {
-		filePatterns: [
-			/_test\.go$/,
-		],
-		dirPatterns: [
-			/\/testdata\//,
-		],
-		symbolPatterns: [
-			/^Test[A-Z]/,
-			/^Benchmark[A-Z]/,
-			/^Example[A-Z]/,
-		],
+		filePatterns: [/_test\.go$/],
+		dirPatterns: [/\/testdata\//],
+		symbolPatterns: [/^Test[A-Z]/, /^Benchmark[A-Z]/, /^Example[A-Z]/],
 	},
 	rust: {
-		filePatterns: [
-			/_test\.rs$/,
-			/tests\.rs$/,
-		],
-		dirPatterns: [
-			/\/tests\//,
-		],
-		symbolPatterns: [
-			/^test_/,
-		],
+		filePatterns: [/_test\.rs$/, /tests\.rs$/],
+		dirPatterns: [/\/tests\//],
+		symbolPatterns: [/^test_/],
 	},
 	java: {
 		filePatterns: [
@@ -122,29 +84,13 @@ const TEST_PATTERNS: Record<SupportedLanguage, TestPattern> = {
 			/TestCase\.java$/,
 			/IT\.java$/,
 		],
-		dirPatterns: [
-			/\/test\//,
-			/\/tests\//,
-			/src\/test\//,
-		],
-		symbolPatterns: [
-			/^test[A-Z]/,
-			/^should[A-Z]/,
-		],
+		dirPatterns: [/\/test\//, /\/tests\//, /src\/test\//],
+		symbolPatterns: [/^test[A-Z]/, /^should[A-Z]/],
 	},
 	c: {
-		filePatterns: [
-			/_test\.c$/,
-			/test_.*\.c$/,
-			/_tests\.c$/,
-		],
-		dirPatterns: [
-			/\/tests?\//,
-		],
-		symbolPatterns: [
-			/^test_/,
-			/^Test_/,
-		],
+		filePatterns: [/_test\.c$/, /test_.*\.c$/, /_tests\.c$/],
+		dirPatterns: [/\/tests?\//],
+		symbolPatterns: [/^test_/, /^Test_/],
 	},
 	cpp: {
 		filePatterns: [
@@ -154,15 +100,13 @@ const TEST_PATTERNS: Record<SupportedLanguage, TestPattern> = {
 			/test_.*\.cpp$/,
 			/Test\.cpp$/,
 		],
-		dirPatterns: [
-			/\/tests?\//,
-			/\/gtest\//,
-		],
-		symbolPatterns: [
-			/^TEST$/,
-			/^TEST_F$/,
-			/^test_/i,
-		],
+		dirPatterns: [/\/tests?\//, /\/gtest\//],
+		symbolPatterns: [/^TEST$/, /^TEST_F$/, /^test_/i],
+	},
+	dingo: {
+		filePatterns: [/_test\.dingo$/, /^test_.*\.dingo$/],
+		dirPatterns: [/\/testdata\//],
+		symbolPatterns: [/^Test[A-Z]/, /^Benchmark[A-Z]/, /^Example[A-Z]/],
 	},
 };
 
@@ -184,6 +128,7 @@ const EXTENSION_TO_LANGUAGE: Record<string, SupportedLanguage> = {
 	".cc": "cpp",
 	".cxx": "cpp",
 	".hpp": "cpp",
+	".dingo": "dingo",
 };
 
 // ============================================================================
@@ -248,9 +193,7 @@ export class TestFileDetector {
 
 		// Use custom patterns if set
 		if (this.customPatterns?.symbolPatterns) {
-			return this.customPatterns.symbolPatterns.some((p) =>
-				p.test(symbolName),
-			);
+			return this.customPatterns.symbolPatterns.some((p) => p.test(symbolName));
 		}
 
 		// Detect language from file and use language-specific patterns

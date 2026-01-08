@@ -168,7 +168,10 @@ export class ReferenceGraphManager {
 		}
 
 		// Normalize scores to sum to 1
-		const totalScore = Array.from(scores.values()).reduce((sum, s) => sum + s, 0);
+		const totalScore = Array.from(scores.values()).reduce(
+			(sum, s) => sum + s,
+			0,
+		);
 		if (totalScore > 0) {
 			for (const [id, score] of scores) {
 				scores.set(id, score / totalScore);
@@ -290,9 +293,7 @@ export class ReferenceGraphManager {
 
 		// If file hint provided, prefer symbols from that file
 		if (fileHint) {
-			const fromFile = candidates.filter((c) =>
-				c.filePath.includes(fileHint),
-			);
+			const fromFile = candidates.filter((c) => c.filePath.includes(fileHint));
 			if (fromFile.length === 1) {
 				return fromFile[0];
 			}
@@ -329,6 +330,8 @@ export class ReferenceGraphManager {
 /**
  * Create a reference graph manager
  */
-export function createReferenceGraphManager(tracker: FileTracker): ReferenceGraphManager {
+export function createReferenceGraphManager(
+	tracker: FileTracker,
+): ReferenceGraphManager {
 	return new ReferenceGraphManager(tracker);
 }

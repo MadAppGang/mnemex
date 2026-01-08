@@ -22,8 +22,16 @@ export function fuzzyMatch(mentioned: string, actual: string): boolean {
 	if (normalizedActual.includes(normalizedMentioned)) return true;
 
 	// Match module paths (e.g., "./store" matches "store.js")
-	const mentionedBase = mentioned.split("/").pop()?.replace(/\.(js|ts|tsx|jsx)$/, "") || mentioned;
-	const actualBase = actual.split("/").pop()?.replace(/\.(js|ts|tsx|jsx)$/, "") || actual;
+	const mentionedBase =
+		mentioned
+			.split("/")
+			.pop()
+			?.replace(/\.(js|ts|tsx|jsx)$/, "") || mentioned;
+	const actualBase =
+		actual
+			.split("/")
+			.pop()
+			?.replace(/\.(js|ts|tsx|jsx)$/, "") || actual;
 	if (mentionedBase.toLowerCase() === actualBase.toLowerCase()) return true;
 
 	return false;

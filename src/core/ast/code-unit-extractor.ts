@@ -13,9 +13,20 @@
 
 import { createHash } from "node:crypto";
 import type { Node, Tree } from "web-tree-sitter";
-import { getParserManager, type ParserManager } from "../../parsers/parser-manager.js";
-import type { ASTMetadata, CodeUnit, SupportedLanguage, UnitType } from "../../types.js";
-import { ASTMetadataExtractor, type ExtractionContext } from "./metadata-extractor.js";
+import {
+	getParserManager,
+	type ParserManager,
+} from "../../parsers/parser-manager.js";
+import type {
+	ASTMetadata,
+	CodeUnit,
+	SupportedLanguage,
+	UnitType,
+} from "../../types.js";
+import {
+	ASTMetadataExtractor,
+	type ExtractionContext,
+} from "./metadata-extractor.js";
 
 // ============================================================================
 // Types
@@ -140,17 +151,33 @@ export class CodeUnitExtractor {
 		// Add file-level unit
 		let fileUnitId: string | null = null;
 		if (includeFile) {
-			const fileUnit = this.createFileUnit(source, filePath, language, fileHash);
+			const fileUnit = this.createFileUnit(
+				source,
+				filePath,
+				language,
+				fileHash,
+			);
 			units.push(fileUnit);
 			fileUnitId = fileUnit.id;
 		}
 
 		// Extract hierarchical units from AST (now passing filePath and language for consistent ID generation)
-		const extractedUnits = this.walkAndExtract(tree.rootNode, fileUnitId, 1, maxDepth, source, filePath, language);
+		const extractedUnits = this.walkAndExtract(
+			tree.rootNode,
+			fileUnitId,
+			1,
+			maxDepth,
+			source,
+			filePath,
+			language,
+		);
 
 		// Convert to CodeUnit format
 		for (const extracted of extractedUnits) {
-			const content = source.slice(extracted.node.startIndex, extracted.node.endIndex);
+			const content = source.slice(
+				extracted.node.startIndex,
+				extracted.node.endIndex,
+			);
 
 			// Skip tiny units
 			if (content.trim().length < minContentLength) {
@@ -159,7 +186,10 @@ export class CodeUnitExtractor {
 
 			const name = extracted.name || this.extractName(extracted.node, language);
 			const signature = this.extractSignature(extracted.node, source);
-			const metadata = this.metadataExtractor.extractMetadata(extracted.node, ctx);
+			const metadata = this.metadataExtractor.extractMetadata(
+				extracted.node,
+				ctx,
+			);
 
 			const unit = this.createCodeUnit({
 				node: extracted.node,
@@ -214,7 +244,12 @@ export class CodeUnitExtractor {
 			// This is a code unit - extract it and use it as parent for children
 			const name = this.extractName(node, language);
 			// Generate ID using same logic as createCodeUnit to ensure parent-child consistency
-			const unitId = this.generateConsistentUnitId(filePath, unitType, name, node.startPosition.row);
+			const unitId = this.generateConsistentUnitId(
+				filePath,
+				unitType,
+				name,
+				node.startPosition.row,
+			);
 
 			results.push({
 				node,
@@ -225,15 +260,39 @@ export class CodeUnitExtractor {
 			});
 
 			// Continue extracting children with this unit as parent
-			const childResults = this.extractChildren(node, unitId, currentDepth + 1, maxDepth, source, filePath, language);
+			const childResults = this.extractChildren(
+				node,
+				unitId,
+				currentDepth + 1,
+				maxDepth,
+				source,
+				filePath,
+				language,
+			);
 			results.push(...childResults);
 		} else if (CONTAINER_TYPES.has(node.type)) {
 			// This is a container - extract children with current parent
-			const childResults = this.extractChildren(node, parentId, currentDepth, maxDepth, source, filePath, language);
+			const childResults = this.extractChildren(
+				node,
+				parentId,
+				currentDepth,
+				maxDepth,
+				source,
+				filePath,
+				language,
+			);
 			results.push(...childResults);
 		} else {
 			// Regular node - check children
-			const childResults = this.extractChildren(node, parentId, currentDepth, maxDepth, source, filePath, language);
+			const childResults = this.extractChildren(
+				node,
+				parentId,
+				currentDepth,
+				maxDepth,
+				source,
+				filePath,
+				language,
+			);
 			results.push(...childResults);
 		}
 
@@ -246,7 +305,11 @@ export class CodeUnitExtractor {
 	 * - Go type_spec with struct_type → class
 	 * - Go type_spec with interface_type → interface
 	 */
-	private refineUnitType(node: Node, baseType: UnitType, language: SupportedLanguage): UnitType {
+	private refineUnitType(
+		node: Node,
+		baseType: UnitType,
+		language: SupportedLanguage,
+	): UnitType {
 		// Python: function inside class is a method
 		if (language === "python" && node.type === "function_definition") {
 			if (this.isInsideClass(node)) {
@@ -279,7 +342,10 @@ export class CodeUnitExtractor {
 	private isInsideClass(node: Node): boolean {
 		let current = node.parent;
 		while (current) {
-			if (current.type === "class_definition" || current.type === "class_declaration") {
+			if (
+				current.type === "class_definition" ||
+				current.type === "class_declaration"
+			) {
 				return true;
 			}
 			current = current.parent;
@@ -304,7 +370,15 @@ export class CodeUnitExtractor {
 		for (let i = 0; i < node.childCount; i++) {
 			const child = node.child(i);
 			if (child) {
-				const childResults = this.walkAndExtract(child, parentId, currentDepth, maxDepth, source, filePath, language);
+				const childResults = this.walkAndExtract(
+					child,
+					parentId,
+					currentDepth,
+					maxDepth,
+					source,
+					filePath,
+					language,
+				);
 				results.push(...childResults);
 			}
 		}
@@ -316,7 +390,12 @@ export class CodeUnitExtractor {
 	 * Generate consistent unit ID matching createCodeUnit logic
 	 * This ensures parentId values match actual unit IDs
 	 */
-	private generateConsistentUnitId(filePath: string, unitType: string, name: string | undefined, startRow: number): string {
+	private generateConsistentUnitId(
+		filePath: string,
+		unitType: string,
+		name: string | undefined,
+		startRow: number,
+	): string {
 		const idSource = `${filePath}:${unitType}:${name || "anon"}:${startRow}`;
 		return createHash("sha256").update(idSource).digest("hex").slice(0, 16);
 	}
@@ -367,8 +446,19 @@ export class CodeUnitExtractor {
 		depth: number;
 		metadata?: ASTMetadata;
 	}): CodeUnit {
-		const { node, unitType, name, signature, content, filePath, language, fileHash, parentId, depth, metadata } =
-			data;
+		const {
+			node,
+			unitType,
+			name,
+			signature,
+			content,
+			filePath,
+			language,
+			fileHash,
+			parentId,
+			depth,
+			metadata,
+		} = data;
 
 		// Create stable ID from file path, name, type, and position
 		const idSource = `${filePath}:${unitType}:${name || "anon"}:${node.startPosition.row}`;
@@ -394,7 +484,10 @@ export class CodeUnitExtractor {
 	/**
 	 * Extract name from AST node
 	 */
-	private extractName(node: Node, language: SupportedLanguage): string | undefined {
+	private extractName(
+		node: Node,
+		language: SupportedLanguage,
+	): string | undefined {
 		// Go-specific: type_spec has type_identifier as direct child
 		if (node.type === "type_spec") {
 			for (let i = 0; i < node.childCount; i++) {
@@ -483,7 +576,11 @@ export class CodeUnitExtractor {
 
 		// For multi-line signatures, get until opening brace or closing paren
 		if (!sig.includes("{") && !sig.endsWith(")") && !sig.endsWith(":")) {
-			for (let i = startLine + 1; i < Math.min(startLine + 5, lines.length); i++) {
+			for (
+				let i = startLine + 1;
+				i < Math.min(startLine + 5, lines.length);
+				i++
+			) {
 				const nextLine = lines[i].trim();
 				sig += " " + nextLine;
 				if (sig.includes("{") || sig.endsWith(")") || sig.endsWith(":")) {

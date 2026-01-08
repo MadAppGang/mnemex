@@ -46,8 +46,8 @@ export interface LockOptions {
 
 const LOCK_FILENAME = ".indexing.lock";
 const DEFAULT_STALE_TIMEOUT = 60000; // 60 seconds without heartbeat = stale
-const DEFAULT_POLL_INTERVAL = 1000;  // Check every second
-const HEARTBEAT_INTERVAL = 5000;     // Update heartbeat every 5 seconds
+const DEFAULT_POLL_INTERVAL = 1000; // Check every second
+const HEARTBEAT_INTERVAL = 5000; // Update heartbeat every 5 seconds
 
 /**
  * Check if a process is still running (cross-platform: Windows, Linux, macOS)
@@ -251,7 +251,11 @@ export class IndexLock {
 	/**
 	 * Check if another process is currently indexing
 	 */
-	isLocked(staleTimeout = DEFAULT_STALE_TIMEOUT): { locked: boolean; holderPid?: number; runningFor?: number } {
+	isLocked(staleTimeout = DEFAULT_STALE_TIMEOUT): {
+		locked: boolean;
+		holderPid?: number;
+		runningFor?: number;
+	} {
 		const lock = readLockFile(this.lockPath);
 
 		if (!lock) {
@@ -318,6 +322,9 @@ export class IndexLock {
 /**
  * Create an index lock for a project
  */
-export function createIndexLock(projectPath: string, indexDir?: string): IndexLock {
+export function createIndexLock(
+	projectPath: string,
+	indexDir?: string,
+): IndexLock {
 	return new IndexLock(projectPath, indexDir);
 }

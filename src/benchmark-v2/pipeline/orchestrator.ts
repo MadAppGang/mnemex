@@ -76,14 +76,18 @@ export class PipelineOrchestrator {
 	constructor(
 		db: BenchmarkDatabase,
 		benchmarkRun: BenchmarkRun,
-		options: OrchestratorOptions = {}
+		options: OrchestratorOptions = {},
 	) {
 		this.db = db;
 		this.benchmarkRun = benchmarkRun;
 		this.config = benchmarkRun.config;
 		this.options = options;
 
-		this.stateMachine = new PipelineStateMachine(db, benchmarkRun, options.onProgress);
+		this.stateMachine = new PipelineStateMachine(
+			db,
+			benchmarkRun,
+			options.onProgress,
+		);
 		this.phaseExecutors = new Map();
 	}
 
@@ -118,7 +122,10 @@ export class PipelineOrchestrator {
 			// Return final report
 			return this.generateReport();
 		} catch (error) {
-			const wrappedError = wrapError(error, this.stateMachine.getCurrentPhase());
+			const wrappedError = wrapError(
+				error,
+				this.stateMachine.getCurrentPhase(),
+			);
 			this.stateMachine.fail(wrappedError.message);
 			throw wrappedError;
 		}
@@ -129,14 +136,14 @@ export class PipelineOrchestrator {
 		if (!executor) {
 			throw new BenchmarkError(
 				`No executor registered for phase: ${phase}`,
-				"MISSING_EXECUTOR"
+				"MISSING_EXECUTOR",
 			);
 		}
 
 		// Validate we can run this phase
 		this.stateMachine.validateTransition(
 			this.stateMachine.getCurrentPhase(),
-			phase
+			phase,
 		);
 
 		const context: PhaseContext = {
@@ -151,7 +158,10 @@ export class PipelineOrchestrator {
 
 			// If executor returned early without starting the phase (itemsProcessed=0),
 			// trigger a progress notification so CLI can show "skipped"
-			if (result.itemsProcessed === 0 && !this.stateMachine.getPhaseState(phase)) {
+			if (
+				result.itemsProcessed === 0 &&
+				!this.stateMachine.getPhaseState(phase)
+			) {
 				this.stateMachine.startPhase(phase, 0);
 			}
 
@@ -159,7 +169,10 @@ export class PipelineOrchestrator {
 				this.stateMachine.completePhase(phase);
 			} else {
 				// Ensure we fail the phase even if no error message is provided
-				this.stateMachine.failPhase(phase, result.error || "Phase failed without error message");
+				this.stateMachine.failPhase(
+					phase,
+					result.error || "Phase failed without error message",
+				);
 			}
 
 			// Notify about phase completion (with failures if any)
@@ -249,19 +262,19 @@ export class PipelineOrchestrator {
 
 		// Run enabled phases in parallel
 		const results = await Promise.allSettled(
-			phasesToRun.map((phase) => this.runPhase(phase))
+			phasesToRun.map((phase) => this.runPhase(phase)),
 		);
 
 		// Check for failures
 		const failures = results.filter(
-			(r): r is PromiseRejectedResult => r.status === "rejected"
+			(r): r is PromiseRejectedResult => r.status === "rejected",
 		);
 
 		if (failures.length > 0) {
 			const errors = failures.map((f) => f.reason?.message || String(f.reason));
 			throw new BenchmarkError(
 				`Evaluation phases failed: ${errors.join("; ")}`,
-				"EVALUATION_FAILED"
+				"EVALUATION_FAILED",
 			);
 		}
 	}
@@ -326,7 +339,7 @@ export class PipelineOrchestrator {
 	}
 
 	private generateRankings(
-		scores: Map<string, NormalizedScores>
+		scores: Map<string, NormalizedScores>,
 	): BenchmarkReport["rankings"] {
 		const rankings = Array.from(scores.entries())
 			.map(([modelId, score]) => ({
@@ -377,7 +390,7 @@ export class PipelineOrchestrator {
 export function createOrchestrator(
 	db: BenchmarkDatabase,
 	run: BenchmarkRun,
-	options?: OrchestratorOptions
+	options?: OrchestratorOptions,
 ): PipelineOrchestrator {
 	return new PipelineOrchestrator(db, run, options);
 }

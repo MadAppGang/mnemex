@@ -9,4 +9,8 @@ export {
 	createTestCaseSelector,
 	type TestCaseSelectionOptions,
 } from "./test-case-selector.js";
-export { BenchmarkEvaluator, runBenchmark, type BenchmarkRunResult } from "./evaluator.js";
+export {
+	BenchmarkEvaluator,
+	runBenchmark,
+	type BenchmarkRunResult,
+} from "./evaluator.js";

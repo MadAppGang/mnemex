@@ -12,7 +12,10 @@ import type {
 	AggregatedScore,
 } from "../types.js";
 import type { ModelAggregation } from "../scorers/aggregator.js";
-import type { CorrelationMatrix, InterRaterAgreement } from "../scorers/statistics.js";
+import type {
+	CorrelationMatrix,
+	InterRaterAgreement,
+} from "../scorers/statistics.js";
 import { detectSameProviderBias } from "../index.js";
 
 // ============================================================================
@@ -88,7 +91,12 @@ export class MarkdownReporter {
 		}
 
 		// Methodology
-		sections.push(this.generateMethodology(config, scores.map(s => s.modelId)));
+		sections.push(
+			this.generateMethodology(
+				config,
+				scores.map((s) => s.modelId),
+			),
+		);
 
 		// Footer
 		sections.push(this.generateFooter(run));
@@ -118,7 +126,7 @@ export class MarkdownReporter {
 	private generateExecutiveSummary(
 		run: BenchmarkRun,
 		scores: AggregatedScore[],
-		aggregations: Map<string, ModelAggregation>
+		aggregations: Map<string, ModelAggregation>,
 	): string {
 		const topModel = scores.length > 0 ? scores[0] : null;
 
@@ -144,8 +152,15 @@ export class MarkdownReporter {
 
 	private generateRankingsTable(scores: AggregatedScore[]): string {
 		const rows = scores.map((score) => {
-			const medal = score.rank === 1 ? "🥇" : score.rank === 2 ? "🥈" : score.rank === 3 ? "🥉" : "";
-			return `| ${medal} ${score.rank} | ${score.modelId} | ${(score.overallScore * 100).toFixed(1)}% | ${(score.retrievalMRR * 100).toFixed(1)}% | ${(score.contrastiveAccuracy * 100).toFixed(1)}% | ${(score.judgeScore / 5 * 100).toFixed(1)}% |`;
+			const medal =
+				score.rank === 1
+					? "🥇"
+					: score.rank === 2
+						? "🥈"
+						: score.rank === 3
+							? "🥉"
+							: "";
+			return `| ${medal} ${score.rank} | ${score.modelId} | ${(score.overallScore * 100).toFixed(1)}% | ${(score.retrievalMRR * 100).toFixed(1)}% | ${(score.contrastiveAccuracy * 100).toFixed(1)}% | ${((score.judgeScore / 5) * 100).toFixed(1)}% |`;
 		});
 
 		return `## Quality Rankings
@@ -162,7 +177,7 @@ ${rows.join("\n")}`;
 			.slice(0, 10) // Top 10
 			.map(
 				(score) =>
-					`    "${score.modelId.slice(-20)}" : ${Math.round(score.overallScore * 100)}`
+					`    "${score.modelId.slice(-20)}" : ${Math.round(score.overallScore * 100)}`,
 			);
 
 		return `## Overall Scores
@@ -170,15 +185,21 @@ ${rows.join("\n")}`;
 \`\`\`mermaid
 xychart-beta
     title "Model Performance Comparison"
-    x-axis [${scores.slice(0, 10).map((s) => `"${s.modelId.slice(-15)}"`).join(", ")}]
+    x-axis [${scores
+			.slice(0, 10)
+			.map((s) => `"${s.modelId.slice(-15)}"`)
+			.join(", ")}]
     y-axis "Score (%)" 0 --> 100
-    bar [${scores.slice(0, 10).map((s) => Math.round(s.overallScore * 100)).join(", ")}]
+    bar [${scores
+			.slice(0, 10)
+			.map((s) => Math.round(s.overallScore * 100))
+			.join(", ")}]
 \`\`\``;
 	}
 
 	private generateDetailedMetrics(
 		aggregations: Map<string, ModelAggregation>,
-		scores: AggregatedScore[]
+		scores: AggregatedScore[],
 	): string {
 		const sections: string[] = ["## Detailed Metrics"];
 
@@ -214,20 +235,28 @@ xychart-beta
 ${Object.entries(agg.retrieval.precision)
 	.map(([k, v]) => `- P@${k}: ${(v * 100).toFixed(1)}%`)
 	.join("\n")}
-- MRR: ${(agg.retrieval.mrr * 100).toFixed(1)}%${agg.iterative ? `
+- MRR: ${(agg.retrieval.mrr * 100).toFixed(1)}%${
+				agg.iterative
+					? `
 
 **Iterative Refinement:**
 - Summaries Evaluated: ${agg.iterative.totalEvaluated}
 - Success Rate: ${(agg.iterative.successRate * 100).toFixed(1)}%
 - Avg Rounds to Success: ${agg.iterative.avgRounds.toFixed(2)}
 - Refinement Score: ${(agg.iterative.avgRefinementScore * 100).toFixed(1)}% (Brokk-style: 1/log₂(rounds+2))
-- Avg Rank Improvement: ${agg.iterative.avgRankImprovement.toFixed(2)}` : ""}${agg.self ? `
+- Avg Rank Improvement: ${agg.iterative.avgRankImprovement.toFixed(2)}`
+					: ""
+			}${
+				agg.self
+					? `
 
 **Self-Evaluation (Internal Consistency):**
 - Self-Retrieval Accuracy: ${(agg.self.retrieval.accuracy * 100).toFixed(1)}% (n=${agg.self.retrieval.count})
 - Self-Retrieval Confidence: ${(agg.self.retrieval.avgConfidence * 100).toFixed(1)}%
 - Function Selection: ${(agg.self.functionSelection.accuracy * 100).toFixed(1)}% (n=${agg.self.functionSelection.count})
-- Overall Self-Use: ${(agg.self.overall * 100).toFixed(1)}%` : ""}`);
+- Overall Self-Use: ${(agg.self.overall * 100).toFixed(1)}%`
+					: ""
+			}`);
 		}
 
 		return sections.join("\n\n");
@@ -261,12 +290,18 @@ ${rows.join("\n")}
 | Interpretation | ${agreement.interpretation} |`;
 	}
 
-	private generateMethodology(config: BenchmarkConfig, generatorIds?: string[]): string {
-		const judgeModels = config.evaluation.judge.judgeModels || config.judges || [];
+	private generateMethodology(
+		config: BenchmarkConfig,
+		generatorIds?: string[],
+	): string {
+		const judgeModels =
+			config.evaluation.judge.judgeModels || config.judges || [];
 		const generators = generatorIds || [];
 		const biasedPairs = detectSameProviderBias(generators, judgeModels);
 
-		const biasWarning = biasedPairs.length > 0 ? `
+		const biasWarning =
+			biasedPairs.length > 0
+				? `
 
 > ⚠️ **Same-Provider Bias Warning**
 >
@@ -274,8 +309,9 @@ ${rows.join("\n")}
 > These scores may be biased as models from the same family may rate each other favorably.
 >
 > Affected pairs:
-${biasedPairs.map(p => `> - ${p.generator} judged by ${p.judge} (${p.provider})`).join("\n")}
-` : "";
+${biasedPairs.map((p) => `> - ${p.generator} judged by ${p.judge} (${p.provider})`).join("\n")}
+`
+				: "";
 
 		return `## Methodology
 
@@ -316,8 +352,11 @@ Production efficiency metrics for cost/speed decisions. Don't affect quality ran
 	private generateFooter(run: BenchmarkRun): string {
 		const duration = run.completedAt
 			? Math.round(
-					(new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) / 1000 / 60
-			  )
+					(new Date(run.completedAt).getTime() -
+						new Date(run.startedAt).getTime()) /
+						1000 /
+						60,
+				)
 			: "N/A";
 
 		return `---
@@ -333,7 +372,7 @@ Production efficiency metrics for cost/speed decisions. Don't affect quality ran
 // ============================================================================
 
 export function createMarkdownReporter(
-	options?: MarkdownReporterOptions
+	options?: MarkdownReporterOptions,
 ): MarkdownReporter {
 	return new MarkdownReporter(options);
 }

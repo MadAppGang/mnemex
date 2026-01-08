@@ -269,7 +269,9 @@ describe("FeedbackStore - Rate Limiting", () => {
 			timestamp: new Date(),
 		};
 
-		expect(() => store.recordFeedback(overLimitEvent)).toThrow(/Rate limit exceeded/);
+		expect(() => store.recordFeedback(overLimitEvent)).toThrow(
+			/Rate limit exceeded/,
+		);
 	});
 
 	it("should track rate limits per session independently", () => {
@@ -527,10 +529,7 @@ describe("ParallelExecutor - Timeout Handling", () => {
 
 		// Test timeout
 		const slowPromise = runWithTimeout(
-			() =>
-				new Promise((resolve) =>
-					setTimeout(() => resolve("slow"), 1000),
-				),
+			() => new Promise((resolve) => setTimeout(() => resolve("slow"), 1000)),
 			50,
 		);
 
@@ -643,7 +642,9 @@ describe("SafetyValidator - containsDangerousPatterns utility", () => {
 	it("should not flag safe code", () => {
 		expect(containsDangerousPatterns("console.log('hello')")).toBe(false);
 		expect(containsDangerousPatterns("const x = 1 + 2")).toBe(false);
-		expect(containsDangerousPatterns("function add(a, b) { return a + b }")).toBe(false);
+		expect(
+			containsDangerousPatterns("function add(a, b) { return a + b }"),
+		).toBe(false);
 	});
 
 	it("should handle large inputs without ReDoS", () => {

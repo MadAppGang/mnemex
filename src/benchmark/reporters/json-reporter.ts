@@ -47,8 +47,12 @@ export class JSONReporter implements IReporter {
 				testCaseCount: gen.testCaseResults.length,
 				// Summarize test case results instead of including full content
 				testCaseSummary: {
-					avgOverallScore: this.avg(gen.testCaseResults.map((r) => r.overallScore)),
-					scoreDistribution: this.scoreDistribution(gen.testCaseResults.map((r) => r.overallScore)),
+					avgOverallScore: this.avg(
+						gen.testCaseResults.map((r) => r.overallScore),
+					),
+					scoreDistribution: this.scoreDistribution(
+						gen.testCaseResults.map((r) => r.overallScore),
+					),
 					failedCount: gen.metrics.failures,
 				},
 			})),
@@ -62,7 +66,7 @@ export class JSONReporter implements IReporter {
 					overallScore: tcr.overallScore,
 					scores: tcr.scores.reduce(
 						(acc, s) => ({ ...acc, [s.criterion]: s.score }),
-						{} as Record<string, number>
+						{} as Record<string, number>,
 					),
 					judgment: tcr.judgment
 						? {
@@ -70,12 +74,14 @@ export class JSONReporter implements IReporter {
 								conciseness: tcr.judgment.conciseness,
 								clarity: tcr.judgment.clarity,
 								judgedBy: tcr.judgment.judgedBy,
-						  }
+							}
 						: null,
 					generation: {
 						durationMs: tcr.generation.durationMs,
 						cost: tcr.generation.usage.cost,
-						tokens: tcr.generation.usage.inputTokens + tcr.generation.usage.outputTokens,
+						tokens:
+							tcr.generation.usage.inputTokens +
+							tcr.generation.usage.outputTokens,
 					},
 				})),
 			})),

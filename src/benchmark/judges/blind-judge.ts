@@ -10,7 +10,12 @@
  */
 
 import type { FileSummary, SymbolSummary } from "../../types.js";
-import type { IJudge, JudgeContext, JudgeInfo, JudgmentResult } from "../types.js";
+import type {
+	IJudge,
+	JudgeContext,
+	JudgeInfo,
+	JudgmentResult,
+} from "../types.js";
 
 // ============================================================================
 // Blind Judge Implementation
@@ -25,7 +30,7 @@ export class BlindJudge implements IJudge {
 
 	async judge(
 		generated: FileSummary | SymbolSummary,
-		context: JudgeContext
+		context: JudgeContext,
 	): Promise<JudgmentResult> {
 		// Create a copy of the summary without any identifying information
 		const anonymizedSummary = this.anonymize(generated);
@@ -38,7 +43,10 @@ export class BlindJudge implements IJudge {
 		};
 
 		// Delegate to inner judge
-		const result = await this.innerJudge.judge(anonymizedSummary, anonymizedContext);
+		const result = await this.innerJudge.judge(
+			anonymizedSummary,
+			anonymizedContext,
+		);
 
 		// Mark as blind judgment
 		return {
@@ -59,7 +67,9 @@ export class BlindJudge implements IJudge {
 	/**
 	 * Remove any identifying information from the summary.
 	 */
-	private anonymize(summary: FileSummary | SymbolSummary): FileSummary | SymbolSummary {
+	private anonymize(
+		summary: FileSummary | SymbolSummary,
+	): FileSummary | SymbolSummary {
 		if ("symbolName" in summary) {
 			// SymbolSummary - keep symbol name as it's needed for understanding
 			return {
@@ -126,17 +136,22 @@ function shuffle<T>(array: T[]): T[] {
  * Shuffles the order and assigns anonymous IDs before evaluation.
  */
 export async function evaluateBlindly(
-	candidates: Array<{ summary: FileSummary | SymbolSummary; generatorId: string }>,
+	candidates: Array<{
+		summary: FileSummary | SymbolSummary;
+		generatorId: string;
+	}>,
 	context: JudgeContext,
-	judge: IJudge
+	judge: IJudge,
 ): Promise<BatchBlindResult[]> {
 	// Assign anonymous IDs and shuffle
 	const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-	const evaluationCandidates: EvaluationCandidate[] = candidates.map((c, i) => ({
-		id: letters[i % letters.length],
-		summary: c.summary,
-		generatorId: c.generatorId,
-	}));
+	const evaluationCandidates: EvaluationCandidate[] = candidates.map(
+		(c, i) => ({
+			id: letters[i % letters.length],
+			summary: c.summary,
+			generatorId: c.generatorId,
+		}),
+	);
 
 	const shuffled = shuffle(evaluationCandidates);
 

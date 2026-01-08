@@ -89,9 +89,10 @@ export function calculateStatistics(values: number[]): StatisticalSummary {
 
 	// Basic stats
 	const mean = values.reduce((a, b) => a + b, 0) / n;
-	const median = n % 2 === 0
-		? (sorted[n / 2 - 1] + sorted[n / 2]) / 2
-		: sorted[Math.floor(n / 2)];
+	const median =
+		n % 2 === 0
+			? (sorted[n / 2 - 1] + sorted[n / 2]) / 2
+			: sorted[Math.floor(n / 2)];
 
 	// Variance and standard deviation
 	const squaredDiffs = values.map((v) => Math.pow(v - mean, 2));
@@ -207,27 +208,32 @@ function toRanks(values: number[]): number[] {
  * Calculate correlation matrix between multiple metrics
  */
 export function calculateCorrelationMatrix(
-	aggregations: Map<string, ModelAggregation>
+	aggregations: Map<string, ModelAggregation>,
 ): CorrelationMatrix {
 	const metrics = ["judge", "contrastive", "retrieval", "downstream"];
 	const modelIds = [...aggregations.keys()];
 
 	// Extract metric values for each model
 	const judgeScores = modelIds.map(
-		(id) => aggregations.get(id)!.judge.pointwise.overall.mean / 5
+		(id) => aggregations.get(id)!.judge.pointwise.overall.mean / 5,
 	);
 	const contrastiveScores = modelIds.map(
-		(id) => aggregations.get(id)!.contrastive.combined
+		(id) => aggregations.get(id)!.contrastive.combined,
 	);
 	const retrievalScores = modelIds.map((id) => {
 		const ret = aggregations.get(id)!.retrieval;
 		return ret.winRate > 0 ? ret.winRate : ret.mrr;
 	});
 	const downstreamScores = modelIds.map(
-		(id) => aggregations.get(id)!.downstream.overall
+		(id) => aggregations.get(id)!.downstream.overall,
 	);
 
-	const allScores = [judgeScores, contrastiveScores, retrievalScores, downstreamScores];
+	const allScores = [
+		judgeScores,
+		contrastiveScores,
+		retrievalScores,
+		downstreamScores,
+	];
 
 	// Calculate pairwise correlations
 	const values: number[][] = [];
@@ -251,7 +257,7 @@ export function calculateCorrelationMatrix(
  */
 export function pairedTTest(
 	group1: number[],
-	group2: number[]
+	group2: number[],
 ): { tStatistic: number; pValue: number } {
 	if (group1.length !== group2.length || group1.length === 0) {
 		return { tStatistic: 0, pValue: 1 };
@@ -299,8 +305,7 @@ function normalCDF(x: number): number {
 
 	const t = 1.0 / (1.0 + p * x);
 	const y =
-		1.0 -
-		((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+		1.0 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
 
 	return 0.5 * (1.0 + sign * y);
 }
@@ -311,7 +316,7 @@ function normalCDF(x: number): number {
 export function calculateKappa(
 	ratings1: string[],
 	ratings2: string[],
-	categories: string[]
+	categories: string[],
 ): number {
 	if (ratings1.length !== ratings2.length || ratings1.length === 0) return 0;
 
@@ -341,7 +346,7 @@ export function calculateKappa(
  * Analyze inter-rater agreement between judges
  */
 export function analyzeInterRaterAgreement(
-	pairwiseResults: PairwiseResult[]
+	pairwiseResults: PairwiseResult[],
 ): InterRaterAgreement {
 	// Group results by code unit and model pair
 	const resultsByPair = new Map<string, Map<string, string>>();
@@ -381,7 +386,8 @@ export function analyzeInterRaterAgreement(
 	}
 
 	const kappa = calculateKappa(ratings1, ratings2, ["A", "B", "tie"]);
-	const agreement = ratings1.filter((r, i) => r === ratings2[i]).length / ratings1.length;
+	const agreement =
+		ratings1.filter((r, i) => r === ratings2[i]).length / ratings1.length;
 
 	let interpretation: string;
 	if (kappa > 0.8) interpretation = "Almost perfect agreement";
@@ -397,7 +403,7 @@ export function analyzeInterRaterAgreement(
  * Analyze ranking stability across different evaluation methods
  */
 export function analyzeRankingStability(
-	aggregations: Map<string, ModelAggregation>
+	aggregations: Map<string, ModelAggregation>,
 ): RankingStability[] {
 	const results: RankingStability[] = [];
 
@@ -407,7 +413,8 @@ export function analyzeRankingStability(
 
 		// We need to calculate ranks per method
 		// For now, use the variation in scores as a proxy
-		const retrievalScore = agg.retrieval.winRate > 0 ? agg.retrieval.winRate : agg.retrieval.mrr;
+		const retrievalScore =
+			agg.retrieval.winRate > 0 ? agg.retrieval.winRate : agg.retrieval.mrr;
 		const scores = [
 			agg.judge.pointwise.overall.mean / 5,
 			agg.contrastive.combined,

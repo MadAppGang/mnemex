@@ -61,21 +61,22 @@ Given a search query and several code summaries, determine which summary best ma
 async function evaluateSelfRetrieval(
 	client: ILLMClient,
 	modelId: string,
-	task: SelfRetrievalTask
+	task: SelfRetrievalTask,
 ): Promise<EvaluationResult> {
 	// Shuffle summaries (target + distractors) to avoid position bias
 	const allSummaries = [task.targetSummary, ...task.distractorSummaries];
 	const shuffled = [...allSummaries].sort(() => Math.random() - 0.5);
-	const targetIndex = shuffled.findIndex(s => s.id === task.targetSummary.id);
+	const targetIndex = shuffled.findIndex((s) => s.id === task.targetSummary.id);
 
 	// Build prompt
 	const summariesText = shuffled
 		.map((s, i) => `[${i}] ${s.summary}`)
 		.join("\n\n");
 
-	const prompt = SELF_RETRIEVAL_PROMPT
-		.replace("{query}", task.query.query)
-		.replace("{summaries}", summariesText);
+	const prompt = SELF_RETRIEVAL_PROMPT.replace(
+		"{query}",
+		task.query.query,
+	).replace("{summaries}", summariesText);
 
 	try {
 		const response = await client.completeJSON<{
@@ -88,7 +89,12 @@ async function evaluateSelfRetrieval(
 		// Handle various field name conventions (common with local models)
 		// biome-ignore lint: we need to access dynamic properties
 		const resp = response as Record<string, unknown>;
-		const rawIndex = resp.selectedIndex ?? resp.selected_index ?? resp.index ?? resp.selection ?? resp.choice;
+		const rawIndex =
+			resp.selectedIndex ??
+			resp.selected_index ??
+			resp.index ??
+			resp.selection ??
+			resp.choice;
 		const confidence = (resp.confidence as number) ?? 0;
 		const reasoning = (resp.reasoning as string) ?? "No reasoning provided";
 
@@ -99,10 +105,14 @@ async function evaluateSelfRetrieval(
 		} else if (typeof rawIndex === "string") {
 			selectedIndex = parseInt(rawIndex, 10);
 			if (isNaN(selectedIndex)) {
-				throw new Error(`Invalid response: selectedIndex "${rawIndex}" is not a number. Response: ${JSON.stringify(response).slice(0, 100)}`);
+				throw new Error(
+					`Invalid response: selectedIndex "${rawIndex}" is not a number. Response: ${JSON.stringify(response).slice(0, 100)}`,
+				);
 			}
 		} else {
-			throw new Error(`Invalid response: missing selectedIndex. Response: ${JSON.stringify(response).slice(0, 100)}`);
+			throw new Error(
+				`Invalid response: missing selectedIndex. Response: ${JSON.stringify(response).slice(0, 100)}`,
+			);
 		}
 
 		const correct = selectedIndex === targetIndex;
@@ -180,19 +190,20 @@ interface FunctionSelectionTask {
 async function evaluateSelfFunctionSelection(
 	client: ILLMClient,
 	modelId: string,
-	task: FunctionSelectionTask
+	task: FunctionSelectionTask,
 ): Promise<EvaluationResult> {
 	const allSummaries = [task.targetSummary, ...task.distractorSummaries];
 	const shuffled = [...allSummaries].sort(() => Math.random() - 0.5);
-	const targetIndex = shuffled.findIndex(s => s.id === task.targetSummary.id);
+	const targetIndex = shuffled.findIndex((s) => s.id === task.targetSummary.id);
 
 	const summariesText = shuffled
 		.map((s, i) => `[${i}] ${s.summary}`)
 		.join("\n\n");
 
-	const prompt = SELF_FUNCTION_SELECTION_PROMPT
-		.replace("{taskDescription}", task.taskDescription)
-		.replace("{summaries}", summariesText);
+	const prompt = SELF_FUNCTION_SELECTION_PROMPT.replace(
+		"{taskDescription}",
+		task.taskDescription,
+	).replace("{summaries}", summariesText);
 
 	try {
 		const response = await client.completeJSON<{
@@ -205,7 +216,12 @@ async function evaluateSelfFunctionSelection(
 		// Handle various field name conventions (common with local models)
 		// biome-ignore lint: we need to access dynamic properties
 		const resp = response as Record<string, unknown>;
-		const rawIndex = resp.selectedIndex ?? resp.selected_index ?? resp.index ?? resp.selection ?? resp.choice;
+		const rawIndex =
+			resp.selectedIndex ??
+			resp.selected_index ??
+			resp.index ??
+			resp.selection ??
+			resp.choice;
 		const reasoning = (resp.reasoning as string) ?? "No reasoning provided";
 
 		// Parse selectedIndex - models often return it as a string
@@ -215,10 +231,14 @@ async function evaluateSelfFunctionSelection(
 		} else if (typeof rawIndex === "string") {
 			selectedIndex = parseInt(rawIndex, 10);
 			if (isNaN(selectedIndex)) {
-				throw new Error(`Invalid response: selectedIndex "${rawIndex}" is not a number. Response: ${JSON.stringify(response).slice(0, 100)}`);
+				throw new Error(
+					`Invalid response: selectedIndex "${rawIndex}" is not a number. Response: ${JSON.stringify(response).slice(0, 100)}`,
+				);
 			}
 		} else {
-			throw new Error(`Invalid response: missing selectedIndex. Response: ${JSON.stringify(response).slice(0, 100)}`);
+			throw new Error(
+				`Invalid response: missing selectedIndex. Response: ${JSON.stringify(response).slice(0, 100)}`,
+			);
 		}
 
 		const correct = selectedIndex === targetIndex;
@@ -233,7 +253,8 @@ async function evaluateSelfFunctionSelection(
 				functionSelectionResults: {
 					taskId: randomUUID(),
 					correct,
-					selectedFunction: shuffled[selectedIndex]?.summary.slice(0, 50) || "unknown",
+					selectedFunction:
+						shuffled[selectedIndex]?.summary.slice(0, 50) || "unknown",
 					reasoning,
 				},
 			},
@@ -272,14 +293,18 @@ async function evaluateSelfFunctionSelection(
  * This measures internal consistency - can the model use what it wrote?
  */
 export function createSelfEvaluationPhaseExecutor(
-	generatorClients: Map<string, ILLMClient>
+	generatorClients: Map<string, ILLMClient>,
 ): (context: PhaseContext) => Promise<PhaseResult> {
 	return async (context: PhaseContext): Promise<PhaseResult> => {
 		const { db, run, config, stateMachine } = context;
 		const evalConfig = config.evaluation.self;
 
 		if (!evalConfig?.enabled) {
-			return { success: true, itemsProcessed: 0, skipReason: "Self-evaluation disabled" };
+			return {
+				success: true,
+				itemsProcessed: 0,
+				skipReason: "Self-evaluation disabled",
+			};
 		}
 
 		try {
@@ -299,7 +324,10 @@ export function createSelfEvaluationPhaseExecutor(
 
 			// Calculate per-model work
 			const tasksToRun = evalConfig.tasks || ["retrieval"];
-			const queriesPerModel = Math.min(queries.length, codeUnits.length * (evalConfig.queriesPerUnit || 2));
+			const queriesPerModel = Math.min(
+				queries.length,
+				codeUnits.length * (evalConfig.queriesPerUnit || 2),
+			);
 			const tasksPerQuery = tasksToRun.length;
 
 			// Calculate total items
@@ -321,7 +349,8 @@ export function createSelfEvaluationPhaseExecutor(
 			const cloudModels: string[] = [];
 			const localModels: string[] = [];
 			for (const modelId of generatorClients.keys()) {
-				const isLocal = modelId.startsWith("lmstudio/") || modelId.startsWith("ollama/");
+				const isLocal =
+					modelId.startsWith("lmstudio/") || modelId.startsWith("ollama/");
 				if (isLocal) {
 					localModels.push(modelId);
 				} else {
@@ -330,18 +359,22 @@ export function createSelfEvaluationPhaseExecutor(
 			}
 
 			// Per-model progress tracking
-			const modelProgress = new Map<string, {
-				completed: number;
-				total: number;
-				inProgress: number;
-				failures: number;
-				lastError: string;
-			}>();
+			const modelProgress = new Map<
+				string,
+				{
+					completed: number;
+					total: number;
+					inProgress: number;
+					failures: number;
+					lastError: string;
+				}
+			>();
 
 			// Initialize progress for all models
 			for (const [modelId] of generatorClients) {
 				const modelSummaries = summariesByModel.get(modelId) || [];
-				const total = modelSummaries.length > 0 ? queriesPerModel * tasksPerQuery : 0;
+				const total =
+					modelSummaries.length > 0 ? queriesPerModel * tasksPerQuery : 0;
 				modelProgress.set(modelId, {
 					completed: 0,
 					total,
@@ -357,7 +390,12 @@ export function createSelfEvaluationPhaseExecutor(
 				const details = p.lastError
 					? `${modelId}: ${p.completed}/${p.total}/${p.inProgress}/${p.failures}|${p.lastError}`
 					: `${modelId}: ${p.completed}/${p.total}/${p.inProgress}/${p.failures}`;
-				stateMachine.updateProgress("evaluation:self", completed, undefined, details);
+				stateMachine.updateProgress(
+					"evaluation:self",
+					completed,
+					undefined,
+					details,
+				);
 			};
 
 			// Process a single model
@@ -369,11 +407,15 @@ export function createSelfEvaluationPhaseExecutor(
 				const p = modelProgress.get(modelId)!;
 
 				// Create lookup for model's summaries by code unit
-				const summaryByCodeUnit = new Map(modelSummaries.map(s => [s.codeUnitId, s]));
-				const codeUnitMap = new Map(codeUnits.map(u => [u.id, u]));
+				const summaryByCodeUnit = new Map(
+					modelSummaries.map((s) => [s.codeUnitId, s]),
+				);
+				const codeUnitMap = new Map(codeUnits.map((u) => [u.id, u]));
 
 				// Get queries that have corresponding summaries
-				const relevantQueries = queries.filter(q => summaryByCodeUnit.has(q.codeUnitId));
+				const relevantQueries = queries.filter((q) =>
+					summaryByCodeUnit.has(q.codeUnitId),
+				);
 				const selectedQueries = relevantQueries.slice(0, queriesPerModel);
 
 				// Process queries in batches
@@ -389,7 +431,7 @@ export function createSelfEvaluationPhaseExecutor(
 
 						// Get distractor summaries (other summaries from same model)
 						const distractorSummaries = modelSummaries
-							.filter(s => s.codeUnitId !== query.codeUnitId)
+							.filter((s) => s.codeUnitId !== query.codeUnitId)
 							.sort(() => Math.random() - 0.5)
 							.slice(0, 4); // 4 distractors
 
@@ -409,7 +451,8 @@ export function createSelfEvaluationPhaseExecutor(
 								});
 								db.insertEvaluationResult(run.id, result);
 								// Check if the result was an error (parsed from error response)
-								const reasoning = result.selfEvaluationResults?.retrievalResults?.reasoning;
+								const reasoning =
+									result.selfEvaluationResults?.retrievalResults?.reasoning;
 								if (reasoning?.startsWith("Error:")) {
 									p.failures++;
 									p.lastError = reasoning.slice(7, 100); // Capture error message
@@ -417,7 +460,10 @@ export function createSelfEvaluationPhaseExecutor(
 							} catch (error) {
 								// Outer catch for unexpected errors (evaluateSelfRetrieval catches its own)
 								p.failures++;
-								p.lastError = error instanceof Error ? error.message.slice(0, 100) : "Unknown error";
+								p.lastError =
+									error instanceof Error
+										? error.message.slice(0, 100)
+										: "Unknown error";
 							} finally {
 								p.inProgress--;
 								p.completed++;
@@ -433,15 +479,21 @@ export function createSelfEvaluationPhaseExecutor(
 
 							try {
 								const taskDescription = `Find a function that: ${query.query}`;
-								const result = await evaluateSelfFunctionSelection(client, modelId, {
-									taskDescription,
-									targetSummary,
-									distractorSummaries,
-									targetFunctionName: targetCode.name,
-								});
+								const result = await evaluateSelfFunctionSelection(
+									client,
+									modelId,
+									{
+										taskDescription,
+										targetSummary,
+										distractorSummaries,
+										targetFunctionName: targetCode.name,
+									},
+								);
 								db.insertEvaluationResult(run.id, result);
 								// Check if the result was an error (parsed from error response)
-								const reasoning = result.selfEvaluationResults?.functionSelectionResults?.reasoning;
+								const reasoning =
+									result.selfEvaluationResults?.functionSelectionResults
+										?.reasoning;
 								if (reasoning?.startsWith("Error:")) {
 									p.failures++;
 									p.lastError = reasoning.slice(7, 100); // Capture error message
@@ -449,7 +501,10 @@ export function createSelfEvaluationPhaseExecutor(
 							} catch (error) {
 								// Outer catch for unexpected errors (evaluateSelfFunctionSelection catches its own)
 								p.failures++;
-								p.lastError = error instanceof Error ? error.message.slice(0, 100) : "Unknown error";
+								p.lastError =
+									error instanceof Error
+										? error.message.slice(0, 100)
+										: "Unknown error";
 							} finally {
 								p.inProgress--;
 								p.completed++;
@@ -479,7 +534,10 @@ export function createSelfEvaluationPhaseExecutor(
 
 				// If threshold is 0, skip size-based isolation
 				if (largeModelThreshold === 0) {
-					if (localParallelism === 0 || localParallelism >= localModels.length) {
+					if (
+						localParallelism === 0 ||
+						localParallelism >= localModels.length
+					) {
 						await Promise.all(localModels.map(processModel));
 					} else if (localParallelism === 1) {
 						for (const modelId of localModels) {
@@ -495,7 +553,10 @@ export function createSelfEvaluationPhaseExecutor(
 				}
 
 				// Query model sizes to separate large from small
-				if (debug) console.error(`[SelfEval] Querying sizes for ${localModels.length} local models, threshold=${largeModelThreshold}B`);
+				if (debug)
+					console.error(
+						`[SelfEval] Querying sizes for ${localModels.length} local models, threshold=${largeModelThreshold}B`,
+					);
 				const modelSizes = new Map<string, number | undefined>();
 
 				await Promise.all(
@@ -505,12 +566,15 @@ export function createSelfEvaluationPhaseExecutor(
 							try {
 								const size = await client.getModelSizeB();
 								modelSizes.set(modelId, size);
-								if (debug) console.error(`[SelfEval] ${modelId} → ${size ?? "unknown"}B ${size !== undefined && size >= largeModelThreshold ? "(LARGE)" : "(small)"}`);
+								if (debug)
+									console.error(
+										`[SelfEval] ${modelId} → ${size ?? "unknown"}B ${size !== undefined && size >= largeModelThreshold ? "(LARGE)" : "(small)"}`,
+									);
 							} catch {
 								modelSizes.set(modelId, undefined);
 							}
 						}
-					})
+					}),
 				);
 
 				// Separate large models (>= threshold) from small models
@@ -533,7 +597,10 @@ export function createSelfEvaluationPhaseExecutor(
 
 				// Then run small models with configured parallelism
 				if (smallModels.length > 0) {
-					if (localParallelism === 0 || localParallelism >= smallModels.length) {
+					if (
+						localParallelism === 0 ||
+						localParallelism >= smallModels.length
+					) {
 						await Promise.all(smallModels.map(processModel));
 					} else if (localParallelism === 1) {
 						for (const modelId of smallModels) {
@@ -587,32 +654,50 @@ export interface SelfEvaluationMetrics {
 
 export function aggregateSelfEvaluationResults(
 	results: EvaluationResult[],
-	modelId: string
+	modelId: string,
 ): SelfEvaluationMetrics {
 	const selfResults = results.filter(
-		r => r.evaluationType === "self" &&
-		r.selfEvaluationResults?.generatingModelId === modelId
+		(r) =>
+			r.evaluationType === "self" &&
+			r.selfEvaluationResults?.generatingModelId === modelId,
 	);
 
 	// Aggregate retrieval results
-	const retrievalResults = selfResults.filter(r => r.selfEvaluationResults?.taskType === "retrieval");
-	const retrievalCorrect = retrievalResults.filter(r => r.selfEvaluationResults?.retrievalResults?.correct).length;
-	const retrievalConfidences = retrievalResults
-		.map(r => r.selfEvaluationResults?.retrievalResults?.confidence || 0);
-	const avgConfidence = retrievalConfidences.length > 0
-		? retrievalConfidences.reduce((a, b) => a + b, 0) / retrievalConfidences.length
-		: 0;
+	const retrievalResults = selfResults.filter(
+		(r) => r.selfEvaluationResults?.taskType === "retrieval",
+	);
+	const retrievalCorrect = retrievalResults.filter(
+		(r) => r.selfEvaluationResults?.retrievalResults?.correct,
+	).length;
+	const retrievalConfidences = retrievalResults.map(
+		(r) => r.selfEvaluationResults?.retrievalResults?.confidence || 0,
+	);
+	const avgConfidence =
+		retrievalConfidences.length > 0
+			? retrievalConfidences.reduce((a, b) => a + b, 0) /
+				retrievalConfidences.length
+			: 0;
 
 	// Aggregate function selection results
-	const funcResults = selfResults.filter(r => r.selfEvaluationResults?.taskType === "function_selection");
-	const funcCorrect = funcResults.filter(r => r.selfEvaluationResults?.functionSelectionResults?.correct).length;
+	const funcResults = selfResults.filter(
+		(r) => r.selfEvaluationResults?.taskType === "function_selection",
+	);
+	const funcCorrect = funcResults.filter(
+		(r) => r.selfEvaluationResults?.functionSelectionResults?.correct,
+	).length;
 
-	const retrievalAccuracy = retrievalResults.length > 0 ? retrievalCorrect / retrievalResults.length : 0;
-	const funcAccuracy = funcResults.length > 0 ? funcCorrect / funcResults.length : 0;
+	const retrievalAccuracy =
+		retrievalResults.length > 0
+			? retrievalCorrect / retrievalResults.length
+			: 0;
+	const funcAccuracy =
+		funcResults.length > 0 ? funcCorrect / funcResults.length : 0;
 
 	// Overall is weighted average of tasks
 	const weights = { retrieval: 0.6, functionSelection: 0.4 };
-	const overall = retrievalAccuracy * weights.retrieval + funcAccuracy * weights.functionSelection;
+	const overall =
+		retrievalAccuracy * weights.retrieval +
+		funcAccuracy * weights.functionSelection;
 
 	return {
 		modelId,

@@ -24,10 +24,13 @@ import { BlindJudge } from "./blind-judge.js";
  */
 export async function createJudge(
 	model: string,
-	provider?: LLMProvider
+	provider?: LLMProvider,
 ): Promise<IJudge> {
 	// Use LLMResolver for consistent spec parsing
-	const client = await LLMResolver.createClient(model, provider ? { provider } : undefined);
+	const client = await LLMResolver.createClient(
+		model,
+		provider ? { provider } : undefined,
+	);
 	return new LLMJudge(client);
 }
 
@@ -39,11 +42,9 @@ export async function createJudge(
  */
 export async function createConsensusJudge(
 	models: string[],
-	aggregation: AggregationMethod = "median"
+	aggregation: AggregationMethod = "median",
 ): Promise<IJudge> {
-	const judges = await Promise.all(
-		models.map((model) => createJudge(model))
-	);
+	const judges = await Promise.all(models.map((model) => createJudge(model)));
 
 	return new ConsensusJudge(judges, aggregation);
 }

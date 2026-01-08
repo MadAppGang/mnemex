@@ -137,7 +137,7 @@ export interface IRefinementStrategy {
 	 */
 	testQuality(
 		summary: string,
-		context: RefinementContext
+		context: RefinementContext,
 	): Promise<QualityTestResult>;
 
 	/**
@@ -148,7 +148,7 @@ export interface IRefinementStrategy {
 	 */
 	generateFeedback(
 		result: QualityTestResult,
-		context: RefinementContext
+		context: RefinementContext,
 	): Promise<string>;
 
 	/**

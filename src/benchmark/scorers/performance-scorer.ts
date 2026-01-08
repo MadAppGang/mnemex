@@ -39,7 +39,7 @@ export class PerformanceScorer implements IScorer {
 	async score(
 		_testCase: TestCase,
 		generation: GenerationResult<FileSummary | SymbolSummary>,
-		_judgment?: JudgmentResult
+		_judgment?: JudgmentResult,
 	): Promise<ScoreResult> {
 		const durationMs = generation.durationMs;
 
@@ -79,7 +79,7 @@ export class PerformanceScorer implements IScorer {
 	getCriterion(): ScoringCriterion {
 		return {
 			name: "speed",
-			weight: 0.10,
+			weight: 0.1,
 			description: "How fast is the generation? (fastest = 100)",
 		};
 	}
@@ -93,7 +93,9 @@ export class PerformanceScorer implements IScorer {
  * Create a performance scorer from a list of durations.
  * Automatically determines fastest and slowest.
  */
-export function createPerformanceScorer(durations: number[]): PerformanceScorer {
+export function createPerformanceScorer(
+	durations: number[],
+): PerformanceScorer {
 	if (durations.length === 0) {
 		return new PerformanceScorer(1000, 1000);
 	}

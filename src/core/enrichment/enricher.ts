@@ -62,7 +62,12 @@ export interface RefinementOptions {
 	/** Concurrency for parallel refinement (default: 5) */
 	concurrency?: number;
 	/** Progress callback for refinement progress */
-	onProgress?: (phase: string, completed: number, total: number, details?: string) => void;
+	onProgress?: (
+		phase: string,
+		completed: number,
+		total: number,
+		details?: string,
+	) => void;
 }
 
 export interface RefinementResult {
@@ -200,7 +205,9 @@ export class Enricher {
 					vector: new Array(384).fill(0),
 				}));
 			} else {
-				documentsWithEmbeddings = await this.embedDocuments(pipelineResult.documents);
+				documentsWithEmbeddings = await this.embedDocuments(
+					pipelineResult.documents,
+				);
 			}
 
 			// Store documents
@@ -219,14 +226,17 @@ export class Enricher {
 			this.tracker.trackDocuments(trackedDocs);
 
 			// Update enrichment state
-			const completedTypes = new Set(pipelineResult.documents.map((d) => d.documentType));
+			const completedTypes = new Set(
+				pipelineResult.documents.map((d) => d.documentType),
+			);
 			for (const docType of completedTypes) {
 				this.tracker.setEnrichmentState(file.filePath, docType, "complete");
 			}
 
 			documentsCreated = pipelineResult.documents.length;
 		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : String(error);
+			const errorMessage =
+				error instanceof Error ? error.message : String(error);
 			errors.push({
 				file: file.filePath,
 				documentType: "file_summary",
@@ -265,17 +275,34 @@ export class Enricher {
 
 		// Get LLM provider label for display
 		const provider = this.llmClient.getProvider();
-		const providerLabel = provider === "claude-code" ? "Claude CLI"
-			: provider === "anthropic" ? "Anthropic API"
-			: provider === "openrouter" ? "OpenRouter"
-			: provider === "local" ? "Local LLM"
-			: provider;
+		const providerLabel =
+			provider === "claude-code"
+				? "Claude CLI"
+				: provider === "anthropic"
+					? "Anthropic API"
+					: provider === "openrouter"
+						? "OpenRouter"
+						: provider === "local"
+							? "Local LLM"
+							: provider;
 
 		// Report progress helper - phase is used by CLI to show distinct progress bars
-		const reportProgress = (phase: string, completed: number, phaseTotal: number, status: string, inProgress = 0) => {
+		const reportProgress = (
+			phase: string,
+			completed: number,
+			phaseTotal: number,
+			status: string,
+			inProgress = 0,
+		) => {
 			if (options.onProgress) {
 				// Format: "[phase] status" - CLI parses this to show separate progress lines
-				options.onProgress(completed, phaseTotal, phase as DocumentType, status, inProgress);
+				options.onProgress(
+					completed,
+					phaseTotal,
+					phase as DocumentType,
+					status,
+					inProgress,
+				);
 			}
 		};
 
@@ -285,7 +312,9 @@ export class Enricher {
 		const concurrency = options.concurrency ?? 10;
 
 		// File summary extractor
-		const fileSummaryExtractor = this.registry.get("file_summary") as FileSummaryExtractor | undefined;
+		const fileSummaryExtractor = this.registry.get("file_summary") as
+			| FileSummaryExtractor
+			| undefined;
 		const otherTypes: DocumentType[] = ["symbol_summary"];
 
 		// Reset usage tracking
@@ -310,7 +339,13 @@ export class Enricher {
 				const active = inProgress.size;
 				const activeList = Array.from(inProgress).slice(0, 2).join(", ");
 				const moreCount = active > 2 ? ` +${active - 2}` : "";
-				reportProgress("file summaries", completed, total, `${completed}/${total} (${active} active) ${activeList}${moreCount}`, active);
+				reportProgress(
+					"file summaries",
+					completed,
+					total,
+					`${completed}/${total} (${active} active) ${activeList}${moreCount}`,
+					active,
+				);
 
 				try {
 					const docs = await fileSummaryExtractor.extract(
@@ -328,11 +363,16 @@ export class Enricher {
 
 					for (const doc of docs) {
 						if (doc.filePath) {
-							this.tracker.setEnrichmentState(doc.filePath, "file_summary", "complete");
+							this.tracker.setEnrichmentState(
+								doc.filePath,
+								"file_summary",
+								"complete",
+							);
 						}
 					}
 				} catch (error) {
-					const errorMessage = error instanceof Error ? error.message : String(error);
+					const errorMessage =
+						error instanceof Error ? error.message : String(error);
 					allErrors.push({
 						file: file.filePath,
 						documentType: "file_summary",
@@ -351,7 +391,13 @@ export class Enricher {
 				await Promise.all(batch.map(processFile));
 			}
 
-			reportProgress("file summaries", total, total, `${total}/${total} via ${providerLabel}`, 0);
+			reportProgress(
+				"file summaries",
+				total,
+				total,
+				`${total}/${total} via ${providerLabel}`,
+				0,
+			);
 		};
 
 		// Symbol summaries processor
@@ -368,7 +414,13 @@ export class Enricher {
 				const active = inProgress.size;
 				const activeList = Array.from(inProgress).slice(0, 2).join(", ");
 				const moreCount = active > 2 ? ` +${active - 2}` : "";
-				reportProgress("symbol summaries", completed, total, `${completed}/${total} (${active} active) ${activeList}${moreCount}`, active);
+				reportProgress(
+					"symbol summaries",
+					completed,
+					total,
+					`${completed}/${total} (${active} active) ${activeList}${moreCount}`,
+					active,
+				);
 
 				try {
 					const pipelineResult = await this.pipeline.extractFile(
@@ -392,7 +444,8 @@ export class Enricher {
 						});
 					}
 				} catch (error) {
-					const errorMessage = error instanceof Error ? error.message : String(error);
+					const errorMessage =
+						error instanceof Error ? error.message : String(error);
 					allErrors.push({
 						file: file.filePath,
 						documentType: "symbol_summary",
@@ -411,21 +464,25 @@ export class Enricher {
 				await Promise.all(batch.map(processFile));
 			}
 
-			reportProgress("symbol summaries", total, total, `${total}/${total} done`, 0);
+			reportProgress(
+				"symbol summaries",
+				total,
+				total,
+				`${total}/${total} done`,
+				0,
+			);
 		};
 
 		// Run BOTH phases in parallel - this doubles throughput when using cloud LLM!
-		await Promise.all([
-			processFileSummaries(),
-			processSymbolSummaries(),
-		]);
+		await Promise.all([processFileSummaries(), processSymbolSummaries()]);
 
 		// Combine all documents
 		const allDocuments = [...fileSummaryDocs, ...symbolSummaryDocs];
 
 		// Get combined usage
 		const combinedUsage = this.llmClient.getAccumulatedUsage();
-		const fileSummaryRatio = fileSummaryDocs.length / Math.max(1, allDocuments.length);
+		const fileSummaryRatio =
+			fileSummaryDocs.length / Math.max(1, allDocuments.length);
 		fileSummariesCost = combinedUsage.cost * fileSummaryRatio;
 		symbolSummariesCost = combinedUsage.cost * (1 - fileSummaryRatio);
 		fileSummariesCalls = Math.round(combinedUsage.calls * fileSummaryRatio);
@@ -434,7 +491,13 @@ export class Enricher {
 		// Step 3: Embed all documents in batch
 		const docCount = allDocuments.length;
 		if (docCount > 0) {
-			reportProgress("embed summaries", 0, docCount, `${docCount} documents...`, docCount);
+			reportProgress(
+				"embed summaries",
+				0,
+				docCount,
+				`${docCount} documents...`,
+				docCount,
+			);
 
 			let documentsWithEmbeddings: DocumentWithEmbedding[];
 			if (options.skipEmbedding) {
@@ -446,10 +509,22 @@ export class Enricher {
 				documentsWithEmbeddings = await this.embedDocuments(allDocuments);
 			}
 
-			reportProgress("embed summaries", docCount, docCount, `${docCount} embedded`, 0);
+			reportProgress(
+				"embed summaries",
+				docCount,
+				docCount,
+				`${docCount} embedded`,
+				0,
+			);
 
 			// Step 4: Store all documents
-			reportProgress("store vectors", 0, docCount, `${docCount} documents...`, docCount);
+			reportProgress(
+				"store vectors",
+				0,
+				docCount,
+				`${docCount} documents...`,
+				docCount,
+			);
 			await this.vectorStore.addDocuments(documentsWithEmbeddings);
 
 			// Track all documents
@@ -464,7 +539,13 @@ export class Enricher {
 			this.tracker.trackDocuments(trackedDocs);
 
 			totalCreated = allDocuments.length;
-			reportProgress("store vectors", docCount, docCount, `${docCount} stored`, 0);
+			reportProgress(
+				"store vectors",
+				docCount,
+				docCount,
+				`${docCount} stored`,
+				0,
+			);
 		}
 
 		// Calculate totals
@@ -478,15 +559,23 @@ export class Enricher {
 			errors: allErrors,
 			llmProvider: provider,
 			cost: totalCost > 0 ? totalCost : undefined,
-			costBreakdown: totalCost > 0 ? {
-				fileSummaries: fileSummariesCost > 0 ? fileSummariesCost : undefined,
-				symbolSummaries: symbolSummariesCost > 0 ? symbolSummariesCost : undefined,
-			} : undefined,
-			llmCalls: totalCalls > 0 ? {
-				fileSummaries: fileSummariesCalls,
-				symbolSummaries: symbolSummariesCalls,
-				total: totalCalls,
-			} : undefined,
+			costBreakdown:
+				totalCost > 0
+					? {
+							fileSummaries:
+								fileSummariesCost > 0 ? fileSummariesCost : undefined,
+							symbolSummaries:
+								symbolSummariesCost > 0 ? symbolSummariesCost : undefined,
+						}
+					: undefined,
+			llmCalls:
+				totalCalls > 0
+					? {
+							fileSummaries: fileSummariesCalls,
+							symbolSummaries: symbolSummariesCalls,
+							total: totalCalls,
+						}
+					: undefined,
 		};
 	}
 
@@ -559,7 +648,9 @@ export class Enricher {
 	 * console.log(`Refined ${result.successfullyRefined} of ${result.failuresFound} failures`);
 	 * ```
 	 */
-	async refineFailures(options: RefinementOptions = {}): Promise<RefinementResult> {
+	async refineFailures(
+		options: RefinementOptions = {},
+	): Promise<RefinementResult> {
 		const startTime = Date.now();
 		const {
 			targetRank = 3,
@@ -568,7 +659,12 @@ export class Enricher {
 			onProgress,
 		} = options;
 
-		const reportProgress = (phase: string, completed: number, total: number, details?: string) => {
+		const reportProgress = (
+			phase: string,
+			completed: number,
+			total: number,
+			details?: string,
+		) => {
 			if (onProgress) {
 				onProgress(phase, completed, total, details);
 			}
@@ -590,7 +686,12 @@ export class Enricher {
 			};
 		}
 
-		reportProgress("loading", allSummaries.length, allSummaries.length, `Loaded ${allSummaries.length} summaries`);
+		reportProgress(
+			"loading",
+			allSummaries.length,
+			allSummaries.length,
+			`Loaded ${allSummaries.length} summaries`,
+		);
 
 		// Step 2: Create refinement engine and strategy
 		const engine = createRefinementEngine();
@@ -600,10 +701,15 @@ export class Enricher {
 		});
 
 		// Step 3: Test all summaries and collect failures
-		reportProgress("testing", 0, allSummaries.length, "Testing summary quality...");
+		reportProgress(
+			"testing",
+			0,
+			allSummaries.length,
+			"Testing summary quality...",
+		);
 
 		const failures: Array<{
-			summary: typeof allSummaries[0];
+			summary: (typeof allSummaries)[0];
 			initialRank: number;
 		}> = [];
 
@@ -611,37 +717,44 @@ export class Enricher {
 		for (let i = 0; i < allSummaries.length; i += concurrency) {
 			const batch = allSummaries.slice(i, i + concurrency);
 
-			await Promise.all(batch.map(async (summary) => {
-				// Build minimal refinement context for testing
-				const context: RefinementContext = {
-					summary: summary.content,
-					codeContent: "", // Not needed for testing, only for refinement prompt
-					language: "",
-					metadata: {
-						filePath: summary.filePath,
-					},
-					competitors: allSummaries
-						.filter((s) => s.id !== summary.id)
-						.slice(0, 20) // Sample competitors for efficiency
-						.map((s) => ({
-							summary: s.content,
-							modelId: "index",
-						})),
-				};
+			await Promise.all(
+				batch.map(async (summary) => {
+					// Build minimal refinement context for testing
+					const context: RefinementContext = {
+						summary: summary.content,
+						codeContent: "", // Not needed for testing, only for refinement prompt
+						language: "",
+						metadata: {
+							filePath: summary.filePath,
+						},
+						competitors: allSummaries
+							.filter((s) => s.id !== summary.id)
+							.slice(0, 20) // Sample competitors for efficiency
+							.map((s) => ({
+								summary: s.content,
+								modelId: "index",
+							})),
+					};
 
-				// Test quality
-				const result = await strategy.testQuality(summary.content, context);
-				tested++;
+					// Test quality
+					const result = await strategy.testQuality(summary.content, context);
+					tested++;
 
-				if (!strategy.isSuccess(result)) {
-					failures.push({
-						summary,
-						initialRank: result.rank ?? Infinity,
-					});
-				}
+					if (!strategy.isSuccess(result)) {
+						failures.push({
+							summary,
+							initialRank: result.rank ?? Infinity,
+						});
+					}
 
-				reportProgress("testing", tested, allSummaries.length, `Tested ${tested}/${allSummaries.length}, ${failures.length} failures`);
-			}));
+					reportProgress(
+						"testing",
+						tested,
+						allSummaries.length,
+						`Tested ${tested}/${allSummaries.length}, ${failures.length} failures`,
+					);
+				}),
+			);
 		}
 
 		if (failures.length === 0) {
@@ -657,7 +770,12 @@ export class Enricher {
 		}
 
 		// Step 4: Refine failures
-		reportProgress("refining", 0, failures.length, `Refining ${failures.length} failing summaries...`);
+		reportProgress(
+			"refining",
+			0,
+			failures.length,
+			`Refining ${failures.length} failing summaries...`,
+		);
 
 		const results: RefinementResult["details"] = [];
 		let refined = 0;
@@ -669,98 +787,114 @@ export class Enricher {
 		for (let i = 0; i < failures.length; i += concurrency) {
 			const batch = failures.slice(i, i + concurrency);
 
-			await Promise.all(batch.map(async (failure) => {
-				const summary = failure.summary;
+			await Promise.all(
+				batch.map(async (failure) => {
+					const summary = failure.summary;
 
-				// Build full refinement context
-				const context: RefinementContext = {
-					summary: summary.content,
-					codeContent: "", // We don't have original code in production - refinement will use summary context
-					language: "",
-					metadata: {
-						filePath: summary.filePath,
-					},
-					competitors: allSummaries
-						.filter((s) => s.id !== summary.id)
-						.slice(0, 20)
-						.map((s) => ({
-							summary: s.content,
-							modelId: "index",
-						})),
-				};
-
-				try {
-					// Run refinement
-					const refinementResult = await engine.refine(
-						summary.content,
-						context,
-						{
-							maxRounds,
-							strategy,
-							llmClient: this.llmClient,
+					// Build full refinement context
+					const context: RefinementContext = {
+						summary: summary.content,
+						codeContent: "", // We don't have original code in production - refinement will use summary context
+						language: "",
+						metadata: {
+							filePath: summary.filePath,
 						},
-					);
+						competitors: allSummaries
+							.filter((s) => s.id !== summary.id)
+							.slice(0, 20)
+							.map((s) => ({
+								summary: s.content,
+								modelId: "index",
+							})),
+					};
 
-					// Track stats
-					const score = calculateRefinementScore(refinementResult.rounds);
+					try {
+						// Run refinement
+						const refinementResult = await engine.refine(
+							summary.content,
+							context,
+							{
+								maxRounds,
+								strategy,
+								llmClient: this.llmClient,
+							},
+						);
 
-					if (refinementResult.success) {
-						successCount++;
-						roundsSum += refinementResult.rounds;
+						// Track stats
+						const score = calculateRefinementScore(refinementResult.rounds);
 
-						// Update the summary in the vector store
-						if (refinementResult.rounds > 0) {
-							// Re-embed the refined summary
-							const embedResult = await this.embeddingsClient.embed([refinementResult.finalSummary]);
-							const newVector = embedResult.embeddings[0];
+						if (refinementResult.success) {
+							successCount++;
+							roundsSum += refinementResult.rounds;
 
-							await this.vectorStore.updateDocumentContent(
-								summary.id,
-								refinementResult.finalSummary,
-								newVector,
-							);
+							// Update the summary in the vector store
+							if (refinementResult.rounds > 0) {
+								// Re-embed the refined summary
+								const embedResult = await this.embeddingsClient.embed([
+									refinementResult.finalSummary,
+								]);
+								const newVector = embedResult.embeddings[0];
+
+								await this.vectorStore.updateDocumentContent(
+									summary.id,
+									refinementResult.finalSummary,
+									newVector,
+								);
+							}
 						}
+
+						scoreSum += score;
+
+						results.push({
+							documentId: summary.id,
+							filePath: summary.filePath,
+							documentType: summary.documentType,
+							initialRank: failure.initialRank,
+							finalRank:
+								refinementResult.metrics.finalRank ?? failure.initialRank,
+							rounds: refinementResult.rounds,
+							success: refinementResult.success,
+							refinementScore: score,
+						});
+					} catch (error) {
+						// Record failure
+						results.push({
+							documentId: summary.id,
+							filePath: summary.filePath,
+							documentType: summary.documentType,
+							initialRank: failure.initialRank,
+							finalRank: failure.initialRank,
+							rounds: 0,
+							success: false,
+							refinementScore: 0,
+						});
 					}
 
-					scoreSum += score;
-
-					results.push({
-						documentId: summary.id,
-						filePath: summary.filePath,
-						documentType: summary.documentType,
-						initialRank: failure.initialRank,
-						finalRank: refinementResult.metrics.finalRank ?? failure.initialRank,
-						rounds: refinementResult.rounds,
-						success: refinementResult.success,
-						refinementScore: score,
-					});
-				} catch (error) {
-					// Record failure
-					results.push({
-						documentId: summary.id,
-						filePath: summary.filePath,
-						documentType: summary.documentType,
-						initialRank: failure.initialRank,
-						finalRank: failure.initialRank,
-						rounds: 0,
-						success: false,
-						refinementScore: 0,
-					});
-				}
-
-				refined++;
-				reportProgress("refining", refined, failures.length, `Refined ${refined}/${failures.length}`);
-			}));
+					refined++;
+					reportProgress(
+						"refining",
+						refined,
+						failures.length,
+						`Refined ${refined}/${failures.length}`,
+					);
+				}),
+			);
 		}
 
-		reportProgress("complete", failures.length, failures.length, `Done: ${successCount}/${failures.length} successfully refined`);
+		reportProgress(
+			"complete",
+			failures.length,
+			failures.length,
+			`Done: ${successCount}/${failures.length} successfully refined`,
+		);
 
 		return {
 			totalTested: allSummaries.length,
 			failuresFound: failures.length,
 			successfullyRefined: successCount,
 			avgRoundsToSuccess: successCount > 0 ? roundsSum / successCount : 0,
-			avgRefinementScore: failures.length > 0 ? scoreSum / failures.length : 1.0,
+			avgRefinementScore:
+				failures.length > 0 ? scoreSum / failures.length : 1.0,
 			durationMs: Date.now() - startTime,
 			details: results,
 		};

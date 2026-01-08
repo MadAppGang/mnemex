@@ -15,7 +15,14 @@ import { CodeUnitExtractor } from "../../src/core/ast/code-unit-extractor.js";
 import { ContextFormatter } from "../../src/retrieval/formatting/context-formatter.js";
 import { QueryRouter } from "../../src/retrieval/routing/query-router.js";
 import { LLMReranker } from "../../src/retrieval/reranking/llm-reranker.js";
-import type { CodeUnit, ILLMClient, LLMMessage, LLMResponse, LLMUsageStats, QueryIntent } from "../../src/types.js";
+import type {
+	CodeUnit,
+	ILLMClient,
+	LLMMessage,
+	LLMResponse,
+	LLMUsageStats,
+	QueryIntent,
+} from "../../src/types.js";
 
 const FIXTURES_DIR = join(import.meta.dir, "../fixtures");
 const TEST_INDEX_DIR = join(import.meta.dir, "../.test-index");
@@ -82,21 +89,51 @@ describe("Retrieval Pipeline Integration", () => {
 		allUnits = [];
 
 		// TypeScript
-		const tsSource = readFileSync(join(FIXTURES_DIR, "sample-typescript.ts"), "utf-8");
-		const tsHash = createHash("sha256").update(tsSource).digest("hex").slice(0, 16);
-		const tsUnits = await extractor.extractUnits(tsSource, "test/fixtures/sample-typescript.ts", "typescript", tsHash);
+		const tsSource = readFileSync(
+			join(FIXTURES_DIR, "sample-typescript.ts"),
+			"utf-8",
+		);
+		const tsHash = createHash("sha256")
+			.update(tsSource)
+			.digest("hex")
+			.slice(0, 16);
+		const tsUnits = await extractor.extractUnits(
+			tsSource,
+			"test/fixtures/sample-typescript.ts",
+			"typescript",
+			tsHash,
+		);
 		allUnits.push(...tsUnits);
 
 		// Python
-		const pySource = readFileSync(join(FIXTURES_DIR, "sample-python.py"), "utf-8");
-		const pyHash = createHash("sha256").update(pySource).digest("hex").slice(0, 16);
-		const pyUnits = await extractor.extractUnits(pySource, "test/fixtures/sample-python.py", "python", pyHash);
+		const pySource = readFileSync(
+			join(FIXTURES_DIR, "sample-python.py"),
+			"utf-8",
+		);
+		const pyHash = createHash("sha256")
+			.update(pySource)
+			.digest("hex")
+			.slice(0, 16);
+		const pyUnits = await extractor.extractUnits(
+			pySource,
+			"test/fixtures/sample-python.py",
+			"python",
+			pyHash,
+		);
 		allUnits.push(...pyUnits);
 
 		// Go
 		const goSource = readFileSync(join(FIXTURES_DIR, "sample-go.go"), "utf-8");
-		const goHash = createHash("sha256").update(goSource).digest("hex").slice(0, 16);
-		const goUnits = await extractor.extractUnits(goSource, "test/fixtures/sample-go.go", "go", goHash);
+		const goHash = createHash("sha256")
+			.update(goSource)
+			.digest("hex")
+			.slice(0, 16);
+		const goUnits = await extractor.extractUnits(
+			goSource,
+			"test/fixtures/sample-go.go",
+			"go",
+			goHash,
+		);
 		allUnits.push(...goUnits);
 	});
 
@@ -125,17 +162,28 @@ describe("Retrieval Pipeline Integration", () => {
 	});
 
 	describe("ContextFormatter", () => {
-		const formatter = new ContextFormatter({ style: "markdown", maxTokens: 4000 });
+		const formatter = new ContextFormatter({
+			style: "markdown",
+			maxTokens: 4000,
+		});
 
 		test("formats code units for LLM context", () => {
-			const classUnits = allUnits.filter((u) => u.unitType === "class").slice(0, 2);
-			const methodUnits = allUnits.filter((u) => u.unitType === "method").slice(0, 3);
+			const classUnits = allUnits
+				.filter((u) => u.unitType === "class")
+				.slice(0, 2);
+			const methodUnits = allUnits
+				.filter((u) => u.unitType === "method")
+				.slice(0, 3);
 
 			const formatted = formatter.format({
 				primary: classUnits,
 				supporting: methodUnits,
 				summaries: [
-					{ name: "UserService", summary: "Manages user operations", path: "sample-typescript.ts" },
+					{
+						name: "UserService",
+						summary: "Manages user operations",
+						path: "sample-typescript.ts",
+					},
 				],
 				queryIntent: "semantic" as QueryIntent,
 			});
@@ -146,7 +194,9 @@ describe("Retrieval Pipeline Integration", () => {
 		});
 
 		test("formatForLLM produces readable output", () => {
-			const units = allUnits.filter((u) => u.unitType === "function").slice(0, 3);
+			const units = allUnits
+				.filter((u) => u.unitType === "function")
+				.slice(0, 3);
 
 			const output = formatter.formatForLLM({
 				primary: units,
@@ -180,7 +230,9 @@ describe("Retrieval Pipeline Integration", () => {
 			const xmlFormatter = new ContextFormatter({ style: "xml" });
 			const plainFormatter = new ContextFormatter({ style: "plain" });
 
-			const units = allUnits.filter((u) => u.unitType === "function").slice(0, 1);
+			const units = allUnits
+				.filter((u) => u.unitType === "function")
+				.slice(0, 1);
 
 			const xmlOutput = xmlFormatter.formatForLLM({
 				primary: units,
@@ -204,7 +256,10 @@ describe("Retrieval Pipeline Integration", () => {
 
 	describe("LLMReranker", () => {
 		const mockLLM = new MockLLMClient();
-		const reranker = new LLMReranker(mockLLM, { maxCandidates: 10, minScore: 3 });
+		const reranker = new LLMReranker(mockLLM, {
+			maxCandidates: 10,
+			minScore: 3,
+		});
 
 		test("reranks code units", async () => {
 			const unitsWithScore = allUnits.slice(0, 5).map((u, i) => ({
@@ -212,11 +267,18 @@ describe("Retrieval Pipeline Integration", () => {
 				score: 0.5 - i * 0.1, // Decreasing scores
 			}));
 
-			const reranked = await reranker.rerankCodeUnits("UserService", unitsWithScore);
+			const reranked = await reranker.rerankCodeUnits(
+				"UserService",
+				unitsWithScore,
+			);
 
 			// Should have rerank scores
-			expect(reranked.every((r) => typeof r.rerankScore === "number")).toBe(true);
-			expect(reranked.every((r) => typeof r.finalScore === "number")).toBe(true);
+			expect(reranked.every((r) => typeof r.rerankScore === "number")).toBe(
+				true,
+			);
+			expect(reranked.every((r) => typeof r.finalScore === "number")).toBe(
+				true,
+			);
 		});
 
 		test("filters by minimum score", async () => {
@@ -226,7 +288,10 @@ describe("Retrieval Pipeline Integration", () => {
 			}));
 
 			const strictReranker = new LLMReranker(mockLLM, { minScore: 6 });
-			const reranked = await strictReranker.rerankCodeUnits("UserService", unitsWithScore);
+			const reranked = await strictReranker.rerankCodeUnits(
+				"UserService",
+				unitsWithScore,
+			);
 
 			// Only high-scoring results should remain (based on mock returning 9, 7, 5)
 			expect(reranked.every((r) => r.rerankScore >= 6)).toBe(true);
@@ -254,7 +319,10 @@ describe("Retrieval Pipeline Integration", () => {
 
 	describe("QueryRouter with LLM", () => {
 		const mockLLM = new MockLLMClient();
-		const router = new QueryRouter(mockLLM, { useLLM: true, minConfidence: 0.5 });
+		const router = new QueryRouter(mockLLM, {
+			useLLM: true,
+			minConfidence: 0.5,
+		});
 
 		test("uses rule-based classification for high-confidence patterns", async () => {
 			// PascalCase should trigger high-confidence rule

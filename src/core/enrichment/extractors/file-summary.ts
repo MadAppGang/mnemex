@@ -96,7 +96,7 @@ export class FileSummaryExtractor extends BaseExtractor {
 		} catch (error) {
 			// Re-throw with context so caller sees the actual error
 			throw new Error(
-				`LLM error: ${error instanceof Error ? error.message : String(error)}`
+				`LLM error: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
 	}
@@ -149,10 +149,11 @@ export class FileSummaryExtractor extends BaseExtractor {
 			const userPrompt = buildBatchedFileSummaryPrompt(batchInfo);
 
 			// Call LLM with batched prompt
-			const responses = await llmClient.completeJSON<BatchedFileSummaryResponse[]>(
-				[{ role: "user", content: userPrompt }],
-				{ systemPrompt: BATCHED_FILE_SUMMARY_SYSTEM_PROMPT },
-			);
+			const responses = await llmClient.completeJSON<
+				BatchedFileSummaryResponse[]
+			>([{ role: "user", content: userPrompt }], {
+				systemPrompt: BATCHED_FILE_SUMMARY_SYSTEM_PROMPT,
+			});
 
 			// Convert responses to documents
 			const documents: FileSummary[] = [];
@@ -160,7 +161,8 @@ export class FileSummaryExtractor extends BaseExtractor {
 			for (let i = 0; i < files.length; i++) {
 				const file = files[i];
 				// Match response by filePath or index
-				const response = responses.find((r) => r.filePath === file.filePath) || responses[i];
+				const response =
+					responses.find((r) => r.filePath === file.filePath) || responses[i];
 
 				if (!response) {
 					console.warn(`No summary returned for ${file.filePath}`);
@@ -192,7 +194,7 @@ export class FileSummaryExtractor extends BaseExtractor {
 		} catch (error) {
 			// Re-throw with context so caller sees the actual error
 			throw new Error(
-				`LLM error: ${error instanceof Error ? error.message : String(error)}`
+				`LLM error: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
 	}
@@ -200,14 +202,16 @@ export class FileSummaryExtractor extends BaseExtractor {
 	/**
 	 * Build searchable content from the summary
 	 */
-	private buildContent(filePath: string, response: FileSummaryLLMResponse): string {
-		const parts = [
-			`File: ${filePath}`,
-			`\nSummary: ${response.summary}`,
-		];
+	private buildContent(
+		filePath: string,
+		response: FileSummaryLLMResponse,
+	): string {
+		const parts = [`File: ${filePath}`, `\nSummary: ${response.summary}`];
 
 		if (response.responsibilities?.length > 0) {
-			parts.push(`\nResponsibilities:\n${response.responsibilities.map((r) => `- ${r}`).join("\n")}`);
+			parts.push(
+				`\nResponsibilities:\n${response.responsibilities.map((r) => `- ${r}`).join("\n")}`,
+			);
 		}
 
 		if (response.exports?.length > 0) {

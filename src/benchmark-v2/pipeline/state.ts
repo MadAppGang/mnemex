@@ -106,7 +106,7 @@ export class PipelineStateMachine {
 	constructor(
 		db: BenchmarkDatabase,
 		run: BenchmarkRun,
-		progressCallback?: BenchmarkProgressCallback
+		progressCallback?: BenchmarkProgressCallback,
 	) {
 		this.db = db;
 		this.runId = run.id;
@@ -178,7 +178,10 @@ export class PipelineStateMachine {
 	getNextPhase(): BenchmarkPhase | null {
 		// Find the first incomplete phase whose dependencies are satisfied
 		for (const phase of PHASES) {
-			if (!this.isPhaseComplete(phase) && this.areAllDependenciesComplete(phase)) {
+			if (
+				!this.isPhaseComplete(phase) &&
+				this.areAllDependenciesComplete(phase)
+			) {
 				return phase;
 			}
 		}
@@ -209,11 +212,11 @@ export class PipelineStateMachine {
 		// Validate transition
 		if (!this.areAllDependenciesComplete(phase)) {
 			const incomplete = PHASE_DEPENDENCIES[phase].filter(
-				(dep) => !this.isPhaseComplete(dep)
+				(dep) => !this.isPhaseComplete(dep),
 			);
 			throw new IncompletePhaseError(
 				phase,
-				`Dependencies not complete: ${incomplete.join(", ")}`
+				`Dependencies not complete: ${incomplete.join(", ")}`,
 			);
 		}
 
@@ -239,7 +242,7 @@ export class PipelineStateMachine {
 		phase: BenchmarkPhase,
 		completed: number,
 		lastProcessedId?: string,
-		details?: string
+		details?: string,
 	): void {
 		const phaseState = this.state.phases.get(phase);
 		if (!phaseState) {
@@ -332,7 +335,7 @@ export class PipelineStateMachine {
 			this.runId,
 			"failed",
 			this.state.currentPhase,
-			error
+			error,
 		);
 	}
 
@@ -344,7 +347,7 @@ export class PipelineStateMachine {
 		phase: BenchmarkPhase,
 		completed: number,
 		total: number,
-		details?: string
+		details?: string,
 	): void {
 		if (this.progressCallback) {
 			this.progressCallback(phase, completed, total, details);
@@ -361,7 +364,7 @@ export class PipelineStateMachine {
 
 	validateTransition(
 		from: BenchmarkPhase | undefined,
-		to: BenchmarkPhase
+		to: BenchmarkPhase,
 	): void {
 		// If starting the same phase we're "in", this isn't a transition -
 		// it's the initial start of that phase (resume() sets currentPhase
@@ -370,10 +373,12 @@ export class PipelineStateMachine {
 			// Just check dependencies are met
 			if (!this.areAllDependenciesComplete(to)) {
 				const incomplete = PHASE_DEPENDENCIES[to].filter(
-					(dep) => !this.isPhaseComplete(dep)
+					(dep) => !this.isPhaseComplete(dep),
 				);
-				throw new IncompletePhaseError(to,
-					`Dependencies not complete: ${incomplete.join(", ")}`);
+				throw new IncompletePhaseError(
+					to,
+					`Dependencies not complete: ${incomplete.join(", ")}`,
+				);
 			}
 			return;
 		}
@@ -458,7 +463,7 @@ export class PipelineStateMachine {
 export function createPipelineStateMachine(
 	db: BenchmarkDatabase,
 	run: BenchmarkRun,
-	progressCallback?: BenchmarkProgressCallback
+	progressCallback?: BenchmarkProgressCallback,
 ): PipelineStateMachine {
 	return new PipelineStateMachine(db, run, progressCallback);
 }

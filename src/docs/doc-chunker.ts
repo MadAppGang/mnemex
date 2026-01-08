@@ -185,8 +185,7 @@ export class DocChunker {
 			}
 			// Add section to current chunk
 			else {
-				currentChunk +=
-					(currentChunk ? "\n\n" : "") + section;
+				currentChunk += (currentChunk ? "\n\n" : "") + section;
 			}
 		}
 
@@ -244,9 +243,7 @@ export class DocChunker {
 	 */
 	private splitBySentences(text: string): string[] {
 		// Simple sentence splitting - handles common patterns
-		return text
-			.split(/(?<=[.!?])\s+/)
-			.filter((s) => s.trim().length > 0);
+		return text.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 0);
 	}
 
 	/**

@@ -511,10 +511,7 @@ export class InteractionStore {
 	/**
 	 * Get recent high-confidence corrections.
 	 */
-	getRecentCorrections(
-		minScore = 0.6,
-		limit = 50,
-	): CorrectionEvent[] {
+	getRecentCorrections(minScore = 0.6, limit = 50): CorrectionEvent[] {
 		const stmt = this.db.prepare(`
 			SELECT * FROM corrections
 			WHERE correction_score >= ?
@@ -738,7 +735,10 @@ export class InteractionStore {
 			WHERE tool_count > 0
 		`,
 			)
-			.get() as { avg_intervention_rate: number | null; avg_duration: number | null };
+			.get() as {
+			avg_intervention_rate: number | null;
+			avg_duration: number | null;
+		};
 
 		const outcomeRows = this.db
 			.prepare(

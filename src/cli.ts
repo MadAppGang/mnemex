@@ -26,7 +26,11 @@ import {
 } from "./config.js";
 // Note: createIndexer imports store.js which loads LanceDB - made lazy to avoid startup errors
 // Use: const { createIndexer } = await import("./core/indexer.js");
-import { createEmbeddingsClient, getModelContextLength, truncateForModel } from "./core/embeddings.js";
+import {
+	createEmbeddingsClient,
+	getModelContextLength,
+	truncateForModel,
+} from "./core/embeddings.js";
 import { chunkFileByPath, canChunkFile } from "./core/chunker.js";
 // Note: createVectorStore is imported lazily to avoid loading LanceDB on startup
 // Use: const { createVectorStore } = await import("./core/store.js");
@@ -118,8 +122,12 @@ function isAgentMode(): boolean {
 /** Print compact help for AI agents (3 lines) */
 function printCompactHelp(): void {
 	console.log(`claudemem v${VERSION} - Semantic code search with AST analysis`);
-	console.log(`Commands: index search map symbol callers callees context dead-code test-gaps impact hook`);
-	console.log(`Use: claudemem --agent <cmd> | Docs: https://github.com/MadAppGang/claudemem`);
+	console.log(
+		`Commands: index search map symbol callers callees context dead-code test-gaps impact hook`,
+	);
+	console.log(
+		`Use: claudemem --agent <cmd> | Docs: https://github.com/MadAppGang/claudemem`,
+	);
 }
 
 // ============================================================================
@@ -322,7 +330,13 @@ function createProgressRenderer() {
 	// Order phases appeared (for consistent rendering order)
 	const phaseOrder: string[] = [];
 
-	function renderLine(elapsed: string, bar: string, percent: number, phase: string, detail: string) {
+	function renderLine(
+		elapsed: string,
+		bar: string,
+		percent: number,
+		phase: string,
+		detail: string,
+	) {
 		return `⏱ ${elapsed} │ ${bar} ${percent.toString().padStart(3)}% │ ${phase.padEnd(16)} │ ${detail}`;
 	}
 
@@ -332,7 +346,10 @@ function createProgressRenderer() {
 		const inProgressRatio = total > 0 ? inProgress / total : 0;
 
 		const filledWidth = Math.round(filledRatio * width);
-		const inProgressWidth = Math.min(Math.round(inProgressRatio * width), width - filledWidth);
+		const inProgressWidth = Math.min(
+			Math.round(inProgressRatio * width),
+			width - filledWidth,
+		);
 		const emptyWidth = width - filledWidth - inProgressWidth;
 
 		const filled = "█".repeat(filledWidth);
@@ -356,17 +373,21 @@ function createProgressRenderer() {
 		// Render each phase in order
 		for (const phaseName of phaseOrder) {
 			const phase = phases.get(phaseName)!;
-			const percent = phase.total > 0 ? Math.round((phase.completed / phase.total) * 100) : 0;
+			const percent =
+				phase.total > 0 ? Math.round((phase.completed / phase.total) * 100) : 0;
 			const bar = phase.isComplete
 				? "█".repeat(20)
 				: buildBar(phase.completed, phase.total, phase.inProgress);
 			// Use frozen duration for completed phases, live duration for active
-			const elapsed = phase.isComplete && phase.finalDuration !== undefined
-				? formatElapsed(phase.finalDuration)
-				: formatElapsed(Date.now() - phase.startTime);
+			const elapsed =
+				phase.isComplete && phase.finalDuration !== undefined
+					? formatElapsed(phase.finalDuration)
+					: formatElapsed(Date.now() - phase.startTime);
 			const detail = phase.isComplete ? "done" : phase.detail;
 
-			process.stdout.write(`\r${renderLine(elapsed, bar, percent, phaseName, detail)}\x1b[K\n`);
+			process.stdout.write(
+				`\r${renderLine(elapsed, bar, percent, phaseName, detail)}\x1b[K\n`,
+			);
 		}
 
 		// Render total line
@@ -445,9 +466,13 @@ function createProgressRenderer() {
 
 			for (const phaseName of phaseOrder) {
 				const phase = phases.get(phaseName)!;
-				const elapsed = formatElapsed(phase.finalDuration ?? (Date.now() - phase.startTime));
+				const elapsed = formatElapsed(
+					phase.finalDuration ?? Date.now() - phase.startTime,
+				);
 				const bar = "█".repeat(20);
-				process.stdout.write(`\r${renderLine(elapsed, bar, 100, phaseName, "done")}\x1b[K\n`);
+				process.stdout.write(
+					`\r${renderLine(elapsed, bar, 100, phaseName, "done")}\x1b[K\n`,
+				);
 			}
 
 			const totalElapsed = formatElapsed(Date.now() - globalStartTime);
@@ -470,7 +495,9 @@ async function handleIndex(args: string[]): Promise<void> {
 
 	// Parse concurrency (default 10 for parallel LLM requests)
 	const concurrencyArg = args.find((a) => a.startsWith("--concurrency="));
-	const concurrency = concurrencyArg ? parseInt(concurrencyArg.split("=")[1], 10) : 10;
+	const concurrency = concurrencyArg
+		? parseInt(concurrencyArg.split("=")[1], 10)
+		: 10;
 
 	// Parse wait timeout (default 5 minutes)
 	const waitTimeoutArg = args.find((a) => a.startsWith("--wait-timeout="));
@@ -542,7 +569,9 @@ async function handleIndex(args: string[]): Promise<void> {
 		lockOptions: wait ? { waitTimeout } : undefined,
 		onWaitingForLock: (holderPid, waitedMs) => {
 			if (!waitingMessageShown) {
-				console.log(`⏳ Waiting for another indexing process (PID ${holderPid}) to finish...`);
+				console.log(
+					`⏳ Waiting for another indexing process (PID ${holderPid}) to finish...`,
+				);
 				waitingMessageShown = true;
 			}
 		},
@@ -563,12 +592,14 @@ async function handleIndex(args: string[]): Promise<void> {
 
 		// Compact mode: 3-line summary
 		if (compactMode) {
-			const costStr = result.cost !== undefined ? ` | Cost: $${result.cost.toFixed(4)}` : "";
-			const errStr = result.errors.length > 0 ? ` | ${result.errors.length} errors` : "";
+			const costStr =
+				result.cost !== undefined ? ` | Cost: $${result.cost.toFixed(4)}` : "";
+			const errStr =
+				result.errors.length > 0 ? ` | ${result.errors.length} errors` : "";
 			compactOutput(
 				`✓ Indexed ${result.filesIndexed} files → ${result.chunksCreated} chunks in ${compactDuration(result.durationMs)}${costStr}${errStr}`,
 				`Model: ${embeddingModel}${result.enrichment ? ` | Enriched: ${result.enrichment.documentsCreated} docs` : ""}`,
-				`Next: claudemem search "query" | claudemem map | claudemem symbol <name>`
+				`Next: claudemem search "query" | claudemem map | claudemem symbol <name>`,
 			);
 			await indexer.close();
 			return;
@@ -590,7 +621,8 @@ async function handleIndex(args: string[]): Promise<void> {
 
 			// Show LLM calls and cost
 			if (result.enrichment.llmCalls) {
-				const { fileSummaries, symbolSummaries, total } = result.enrichment.llmCalls;
+				const { fileSummaries, symbolSummaries, total } =
+					result.enrichment.llmCalls;
 				const provider = result.enrichment.llmProvider;
 
 				// For subscription/local providers, show "Subscription" or "Free" instead of cost
@@ -603,14 +635,20 @@ async function handleIndex(args: string[]): Promise<void> {
 					console.log(`      - file summaries:   ${fileSummaries} calls`);
 					console.log(`      - symbol summaries: ${symbolSummaries} calls`);
 				} else if (result.enrichment.cost !== undefined) {
-					console.log(`    LLM cost:     $${result.enrichment.cost.toFixed(6)} (${total} calls)`);
+					console.log(
+						`    LLM cost:     $${result.enrichment.cost.toFixed(6)} (${total} calls)`,
+					);
 					if (result.enrichment.costBreakdown) {
 						const breakdown = result.enrichment.costBreakdown;
 						if (breakdown.fileSummaries !== undefined) {
-							console.log(`      - file summaries:   $${breakdown.fileSummaries.toFixed(6)} (${fileSummaries} calls)`);
+							console.log(
+								`      - file summaries:   $${breakdown.fileSummaries.toFixed(6)} (${fileSummaries} calls)`,
+							);
 						}
 						if (breakdown.symbolSummaries !== undefined) {
-							console.log(`      - symbol summaries: $${breakdown.symbolSummaries.toFixed(6)} (${symbolSummaries} calls)`);
+							console.log(
+								`      - symbol summaries: $${breakdown.symbolSummaries.toFixed(6)} (${symbolSummaries} calls)`,
+							);
 						}
 					}
 				} else {
@@ -623,7 +661,10 @@ async function handleIndex(args: string[]): Promise<void> {
 			if (result.enrichment.errors.length > 0) {
 				console.log(`    Errors:       ${result.enrichment.errors.length}`);
 				// Group errors by error message for cleaner output
-				const errorGroups = new Map<string, { count: number; files: string[] }>();
+				const errorGroups = new Map<
+					string,
+					{ count: number; files: string[] }
+				>();
 				for (const err of result.enrichment.errors) {
 					const key = err.error;
 					const existing = errorGroups.get(key);
@@ -639,9 +680,12 @@ async function handleIndex(args: string[]): Promise<void> {
 				// Show unique errors with counts
 				console.log("\n  Enrichment errors:");
 				for (const [error, { count, files }] of errorGroups) {
-					const truncatedError = error.length > 100 ? error.slice(0, 100) + "..." : error;
+					const truncatedError =
+						error.length > 100 ? error.slice(0, 100) + "..." : error;
 					console.log(`    ✖ ${truncatedError}`);
-					console.log(`      (${count}x) files: ${files.join(", ")}${count > files.length ? ` +${count - files.length} more` : ""}`);
+					console.log(
+						`      (${count}x) files: ${files.join(", ")}${count > files.length ? ` +${count - files.length} more` : ""}`,
+					);
 				}
 			}
 		}
@@ -676,9 +720,7 @@ async function handleSearch(args: string[]): Promise<void> {
 	// Parse arguments
 	const limitIdx = args.findIndex((a) => a === "-n" || a === "--limit");
 	const limit =
-		limitIdx >= 0 && args[limitIdx + 1]
-			? parseInt(args[limitIdx + 1], 10)
-			: 10;
+		limitIdx >= 0 && args[limitIdx + 1] ? parseInt(args[limitIdx + 1], 10) : 10;
 
 	const langIdx = args.findIndex((a) => a === "-l" || a === "--language");
 	const language = langIdx >= 0 ? args[langIdx + 1] : undefined;
@@ -696,7 +738,10 @@ async function handleSearch(args: string[]): Promise<void> {
 
 	// Search use case (fim, search, navigation)
 	const useCaseIdx = args.findIndex((a) => a === "--use-case");
-	const useCase = useCaseIdx >= 0 ? args[useCaseIdx + 1] as "fim" | "search" | "navigation" : "search";
+	const useCase =
+		useCaseIdx >= 0
+			? (args[useCaseIdx + 1] as "fim" | "search" | "navigation")
+			: "search";
 
 	// Keyword-only search (skip embedding API call, use BM25 only)
 	const keywordOnly = args.includes("-k") || args.includes("--keyword");
@@ -704,12 +749,29 @@ async function handleSearch(args: string[]): Promise<void> {
 	// Get query (everything that's not a flag)
 	// Only add indices to flagIndices if the flag was actually found (>= 0)
 	const flagIndices = new Set<number>();
-	if (limitIdx >= 0) { flagIndices.add(limitIdx); flagIndices.add(limitIdx + 1); }
-	if (langIdx >= 0) { flagIndices.add(langIdx); flagIndices.add(langIdx + 1); }
-	if (pathIdx >= 0) { flagIndices.add(pathIdx); flagIndices.add(pathIdx + 1); }
-	if (modelIdx >= 0) { flagIndices.add(modelIdx); flagIndices.add(modelIdx + 1); }
-	if (useCaseIdx >= 0) { flagIndices.add(useCaseIdx); flagIndices.add(useCaseIdx + 1); }
-	const queryParts = args.filter((_, i) => !flagIndices.has(i) && !args[i].startsWith("-"));
+	if (limitIdx >= 0) {
+		flagIndices.add(limitIdx);
+		flagIndices.add(limitIdx + 1);
+	}
+	if (langIdx >= 0) {
+		flagIndices.add(langIdx);
+		flagIndices.add(langIdx + 1);
+	}
+	if (pathIdx >= 0) {
+		flagIndices.add(pathIdx);
+		flagIndices.add(pathIdx + 1);
+	}
+	if (modelIdx >= 0) {
+		flagIndices.add(modelIdx);
+		flagIndices.add(modelIdx + 1);
+	}
+	if (useCaseIdx >= 0) {
+		flagIndices.add(useCaseIdx);
+		flagIndices.add(useCaseIdx + 1);
+	}
+	const queryParts = args.filter(
+		(_, i) => !flagIndices.has(i) && !args[i].startsWith("-"),
+	);
 	const query = queryParts.join(" ");
 
 	if (!query) {
@@ -728,7 +790,9 @@ async function handleSearch(args: string[]): Promise<void> {
 		process.exit(1);
 	}
 
-	const { createIndexer, EmbeddingModelMismatchError } = await import("./core/indexer.js");
+	const { createIndexer, EmbeddingModelMismatchError } = await import(
+		"./core/indexer.js"
+	);
 	const indexer = createIndexer({ projectPath, model });
 
 	try {
@@ -746,7 +810,9 @@ async function handleSearch(args: string[]): Promise<void> {
 				});
 
 				if (!shouldIndex) {
-					console.log("Search cancelled. Run 'claudemem index' to create an index.");
+					console.log(
+						"Search cancelled. Run 'claudemem index' to create an index.",
+					);
 					return;
 				}
 				console.log("");
@@ -754,12 +820,16 @@ async function handleSearch(args: string[]): Promise<void> {
 
 			// Create initial index
 			const result = await indexer.index(false);
-			console.log(`✅ Indexed ${result.filesIndexed} files (${result.chunksCreated} chunks)\n`);
+			console.log(
+				`✅ Indexed ${result.filesIndexed} files (${result.chunksCreated} chunks)\n`,
+			);
 		} else if (!noReindex) {
 			// Index exists - auto-reindex changed files with progress display
 			// In compact mode, do silent reindex
 			if (compactMode) {
-				const { createIndexer: createTempIndexer } = await import("./core/indexer.js");
+				const { createIndexer: createTempIndexer } = await import(
+					"./core/indexer.js"
+				);
 				const tempIndexer = createTempIndexer({ projectPath });
 				await tempIndexer.index(false);
 			} else {
@@ -768,7 +838,9 @@ async function handleSearch(args: string[]): Promise<void> {
 				let hasChanges = false;
 
 				// Create a temporary indexer with progress callback
-				const { createIndexer: createTempIndexer } = await import("./core/indexer.js");
+				const { createIndexer: createTempIndexer } = await import(
+					"./core/indexer.js"
+				);
 				const tempIndexer = createTempIndexer({
 					projectPath,
 					onProgress: (current, total, detail, inProgress) => {
@@ -787,16 +859,25 @@ async function handleSearch(args: string[]): Promise<void> {
 
 				if (hasChanges) {
 					progress.finish();
-					console.log(`✅ Auto-indexed ${result.filesIndexed} changed file(s)\n`);
+					console.log(
+						`✅ Auto-indexed ${result.filesIndexed} changed file(s)\n`,
+					);
 				}
 			}
 		}
 
 		if (!compactMode) {
-			console.log(`Searching for: "${query}"${keywordOnly ? " (keyword-only)" : ""}`);
+			console.log(
+				`Searching for: "${query}"${keywordOnly ? " (keyword-only)" : ""}`,
+			);
 		}
 
-		const results = await indexer.search(query, { limit, language, useCase, keywordOnly });
+		const results = await indexer.search(query, {
+			limit,
+			language,
+			useCase,
+			keywordOnly,
+		});
 
 		if (results.length === 0) {
 			if (compactMode) {
@@ -842,22 +923,29 @@ async function handleSearch(args: string[]): Promise<void> {
 		if (compactMode) {
 			// Plain mode: minimal output for tools/CI (no emojis, no hints)
 			if (agentMode) {
-				const topResults = results.slice(0, 5).map((r) =>
-					`${r.chunk.filePath}:${r.chunk.startLine}`
-				).join("\n");
+				const topResults = results
+					.slice(0, 5)
+					.map((r) => `${r.chunk.filePath}:${r.chunk.startLine}`)
+					.join("\n");
 				console.log(topResults);
 				return;
 			}
 			// Line 1: Summary
 			console.log(`✓ Found ${results.length} results for "${query}"`);
 			// Line 2: Top results (file:line score%)
-			const topResults = results.slice(0, 5).map((r) =>
-				`${compactPath(r.chunk.filePath, 25)}:${r.chunk.startLine} (${(r.score * 100).toFixed(0)}%)`
-			).join(" | ");
+			const topResults = results
+				.slice(0, 5)
+				.map(
+					(r) =>
+						`${compactPath(r.chunk.filePath, 25)}:${r.chunk.startLine} (${(r.score * 100).toFixed(0)}%)`,
+				)
+				.join(" | ");
 			console.log(topResults);
 			// Line 3: Use Read tool hint
 			const firstFile = results[0]?.chunk.filePath;
-			console.log(`Read: ${firstFile}:${results[0]?.chunk.startLine} | More: claudemem symbol <name>`);
+			console.log(
+				`Read: ${firstFile}:${results[0]?.chunk.startLine} | More: claudemem symbol <name>`,
+			);
 			return;
 		}
 
@@ -870,10 +958,16 @@ async function handleSearch(args: string[]): Promise<void> {
 			const r = results[i];
 			const chunk = r.chunk;
 
-			console.log(`━━━ ${i + 1}. ${chunk.filePath}:${chunk.startLine}-${chunk.endLine} ━━━`);
+			console.log(
+				`━━━ ${i + 1}. ${chunk.filePath}:${chunk.startLine}-${chunk.endLine} ━━━`,
+			);
 			console.log(`ID: ${chunk.id}`);
-			console.log(`Type: ${chunk.chunkType}${chunk.name ? ` | Name: ${chunk.name}` : ""}${chunk.parentName ? ` | Parent: ${chunk.parentName}` : ""}`);
-			console.log(`Score: ${(r.score * 100).toFixed(1)}% (vector: ${(r.vectorScore * 100).toFixed(0)}%, keyword: ${(r.keywordScore * 100).toFixed(0)}%)`);
+			console.log(
+				`Type: ${chunk.chunkType}${chunk.name ? ` | Name: ${chunk.name}` : ""}${chunk.parentName ? ` | Parent: ${chunk.parentName}` : ""}`,
+			);
+			console.log(
+				`Score: ${(r.score * 100).toFixed(1)}% (vector: ${(r.vectorScore * 100).toFixed(0)}%, keyword: ${(r.keywordScore * 100).toFixed(0)}%)`,
+			);
 			console.log("");
 
 			// Print code with truncation
@@ -893,7 +987,9 @@ async function handleSearch(args: string[]): Promise<void> {
 		}
 
 		// Show feedback hint for agents
-		console.log(`💡 To provide feedback: claudemem feedback --query "${query}" --helpful <ids> --unhelpful <ids>`);
+		console.log(
+			`💡 To provide feedback: claudemem feedback --query "${query}" --helpful <ids> --unhelpful <ids>`,
+		);
 		console.log(`   Result IDs: ${resultIds.join(",")}\n`);
 	} catch (error) {
 		if (error instanceof EmbeddingModelMismatchError) {
@@ -936,9 +1032,15 @@ async function handleStatus(args: string[]): Promise<void> {
 			const age = status.lastUpdated
 				? compactDuration(Date.now() - status.lastUpdated.getTime()) + " ago"
 				: "unknown";
-			console.log(`✓ Index: ${status.totalFiles} files, ${status.totalChunks} chunks (${age})`);
-			console.log(`Languages: ${status.languages.join(", ") || "none"} | Model: ${status.embeddingModel || "none"}`);
-			console.log(`Commands: search map symbol callers callees context dead-code test-gaps impact`);
+			console.log(
+				`✓ Index: ${status.totalFiles} files, ${status.totalChunks} chunks (${age})`,
+			);
+			console.log(
+				`Languages: ${status.languages.join(", ") || "none"} | Model: ${status.embeddingModel || "none"}`,
+			);
+			console.log(
+				`Commands: search map symbol callers callees context dead-code test-gaps impact`,
+			);
 			return;
 		}
 
@@ -999,7 +1101,7 @@ async function handleInit(): Promise<void> {
 	// ═══════════════════════════════════════════════════════════════════════════
 	console.log("─── Embedding Configuration ───\n");
 
-	const embeddingProvider = await select({
+	const embeddingProvider = (await select({
 		message: "Select embedding provider:",
 		choices: [
 			{
@@ -1023,7 +1125,7 @@ async function handleInit(): Promise<void> {
 				value: "local",
 			},
 		],
-	}) as "voyage" | "openrouter" | "ollama" | "lmstudio" | "local";
+	})) as "voyage" | "openrouter" | "ollama" | "lmstudio" | "local";
 
 	let embeddingModel: string;
 	let embeddingEndpoint: string | undefined;
@@ -1048,12 +1150,14 @@ async function handleInit(): Promise<void> {
 		embeddingModel = await select({
 			message: "Select Voyage embedding model:",
 			choices: [
-				{ name: "voyage-3.5-lite (recommended, fast, cheap)", value: "voyage-3.5-lite" },
+				{
+					name: "voyage-3.5-lite (recommended, fast, cheap)",
+					value: "voyage-3.5-lite",
+				},
 				{ name: "voyage-3 (highest quality)", value: "voyage-3" },
 				{ name: "voyage-code-3 (optimized for code)", value: "voyage-code-3" },
 			],
 		});
-
 	} else if (embeddingProvider === "openrouter") {
 		// OpenRouter setup
 		const existingKey = getApiKey();
@@ -1090,7 +1194,6 @@ async function handleInit(): Promise<void> {
 				}));
 			},
 		});
-
 	} else if (embeddingProvider === "ollama") {
 		// Ollama setup
 		embeddingEndpoint = await input({
@@ -1103,10 +1206,16 @@ async function handleInit(): Promise<void> {
 		try {
 			const response = await fetch(`${embeddingEndpoint}/api/tags`);
 			if (response.ok) {
-				const data = await response.json() as { models?: Array<{ name: string }> };
+				const data = (await response.json()) as {
+					models?: Array<{ name: string }>;
+				};
 				const installedModels = data.models || [];
-				const embModels = installedModels.filter((m: { name: string }) =>
-					m.name.includes("embed") || m.name.includes("nomic") || m.name.includes("minilm") || m.name.includes("bge")
+				const embModels = installedModels.filter(
+					(m: { name: string }) =>
+						m.name.includes("embed") ||
+						m.name.includes("nomic") ||
+						m.name.includes("minilm") ||
+						m.name.includes("bge"),
 				);
 
 				if (embModels.length > 0) {
@@ -1133,7 +1242,6 @@ async function handleInit(): Promise<void> {
 				default: "nomic-embed-text",
 			});
 		}
-
 	} else if (embeddingProvider === "lmstudio") {
 		// LM Studio setup (OpenAI-compatible API)
 		embeddingEndpoint = await input({
@@ -1156,13 +1264,14 @@ async function handleInit(): Promise<void> {
 			});
 		} else {
 			console.log("⚠️  No embedding models found in LM Studio.");
-			console.log("   Make sure LM Studio is running and has embedding models loaded.");
+			console.log(
+				"   Make sure LM Studio is running and has embedding models loaded.",
+			);
 			embeddingModel = await input({
 				message: "Enter embedding model name:",
 				default: "text-embedding-nomic-embed-text-v1.5",
 			});
 		}
-
 	} else {
 		// Custom endpoint setup
 		embeddingEndpoint = await input({
@@ -1179,7 +1288,9 @@ async function handleInit(): Promise<void> {
 	// STEP 2: LLM Enrichment
 	// ═══════════════════════════════════════════════════════════════════════════
 	console.log("\n─── LLM Enrichment Configuration ───\n");
-	console.log("LLM enrichment generates semantic summaries for better search.\n");
+	console.log(
+		"LLM enrichment generates semantic summaries for better search.\n",
+	);
 
 	const enableEnrichment = await confirm({
 		message: "Enable LLM enrichment?",
@@ -1193,12 +1304,21 @@ async function handleInit(): Promise<void> {
 		const llmProvider = await select({
 			message: "Select LLM provider for enrichment:",
 			choices: [
-				{ name: "Claude Code CLI (uses your subscription)", value: "claude-code" },
-				{ name: "Anthropic API (direct, requires API key)", value: "anthropic" },
+				{
+					name: "Claude Code CLI (uses your subscription)",
+					value: "claude-code",
+				},
+				{
+					name: "Anthropic API (direct, requires API key)",
+					value: "anthropic",
+				},
 				{ name: "OpenRouter (many models)", value: "openrouter" },
 				{ name: "LM Studio (local, OpenAI-compatible)", value: "lmstudio" },
 				{ name: "Ollama (local)", value: "ollama" },
-				{ name: "OpenAI-compatible (MLX, vLLM, llamafile, etc.)", value: "openai-compat" },
+				{
+					name: "OpenAI-compatible (MLX, vLLM, llamafile, etc.)",
+					value: "openai-compat",
+				},
 			],
 		});
 
@@ -1212,7 +1332,6 @@ async function handleInit(): Promise<void> {
 				],
 			});
 			llmSpec = `cc/${llmModel}`;
-
 		} else if (llmProvider === "anthropic") {
 			const existingAnthropicKey = getAnthropicApiKey();
 			if (existingAnthropicKey) {
@@ -1223,26 +1342,35 @@ async function handleInit(): Promise<void> {
 				if (!useExisting) {
 					anthropicApiKey = await input({
 						message: "Enter your Anthropic API key:",
-						validate: (v) => v.startsWith("sk-ant-") || "Invalid format. Keys start with 'sk-ant-'",
+						validate: (v) =>
+							v.startsWith("sk-ant-") ||
+							"Invalid format. Keys start with 'sk-ant-'",
 					});
 				}
 			} else {
 				anthropicApiKey = await input({
 					message: "Enter your Anthropic API key:",
-					validate: (v) => v.startsWith("sk-ant-") || "Invalid format. Keys start with 'sk-ant-'",
+					validate: (v) =>
+						v.startsWith("sk-ant-") ||
+						"Invalid format. Keys start with 'sk-ant-'",
 				});
 			}
 
 			const llmModel = await select({
 				message: "Select Claude model:",
 				choices: [
-					{ name: "Claude Sonnet 4 (recommended)", value: "claude-sonnet-4-20250514" },
-					{ name: "Claude Haiku 3.5 (fastest)", value: "claude-3-5-haiku-20241022" },
+					{
+						name: "Claude Sonnet 4 (recommended)",
+						value: "claude-sonnet-4-20250514",
+					},
+					{
+						name: "Claude Haiku 3.5 (fastest)",
+						value: "claude-3-5-haiku-20241022",
+					},
 					{ name: "Claude Opus 4", value: "claude-opus-4-20250514" },
 				],
 			});
 			llmSpec = `a/${llmModel}`;
-
 		} else if (llmProvider === "openrouter") {
 			// Reuse OpenRouter key if already set
 			if (!getApiKey()) {
@@ -1251,11 +1379,11 @@ async function handleInit(): Promise<void> {
 			}
 
 			llmSpec = await input({
-				message: "Enter OpenRouter model (e.g., openai/gpt-4o, anthropic/claude-3.5-sonnet):",
+				message:
+					"Enter OpenRouter model (e.g., openai/gpt-4o, anthropic/claude-3.5-sonnet):",
 				default: "anthropic/claude-3.5-sonnet",
 			});
 			llmSpec = `or/${llmSpec}`;
-
 		} else if (llmProvider === "lmstudio") {
 			// LM Studio for LLM enrichment
 			const lmstudioEndpoint = await input({
@@ -1279,14 +1407,15 @@ async function handleInit(): Promise<void> {
 				});
 			} else {
 				console.log("⚠️  No LLM models found in LM Studio.");
-				console.log("   Make sure LM Studio is running and has LLM models loaded.");
+				console.log(
+					"   Make sure LM Studio is running and has LLM models loaded.",
+				);
 				localModel = await input({
 					message: "Enter LLM model name:",
 					default: "llama-3.2-3b-instruct",
 				});
 			}
 			llmSpec = `lmstudio/${localModel}`;
-
 		} else if (llmProvider === "ollama") {
 			// Ollama for LLM enrichment
 			const ollamaEndpoint = await input({
@@ -1299,7 +1428,9 @@ async function handleInit(): Promise<void> {
 			try {
 				const response = await fetch(`${ollamaEndpoint}/api/tags`);
 				if (response.ok) {
-					const data = await response.json() as { models?: Array<{ name: string }> };
+					const data = (await response.json()) as {
+						models?: Array<{ name: string }>;
+					};
 					const installedModels = data.models || [];
 
 					if (installedModels.length > 0) {
@@ -1331,7 +1462,6 @@ async function handleInit(): Promise<void> {
 				});
 				llmSpec = `ollama/${localModel}`;
 			}
-
 		} else if (llmProvider === "openai-compat") {
 			// Generic OpenAI-compatible server (MLX, vLLM, text-generation-inference, etc.)
 			const customEndpoint = await input({
@@ -1340,10 +1470,15 @@ async function handleInit(): Promise<void> {
 			});
 
 			// Normalize endpoint
-			const normalizedEndpoint = customEndpoint.replace(/\/v1\/?$/, "").replace(/\/$/, "");
+			const normalizedEndpoint = customEndpoint
+				.replace(/\/v1\/?$/, "")
+				.replace(/\/$/, "");
 
 			console.log("\n🔄 Fetching available models...");
-			const models = await fetchOpenAICompatibleModels(normalizedEndpoint, "llm");
+			const models = await fetchOpenAICompatibleModels(
+				normalizedEndpoint,
+				"llm",
+			);
 
 			let localModel: string;
 			if (models.length > 0) {
@@ -1356,7 +1491,9 @@ async function handleInit(): Promise<void> {
 					})),
 				});
 			} else {
-				console.log("⚠️  Could not fetch models. Server might be starting up or doesn't support /v1/models.");
+				console.log(
+					"⚠️  Could not fetch models. Server might be starting up or doesn't support /v1/models.",
+				);
 				localModel = await input({
 					message: "Enter model name (check your server logs):",
 					default: "default",
@@ -1375,7 +1512,9 @@ async function handleInit(): Promise<void> {
 	// STEP 3: Documentation Sources
 	// ═══════════════════════════════════════════════════════════════════════════
 	console.log("\n─── Documentation Sources ───\n");
-	console.log("Automatically fetch framework docs for your project dependencies.");
+	console.log(
+		"Automatically fetch framework docs for your project dependencies.",
+	);
 	console.log("Docs are searchable alongside your code.\n");
 
 	const enableDocs = await confirm({
@@ -1394,7 +1533,8 @@ Documentation providers (used in priority order):
 `);
 
 		const configureContext7 = await confirm({
-			message: "Configure Context7 API for best coverage? (free tier available)",
+			message:
+				"Configure Context7 API for best coverage? (free tier available)",
 			default: true,
 		});
 
@@ -1406,14 +1546,18 @@ Documentation providers (used in priority order):
 					default: true,
 				});
 				if (!useExisting) {
-					console.log("Get your free API key at: https://context7.com/dashboard\n");
+					console.log(
+						"Get your free API key at: https://context7.com/dashboard\n",
+					);
 					context7ApiKey = await input({
 						message: "Enter Context7 API key:",
 						validate: (v) => v.trim().length > 0 || "API key is required",
 					});
 				}
 			} else {
-				console.log("Get your free API key at: https://context7.com/dashboard\n");
+				console.log(
+					"Get your free API key at: https://context7.com/dashboard\n",
+				);
 				context7ApiKey = await input({
 					message: "Enter Context7 API key (or press Enter to skip):",
 				});
@@ -1429,8 +1573,12 @@ Documentation providers (used in priority order):
 	// STEP 4: Self-Learning System
 	// ═══════════════════════════════════════════════════════════════════════════
 	console.log("\n─── Self-Learning System ───\n");
-	console.log("claudemem can learn from your interactions to improve search quality.");
-	console.log("It tracks which results you find helpful and adapts over time.\n");
+	console.log(
+		"claudemem can learn from your interactions to improve search quality.",
+	);
+	console.log(
+		"It tracks which results you find helpful and adapts over time.\n",
+	);
 
 	const enableLearning = await confirm({
 		message: "Enable self-learning system?",
@@ -1453,14 +1601,21 @@ View stats anytime with: claudemem learn
 	// Save Configuration
 	// ═══════════════════════════════════════════════════════════════════════════
 	saveGlobalConfig({
-		embeddingProvider: embeddingProvider === "lmstudio" ? "lmstudio" : embeddingProvider,
+		embeddingProvider:
+			embeddingProvider === "lmstudio" ? "lmstudio" : embeddingProvider,
 		defaultModel: embeddingModel,
 		...(voyageApiKey ? { voyageApiKey } : {}),
 		...(openrouterApiKey ? { openrouterApiKey } : {}),
 		...(anthropicApiKey ? { anthropicApiKey } : {}),
-		...(embeddingProvider === "ollama" && embeddingEndpoint ? { ollamaEndpoint: embeddingEndpoint } : {}),
-		...(embeddingProvider === "lmstudio" && embeddingEndpoint ? { lmstudioEndpoint: embeddingEndpoint } : {}),
-		...(embeddingProvider === "local" && embeddingEndpoint ? { localEndpoint: embeddingEndpoint } : {}),
+		...(embeddingProvider === "ollama" && embeddingEndpoint
+			? { ollamaEndpoint: embeddingEndpoint }
+			: {}),
+		...(embeddingProvider === "lmstudio" && embeddingEndpoint
+			? { lmstudioEndpoint: embeddingEndpoint }
+			: {}),
+		...(embeddingProvider === "local" && embeddingEndpoint
+			? { localEndpoint: embeddingEndpoint }
+			: {}),
 		enableEnrichment,
 		...(llmSpec ? { llm: llmSpec } : {}),
 		...(context7ApiKey ? { context7ApiKey } : {}),
@@ -1474,15 +1629,22 @@ View stats anytime with: claudemem learn
 	console.log("─── Configuration Summary ───\n");
 	console.log(`  Embedding provider: ${embeddingProvider}`);
 	console.log(`  Embedding model:    ${embeddingModel}`);
-	if (embeddingEndpoint) console.log(`  Endpoint:           ${embeddingEndpoint}`);
-	console.log(`  LLM enrichment:     ${enableEnrichment ? "enabled" : "disabled"}`);
+	if (embeddingEndpoint)
+		console.log(`  Endpoint:           ${embeddingEndpoint}`);
+	console.log(
+		`  LLM enrichment:     ${enableEnrichment ? "enabled" : "disabled"}`,
+	);
 	if (llmSpec) console.log(`  LLM model:          ${llmSpec}`);
 	console.log(`  Auto-fetch docs:    ${enableDocs ? "enabled" : "disabled"}`);
 	if (enableDocs) {
 		const hasContext7 = context7ApiKey || getContext7ApiKey();
-		console.log(`  Context7 API:       ${hasContext7 ? "configured" : "not configured (using llms.txt/DevDocs)"}`);
+		console.log(
+			`  Context7 API:       ${hasContext7 ? "configured" : "not configured (using llms.txt/DevDocs)"}`,
+		);
 	}
-	console.log(`  Self-learning:      ${enableLearning ? "enabled" : "disabled"}`);
+	console.log(
+		`  Self-learning:      ${enableLearning ? "enabled" : "disabled"}`,
+	);
 	console.log("\nYou can now index your codebase:");
 	console.log("  claudemem index\n");
 }
@@ -1509,7 +1671,7 @@ async function fetchLMStudioModels(
 	try {
 		const response = await fetch(`${baseUrl}/api/v0/models`);
 		if (response.ok) {
-			const data = await response.json() as { data?: LMStudioModel[] };
+			const data = (await response.json()) as { data?: LMStudioModel[] };
 			let models = data.data || [];
 
 			// Filter by type if specified
@@ -1550,14 +1712,17 @@ async function fetchOpenAICompatibleModels(
 			return [];
 		}
 
-		const data = await response.json() as { data?: Array<{ id: string; owned_by?: string }> };
+		const data = (await response.json()) as {
+			data?: Array<{ id: string; owned_by?: string }>;
+		};
 		const rawModels = data.data || [];
 
 		// Convert to LMStudioModel format
 		// OpenAI API doesn't expose model type, so we guess based on name
 		const models: LMStudioModel[] = rawModels.map((m) => {
 			const id = m.id;
-			const isEmbedding = id.toLowerCase().includes("embed") ||
+			const isEmbedding =
+				id.toLowerCase().includes("embed") ||
 				id.toLowerCase().includes("e5") ||
 				id.toLowerCase().includes("bge");
 			return {
@@ -1631,10 +1796,30 @@ async function handleModels(args: string[]): Promise<void> {
 		console.log(`${c.orange}${c.bold}⭐ RECOMMENDED OLLAMA MODELS${c.reset}\n`);
 
 		const ollamaModels = [
-			{ id: "nomic-embed-text", dim: 768, size: "274MB", desc: "Best quality, multilingual" },
-			{ id: "mxbai-embed-large", dim: 1024, size: "670MB", desc: "Large context, high quality" },
-			{ id: "all-minilm", dim: 384, size: "46MB", desc: "Fastest, lightweight" },
-			{ id: "snowflake-arctic-embed", dim: 1024, size: "670MB", desc: "Optimized for retrieval" },
+			{
+				id: "nomic-embed-text",
+				dim: 768,
+				size: "274MB",
+				desc: "Best quality, multilingual",
+			},
+			{
+				id: "mxbai-embed-large",
+				dim: 1024,
+				size: "670MB",
+				desc: "Large context, high quality",
+			},
+			{
+				id: "all-minilm",
+				dim: 384,
+				size: "46MB",
+				desc: "Fastest, lightweight",
+			},
+			{
+				id: "snowflake-arctic-embed",
+				dim: 1024,
+				size: "670MB",
+				desc: "Optimized for retrieval",
+			},
 		];
 
 		for (const m of ollamaModels) {
@@ -1663,9 +1848,11 @@ async function handleModels(args: string[]): Promise<void> {
 	const recommendedIds = new Set(RECOMMENDED_MODELS.map((m) => m.id));
 
 	// Helper to print a model row
-	const printModel = (model: typeof allModels[0], prefix = "  ") => {
+	const printModel = (model: (typeof allModels)[0], prefix = "  ") => {
 		const id = model.id.length > 35 ? model.id.slice(0, 32) + "..." : model.id;
-		const price = model.isFree ? `${c.green}FREE${c.reset}` : `$${model.pricePerMillion.toFixed(3)}/1M`;
+		const price = model.isFree
+			? `${c.green}FREE${c.reset}`
+			: `$${model.pricePerMillion.toFixed(3)}/1M`;
 		const context = `${Math.round(model.contextLength / 1000)}K`;
 		const dim = model.dimension ? `${model.dimension}d` : "N/A";
 		console.log(
@@ -1675,7 +1862,9 @@ async function handleModels(args: string[]): Promise<void> {
 
 	// Print header
 	const printHeader = () => {
-		console.log(`  ${"Model".padEnd(36)} ${"Provider".padEnd(10)} ${"Price".padEnd(12)} ${"Context".padEnd(6)} Dim`);
+		console.log(
+			`  ${"Model".padEnd(36)} ${"Provider".padEnd(10)} ${"Price".padEnd(12)} ${"Context".padEnd(6)} Dim`,
+		);
 		console.log("  " + "─".repeat(78));
 	};
 
@@ -1692,7 +1881,9 @@ async function handleModels(args: string[]): Promise<void> {
 			}
 		}
 		console.log("");
-		console.log(`${c.dim}Note: Free model availability changes frequently.${c.reset}`);
+		console.log(
+			`${c.dim}Note: Free model availability changes frequently.${c.reset}`,
+		);
 		console.log(`${c.dim}Use --refresh to fetch the latest list.${c.reset}\n`);
 		return;
 	}
@@ -1703,30 +1894,58 @@ async function handleModels(args: string[]): Promise<void> {
 	console.log(`${c.orange}${c.bold}⭐ CURATED PICKS${c.reset}\n`);
 
 	const picks = [
-		{ label: "Best Quality", emoji: "🏆", model: CURATED_PICKS.bestQuality, desc: "Top-tier code understanding" },
-		{ label: "Best Balanced", emoji: "⚖️", model: CURATED_PICKS.bestBalanced, desc: "Excellent quality/price ratio" },
-		{ label: "Best Value", emoji: "💰", model: CURATED_PICKS.bestValue, desc: "Great quality, lowest cost" },
-		{ label: "Fastest", emoji: "⚡", model: CURATED_PICKS.fastest, desc: "Optimized for speed" },
+		{
+			label: "Best Quality",
+			emoji: "🏆",
+			model: CURATED_PICKS.bestQuality,
+			desc: "Top-tier code understanding",
+		},
+		{
+			label: "Best Balanced",
+			emoji: "⚖️",
+			model: CURATED_PICKS.bestBalanced,
+			desc: "Excellent quality/price ratio",
+		},
+		{
+			label: "Best Value",
+			emoji: "💰",
+			model: CURATED_PICKS.bestValue,
+			desc: "Great quality, lowest cost",
+		},
+		{
+			label: "Fastest",
+			emoji: "⚡",
+			model: CURATED_PICKS.fastest,
+			desc: "Optimized for speed",
+		},
 	];
 
 	for (const pick of picks) {
-		const price = pick.model.isFree ? `${c.green}FREE${c.reset}` : `$${pick.model.pricePerMillion.toFixed(3)}/1M`;
+		const price = pick.model.isFree
+			? `${c.green}FREE${c.reset}`
+			: `$${pick.model.pricePerMillion.toFixed(3)}/1M`;
 		const context = `${Math.round(pick.model.contextLength / 1000)}K`;
 		const dim = pick.model.dimension ? `${pick.model.dimension}d` : "";
-		console.log(`  ${pick.emoji} ${c.bold}${pick.label}${c.reset}: ${c.cyan}${pick.model.id}${c.reset}`);
+		console.log(
+			`  ${pick.emoji} ${c.bold}${pick.label}${c.reset}: ${c.cyan}${pick.model.id}${c.reset}`,
+		);
 		console.log(`     ${pick.desc} | ${price} | ${context} ctx | ${dim}`);
 	}
 	console.log("");
 
 	// 3. Free Models (if any)
 	if (freeModels.length > 0) {
-		console.log(`${c.green}${c.bold}🆓 FREE MODELS${c.reset} ${c.dim}(Currently available)${c.reset}\n`);
+		console.log(
+			`${c.green}${c.bold}🆓 FREE MODELS${c.reset} ${c.dim}(Currently available)${c.reset}\n`,
+		);
 		printHeader();
 		for (const model of freeModels.slice(0, 10)) {
 			printModel(model);
 		}
 		if (freeModels.length > 10) {
-			console.log(`  ${c.dim}... and ${freeModels.length - 10} more free models${c.reset}`);
+			console.log(
+				`  ${c.dim}... and ${freeModels.length - 10} more free models${c.reset}`,
+			);
 		}
 		console.log("");
 	}
@@ -1743,8 +1962,12 @@ async function handleModels(args: string[]): Promise<void> {
 	}
 
 	// Summary
-	console.log(`${c.bold}Summary:${c.reset} ${allModels.length} total models (${freeModels.length} free, ${paidModels.length} paid)`);
-	console.log(`\n${c.dim}Use --free to show only free models, --refresh to update from API${c.reset}\n`);
+	console.log(
+		`${c.bold}Summary:${c.reset} ${allModels.length} total models (${freeModels.length} free, ${paidModels.length} paid)`,
+	);
+	console.log(
+		`\n${c.dim}Use --free to show only free models, --refresh to update from API${c.reset}\n`,
+	);
 }
 
 // ============================================================================
@@ -1778,9 +2001,24 @@ async function promptForApiKey(): Promise<void> {
 
 /** Directories to always exclude when discovering files */
 const EXCLUDE_DIRS = new Set([
-	"node_modules", ".git", ".svn", ".hg", "dist", "build", "out",
-	".next", ".nuxt", ".output", "coverage", ".cache", ".claudemem",
-	"__pycache__", ".pytest_cache", "venv", ".venv", "target",
+	"node_modules",
+	".git",
+	".svn",
+	".hg",
+	"dist",
+	"build",
+	"out",
+	".next",
+	".nuxt",
+	".output",
+	"coverage",
+	".cache",
+	".claudemem",
+	"__pycache__",
+	".pytest_cache",
+	"venv",
+	".venv",
+	"target",
 ]);
 
 // Note: createBenchmarkProgress is imported from ./ui/index.js
@@ -1802,7 +2040,10 @@ interface BenchmarkResult {
 /**
  * Discover source files and parse them into chunks for benchmarking
  */
-async function discoverAndChunkFiles(projectPath: string, maxChunks: number): Promise<string[]> {
+async function discoverAndChunkFiles(
+	projectPath: string,
+	maxChunks: number,
+): Promise<string[]> {
 	const files: string[] = [];
 
 	// Walk directory to find source files
@@ -1942,23 +2183,35 @@ async function handleBenchmark(args: string[]): Promise<void> {
 	// Parse --models flag (support multiple formats)
 	let models: string[];
 	const modelsArgEquals = args.find((a) => a.startsWith("--models="));
-	const modelsArgNoEquals = args.find((a) => a.startsWith("--models") && a.length > 8 && !a.includes("="));
+	const modelsArgNoEquals = args.find(
+		(a) => a.startsWith("--models") && a.length > 8 && !a.includes("="),
+	);
 	const modelsArgIndex = args.findIndex((a) => a === "--models");
 
 	if (modelsArgEquals) {
 		// --models=model1,model2
-		models = modelsArgEquals.replace("--models=", "").split(",").map((s) => s.trim());
+		models = modelsArgEquals
+			.replace("--models=", "")
+			.split(",")
+			.map((s) => s.trim());
 	} else if (modelsArgNoEquals) {
 		// --modelsmodel1,model2 (typo - missing =)
-		models = modelsArgNoEquals.replace("--models", "").split(",").map((s) => s.trim());
+		models = modelsArgNoEquals
+			.replace("--models", "")
+			.split(",")
+			.map((s) => s.trim());
 		console.log(`${c.dim}(Note: use --models= for clarity)${c.reset}`);
-	} else if (modelsArgIndex !== -1 && args[modelsArgIndex + 1] && !args[modelsArgIndex + 1].startsWith("-")) {
+	} else if (
+		modelsArgIndex !== -1 &&
+		args[modelsArgIndex + 1] &&
+		!args[modelsArgIndex + 1].startsWith("-")
+	) {
 		// --models model1,model2 (space-separated)
 		models = args[modelsArgIndex + 1].split(",").map((s) => s.trim());
 	} else {
 		// Default models
 		models = [
-			CURATED_PICKS.bestBalanced.id,  // qwen/qwen3-embedding-8b
+			CURATED_PICKS.bestBalanced.id, // qwen/qwen3-embedding-8b
 			"openai/text-embedding-3-small",
 		];
 	}
@@ -1969,7 +2222,10 @@ async function handleBenchmark(args: string[]): Promise<void> {
 
 	// Get chunks with file paths (always needed for quality testing)
 	console.log(`${c.dim}Parsing source files...${c.reset}`);
-	const chunksWithPaths = await discoverAndChunkFilesWithPaths(projectPath, useRealData ? 100 : 50);
+	const chunksWithPaths = await discoverAndChunkFilesWithPaths(
+		projectPath,
+		useRealData ? 100 : 50,
+	);
 	if (chunksWithPaths.length === 0) {
 		console.error("No source files found in the current directory.");
 		process.exit(1);
@@ -1980,26 +2236,98 @@ async function handleBenchmark(args: string[]): Promise<void> {
 	if (autoMode) {
 		testQueries = await extractAutoTestQueries(projectPath);
 		if (testQueries.length === 0) {
-			console.error("No functions with docstrings found. Run without --auto to use predefined queries.");
+			console.error(
+				"No functions with docstrings found. Run without --auto to use predefined queries.",
+			);
 			process.exit(1);
 		}
 	} else {
 		// Predefined queries for claudemem codebase
 		testQueries = [
-			{ query: "convert text to vector representation", category: "semantic", expected: [{ file: "embeddings.ts", relevance: 3 }, { file: "store.ts", relevance: 2 }], description: "embedding" },
-			{ query: "split code into smaller pieces", category: "semantic", expected: [{ file: "chunker.ts", relevance: 3 }, { file: "parser-manager.ts", relevance: 2 }], description: "chunking" },
-			{ query: "find similar code based on meaning", category: "semantic", expected: [{ file: "store.ts", relevance: 3 }, { file: "indexer.ts", relevance: 2 }], description: "search" },
-			{ query: "LanceDB vector database", category: "keyword", expected: [{ file: "store.ts", relevance: 3 }], description: "LanceDB" },
-			{ query: "tree-sitter parser AST", category: "keyword", expected: [{ file: "parser-manager.ts", relevance: 3 }, { file: "chunker.ts", relevance: 2 }], description: "tree-sitter" },
-			{ query: "OpenRouter API embeddings", category: "keyword", expected: [{ file: "embeddings.ts", relevance: 3 }, { file: "config.ts", relevance: 2 }], description: "OpenRouter" },
-			{ query: "how do I search for code", category: "natural", expected: [{ file: "indexer.ts", relevance: 3 }, { file: "store.ts", relevance: 2 }], description: "search usage" },
-			{ query: "createEmbeddingsClient function", category: "api", expected: [{ file: "embeddings.ts", relevance: 3 }], description: "embeddings API" },
-			{ query: "VectorStore search method", category: "api", expected: [{ file: "store.ts", relevance: 3 }], description: "vector store" },
-			{ query: "handle API timeout retry", category: "error", expected: [{ file: "embeddings.ts", relevance: 3 }], description: "retry logic" },
+			{
+				query: "convert text to vector representation",
+				category: "semantic",
+				expected: [
+					{ file: "embeddings.ts", relevance: 3 },
+					{ file: "store.ts", relevance: 2 },
+				],
+				description: "embedding",
+			},
+			{
+				query: "split code into smaller pieces",
+				category: "semantic",
+				expected: [
+					{ file: "chunker.ts", relevance: 3 },
+					{ file: "parser-manager.ts", relevance: 2 },
+				],
+				description: "chunking",
+			},
+			{
+				query: "find similar code based on meaning",
+				category: "semantic",
+				expected: [
+					{ file: "store.ts", relevance: 3 },
+					{ file: "indexer.ts", relevance: 2 },
+				],
+				description: "search",
+			},
+			{
+				query: "LanceDB vector database",
+				category: "keyword",
+				expected: [{ file: "store.ts", relevance: 3 }],
+				description: "LanceDB",
+			},
+			{
+				query: "tree-sitter parser AST",
+				category: "keyword",
+				expected: [
+					{ file: "parser-manager.ts", relevance: 3 },
+					{ file: "chunker.ts", relevance: 2 },
+				],
+				description: "tree-sitter",
+			},
+			{
+				query: "OpenRouter API embeddings",
+				category: "keyword",
+				expected: [
+					{ file: "embeddings.ts", relevance: 3 },
+					{ file: "config.ts", relevance: 2 },
+				],
+				description: "OpenRouter",
+			},
+			{
+				query: "how do I search for code",
+				category: "natural",
+				expected: [
+					{ file: "indexer.ts", relevance: 3 },
+					{ file: "store.ts", relevance: 2 },
+				],
+				description: "search usage",
+			},
+			{
+				query: "createEmbeddingsClient function",
+				category: "api",
+				expected: [{ file: "embeddings.ts", relevance: 3 }],
+				description: "embeddings API",
+			},
+			{
+				query: "VectorStore search method",
+				category: "api",
+				expected: [{ file: "store.ts", relevance: 3 }],
+				description: "vector store",
+			},
+			{
+				query: "handle API timeout retry",
+				category: "error",
+				expected: [{ file: "embeddings.ts", relevance: 3 }],
+				description: "retry logic",
+			},
 		];
 	}
 
-	console.log(`${c.dim}Testing ${models.length} models with ${chunksWithPaths.length} chunks + ${testQueries.length} quality queries${c.reset}\n`);
+	console.log(
+		`${c.dim}Testing ${models.length} models with ${chunksWithPaths.length} chunks + ${testQueries.length} quality queries${c.reset}\n`,
+	);
 
 	// Create multi-line progress display
 	const progress = createBenchmarkProgress(models);
@@ -2041,7 +2369,13 @@ async function handleBenchmark(args: string[]): Promise<void> {
 			const embedTimeMs = Date.now() - startTime;
 
 			// Phase 2: Build temp vector store and run quality queries
-			progress.update(modelId, 0, testQueries.length, testQueries.length, "quality");
+			progress.update(
+				modelId,
+				0,
+				testQueries.length,
+				testQueries.length,
+				"quality",
+			);
 
 			// Clear existing temp db
 			if (existsSync(tempDbPath)) {
@@ -2085,7 +2419,9 @@ async function handleBenchmark(args: string[]): Promise<void> {
 
 				// Embed query and search
 				const queryVector = await client.embedOne(tq.query);
-				const searchResults = await store.search(tq.query, queryVector, { limit: 5 });
+				const searchResults = await store.search(tq.query, queryVector, {
+					limit: 5,
+				});
 
 				// Build relevance map
 				const relevanceMap = new Map<string, number>();
@@ -2137,7 +2473,9 @@ async function handleBenchmark(args: string[]): Promise<void> {
 			progress.finish(modelId);
 
 			// Find first non-empty embedding for dimension
-			const firstValidEmbedding = embedResult.embeddings.find((e) => e && e.length > 0);
+			const firstValidEmbedding = embedResult.embeddings.find(
+				(e) => e && e.length > 0,
+			);
 
 			return {
 				model: modelId,
@@ -2187,26 +2525,38 @@ async function handleBenchmark(args: string[]): Promise<void> {
 	progress.stop();
 
 	// Sort by NDCG (quality first)
-	results.sort((a, b) => (a.error ? 1 : 0) - (b.error ? 1 : 0) || b.ndcg - a.ndcg);
+	results.sort(
+		(a, b) => (a.error ? 1 : 0) - (b.error ? 1 : 0) || b.ndcg - a.ndcg,
+	);
 
 	// Display results table
 	console.log(`\n${c.bold}Results (sorted by quality):${c.reset}\n`);
-	console.log(`  ${"Model".padEnd(28)} ${"Speed".padEnd(7)} ${"Cost".padEnd(11)} ${"Ctx".padEnd(6)} ${"Dim".padEnd(6)} ${"NDCG".padEnd(6)} ${"MRR".padEnd(6)} ${"Hit@5"}`);
+	console.log(
+		`  ${"Model".padEnd(28)} ${"Speed".padEnd(7)} ${"Cost".padEnd(11)} ${"Ctx".padEnd(6)} ${"Dim".padEnd(6)} ${"NDCG".padEnd(6)} ${"MRR".padEnd(6)} ${"Hit@5"}`,
+	);
 	console.log("  " + "─".repeat(82));
 
 	// Truncate long model names
-	const truncate = (s: string, max = 26) => s.length > max ? s.slice(0, max - 1) + "…" : s;
+	const truncate = (s: string, max = 26) =>
+		s.length > max ? s.slice(0, max - 1) + "…" : s;
 
 	// Format context length (e.g., 32000 -> "32K")
-	const fmtCtx = (ctx: number) => ctx >= 1000 ? `${Math.round(ctx / 1000)}K` : String(ctx);
+	const fmtCtx = (ctx: number) =>
+		ctx >= 1000 ? `${Math.round(ctx / 1000)}K` : String(ctx);
 
 	// Calculate best/worst for highlighting
 	const successResults = results.filter((r) => !r.error);
 	const minSpeed = Math.min(...successResults.map((r) => r.speedMs));
 	const maxSpeed = Math.max(...successResults.map((r) => r.speedMs));
 	const costsWithValues = successResults.filter((r) => r.cost !== undefined);
-	const minCost = costsWithValues.length > 0 ? Math.min(...costsWithValues.map((r) => r.cost!)) : undefined;
-	const maxCost = costsWithValues.length > 0 ? Math.max(...costsWithValues.map((r) => r.cost!)) : undefined;
+	const minCost =
+		costsWithValues.length > 0
+			? Math.min(...costsWithValues.map((r) => r.cost!))
+			: undefined;
+	const maxCost =
+		costsWithValues.length > 0
+			? Math.max(...costsWithValues.map((r) => r.cost!))
+			: undefined;
 	const maxNdcg = Math.max(...successResults.map((r) => r.ndcg));
 	const minNdcg = Math.min(...successResults.map((r) => r.ndcg));
 	const shouldHighlight = successResults.length > 1;
@@ -2224,19 +2574,38 @@ async function handleBenchmark(args: string[]): Promise<void> {
 		let speed = speedVal.padEnd(7);
 		if (shouldHighlight && r.speedMs === minSpeed) {
 			speed = `${c.green}${speedVal.padEnd(7)}${c.reset}`;
-		} else if (shouldHighlight && r.speedMs === maxSpeed && minSpeed !== maxSpeed) {
+		} else if (
+			shouldHighlight &&
+			r.speedMs === maxSpeed &&
+			minSpeed !== maxSpeed
+		) {
 			speed = `${c.red}${speedVal.padEnd(7)}${c.reset}`;
 		}
 
 		// Cost with highlighting (FREE for local/ollama models)
 		const isLocal = r.model.startsWith("ollama/");
-		const costVal = isLocal ? "FREE" : (r.cost !== undefined ? `$${r.cost.toFixed(5)}` : "N/A");
+		const costVal = isLocal
+			? "FREE"
+			: r.cost !== undefined
+				? `$${r.cost.toFixed(5)}`
+				: "N/A";
 		let cost = costVal.padEnd(11);
 		if (isLocal) {
 			cost = `${c.green}${costVal.padEnd(11)}${c.reset}`;
-		} else if (shouldHighlight && r.cost !== undefined && minCost !== undefined && r.cost === minCost) {
+		} else if (
+			shouldHighlight &&
+			r.cost !== undefined &&
+			minCost !== undefined &&
+			r.cost === minCost
+		) {
 			cost = `${c.green}${costVal.padEnd(11)}${c.reset}`;
-		} else if (shouldHighlight && r.cost !== undefined && maxCost !== undefined && r.cost === maxCost && minCost !== maxCost) {
+		} else if (
+			shouldHighlight &&
+			r.cost !== undefined &&
+			maxCost !== undefined &&
+			r.cost === maxCost &&
+			minCost !== maxCost
+		) {
 			cost = `${c.red}${costVal.padEnd(11)}${c.reset}`;
 		}
 
@@ -2256,26 +2625,49 @@ async function handleBenchmark(args: string[]): Promise<void> {
 		const mrr = `${r.mrr.toFixed(0)}%`.padEnd(6);
 		const hit5 = `${r.hitRate.k5.toFixed(0)}%`;
 
-		console.log(`  ${displayName} ${speed} ${cost} ${ctx} ${dim} ${ndcg} ${mrr} ${hit5}`);
+		console.log(
+			`  ${displayName} ${speed} ${cost} ${ctx} ${dim} ${ndcg} ${mrr} ${hit5}`,
+		);
 	}
 
 	// Summary
 	if (successResults.length > 0) {
-		const fastest = successResults.reduce((a, b) => a.speedMs < b.speedMs ? a : b);
-		const cheapest = costsWithValues.length > 0 ? costsWithValues.reduce((a, b) => (a.cost || Infinity) < (b.cost || Infinity) ? a : b) : null;
-		const bestQuality = successResults.reduce((a, b) => a.ndcg > b.ndcg ? a : b);
+		const fastest = successResults.reduce((a, b) =>
+			a.speedMs < b.speedMs ? a : b,
+		);
+		const cheapest =
+			costsWithValues.length > 0
+				? costsWithValues.reduce((a, b) =>
+						(a.cost || Infinity) < (b.cost || Infinity) ? a : b,
+					)
+				: null;
+		const bestQuality = successResults.reduce((a, b) =>
+			a.ndcg > b.ndcg ? a : b,
+		);
 
 		console.log(`\n${c.bold}Summary:${c.reset}`);
-		console.log(`  ${c.green}🏆 Best Quality:${c.reset} ${bestQuality.model} (NDCG: ${bestQuality.ndcg.toFixed(0)}%)`);
-		console.log(`  ${c.green}⚡ Fastest:${c.reset} ${fastest.model} (${(fastest.speedMs / 1000).toFixed(2)}s)`);
+		console.log(
+			`  ${c.green}🏆 Best Quality:${c.reset} ${bestQuality.model} (NDCG: ${bestQuality.ndcg.toFixed(0)}%)`,
+		);
+		console.log(
+			`  ${c.green}⚡ Fastest:${c.reset} ${fastest.model} (${(fastest.speedMs / 1000).toFixed(2)}s)`,
+		);
 		if (cheapest) {
-			console.log(`  ${c.green}💰 Cheapest:${c.reset} ${cheapest.model} ($${cheapest.cost?.toFixed(6)})`);
+			console.log(
+				`  ${c.green}💰 Cheapest:${c.reset} ${cheapest.model} ($${cheapest.cost?.toFixed(6)})`,
+			);
 		}
 	}
 
-	console.log(`\n${c.dim}Metrics: NDCG (quality), MRR (rank), Hit@5 (found in top 5)${c.reset}`);
-	console.log(`${c.dim}Use --auto to generate queries from docstrings (works on any codebase)${c.reset}`);
-	console.log(`${c.dim}Use --verbose for detailed per-query results${c.reset}\n`);
+	console.log(
+		`\n${c.dim}Metrics: NDCG (quality), MRR (rank), Hit@5 (found in top 5)${c.reset}`,
+	);
+	console.log(
+		`${c.dim}Use --auto to generate queries from docstrings (works on any codebase)${c.reset}`,
+	);
+	console.log(
+		`${c.dim}Use --verbose for detailed per-query results${c.reset}\n`,
+	);
 }
 
 // ============================================================================
@@ -2349,7 +2741,10 @@ interface TestResult {
 		precision: { k1: number; k3: number; k5: number };
 	};
 	/** Metrics broken down by category */
-	byCategory: Record<QueryCategory, { count: number; mrr: number; ndcg: number }>;
+	byCategory: Record<
+		QueryCategory,
+		{ count: number; mrr: number; ndcg: number }
+	>;
 	error?: string;
 }
 
@@ -2366,7 +2761,10 @@ function calculateDCG(relevances: number[]): number {
 /**
  * Calculate NDCG (Normalized DCG)
  */
-function calculateNDCG(actualRelevances: number[], idealRelevances: number[]): number {
+function calculateNDCG(
+	actualRelevances: number[],
+	idealRelevances: number[],
+): number {
 	const dcg = calculateDCG(actualRelevances);
 	const idcg = calculateDCG(idealRelevances.sort((a, b) => b - a));
 	return idcg === 0 ? 0 : dcg / idcg;
@@ -2377,12 +2775,17 @@ function calculateNDCG(actualRelevances: number[], idealRelevances: number[]): n
  * Uses docstrings as queries and their source file as expected result
  * This enables testing on ANY codebase, not just claudemem
  */
-async function extractAutoTestQueries(projectPath: string): Promise<TestQuery[]> {
+async function extractAutoTestQueries(
+	projectPath: string,
+): Promise<TestQuery[]> {
 	const queries: TestQuery[] = [];
 	const seenQueries = new Set<string>();
 
 	// Discover and chunk files WITH file paths
-	const chunksWithFiles = await discoverAndChunkFilesWithPaths(projectPath, 500);
+	const chunksWithFiles = await discoverAndChunkFilesWithPaths(
+		projectPath,
+		500,
+	);
 
 	// Regex patterns for extracting docstrings from different languages
 	const docstringPatterns = [
@@ -2427,7 +2830,12 @@ async function extractAutoTestQueries(projectPath: string): Promise<TestQuery[]>
 		}
 
 		// Create queries from docstrings (semantic category)
-		if (docstring && docstring.length > 15 && docstring.length < 200 && fileName) {
+		if (
+			docstring &&
+			docstring.length > 15 &&
+			docstring.length < 200 &&
+			fileName
+		) {
 			// Clean up docstring
 			const cleanDoc = docstring
 				.replace(/\s+/g, " ")
@@ -2446,7 +2854,12 @@ async function extractAutoTestQueries(projectPath: string): Promise<TestQuery[]>
 		}
 
 		// Create queries from function names (keyword category)
-		if (funcName && funcName.length > 3 && fileName && !seenQueries.has(funcName.toLowerCase())) {
+		if (
+			funcName &&
+			funcName.length > 3 &&
+			fileName &&
+			!seenQueries.has(funcName.toLowerCase())
+		) {
 			seenQueries.add(funcName.toLowerCase());
 
 			// Convert camelCase/snake_case to words for better semantic search
@@ -2528,10 +2941,13 @@ function formatSymbolRaw(symbol: {
 		`name: ${symbol.name}`,
 	];
 	if (symbol.signature) lines.push(`signature: ${symbol.signature}`);
-	if (symbol.pagerankScore !== undefined) lines.push(`pagerank: ${symbol.pagerankScore.toFixed(4)}`);
-	if (symbol.isExported !== undefined) lines.push(`exported: ${symbol.isExported}`);
-	if (symbol.docstring) lines.push(`docstring: ${symbol.docstring.split('\n')[0]}`);
-	return lines.join('\n');
+	if (symbol.pagerankScore !== undefined)
+		lines.push(`pagerank: ${symbol.pagerankScore.toFixed(4)}`);
+	if (symbol.isExported !== undefined)
+		lines.push(`exported: ${symbol.isExported}`);
+	if (symbol.docstring)
+		lines.push(`docstring: ${symbol.docstring.split("\n")[0]}`);
+	return lines.join("\n");
 }
 
 /**
@@ -2556,26 +2972,27 @@ async function handleMap(args: string[]): Promise<void> {
 
 	// Parse --tokens flag
 	let maxTokens = 2000;
-	const tokensIdx = args.findIndex(a => a === "--tokens");
+	const tokensIdx = args.findIndex((a) => a === "--tokens");
 	if (tokensIdx !== -1 && args[tokensIdx + 1]) {
 		maxTokens = parseInt(args[tokensIdx + 1], 10) || 2000;
 	}
 
 	// Parse --path flag for project path
 	let projectPath = ".";
-	const pathIdx = args.findIndex(a => a === "--path" || a === "-p");
+	const pathIdx = args.findIndex((a) => a === "--path" || a === "-p");
 	if (pathIdx !== -1 && args[pathIdx + 1]) {
 		projectPath = args[pathIdx + 1];
 	}
 	projectPath = resolve(projectPath);
 
 	// Get query (first non-flag argument)
-	const nonFlagArgs = args.filter(a => !a.startsWith("-"));
+	const nonFlagArgs = args.filter((a) => !a.startsWith("-"));
 	// Skip args that are values for flags
 	const flagValues = new Set<string>();
-	if (tokensIdx !== -1 && args[tokensIdx + 1]) flagValues.add(args[tokensIdx + 1]);
+	if (tokensIdx !== -1 && args[tokensIdx + 1])
+		flagValues.add(args[tokensIdx + 1]);
 	if (pathIdx !== -1 && args[pathIdx + 1]) flagValues.add(args[pathIdx + 1]);
-	const query = nonFlagArgs.find(a => !flagValues.has(a));
+	const query = nonFlagArgs.find((a) => !flagValues.has(a));
 
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
@@ -2595,7 +3012,9 @@ async function handleMap(args: string[]): Promise<void> {
 		if (compactMode) {
 			// Agent mode: top symbols as file:line list
 			const structured = repoMapGen.generateStructured({ maxTokens: 1000 });
-			const allSymbols = structured.flatMap(e => e.symbols.map(s => ({ ...s, file: e.filePath })));
+			const allSymbols = structured.flatMap((e) =>
+				e.symbols.map((s) => ({ ...s, file: e.filePath })),
+			);
 			allSymbols.sort((a, b) => b.pagerankScore - a.pagerankScore);
 			const top10 = allSymbols.slice(0, 10);
 			for (const s of top10) {
@@ -2625,7 +3044,7 @@ async function handleSymbol(args: string[]): Promise<void> {
 	const projectPath = resolve(".");
 
 	// Get symbol name
-	const symbolName = args.find(a => !a.startsWith("-"));
+	const symbolName = args.find((a) => !a.startsWith("-"));
 	if (!symbolName) {
 		if (compactMode) {
 			console.log(`Missing symbol name`);
@@ -2638,7 +3057,7 @@ async function handleSymbol(args: string[]): Promise<void> {
 
 	// Get file hint
 	let fileHint: string | undefined;
-	const fileIdx = args.findIndex(a => a === "--file");
+	const fileIdx = args.findIndex((a) => a === "--file");
 	if (fileIdx !== -1 && args[fileIdx + 1]) {
 		fileHint = args[fileIdx + 1];
 	}
@@ -2659,13 +3078,15 @@ async function handleSymbol(args: string[]): Promise<void> {
 		const graphManager = createReferenceGraphManager(tracker);
 		const symbol = graphManager.findSymbol(symbolName, {
 			preferExported: true,
-			fileHint
+			fileHint,
 		});
 
 		if (!symbol) {
 			if (compactMode) {
 				console.log(`✗ Symbol '${symbolName}' not found`);
-				console.log(`Try: claudemem map "${symbolName}" | claudemem search "${symbolName}"`);
+				console.log(
+					`Try: claudemem map "${symbolName}" | claudemem search "${symbolName}"`,
+				);
 				console.log(`Fuzzy: similar names may exist with different casing`);
 			} else {
 				console.error(`Symbol '${symbolName}' not found.`);
@@ -2675,17 +3096,22 @@ async function handleSymbol(args: string[]): Promise<void> {
 
 		if (compactMode) {
 			// Agent mode: file:line format
-			console.log(`${symbol.filePath}:${symbol.startLine} ${symbol.name} (${symbol.kind})`);
+			console.log(
+				`${symbol.filePath}:${symbol.startLine} ${symbol.name} (${symbol.kind})`,
+			);
 		} else {
 			printLogo();
 			console.log("\n🔍 Symbol Found\n");
 			console.log(`  Name:      ${symbol.name}`);
 			console.log(`  Kind:      ${symbol.kind}`);
-			console.log(`  File:      ${symbol.filePath}:${symbol.startLine}-${symbol.endLine}`);
+			console.log(
+				`  File:      ${symbol.filePath}:${symbol.startLine}-${symbol.endLine}`,
+			);
 			if (symbol.signature) console.log(`  Signature: ${symbol.signature}`);
 			console.log(`  PageRank:  ${symbol.pagerankScore.toFixed(4)}`);
 			console.log(`  Exported:  ${symbol.isExported}`);
-			if (symbol.docstring) console.log(`  Docstring: ${symbol.docstring.split('\n')[0]}`);
+			if (symbol.docstring)
+				console.log(`  Docstring: ${symbol.docstring.split("\n")[0]}`);
 			console.log("");
 		}
 	} finally {
@@ -2700,7 +3126,7 @@ async function handleCallers(args: string[]): Promise<void> {
 	const compactMode = agentMode;
 	const projectPath = resolve(".");
 
-	const symbolName = args.find(a => !a.startsWith("-"));
+	const symbolName = args.find((a) => !a.startsWith("-"));
 	if (!symbolName) {
 		if (compactMode) {
 			console.log(`✗ Missing symbol name`);
@@ -2726,12 +3152,16 @@ async function handleCallers(args: string[]): Promise<void> {
 
 	try {
 		const graphManager = createReferenceGraphManager(tracker);
-		const symbol = graphManager.findSymbol(symbolName, { preferExported: true });
+		const symbol = graphManager.findSymbol(symbolName, {
+			preferExported: true,
+		});
 
 		if (!symbol) {
 			if (compactMode) {
 				console.log(`✗ Symbol '${symbolName}' not found`);
-				console.log(`Try: claudemem symbol ${symbolName} | claudemem map "${symbolName}"`);
+				console.log(
+					`Try: claudemem symbol ${symbolName} | claudemem map "${symbolName}"`,
+				);
 				console.log(`Check spelling and casing`);
 			} else {
 				console.error(`Symbol '${symbolName}' not found.`);
@@ -2747,7 +3177,9 @@ async function handleCallers(args: string[]): Promise<void> {
 				console.log("No callers found");
 			} else {
 				for (const caller of callers.slice(0, 10)) {
-					console.log(`${caller.filePath}:${caller.startLine} ${caller.name} (${caller.kind})`);
+					console.log(
+						`${caller.filePath}:${caller.startLine} ${caller.name} (${caller.kind})`,
+					);
 				}
 			}
 		} else {
@@ -2758,7 +3190,9 @@ async function handleCallers(args: string[]): Promise<void> {
 			} else {
 				for (const caller of callers) {
 					console.log(`  ${caller.name}`);
-					console.log(`     ${caller.filePath}:${caller.startLine} (${caller.kind})`);
+					console.log(
+						`     ${caller.filePath}:${caller.startLine} (${caller.kind})`,
+					);
 				}
 			}
 			console.log("");
@@ -2775,7 +3209,7 @@ async function handleCallees(args: string[]): Promise<void> {
 	const compactMode = agentMode;
 	const projectPath = resolve(".");
 
-	const symbolName = args.find(a => !a.startsWith("-"));
+	const symbolName = args.find((a) => !a.startsWith("-"));
 	if (!symbolName) {
 		if (compactMode) {
 			console.log(`✗ Missing symbol name`);
@@ -2801,12 +3235,16 @@ async function handleCallees(args: string[]): Promise<void> {
 
 	try {
 		const graphManager = createReferenceGraphManager(tracker);
-		const symbol = graphManager.findSymbol(symbolName, { preferExported: true });
+		const symbol = graphManager.findSymbol(symbolName, {
+			preferExported: true,
+		});
 
 		if (!symbol) {
 			if (compactMode) {
 				console.log(`✗ Symbol '${symbolName}' not found`);
-				console.log(`Try: claudemem symbol ${symbolName} | claudemem map "${symbolName}"`);
+				console.log(
+					`Try: claudemem symbol ${symbolName} | claudemem map "${symbolName}"`,
+				);
 				console.log(`Check spelling and casing`);
 			} else {
 				console.error(`Symbol '${symbolName}' not found.`);
@@ -2822,7 +3260,9 @@ async function handleCallees(args: string[]): Promise<void> {
 				console.log("No callees found");
 			} else {
 				for (const callee of callees.slice(0, 10)) {
-					console.log(`${callee.filePath}:${callee.startLine} ${callee.name} (${callee.kind})`);
+					console.log(
+						`${callee.filePath}:${callee.startLine} ${callee.name} (${callee.kind})`,
+					);
 				}
 			}
 		} else {
@@ -2833,7 +3273,9 @@ async function handleCallees(args: string[]): Promise<void> {
 			} else {
 				for (const callee of callees) {
 					console.log(`  ${callee.name}`);
-					console.log(`     ${callee.filePath}:${callee.startLine} (${callee.kind})`);
+					console.log(
+						`     ${callee.filePath}:${callee.startLine} (${callee.kind})`,
+					);
 				}
 			}
 			console.log("");
@@ -2850,14 +3292,16 @@ async function handleContext(args: string[]): Promise<void> {
 	const compactMode = agentMode;
 	const projectPath = resolve(".");
 
-	const symbolName = args.find(a => !a.startsWith("-"));
+	const symbolName = args.find((a) => !a.startsWith("-"));
 	if (!symbolName) {
 		if (compactMode) {
 			console.log(`✗ Missing symbol name`);
 			console.log(`Usage: claudemem context <name>`);
 			console.log(`Example: claudemem context handleSearch`);
 		} else {
-			console.error("Usage: claudemem context <name> [--callers N] [--callees N]");
+			console.error(
+				"Usage: claudemem context <name> [--callers N] [--callees N]",
+			);
 		}
 		process.exit(1);
 	}
@@ -2865,11 +3309,11 @@ async function handleContext(args: string[]): Promise<void> {
 	// Parse limits
 	let maxCallers = 10;
 	let maxCallees = 15;
-	const callersIdx = args.findIndex(a => a === "--callers");
+	const callersIdx = args.findIndex((a) => a === "--callers");
 	if (callersIdx !== -1 && args[callersIdx + 1]) {
 		maxCallers = parseInt(args[callersIdx + 1], 10) || 10;
 	}
-	const calleesIdx = args.findIndex(a => a === "--callees");
+	const calleesIdx = args.findIndex((a) => a === "--callees");
 	if (calleesIdx !== -1 && args[calleesIdx + 1]) {
 		maxCallees = parseInt(args[calleesIdx + 1], 10) || 15;
 	}
@@ -2888,12 +3332,16 @@ async function handleContext(args: string[]): Promise<void> {
 
 	try {
 		const graphManager = createReferenceGraphManager(tracker);
-		const symbol = graphManager.findSymbol(symbolName, { preferExported: true });
+		const symbol = graphManager.findSymbol(symbolName, {
+			preferExported: true,
+		});
 
 		if (!symbol) {
 			if (compactMode) {
 				console.log(`✗ Symbol '${symbolName}' not found`);
-				console.log(`Try: claudemem symbol ${symbolName} | claudemem map "${symbolName}"`);
+				console.log(
+					`Try: claudemem symbol ${symbolName} | claudemem map "${symbolName}"`,
+				);
 				console.log(`Check spelling and casing`);
 			} else {
 				console.error(`Symbol '${symbolName}' not found.`);
@@ -2910,7 +3358,9 @@ async function handleContext(args: string[]): Promise<void> {
 
 		if (compactMode) {
 			// Agent mode: file:line list for symbol, callers, callees
-			console.log(`${symbol.filePath}:${symbol.startLine} ${symbol.name} (${symbol.kind})`);
+			console.log(
+				`${symbol.filePath}:${symbol.startLine} ${symbol.name} (${symbol.kind})`,
+			);
 			if (context.callers.length > 0) {
 				console.log("# callers:");
 				for (const caller of context.callers.slice(0, 5)) {
@@ -2930,7 +3380,9 @@ async function handleContext(args: string[]): Promise<void> {
 			// Symbol
 			console.log("  Symbol:");
 			console.log(`    ${symbol.name} (${symbol.kind})`);
-			console.log(`    ${symbol.filePath}:${symbol.startLine}-${symbol.endLine}`);
+			console.log(
+				`    ${symbol.filePath}:${symbol.startLine}-${symbol.endLine}`,
+			);
 			if (symbol.signature) console.log(`    ${symbol.signature}`);
 
 			// Callers
@@ -2939,7 +3391,9 @@ async function handleContext(args: string[]): Promise<void> {
 				console.log("    None");
 			} else {
 				for (const caller of context.callers) {
-					console.log(`    ${caller.name} (${caller.filePath}:${caller.startLine})`);
+					console.log(
+						`    ${caller.name} (${caller.filePath}:${caller.startLine})`,
+					);
 				}
 			}
 
@@ -2949,7 +3403,9 @@ async function handleContext(args: string[]): Promise<void> {
 				console.log("    None");
 			} else {
 				for (const callee of context.callees) {
-					console.log(`    ${callee.name} (${callee.filePath}:${callee.startLine})`);
+					console.log(
+						`    ${callee.name} (${callee.filePath}:${callee.startLine})`,
+					);
 				}
 			}
 			console.log("");
@@ -2972,14 +3428,14 @@ async function handleDeadCode(args: string[]): Promise<void> {
 
 	// Parse --max-pagerank flag
 	let maxPageRank = 0.001;
-	const prIdx = args.findIndex(a => a === "--max-pagerank");
+	const prIdx = args.findIndex((a) => a === "--max-pagerank");
 	if (prIdx !== -1 && args[prIdx + 1]) {
 		maxPageRank = parseFloat(args[prIdx + 1]) || 0.001;
 	}
 
 	// Parse --limit flag
 	let limit = 50;
-	const limitIdx = args.findIndex(a => a === "--limit" || a === "-n");
+	const limitIdx = args.findIndex((a) => a === "--limit" || a === "-n");
 	if (limitIdx !== -1 && args[limitIdx + 1]) {
 		limit = parseInt(args[limitIdx + 1], 10) || 50;
 	}
@@ -3016,7 +3472,9 @@ async function handleDeadCode(args: string[]): Promise<void> {
 				console.log("No dead code found");
 			} else {
 				for (const r of results.slice(0, 10)) {
-					console.log(`${r.symbol.filePath}:${r.symbol.startLine} ${r.symbol.name} (${r.symbol.kind})`);
+					console.log(
+						`${r.symbol.filePath}:${r.symbol.startLine} ${r.symbol.name} (${r.symbol.kind})`,
+					);
 				}
 			}
 		} else {
@@ -3029,7 +3487,9 @@ async function handleDeadCode(args: string[]): Promise<void> {
 				console.log(`  Found ${results.length} potentially dead symbol(s):\n`);
 				for (const r of results) {
 					console.log(`  ${r.symbol.name}`);
-					console.log(`     ${r.symbol.filePath}:${r.symbol.startLine} (${r.symbol.kind})`);
+					console.log(
+						`     ${r.symbol.filePath}:${r.symbol.startLine} (${r.symbol.kind})`,
+					);
 					console.log(`     PageRank: ${r.symbol.pagerankScore.toFixed(6)}`);
 				}
 			}
@@ -3049,14 +3509,14 @@ async function handleTestGaps(args: string[]): Promise<void> {
 
 	// Parse --min-pagerank flag
 	let minPageRank = 0.01;
-	const prIdx = args.findIndex(a => a === "--min-pagerank");
+	const prIdx = args.findIndex((a) => a === "--min-pagerank");
 	if (prIdx !== -1 && args[prIdx + 1]) {
 		minPageRank = parseFloat(args[prIdx + 1]) || 0.01;
 	}
 
 	// Parse --limit flag
 	let limit = 30;
-	const limitIdx = args.findIndex(a => a === "--limit" || a === "-n");
+	const limitIdx = args.findIndex((a) => a === "--limit" || a === "-n");
 	if (limitIdx !== -1 && args[limitIdx + 1]) {
 		limit = parseInt(args[limitIdx + 1], 10) || 30;
 	}
@@ -3088,7 +3548,9 @@ async function handleTestGaps(args: string[]): Promise<void> {
 				console.log("No test gaps found");
 			} else {
 				for (const r of results.slice(0, 10)) {
-					console.log(`${r.symbol.filePath}:${r.symbol.startLine} ${r.symbol.name} (${r.symbol.kind})`);
+					console.log(
+						`${r.symbol.filePath}:${r.symbol.startLine} ${r.symbol.name} (${r.symbol.kind})`,
+					);
 				}
 			}
 		} else {
@@ -3096,13 +3558,21 @@ async function handleTestGaps(args: string[]): Promise<void> {
 			console.log("\n🧪 Test Coverage Gaps\n");
 
 			if (results.length === 0) {
-				console.log("  No test gaps found! All important code has test coverage.");
+				console.log(
+					"  No test gaps found! All important code has test coverage.",
+				);
 			} else {
-				console.log(`  Found ${results.length} important symbol(s) without test coverage:\n`);
+				console.log(
+					`  Found ${results.length} important symbol(s) without test coverage:\n`,
+				);
 				for (const r of results) {
 					console.log(`  ${r.symbol.name}`);
-					console.log(`     ${r.symbol.filePath}:${r.symbol.startLine} (${r.symbol.kind})`);
-					console.log(`     PageRank: ${r.symbol.pagerankScore.toFixed(4)} | Callers: ${r.callerCount}`);
+					console.log(
+						`     ${r.symbol.filePath}:${r.symbol.startLine} (${r.symbol.kind})`,
+					);
+					console.log(
+						`     PageRank: ${r.symbol.pagerankScore.toFixed(4)} | Callers: ${r.callerCount}`,
+					);
 				}
 			}
 			console.log("");
@@ -3120,7 +3590,7 @@ async function handleImpact(args: string[]): Promise<void> {
 	const projectPath = resolve(".");
 
 	// Get symbol name
-	const symbolName = args.find(a => !a.startsWith("-"));
+	const symbolName = args.find((a) => !a.startsWith("-"));
 	if (!symbolName) {
 		if (compactMode) {
 			console.log(`✗ Missing symbol name`);
@@ -3134,14 +3604,14 @@ async function handleImpact(args: string[]): Promise<void> {
 
 	// Parse --max-depth flag
 	let maxDepth = 10;
-	const depthIdx = args.findIndex(a => a === "--max-depth");
+	const depthIdx = args.findIndex((a) => a === "--max-depth");
 	if (depthIdx !== -1 && args[depthIdx + 1]) {
 		maxDepth = parseInt(args[depthIdx + 1], 10) || 10;
 	}
 
 	// Parse --file flag for disambiguation
 	let fileHint: string | undefined;
-	const fileIdx = args.findIndex(a => a === "--file");
+	const fileIdx = args.findIndex((a) => a === "--file");
 	if (fileIdx !== -1 && args[fileIdx + 1]) {
 		fileHint = args[fileIdx + 1];
 	}
@@ -3167,7 +3637,9 @@ async function handleImpact(args: string[]): Promise<void> {
 		if (!target) {
 			if (compactMode) {
 				console.log(`✗ Symbol '${symbolName}' not found`);
-				console.log(`Try: claudemem symbol ${symbolName} | claudemem map "${symbolName}"`);
+				console.log(
+					`Try: claudemem symbol ${symbolName} | claudemem map "${symbolName}"`,
+				);
 				console.log(`Check spelling and casing`);
 			} else {
 				console.error(`Symbol '${symbolName}' not found.`);
@@ -3184,7 +3656,9 @@ async function handleImpact(args: string[]): Promise<void> {
 		if (!impact) {
 			if (compactMode) {
 				console.log(`✗ Failed to analyze impact`);
-				console.log(`Symbol: ${symbolName} at ${target.filePath}:${target.startLine}`);
+				console.log(
+					`Symbol: ${symbolName} at ${target.filePath}:${target.startLine}`,
+				);
 				console.log(`Try: claudemem callers ${symbolName}`);
 			} else {
 				console.error("Failed to analyze impact.");
@@ -3194,9 +3668,15 @@ async function handleImpact(args: string[]): Promise<void> {
 
 		if (compactMode) {
 			// Agent mode: affected files list
-			console.log(`${impact.target.filePath}:${impact.target.startLine} ${impact.target.name} (target)`);
-			console.log(`# ${impact.totalAffected} affected symbols in ${impact.byFile.size} files`);
-			for (const [filePath, results] of Array.from(impact.byFile.entries()).slice(0, 5)) {
+			console.log(
+				`${impact.target.filePath}:${impact.target.startLine} ${impact.target.name} (target)`,
+			);
+			console.log(
+				`# ${impact.totalAffected} affected symbols in ${impact.byFile.size} files`,
+			);
+			for (const [filePath, results] of Array.from(
+				impact.byFile.entries(),
+			).slice(0, 5)) {
 				for (const r of results.slice(0, 2)) {
 					console.log(`${filePath}:${r.symbol.startLine} ${r.symbol.name}`);
 				}
@@ -3222,8 +3702,11 @@ async function handleImpact(args: string[]): Promise<void> {
 				for (const [filePath, results] of impact.byFile) {
 					console.log(`\n    📄 ${filePath} (${results.length} symbols)`);
 					for (const r of results.slice(0, 5)) {
-						const depthIcon = r.depth === 1 ? "→" : "→".repeat(Math.min(r.depth, 3));
-						console.log(`       ${depthIcon} ${r.symbol.name}:${r.symbol.startLine} (depth ${r.depth})`);
+						const depthIcon =
+							r.depth === 1 ? "→" : "→".repeat(Math.min(r.depth, 3));
+						console.log(
+							`       ${depthIcon} ${r.symbol.name}:${r.symbol.startLine} (depth ${r.depth})`,
+						);
 					}
 					if (results.length > 5) {
 						console.log(`       ... and ${results.length - 5} more`);
@@ -3245,7 +3728,7 @@ async function handleWatch(args: string[]): Promise<void> {
 
 	// Parse --debounce flag
 	let debounceMs = 1000;
-	const debounceIdx = args.findIndex(a => a === "--debounce");
+	const debounceIdx = args.findIndex((a) => a === "--debounce");
 	if (debounceIdx !== -1 && args[debounceIdx + 1]) {
 		debounceMs = parseInt(args[debounceIdx + 1], 10) || 1000;
 	}
@@ -3257,7 +3740,9 @@ async function handleWatch(args: string[]): Promise<void> {
 	}
 
 	try {
-		const { createFileWatcher } = await import("./core/watcher/file-watcher.js");
+		const { createFileWatcher } = await import(
+			"./core/watcher/file-watcher.js"
+		);
 		const watcher = createFileWatcher(projectPath, debounceMs);
 
 		printLogo();
@@ -3315,10 +3800,14 @@ Subcommands:
 				await hookManager.install();
 				printLogo();
 				console.log("\n✅ Git hook installed successfully!\n");
-				console.log("  The post-commit hook will now auto-index changes after each commit.");
+				console.log(
+					"  The post-commit hook will now auto-index changes after each commit.",
+				);
 				console.log("  Location: .git/hooks/post-commit\n");
 			} catch (error) {
-				console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+				console.error(
+					`Error: ${error instanceof Error ? error.message : String(error)}`,
+				);
 				process.exit(1);
 			}
 			break;
@@ -3329,7 +3818,9 @@ Subcommands:
 				printLogo();
 				console.log("\n✅ Git hook uninstalled successfully!\n");
 			} catch (error) {
-				console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+				console.error(
+					`Error: ${error instanceof Error ? error.message : String(error)}`,
+				);
 				process.exit(1);
 			}
 			break;
@@ -3421,7 +3912,7 @@ Examples:
 
 		default:
 			console.error(`Unknown tool: ${tool}`);
-			console.error('Available: opencode, claude-code');
+			console.error("Available: opencode, claude-code");
 			console.error('Run "claudemem install help" for usage.');
 			process.exit(1);
 	}
@@ -3433,9 +3924,11 @@ Examples:
 async function handleOpenCodeIntegration(
 	projectPath: string,
 	subcommand: string,
-	args: string[]
+	args: string[],
 ): Promise<void> {
-	const { createOpenCodeIntegration } = await import("./integrations/opencode.js");
+	const { createOpenCodeIntegration } = await import(
+		"./integrations/opencode.js"
+	);
 	const manager = createOpenCodeIntegration(projectPath);
 
 	// Parse --type option (default: both)
@@ -3453,7 +3946,9 @@ async function handleOpenCodeIntegration(
 			try {
 				// Warn if not an OpenCode project
 				if (!manager.isOpenCodeProject()) {
-					console.log("\n⚠️  No opencode.json or .opencode/ found in this directory.");
+					console.log(
+						"\n⚠️  No opencode.json or .opencode/ found in this directory.",
+					);
 					console.log("   This will create a new OpenCode configuration.\n");
 				}
 
@@ -3483,7 +3978,9 @@ async function handleOpenCodeIntegration(
 					console.log("  ⚠️  Project not indexed. Run: claudemem index\n");
 				}
 			} catch (error) {
-				console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+				console.error(
+					`Error: ${error instanceof Error ? error.message : String(error)}`,
+				);
 				process.exit(1);
 			}
 			break;
@@ -3494,7 +3991,9 @@ async function handleOpenCodeIntegration(
 				printLogo();
 				console.log("\n✅ OpenCode integration uninstalled!\n");
 			} catch (error) {
-				console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+				console.error(
+					`Error: ${error instanceof Error ? error.message : String(error)}`,
+				);
 				process.exit(1);
 			}
 			break;
@@ -3503,7 +4002,9 @@ async function handleOpenCodeIntegration(
 			const status = await manager.status();
 			printLogo();
 			console.log("\n🔌 OpenCode Integration Status\n");
-			console.log(`  OpenCode project: ${status.isOpenCodeProject ? "Yes" : "No"}`);
+			console.log(
+				`  OpenCode project: ${status.isOpenCodeProject ? "Yes" : "No"}`,
+			);
 			console.log(`  Installed: ${status.installed ? "Yes" : "No"}`);
 			if (status.installed) {
 				console.log(`  Plugin type: ${status.pluginType}`);
@@ -3520,7 +4021,10 @@ async function handleOpenCodeIntegration(
 			// Treat unknown subcommand as install with --type
 			if (subcommand.startsWith("--")) {
 				// Parse as option
-				await handleOpenCodeIntegration(projectPath, "install", [subcommand, ...args]);
+				await handleOpenCodeIntegration(projectPath, "install", [
+					subcommand,
+					...args,
+				]);
 			} else {
 				console.error(`Unknown subcommand: ${subcommand}`);
 				console.error('Run "claudemem install opencode help" for usage.');
@@ -3592,8 +4096,11 @@ Subcommands:
 
 	// Import required modules
 	const { createFileTracker } = await import("./core/tracker.js");
-	const { getIndexDbPath, isDocsEnabled, getDocsConfig, hasContext7ApiKey } = await import("./config.js");
-	const { createDocsFetcher, createProviders } = await import("./docs/index.js");
+	const { getIndexDbPath, isDocsEnabled, getDocsConfig, hasContext7ApiKey } =
+		await import("./config.js");
+	const { createDocsFetcher, createProviders } = await import(
+		"./docs/index.js"
+	);
 
 	switch (subcommand) {
 		case "status":
@@ -3661,7 +4168,9 @@ async function handleDocsStatus(projectPath: string): Promise<void> {
 			for (const doc of docs.slice(0, 20)) {
 				const version = doc.version ? `@${doc.version}` : "";
 				const provider = doc.provider.replace("_", ".");
-				console.log(`    • ${doc.library}${version} (${provider}, ${doc.chunkIds.length} chunks)`);
+				console.log(
+					`    • ${doc.library}${version} (${provider}, ${doc.chunkIds.length} chunks)`,
+				);
 			}
 			if (docs.length > 20) {
 				console.log(`    ... and ${docs.length - 20} more`);
@@ -3677,12 +4186,16 @@ async function handleDocsStatus(projectPath: string): Promise<void> {
 /**
  * Fetch documentation for dependencies
  */
-async function handleDocsFetch(projectPath: string, args: string[]): Promise<void> {
+async function handleDocsFetch(
+	projectPath: string,
+	args: string[],
+): Promise<void> {
 	const { createDocsFetcher } = await import("./docs/index.js");
 	const { createFileTracker } = await import("./core/tracker.js");
 	const { createEmbeddingsClient } = await import("./core/embeddings.js");
 	const { createVectorStore } = await import("./core/store.js");
-	const { getIndexDbPath, getVectorStorePath, getEmbeddingModel } = await import("./config.js");
+	const { getIndexDbPath, getVectorStorePath, getEmbeddingModel } =
+		await import("./config.js");
 	const { computeHash } = await import("./core/tracker.js");
 
 	const specificLibrary = args[0];
@@ -3693,14 +4206,18 @@ async function handleDocsFetch(projectPath: string, args: string[]): Promise<voi
 	const fetcher = createDocsFetcher(projectPath);
 	if (!fetcher.isEnabled()) {
 		console.log("  No documentation providers available.");
-		console.log("  Configure Context7 API key or use llms.txt/DevDocs providers.\n");
+		console.log(
+			"  Configure Context7 API key or use llms.txt/DevDocs providers.\n",
+		);
 		return;
 	}
 
 	// Initialize components
 	const indexDbPath = getIndexDbPath(projectPath);
 	const tracker = createFileTracker(indexDbPath, projectPath);
-	const embeddingsClient = createEmbeddingsClient({ model: getEmbeddingModel(projectPath) });
+	const embeddingsClient = createEmbeddingsClient({
+		model: getEmbeddingModel(projectPath),
+	});
 	const vectorStore = createVectorStore(getVectorStorePath(projectPath));
 	await vectorStore.initialize();
 
@@ -3711,7 +4228,10 @@ async function handleDocsFetch(projectPath: string, args: string[]): Promise<voi
 			libraries = [{ name: specificLibrary }];
 		} else {
 			const deps = await fetcher.detectDependencies(projectPath);
-			libraries = deps.map((d) => ({ name: d.name, majorVersion: d.majorVersion }));
+			libraries = deps.map((d) => ({
+				name: d.name,
+				majorVersion: d.majorVersion,
+			}));
 		}
 
 		if (libraries.length === 0) {
@@ -3719,7 +4239,9 @@ async function handleDocsFetch(projectPath: string, args: string[]): Promise<voi
 			return;
 		}
 
-		console.log(`  Found ${libraries.length} ${specificLibrary ? "library" : "dependencies"}\n`);
+		console.log(
+			`  Found ${libraries.length} ${specificLibrary ? "library" : "dependencies"}\n`,
+		);
 
 		let successCount = 0;
 		for (const lib of libraries) {
@@ -3804,7 +4326,9 @@ async function handleDocsRefresh(projectPath: string): Promise<void> {
 		tracker.clearAllIndexedDocs();
 
 		printLogo();
-		console.log("\n📚 Documentation cache cleared. Run 'claudemem index' to refresh.\n");
+		console.log(
+			"\n📚 Documentation cache cleared. Run 'claudemem index' to refresh.\n",
+		);
 	} finally {
 		tracker.close();
 	}
@@ -3825,7 +4349,9 @@ async function handleDocsProviders(projectPath: string): Promise<void> {
 
 	const context7Configured = hasContext7ApiKey();
 
-	console.log(`  Context7:  ${context7Configured ? "✓ Configured" : "✗ No API key"}`);
+	console.log(
+		`  Context7:  ${context7Configured ? "✓ Configured" : "✗ No API key"}`,
+	);
 	console.log(`  llms.txt:  ✓ Available (free)`);
 	console.log(`  DevDocs:   ✓ Available (free)`);
 
@@ -3842,7 +4368,10 @@ async function handleDocsProviders(projectPath: string): Promise<void> {
 /**
  * Clear cached documentation
  */
-async function handleDocsClear(projectPath: string, args: string[]): Promise<void> {
+async function handleDocsClear(
+	projectPath: string,
+	args: string[],
+): Promise<void> {
 	const { createFileTracker } = await import("./core/tracker.js");
 	const { createVectorStore } = await import("./core/store.js");
 	const { getIndexDbPath, getVectorStorePath } = await import("./config.js");
@@ -3914,38 +4443,58 @@ async function handleFeedback(args: string[]): Promise<void> {
 
 	// Parse --helpful flag (comma-separated chunk IDs)
 	const helpfulIdx = args.findIndex((a) => a === "--helpful");
-	const helpfulIds = helpfulIdx >= 0 && args[helpfulIdx + 1]
-		? args[helpfulIdx + 1].split(",").map((id) => id.trim()).filter(Boolean)
-		: [];
+	const helpfulIds =
+		helpfulIdx >= 0 && args[helpfulIdx + 1]
+			? args[helpfulIdx + 1]
+					.split(",")
+					.map((id) => id.trim())
+					.filter(Boolean)
+			: [];
 
 	// Parse --unhelpful flag (comma-separated chunk IDs)
 	const unhelpfulIdx = args.findIndex((a) => a === "--unhelpful");
-	const unhelpfulIds = unhelpfulIdx >= 0 && args[unhelpfulIdx + 1]
-		? args[unhelpfulIdx + 1].split(",").map((id) => id.trim()).filter(Boolean)
-		: [];
+	const unhelpfulIds =
+		unhelpfulIdx >= 0 && args[unhelpfulIdx + 1]
+			? args[unhelpfulIdx + 1]
+					.split(",")
+					.map((id) => id.trim())
+					.filter(Boolean)
+			: [];
 
 	// Parse --results flag (all result IDs from the search)
 	const resultsIdx = args.findIndex((a) => a === "--results");
-	const resultIds = resultsIdx >= 0 && args[resultsIdx + 1]
-		? args[resultsIdx + 1].split(",").map((id) => id.trim()).filter(Boolean)
-		: [...helpfulIds, ...unhelpfulIds]; // Default to combined if not specified
+	const resultIds =
+		resultsIdx >= 0 && args[resultsIdx + 1]
+			? args[resultsIdx + 1]
+					.split(",")
+					.map((id) => id.trim())
+					.filter(Boolean)
+			: [...helpfulIds, ...unhelpfulIds]; // Default to combined if not specified
 
 	if (!query) {
 		if (compactMode) {
 			console.log("error: --query is required");
 		} else {
 			console.error("Error: --query is required.");
-			console.error('Usage: claudemem feedback --query "your query" --helpful id1,id2 --unhelpful id3');
+			console.error(
+				'Usage: claudemem feedback --query "your query" --helpful id1,id2 --unhelpful id3',
+			);
 		}
 		process.exit(1);
 	}
 
 	if (helpfulIds.length === 0 && unhelpfulIds.length === 0) {
 		if (compactMode) {
-			console.log("error: at least one of --helpful or --unhelpful is required");
+			console.log(
+				"error: at least one of --helpful or --unhelpful is required",
+			);
 		} else {
-			console.error("Error: At least one of --helpful or --unhelpful is required.");
-			console.error('Usage: claudemem feedback --query "your query" --helpful id1,id2 --unhelpful id3');
+			console.error(
+				"Error: At least one of --helpful or --unhelpful is required.",
+			);
+			console.error(
+				'Usage: claudemem feedback --query "your query" --helpful id1,id2 --unhelpful id3',
+			);
 		}
 		process.exit(1);
 	}
@@ -3956,7 +4505,9 @@ async function handleFeedback(args: string[]): Promise<void> {
 			console.log("error: learning disabled in config");
 		} else {
 			console.error("Self-learning is disabled in configuration.");
-			console.error("Enable it with: claudemem init (or set learning: true in config)");
+			console.error(
+				"Enable it with: claudemem init (or set learning: true in config)",
+			);
 		}
 		process.exit(1);
 	}
@@ -4028,7 +4579,9 @@ async function handleLearn(args: string[]): Promise<void> {
 	// Show warning if learning is disabled (but still allow viewing stats)
 	if (!learningEnabled && !compactMode) {
 		console.warn("⚠️  Self-learning is disabled in configuration.");
-		console.warn("   Enable with: claudemem init (or set learning: true in config)\n");
+		console.warn(
+			"   Enable with: claudemem init (or set learning: true in config)\n",
+		);
 	}
 
 	const tracker = getFileTracker(projectPath);
@@ -4051,10 +4604,9 @@ async function handleLearn(args: string[]): Promise<void> {
 
 		if (subcommand === "sessions") {
 			// Show session interaction statistics
-			const {
-				getSessionStatistics,
-				formatSessionStats,
-			} = await import("./learning/interaction/index.js");
+			const { getSessionStatistics, formatSessionStats } = await import(
+				"./learning/interaction/index.js"
+			);
 			const stats = getSessionStatistics(projectPath);
 
 			if (!stats) {
@@ -4062,14 +4614,16 @@ async function handleLearn(args: string[]): Promise<void> {
 					console.log("error: interaction monitoring not enabled");
 				} else {
 					console.error("Interaction monitoring not enabled or no data yet.");
-					console.error("Session data is captured automatically during Claude Code sessions.");
+					console.error(
+						"Session data is captured automatically during Claude Code sessions.",
+					);
 				}
 				return;
 			}
 
 			if (compactMode) {
 				console.log(
-					`sessions:${stats.totalSessions} tools:${stats.totalToolEvents} corrections:${stats.totalCorrections} intervention:${(stats.avgInterventionRate * 100).toFixed(1)}%`
+					`sessions:${stats.totalSessions} tools:${stats.totalToolEvents} corrections:${stats.totalCorrections} intervention:${(stats.avgInterventionRate * 100).toFixed(1)}%`,
 				);
 			} else {
 				printLogo();
@@ -4081,10 +4635,9 @@ async function handleLearn(args: string[]): Promise<void> {
 
 		if (subcommand === "corrections") {
 			// Show correction gap statistics
-			const {
-				getCorrectionGapStats,
-				getRecentCorrections,
-			} = await import("./learning/interaction/index.js");
+			const { getCorrectionGapStats, getRecentCorrections } = await import(
+				"./learning/interaction/index.js"
+			);
 
 			const gapStats = getCorrectionGapStats(projectPath);
 			const recentCorrections = getRecentCorrections(projectPath, 0.5);
@@ -4095,7 +4648,9 @@ async function handleLearn(args: string[]): Promise<void> {
 				} else {
 					printLogo();
 					console.log("\n📊 No corrections detected yet.\n");
-					console.log("Corrections are detected when users modify agent-generated code.");
+					console.log(
+						"Corrections are detected when users modify agent-generated code.",
+					);
 					console.log("");
 				}
 				return;
@@ -4119,7 +4674,9 @@ async function handleLearn(args: string[]): Promise<void> {
 					for (const corr of recentCorrections.slice(0, 5)) {
 						const score = (corr.correctionScore * 100).toFixed(0);
 						const date = new Date(corr.timestamp).toLocaleDateString();
-						console.log(`  [${score}%] ${date} - ${corr.triggerEvent?.substring(0, 50) || "N/A"}...`);
+						console.log(
+							`  [${score}%] ${date} - ${corr.triggerEvent?.substring(0, 50) || "N/A"}...`,
+						);
 					}
 				}
 				console.log("");
@@ -4140,7 +4697,9 @@ async function handleLearn(args: string[]): Promise<void> {
 				} else {
 					printLogo();
 					console.log("\n📊 No patterns detected yet.\n");
-					console.log("Patterns are mined from tool sequences and error clusters.");
+					console.log(
+						"Patterns are mined from tool sequences and error clusters.",
+					);
 					console.log("More interaction data is needed for pattern detection.");
 					console.log("");
 				}
@@ -4167,7 +4726,9 @@ async function handleLearn(args: string[]): Promise<void> {
 				if (compactMode) {
 					console.log("error: learning disabled in config");
 				} else {
-					console.error("Cannot reset: Self-learning is disabled in configuration.");
+					console.error(
+						"Cannot reset: Self-learning is disabled in configuration.",
+					);
 					console.error("Enable it first with: claudemem init");
 				}
 				return;
@@ -4210,7 +4771,9 @@ async function handleLearn(args: string[]): Promise<void> {
 		const trackedFilesCount = stats.topBoostedFiles?.length ?? 0;
 
 		if (compactMode) {
-			console.log(`feedback:${stats.totalFeedbackEvents} queries:${stats.uniqueQueries}`);
+			console.log(
+				`feedback:${stats.totalFeedbackEvents} queries:${stats.uniqueQueries}`,
+			);
 		} else {
 			printLogo();
 			console.log("\n📊 Learning Statistics\n");
@@ -4246,8 +4809,9 @@ async function handleLearn(args: string[]): Promise<void> {
 			const docWeights = weights.documentTypeWeights;
 			if (Object.keys(docWeights).length > 0) {
 				console.log("\n📄 Document Type Weights\n");
-				const sorted = Object.entries(docWeights)
-					.sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0));
+				const sorted = Object.entries(docWeights).sort(
+					(a, b) => (b[1] ?? 0) - (a[1] ?? 0),
+				);
 				for (const [type, weight] of sorted) {
 					console.log(`  ${((weight ?? 0) * 100).toFixed(0)}%  ${type}`);
 				}
@@ -4288,20 +4852,38 @@ function handleAiInstructions(args: string[]): void {
 		console.log(`${c.yellow}${c.bold}USAGE${c.reset}`);
 		console.log(`  ${c.cyan}claudemem ai <target>${c.reset} [options]\n`);
 		console.log(`${c.yellow}${c.bold}TARGETS${c.reset}`);
-		console.log(`  ${c.green}skill${c.reset}       Full claudemem skill (all capabilities)`);
-		console.log(`  ${c.green}architect${c.reset}   System design, codebase structure`);
-		console.log(`  ${c.green}developer${c.reset}   Implementation, code navigation`);
-		console.log(`  ${c.green}tester${c.reset}      Test coverage, quality assurance`);
-		console.log(`  ${c.green}debugger${c.reset}    Error tracing, diagnostics\n`);
+		console.log(
+			`  ${c.green}skill${c.reset}       Full claudemem skill (all capabilities)`,
+		);
+		console.log(
+			`  ${c.green}architect${c.reset}   System design, codebase structure`,
+		);
+		console.log(
+			`  ${c.green}developer${c.reset}   Implementation, code navigation`,
+		);
+		console.log(
+			`  ${c.green}tester${c.reset}      Test coverage, quality assurance`,
+		);
+		console.log(
+			`  ${c.green}debugger${c.reset}    Error tracing, diagnostics\n`,
+		);
 		console.log(`${c.yellow}${c.bold}OPTIONS${c.reset}`);
-		console.log(`  ${c.cyan}-c, --compact${c.reset}       Minimal version (~50 tokens)`);
-		console.log(`  ${c.cyan}-q, --quick${c.reset}         Quick reference (~30 tokens)`);
+		console.log(
+			`  ${c.cyan}-c, --compact${c.reset}       Minimal version (~50 tokens)`,
+		);
+		console.log(
+			`  ${c.cyan}-q, --quick${c.reset}         Quick reference (~30 tokens)`,
+		);
 		console.log(`  ${c.cyan}-m, --mcp-format${c.reset}    MCP tools format\n`);
 		console.log(`${c.yellow}${c.bold}EXAMPLES${c.reset}`);
 		console.log(`  ${c.dim}# Full skill document for CLAUDE.md${c.reset}`);
-		console.log(`  ${c.cyan}claudemem --agent ai skill >> CLAUDE.md${c.reset}\n`);
+		console.log(
+			`  ${c.cyan}claudemem --agent ai skill >> CLAUDE.md${c.reset}\n`,
+		);
 		console.log(`  ${c.dim}# Compact skill + role for system prompt${c.reset}`);
-		console.log(`  ${c.cyan}claudemem --agent ai developer --compact${c.reset}\n`);
+		console.log(
+			`  ${c.cyan}claudemem --agent ai developer --compact${c.reset}\n`,
+		);
 		console.log(`  ${c.dim}# MCP tools reference${c.reset}`);
 		console.log(`  ${c.cyan}claudemem ai skill -m${c.reset}\n`);
 		console.log(`  ${c.dim}# Quick reference (minimal tokens)${c.reset}`);
@@ -4356,7 +4938,9 @@ function handleAiInstructions(args: string[]): void {
 		console.log(`${c.dim}${"─".repeat(60)}${c.reset}\n`);
 		console.log(output);
 		console.log(`\n${c.dim}${"─".repeat(60)}${c.reset}`);
-		console.log(`${c.dim}For piping: claudemem --agent ai ${target} | pbcopy${c.reset}\n`);
+		console.log(
+			`${c.dim}For piping: claudemem --agent ai ${target} | pbcopy${c.reset}\n`,
+		);
 	}
 }
 
@@ -4367,11 +4951,11 @@ function printHelp(): void {
 		bold: "\x1b[1m",
 		dim: "\x1b[2m",
 		cyan: "\x1b[36m",
-		green: "\x1b[38;5;78m",  // Softer green (not acid)
+		green: "\x1b[38;5;78m", // Softer green (not acid)
 		yellow: "\x1b[33m",
 		blue: "\x1b[34m",
 		magenta: "\x1b[35m",
-		orange: "\x1b[38;5;209m",  // Salmon/orange like claudish
+		orange: "\x1b[38;5;209m", // Salmon/orange like claudish
 		gray: "\x1b[90m",
 	};
 
@@ -4589,7 +5173,9 @@ ${c.yellow}${c.bold}MORE INFO${c.reset}
 // ============================================================================
 
 async function handleBenchmarkList(args: string[]): Promise<void> {
-	const { BenchmarkDatabase } = await import("./benchmark-v2/storage/benchmark-db.js");
+	const { BenchmarkDatabase } = await import(
+		"./benchmark-v2/storage/benchmark-db.js"
+	);
 
 	// Colors for output
 	const c = {
@@ -4603,14 +5189,25 @@ async function handleBenchmarkList(args: string[]): Promise<void> {
 	};
 
 	// Parse arguments
-	const limitArg = parseInt(args.find(a => a.startsWith("--limit="))?.split("=")[1] || "20", 10);
-	const statusFilter = args.find(a => a.startsWith("--status="))?.split("=")[1] as "completed" | "failed" | "running" | undefined;
-	const projectPath = args.find(a => a.startsWith("--project="))?.split("=")[1] || process.cwd();
+	const limitArg = parseInt(
+		args.find((a) => a.startsWith("--limit="))?.split("=")[1] || "20",
+		10,
+	);
+	const statusFilter = args
+		.find((a) => a.startsWith("--status="))
+		?.split("=")[1] as "completed" | "failed" | "running" | undefined;
+	const projectPath =
+		args.find((a) => a.startsWith("--project="))?.split("=")[1] ||
+		process.cwd();
 
 	const dbPath = join(projectPath, ".claudemem", "benchmark.db");
 	if (!existsSync(dbPath)) {
-		console.log(`${c.yellow}No benchmark database found at ${dbPath}${c.reset}`);
-		console.log(`${c.dim}Run benchmarks first with: claudemem benchmark ...${c.reset}`);
+		console.log(
+			`${c.yellow}No benchmark database found at ${dbPath}${c.reset}`,
+		);
+		console.log(
+			`${c.dim}Run benchmarks first with: claudemem benchmark ...${c.reset}`,
+		);
 		return;
 	}
 
@@ -4622,32 +5219,48 @@ async function handleBenchmarkList(args: string[]): Promise<void> {
 		return;
 	}
 
-	console.log(`\n${c.cyan}📊 Benchmark Runs${c.reset} (${runs.length} shown)\n`);
-	console.log(`${"ID".padEnd(38)} ${"Status".padEnd(10)} ${"Date".padEnd(20)} ${"Models".padEnd(8)} ${"Cases".padEnd(6)} Project`);
-	console.log(`${"─".repeat(38)} ${"─".repeat(10)} ${"─".repeat(20)} ${"─".repeat(8)} ${"─".repeat(6)} ${"─".repeat(30)}`);
+	console.log(
+		`\n${c.cyan}📊 Benchmark Runs${c.reset} (${runs.length} shown)\n`,
+	);
+	console.log(
+		`${"ID".padEnd(38)} ${"Status".padEnd(10)} ${"Date".padEnd(20)} ${"Models".padEnd(8)} ${"Cases".padEnd(6)} Project`,
+	);
+	console.log(
+		`${"─".repeat(38)} ${"─".repeat(10)} ${"─".repeat(20)} ${"─".repeat(8)} ${"─".repeat(6)} ${"─".repeat(30)}`,
+	);
 
 	for (const run of runs) {
 		const date = new Date(run.startedAt).toLocaleString();
-		const statusColor = run.status === "completed" ? c.green : run.status === "failed" ? c.red : c.yellow;
+		const statusColor =
+			run.status === "completed"
+				? c.green
+				: run.status === "failed"
+					? c.red
+					: c.yellow;
 		const modelCount = run.config.generators.length;
 		const caseCount = run.config.sampleSize;
-		const project = run.config.projectPath.split("/").pop() || run.config.projectPath;
+		const project =
+			run.config.projectPath.split("/").pop() || run.config.projectPath;
 
 		console.log(
 			`${c.dim}${run.id.slice(0, 36)}${c.reset} ` +
-			`${statusColor}${run.status.padEnd(10)}${c.reset} ` +
-			`${date.padEnd(20)} ` +
-			`${String(modelCount).padEnd(8)} ` +
-			`${String(caseCount).padEnd(6)} ` +
-			`${project}`
+				`${statusColor}${run.status.padEnd(10)}${c.reset} ` +
+				`${date.padEnd(20)} ` +
+				`${String(modelCount).padEnd(8)} ` +
+				`${String(caseCount).padEnd(6)} ` +
+				`${project}`,
 		);
 	}
 
-	console.log(`\n${c.dim}Use: claudemem benchmark-show <run-id> to view results${c.reset}\n`);
+	console.log(
+		`\n${c.dim}Use: claudemem benchmark-show <run-id> to view results${c.reset}\n`,
+	);
 }
 
 async function handleBenchmarkShow(args: string[]): Promise<void> {
-	const { BenchmarkDatabase } = await import("./benchmark-v2/storage/benchmark-db.js");
+	const { BenchmarkDatabase } = await import(
+		"./benchmark-v2/storage/benchmark-db.js"
+	);
 	const { displayBenchmarkResults } = await import("./benchmark-v2/display.js");
 
 	// Colors for output
@@ -4661,19 +5274,25 @@ async function handleBenchmarkShow(args: string[]): Promise<void> {
 		red: "\x1b[31m",
 	};
 
-	const runId = args.find(a => !a.startsWith("--"));
+	const runId = args.find((a) => !a.startsWith("--"));
 	if (!runId) {
 		console.log(`${c.red}Error: Please provide a run ID${c.reset}`);
 		console.log(`Usage: claudemem benchmark-show <run-id>`);
 		console.log(`       claudemem benchmark-show <run-id> --json`);
-		console.log(`       claudemem benchmark-show <run-id> --project=/path/to/project`);
+		console.log(
+			`       claudemem benchmark-show <run-id> --project=/path/to/project`,
+		);
 		return;
 	}
 
-	const projectPath = args.find(a => a.startsWith("--project="))?.split("=")[1] || process.cwd();
+	const projectPath =
+		args.find((a) => a.startsWith("--project="))?.split("=")[1] ||
+		process.cwd();
 	const dbPath = join(projectPath, ".claudemem", "benchmark.db");
 	if (!existsSync(dbPath)) {
-		console.log(`${c.yellow}No benchmark database found at ${dbPath}${c.reset}`);
+		console.log(
+			`${c.yellow}No benchmark database found at ${dbPath}${c.reset}`,
+		);
 		return;
 	}
 
@@ -4689,28 +5308,36 @@ async function handleBenchmarkShow(args: string[]): Promise<void> {
 
 	if (jsonOutput) {
 		const scores = db.getAggregatedScores(runId);
-		console.log(JSON.stringify({
-			run: {
-				id: run.id,
-				status: run.status,
-				startedAt: run.startedAt,
-				config: run.config,
-			},
-			scores: Object.fromEntries(scores),
-		}, null, 2));
+		console.log(
+			JSON.stringify(
+				{
+					run: {
+						id: run.id,
+						status: run.status,
+						startedAt: run.startedAt,
+						config: run.config,
+					},
+					scores: Object.fromEntries(scores),
+				},
+				null,
+				2,
+			),
+		);
 		return;
 	}
 
 	// Display run info header
 	console.log(`\n${c.cyan}📊 Benchmark Run: ${run.id}${c.reset}\n`);
-	console.log(`Status:     ${run.status === "completed" ? c.green : c.red}${run.status}${c.reset}`);
+	console.log(
+		`Status:     ${run.status === "completed" ? c.green : c.red}${run.status}${c.reset}`,
+	);
 	console.log(`Started:    ${new Date(run.startedAt).toLocaleString()}`);
 	console.log(`Project:    ${run.config.projectPath}`);
 	console.log(`Cases:      ${run.config.sampleSize}`);
 	console.log();
 
 	// Use the full display function (same as after benchmark run)
-	const generatorSpecs = run.config.generators.map(g => g.id);
+	const generatorSpecs = run.config.generators.map((g) => g.id);
 	const judgeModels = run.config.judges;
 
 	await displayBenchmarkResults(db, runId, generatorSpecs, judgeModels);

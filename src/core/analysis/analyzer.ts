@@ -9,8 +9,14 @@
 
 import type { FileTracker } from "../tracker.js";
 import type { SymbolDefinition } from "../../types.js";
-import { createReferenceGraphManager, type ReferenceGraphManager } from "../reference-graph.js";
-import { createTestFileDetector, type TestFileDetector } from "./test-detector.js";
+import {
+	createReferenceGraphManager,
+	type ReferenceGraphManager,
+} from "../reference-graph.js";
+import {
+	createTestFileDetector,
+	type TestFileDetector,
+} from "./test-detector.js";
 
 // ============================================================================
 // Types
@@ -140,11 +146,7 @@ export class CodeAnalyzer {
 	 * Find test gaps: high PageRank symbols not called by any test file
 	 */
 	findTestGaps(options: TestGapOptions = {}): TestGapResult[] {
-		const {
-			minPageRank = 0.01,
-			limit = 50,
-			kinds,
-		} = options;
+		const { minPageRank = 0.01, limit = 50, kinds } = options;
 
 		const allSymbols = this.tracker.getAllSymbols();
 		const results: TestGapResult[] = [];
@@ -194,7 +196,10 @@ export class CodeAnalyzer {
 	 * Analyze the impact of changing a symbol
 	 * Returns direct callers, transitive callers, and file grouping
 	 */
-	findImpact(symbolId: string, options: ImpactOptions = {}): ImpactAnalysis | null {
+	findImpact(
+		symbolId: string,
+		options: ImpactOptions = {},
+	): ImpactAnalysis | null {
 		const {
 			maxDepth = 10,
 			includeTestFiles = true,
@@ -294,7 +299,8 @@ export class CodeAnalyzer {
 			totalSymbols: allSymbols.length,
 			totalTestSymbols: testSymbols,
 			totalProductionSymbols: allSymbols.length - testSymbols,
-			avgPageRank: allSymbols.length > 0 ? totalPageRank / allSymbols.length : 0,
+			avgPageRank:
+				allSymbols.length > 0 ? totalPageRank / allSymbols.length : 0,
 			symbolsWithNoCallers,
 		};
 	}

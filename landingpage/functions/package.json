@@ -1,27 +1,27 @@
 {
-  "name": "claudemem-functions",
-  "version": "1.0.0",
-  "description": "Firebase Cloud Functions for claudemem benchmark results",
-  "main": "lib/index.js",
-  "scripts": {
-    "build": "tsc",
-    "build:watch": "tsc --watch",
-    "serve": "npm run build && firebase emulators:start --only functions",
-    "shell": "npm run build && firebase functions:shell",
-    "start": "npm run shell",
-    "deploy": "firebase deploy --only functions",
-    "logs": "firebase functions:log"
-  },
-  "engines": {
-    "node": "20"
-  },
-  "dependencies": {
-    "firebase-admin": "^13.0.2",
-    "firebase-functions": "^6.3.0"
-  },
-  "devDependencies": {
-    "@types/node": "^22.0.0",
-    "typescript": "^5.7.2"
-  },
-  "private": true
+	"name": "claudemem-functions",
+	"version": "1.0.0",
+	"description": "Firebase Cloud Functions for claudemem benchmark results",
+	"main": "lib/index.js",
+	"scripts": {
+		"build": "tsc",
+		"build:watch": "tsc --watch",
+		"serve": "npm run build && firebase emulators:start --only functions",
+		"shell": "npm run build && firebase functions:shell",
+		"start": "npm run shell",
+		"deploy": "firebase deploy --only functions",
+		"logs": "firebase functions:log"
+	},
+	"engines": {
+		"node": "20"
+	},
+	"dependencies": {
+		"firebase-admin": "^13.0.2",
+		"firebase-functions": "^6.3.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22.0.0",
+		"typescript": "^5.7.2"
+	},
+	"private": true
 }

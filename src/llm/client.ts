@@ -23,7 +23,13 @@ import type {
 // Re-exports
 // ============================================================================
 
-export type { ILLMClient, LLMGenerateOptions, LLMMessage, LLMProvider, LLMResponse };
+export type {
+	ILLMClient,
+	LLMGenerateOptions,
+	LLMMessage,
+	LLMProvider,
+	LLMResponse,
+};
 
 // ============================================================================
 // Constants
@@ -49,13 +55,22 @@ const BASE_RETRY_DELAY = 1000;
 // ============================================================================
 
 /** Cloud LLM providers (use network API calls) */
-const CLOUD_LLM_PROVIDERS: Set<LLMProvider> = new Set(["anthropic", "anthropic-batch", "openrouter"]);
+const CLOUD_LLM_PROVIDERS: Set<LLMProvider> = new Set([
+	"anthropic",
+	"anthropic-batch",
+	"openrouter",
+]);
 
 export abstract class BaseLLMClient implements ILLMClient {
 	protected provider: LLMProvider;
 	protected model: string;
 	protected timeout: number;
-	private accumulatedUsage = { inputTokens: 0, outputTokens: 0, cost: 0, calls: 0 };
+	private accumulatedUsage = {
+		inputTokens: 0,
+		outputTokens: 0,
+		cost: 0,
+		calls: 0,
+	};
 
 	constructor(provider: LLMProvider, model: string, timeout = 120000) {
 		this.provider = provider;
@@ -89,10 +104,19 @@ export abstract class BaseLLMClient implements ILLMClient {
 	}
 
 	resetAccumulatedUsage(): void {
-		this.accumulatedUsage = { inputTokens: 0, outputTokens: 0, cost: 0, calls: 0 };
+		this.accumulatedUsage = {
+			inputTokens: 0,
+			outputTokens: 0,
+			cost: 0,
+			calls: 0,
+		};
 	}
 
-	protected accumulateUsage(usage?: { inputTokens: number; outputTokens: number; cost?: number }): void {
+	protected accumulateUsage(usage?: {
+		inputTokens: number;
+		outputTokens: number;
+		cost?: number;
+	}): void {
 		if (usage) {
 			this.accumulatedUsage.inputTokens += usage.inputTokens;
 			this.accumulatedUsage.outputTokens += usage.outputTokens;
@@ -103,17 +127,18 @@ export abstract class BaseLLMClient implements ILLMClient {
 
 	abstract complete(
 		messages: LLMMessage[],
-		options?: LLMGenerateOptions
+		options?: LLMGenerateOptions,
 	): Promise<LLMResponse>;
 
 	async completeJSON<T>(
 		messages: LLMMessage[],
-		options?: LLMGenerateOptions
+		options?: LLMGenerateOptions,
 	): Promise<T> {
 		// Add JSON instruction to system prompt
 		const jsonOptions: LLMGenerateOptions = {
 			...options,
-			systemPrompt: `${options?.systemPrompt || ""}\n\nYou must respond with valid JSON only. No markdown, no explanation, just the JSON object.`.trim(),
+			systemPrompt:
+				`${options?.systemPrompt || ""}\n\nYou must respond with valid JSON only. No markdown, no explanation, just the JSON object.`.trim(),
 		};
 
 		const response = await this.complete(messages, jsonOptions);
@@ -131,7 +156,7 @@ export abstract class BaseLLMClient implements ILLMClient {
 			return parsed as T;
 		} catch (error) {
 			throw new Error(
-				`Failed to parse LLM response as JSON: ${error instanceof Error ? error.message : String(error)}\nResponse: ${response.content.slice(0, 500)}`
+				`Failed to parse LLM response as JSON: ${error instanceof Error ? error.message : String(error)}\nResponse: ${response.content.slice(0, 500)}`,
 			);
 		}
 	}
@@ -262,7 +287,7 @@ export abstract class BaseLLMClient implements ILLMClient {
 
 	protected async withRetry<T>(
 		fn: () => Promise<T>,
-		maxRetries = MAX_RETRIES
+		maxRetries = MAX_RETRIES,
 	): Promise<T> {
 		let lastError: Error | undefined;
 
@@ -321,7 +346,7 @@ export interface LLMClientOptions {
  */
 export async function createLLMClient(
 	options?: LLMClientOptions,
-	projectPath?: string
+	projectPath?: string,
 ): Promise<ILLMClient> {
 	const config = loadGlobalConfig();
 
@@ -339,7 +364,9 @@ export async function createLLMClient(
 
 	switch (provider) {
 		case "claude-code": {
-			const { ClaudeCodeLLMClient } = await import("./providers/claude-code.js");
+			const { ClaudeCodeLLMClient } = await import(
+				"./providers/claude-code.js"
+			);
 			return new ClaudeCodeLLMClient({
 				model,
 				timeout: options?.timeout,
@@ -356,7 +383,9 @@ export async function createLLMClient(
 		}
 
 		case "anthropic-batch": {
-			const { AnthropicBatchLLMClient } = await import("./providers/anthropic-batch.js");
+			const { AnthropicBatchLLMClient } = await import(
+				"./providers/anthropic-batch.js"
+			);
 			return new AnthropicBatchLLMClient({
 				model,
 				apiKey: options?.apiKey || getAnthropicApiKey(),
@@ -391,7 +420,7 @@ export async function createLLMClient(
  */
 export async function testLLMConnection(
 	provider: LLMProvider,
-	options?: Omit<LLMClientOptions, "provider">
+	options?: Omit<LLMClientOptions, "provider">,
 ): Promise<{ ok: boolean; error?: string }> {
 	try {
 		const client = await createLLMClient({ ...options, provider });

@@ -10,7 +10,13 @@
  * for richer context and better search relevance.
  */
 
-import type { CodeUnit, ILLMClient, UnitType, ASTMetadata, LLMMessage } from "../../types.js";
+import type {
+	CodeUnit,
+	ILLMClient,
+	UnitType,
+	ASTMetadata,
+	LLMMessage,
+} from "../../types.js";
 import type { VectorStore } from "../store.js";
 import {
 	SUMMARY_SYSTEM_PROMPT,
@@ -64,7 +70,10 @@ export class BottomUpSummarizer {
 	/**
 	 * Summarize all code units in a file using bottom-up order
 	 */
-	async summarizeFile(filePath: string, options: SummarizationOptions = {}): Promise<SummarizationResult> {
+	async summarizeFile(
+		filePath: string,
+		options: SummarizationOptions = {},
+	): Promise<SummarizationResult> {
 		const startTime = Date.now();
 		const { onProgress, skipExisting = false, concurrency = 5 } = options;
 
@@ -85,7 +94,11 @@ export class BottomUpSummarizer {
 			if (unitsAtDepth.length === 0) continue;
 
 			if (onProgress) {
-				onProgress(summariesGenerated, units.length, `Processing depth ${depth} (${unitsAtDepth.length} units)`);
+				onProgress(
+					summariesGenerated,
+					units.length,
+					`Processing depth ${depth} (${unitsAtDepth.length} units)`,
+				);
 			}
 
 			// Process in batches with concurrency
@@ -114,7 +127,11 @@ export class BottomUpSummarizer {
 				}
 
 				if (onProgress) {
-					onProgress(summariesGenerated, units.length, `Depth ${depth}: ${Math.min(i + concurrency, unitsAtDepth.length)}/${unitsAtDepth.length}`);
+					onProgress(
+						summariesGenerated,
+						units.length,
+						`Depth ${depth}: ${Math.min(i + concurrency, unitsAtDepth.length)}/${unitsAtDepth.length}`,
+					);
 				}
 			}
 		}
@@ -129,7 +146,10 @@ export class BottomUpSummarizer {
 	/**
 	 * Summarize all code units across multiple files
 	 */
-	async summarizeFiles(filePaths: string[], options: SummarizationOptions = {}): Promise<SummarizationResult> {
+	async summarizeFiles(
+		filePaths: string[],
+		options: SummarizationOptions = {},
+	): Promise<SummarizationResult> {
 		const startTime = Date.now();
 		let totalGenerated = 0;
 		const allErrors: Array<{ unitId: string; error: string }> = [];
@@ -138,7 +158,11 @@ export class BottomUpSummarizer {
 			const filePath = filePaths[i];
 
 			if (options.onProgress) {
-				options.onProgress(i, filePaths.length, `Summarizing ${filePath.split("/").pop()}`);
+				options.onProgress(
+					i,
+					filePaths.length,
+					`Summarizing ${filePath.split("/").pop()}`,
+				);
 			}
 
 			const result = await this.summarizeFile(filePath, {
@@ -160,7 +184,11 @@ export class BottomUpSummarizer {
 	/**
 	 * Summarize a single code unit
 	 */
-	private async summarizeUnit(unit: CodeUnit, allUnits: CodeUnit[], skipExisting: boolean): Promise<string | null> {
+	private async summarizeUnit(
+		unit: CodeUnit,
+		allUnits: CodeUnit[],
+		skipExisting: boolean,
+	): Promise<string | null> {
 		// Check if we should skip
 		if (skipExisting) {
 			const existing = this.summaryCache.get(unit.id);
@@ -229,7 +257,11 @@ export class BottomUpSummarizer {
 	/**
 	 * Build prompt for class/interface summary
 	 */
-	private buildClassPrompt(unit: CodeUnit, allUnits: CodeUnit[], metadata: ASTMetadata): string {
+	private buildClassPrompt(
+		unit: CodeUnit,
+		allUnits: CodeUnit[],
+		metadata: ASTMetadata,
+	): string {
 		// Get child method summaries
 		const children = allUnits.filter((u) => u.parentId === unit.id);
 		const methodSummaries = children
@@ -261,13 +293,19 @@ export class BottomUpSummarizer {
 	/**
 	 * Build prompt for file summary
 	 */
-	private buildFilePrompt(unit: CodeUnit, allUnits: CodeUnit[], metadata: ASTMetadata): string {
+	private buildFilePrompt(
+		unit: CodeUnit,
+		allUnits: CodeUnit[],
+		metadata: ASTMetadata,
+	): string {
 		// Get top-level children (classes, functions, exports)
 		const children = allUnits.filter((u) => u.parentId === unit.id);
 
 		// Build exports list from exported children
 		const exports = children
-			.filter((c) => c.metadata?.isExported || c.metadata?.visibility === "exported")
+			.filter(
+				(c) => c.metadata?.isExported || c.metadata?.visibility === "exported",
+			)
 			.map((c) => ({
 				name: c.name || "anonymous",
 				type: c.unitType,
@@ -276,7 +314,9 @@ export class BottomUpSummarizer {
 
 		// Non-exported internals
 		const internals = children
-			.filter((c) => !c.metadata?.isExported && c.metadata?.visibility !== "exported")
+			.filter(
+				(c) => !c.metadata?.isExported && c.metadata?.visibility !== "exported",
+			)
 			.map((c) => ({
 				name: c.name || "anonymous",
 				type: c.unitType,
@@ -288,8 +328,12 @@ export class BottomUpSummarizer {
 			moduleName: undefined, // TODO: Extract from package.json or similar
 			exports,
 			internals: internals.length > 0 ? internals : undefined,
-			externalDeps: metadata.importsUsed?.filter((i) => !i.startsWith(".") && !i.startsWith("@app")),
-			internalDeps: metadata.importsUsed?.filter((i) => i.startsWith(".") || i.startsWith("@app")),
+			externalDeps: metadata.importsUsed?.filter(
+				(i) => !i.startsWith(".") && !i.startsWith("@app"),
+			),
+			internalDeps: metadata.importsUsed?.filter(
+				(i) => i.startsWith(".") || i.startsWith("@app"),
+			),
 			importedBy: [], // TODO: Could be populated from reference graph
 		};
 
@@ -324,11 +368,16 @@ export class BottomUpSummarizer {
 		code: string,
 		language: string,
 	): Array<{ name: string; type?: string; visibility?: string }> {
-		const properties: Array<{ name: string; type?: string; visibility?: string }> = [];
+		const properties: Array<{
+			name: string;
+			type?: string;
+			visibility?: string;
+		}> = [];
 
 		if (language === "typescript" || language === "javascript") {
 			// Match property declarations like: private readonly name: Type
-			const propRegex = /(private|public|protected|readonly)?\s*(readonly)?\s*(\w+)\s*[?!]?\s*:\s*([^;=]+)/g;
+			const propRegex =
+				/(private|public|protected|readonly)?\s*(readonly)?\s*(\w+)\s*[?!]?\s*:\s*([^;=]+)/g;
 			let match;
 			while ((match = propRegex.exec(code)) !== null) {
 				const visibility = match[1] || "public";
@@ -358,6 +407,9 @@ export class BottomUpSummarizer {
 /**
  * Create a bottom-up summarizer
  */
-export function createBottomUpSummarizer(llmClient: ILLMClient, store: VectorStore): BottomUpSummarizer {
+export function createBottomUpSummarizer(
+	llmClient: ILLMClient,
+	store: VectorStore,
+): BottomUpSummarizer {
 	return new BottomUpSummarizer(llmClient, store);
 }

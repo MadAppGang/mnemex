@@ -37,7 +37,11 @@ export interface PipelineResult {
 	/** Documents extracted */
 	documents: BaseDocument[];
 	/** Errors encountered */
-	errors: Array<{ documentType: DocumentType; filePath: string; error: string }>;
+	errors: Array<{
+		documentType: DocumentType;
+		filePath: string;
+		error: string;
+	}>;
 	/** Time taken in milliseconds */
 	durationMs: number;
 }
@@ -82,7 +86,8 @@ export class EnrichmentPipeline {
 		const extractionTypes = targetTypes.filter((t) => t !== "code_chunk");
 
 		// Get extraction order based on dependencies
-		const orderedTypes = this.dependencyGraph.getExtractionOrder(extractionTypes);
+		const orderedTypes =
+			this.dependencyGraph.getExtractionOrder(extractionTypes);
 
 		// Build extraction context with existing docs for incremental processing
 		const context: ExtractionContext = {
@@ -105,7 +110,9 @@ export class EnrichmentPipeline {
 			}
 
 			// Check if dependencies are satisfied
-			if (!this.dependencyGraph.areDependenciesSatisfied(docType, completedTypes)) {
+			if (
+				!this.dependencyGraph.areDependenciesSatisfied(docType, completedTypes)
+			) {
 				errors.push({
 					documentType: docType,
 					filePath,
@@ -137,7 +144,8 @@ export class EnrichmentPipeline {
 
 				completedTypes.add(docType);
 			} catch (error) {
-				const errorMessage = error instanceof Error ? error.message : String(error);
+				const errorMessage =
+					error instanceof Error ? error.message : String(error);
 				errors.push({
 					documentType: docType,
 					filePath,

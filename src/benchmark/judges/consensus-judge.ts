@@ -6,7 +6,12 @@
  */
 
 import type { FileSummary, SymbolSummary } from "../../types.js";
-import type { IJudge, JudgeContext, JudgeInfo, JudgmentResult } from "../types.js";
+import type {
+	IJudge,
+	JudgeContext,
+	JudgeInfo,
+	JudgmentResult,
+} from "../types.js";
 
 // ============================================================================
 // Types
@@ -22,7 +27,10 @@ export class ConsensusJudge implements IJudge {
 	private judges: IJudge[];
 	private aggregationMethod: AggregationMethod;
 
-	constructor(judges: IJudge[], aggregationMethod: AggregationMethod = "median") {
+	constructor(
+		judges: IJudge[],
+		aggregationMethod: AggregationMethod = "median",
+	) {
 		if (judges.length === 0) {
 			throw new Error("ConsensusJudge requires at least one judge");
 		}
@@ -32,17 +40,19 @@ export class ConsensusJudge implements IJudge {
 
 	async judge(
 		generated: FileSummary | SymbolSummary,
-		context: JudgeContext
+		context: JudgeContext,
 	): Promise<JudgmentResult> {
 		const startTime = Date.now();
 
 		// Run all judges in parallel
 		const results = await Promise.all(
-			this.judges.map((judge) => judge.judge(generated, context))
+			this.judges.map((judge) => judge.judge(generated, context)),
 		);
 
 		// Filter out failed judgments (those with default scores due to errors)
-		const validResults = results.filter((r) => !r.feedback?.startsWith("Judgment failed:"));
+		const validResults = results.filter(
+			(r) => !r.feedback?.startsWith("Judgment failed:"),
+		);
 
 		// If all failed, return the first result
 		if (validResults.length === 0) {
@@ -56,19 +66,20 @@ export class ConsensusJudge implements IJudge {
 
 		// Calculate overall quality score
 		const qualityScore = Math.round(
-			usefulness * 0.5 + conciseness * 0.25 + clarity * 0.25
+			usefulness * 0.5 + conciseness * 0.25 + clarity * 0.25,
 		);
 
 		// Combine feedback from all judges
 		const feedbackParts = validResults
 			.map((r) => r.feedback)
 			.filter((f): f is string => !!f);
-		const feedback = feedbackParts.length > 0
-			? feedbackParts.join(" | ")
-			: undefined;
+		const feedback =
+			feedbackParts.length > 0 ? feedbackParts.join(" | ") : undefined;
 
 		const durationMs = Date.now() - startTime;
-		const judgeNames = this.judges.map((j) => j.getInfo().model || j.getInfo().name).join(", ");
+		const judgeNames = this.judges
+			.map((j) => j.getInfo().model || j.getInfo().name)
+			.join(", ");
 
 		return {
 			usefulness,

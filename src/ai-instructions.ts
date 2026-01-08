@@ -21,7 +21,12 @@
 
 export type AgentRole = "architect" | "developer" | "tester" | "debugger";
 
-export const VALID_ROLES: AgentRole[] = ["architect", "developer", "tester", "debugger"];
+export const VALID_ROLES: AgentRole[] = [
+	"architect",
+	"developer",
+	"tester",
+	"debugger",
+];
 
 /**
  * Get instruction text for a specific role
@@ -435,7 +440,7 @@ Root cause analysis:
   Root cause: specific file:line
   Impact: all callers of buggy symbol
 Format: caller chain with file:line references
-</output>`
+</output>`,
 };
 
 /**
@@ -472,5 +477,5 @@ Commands: symbol <from stack> → callers (how got here) → callees (what faile
 Analysis: impact <name> (who's affected by this bug)
 Workflow: Locate error → trace callers up → trace callees down → impact analysis
 Best: Map full caller chain before fixing, use impact to assess bug scope
-Avoid: console.log without flow understanding, fixing symptoms not causes`
+Avoid: console.log without flow understanding, fixing symptoms not causes`,
 };
