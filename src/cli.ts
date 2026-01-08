@@ -4,12 +4,27 @@
  * Command-line interface for code indexing and search.
  */
 
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import inquirerSearch from "@inquirer/search";
 import { confirm, input, select } from "@inquirer/prompts";
+import inquirerSearch from "@inquirer/search";
+import {
+	type AgentRole,
+	VALID_ROLES,
+	getCompactInstructions,
+	getInstructions,
+	listRoles,
+} from "./ai-instructions.js";
+import {
+	CLAUDEMEM_MCP_SKILL,
+	CLAUDEMEM_QUICK_REF,
+	CLAUDEMEM_SKILL,
+	CLAUDEMEM_SKILL_COMPACT,
+	getCompactSkillWithRole,
+	getFullSkillWithRole,
+} from "./ai-skill.js";
 import {
 	ENV,
 	getAnthropicApiKey,
@@ -24,6 +39,7 @@ import {
 	loadGlobalConfig,
 	saveGlobalConfig,
 } from "./config.js";
+import { canChunkFile, chunkFileByPath } from "./core/chunker.js";
 // Note: createIndexer imports store.js which loads LanceDB - made lazy to avoid startup errors
 // Use: const { createIndexer } = await import("./core/indexer.js");
 import {
@@ -31,54 +47,38 @@ import {
 	getModelContextLength,
 	truncateForModel,
 } from "./core/embeddings.js";
-import { chunkFileByPath, canChunkFile } from "./core/chunker.js";
+import { createReferenceGraphManager } from "./core/reference-graph.js";
 // Note: createVectorStore is imported lazily to avoid loading LanceDB on startup
 // Use: const { createVectorStore } = await import("./core/store.js");
 import { createRepoMapGenerator } from "./core/repo-map.js";
-import { createReferenceGraphManager } from "./core/reference-graph.js";
 import { FileTracker } from "./core/tracker.js";
 import {
 	CURATED_PICKS,
+	RECOMMENDED_MODELS,
 	discoverEmbeddingModels,
 	formatModelInfo,
-	RECOMMENDED_MODELS,
 } from "./models/model-discovery.js";
-import {
-	type AgentRole,
-	VALID_ROLES,
-	getInstructions,
-	getCompactInstructions,
-	listRoles,
-} from "./ai-instructions.js";
-import {
-	CLAUDEMEM_SKILL,
-	CLAUDEMEM_SKILL_COMPACT,
-	CLAUDEMEM_MCP_SKILL,
-	CLAUDEMEM_QUICK_REF,
-	getFullSkillWithRole,
-	getCompactSkillWithRole,
-} from "./ai-skill.js";
 // Note: learning module is imported lazily to avoid startup errors
 // Use: const { createLearningSystem } = await import("./learning/index.js");
 import {
+	type CellValue,
+	type TableColumn,
+	createBenchmarkProgress,
+	formatContextLength,
+	formatCost,
+	formatDuration,
+	formatElapsed,
+	formatPercent,
+	getHighlight,
 	getLogo,
 	printLogo as printLogoUI,
-	formatElapsed,
-	createBenchmarkProgress,
-	renderTable,
-	renderSummary,
+	renderError,
 	renderHeader,
 	renderInfo,
 	renderSuccess,
-	renderError,
+	renderSummary,
+	renderTable,
 	truncate,
-	formatPercent,
-	formatDuration,
-	formatCost,
-	formatContextLength,
-	getHighlight,
-	type TableColumn,
-	type CellValue,
 } from "./ui/index.js";
 
 // ============================================================================
@@ -123,10 +123,10 @@ function isAgentMode(): boolean {
 function printCompactHelp(): void {
 	console.log(`claudemem v${VERSION} - Semantic code search with AST analysis`);
 	console.log(
-		`Commands: index search map symbol callers callees context dead-code test-gaps impact hook`,
+		"Commands: index search map symbol callers callees context dead-code test-gaps impact hook update",
 	);
 	console.log(
-		`Use: claudemem --agent <cmd> | Docs: https://github.com/MadAppGang/claudemem`,
+		"Use: claudemem --agent <cmd> | Docs: https://github.com/MadAppGang/claudemem",
 	);
 }
 
@@ -146,7 +146,7 @@ function compactPath(path: string, maxLen = 40): string {
 	if (path.length <= maxLen) return path;
 	const parts = path.split("/");
 	if (parts.length <= 2) return path.slice(-maxLen);
-	return "..." + path.slice(-(maxLen - 3));
+	return `...${path.slice(-(maxLen - 3))}`;
 }
 
 /** Format duration compactly */
@@ -180,6 +180,28 @@ export async function runCli(args: string[]): Promise<void> {
 	// Note: -v is reserved for --verbose in subcommands, use --version only for version
 	if (args.includes("--version")) {
 		console.log(`claudemem v${VERSION}`);
+
+		// Async check for updates (non-blocking with timeout)
+		const { UpdateManager } = await import("./updater/index.js");
+		const updater = new UpdateManager();
+
+		try {
+			// Try to check for update with 2s timeout
+			const check = await Promise.race([
+				updater.checkForUpdate(),
+				new Promise<null>((_, reject) =>
+					setTimeout(() => reject(new Error("timeout")), 2000),
+				),
+			]);
+
+			if (check?.isUpdateAvailable) {
+				console.log(`\nUpdate available: v${check.latestVersion}`);
+				console.log("Run: \x1b[36mclaudemem update\x1b[0m");
+			}
+		} catch {
+			// Silently ignore errors (offline, timeout, etc.)
+		}
+
 		return;
 	}
 
@@ -284,6 +306,10 @@ export async function runCli(args: string[]): Promise<void> {
 			break;
 		case "learn":
 			await handleLearn(args.slice(1));
+			break;
+		// Update command
+		case "update":
+			await handleUpdate(args.slice(1));
 			break;
 		default:
 			// Check if it looks like a search query
@@ -500,13 +526,13 @@ async function handleIndex(args: string[]): Promise<void> {
 	// Parse concurrency (default 10 for parallel LLM requests)
 	const concurrencyArg = args.find((a) => a.startsWith("--concurrency="));
 	const concurrency = concurrencyArg
-		? parseInt(concurrencyArg.split("=")[1], 10)
+		? Number.parseInt(concurrencyArg.split("=")[1], 10)
 		: 10;
 
 	// Parse wait timeout (default 5 minutes)
 	const waitTimeoutArg = args.find((a) => a.startsWith("--wait-timeout="));
 	const waitTimeout = waitTimeoutArg
-		? parseInt(waitTimeoutArg.split("=")[1], 10) * 1000
+		? Number.parseInt(waitTimeoutArg.split("=")[1], 10) * 1000
 		: 5 * 60 * 1000;
 
 	// Handle force unlock
@@ -545,7 +571,7 @@ async function handleIndex(args: string[]): Promise<void> {
 		if (vectorEnabled) {
 			console.log(`  Embedding model: ${embeddingModel}`);
 		} else {
-			console.log(`  Vector mode: disabled (BM25 keyword search only)`);
+			console.log("  Vector mode: disabled (BM25 keyword search only)");
 		}
 		if (!noLlm) {
 			console.log(`  LLM for enrichment: ${llmSpec.displayName}`);
@@ -620,7 +646,7 @@ async function handleIndex(args: string[]): Promise<void> {
 
 		// Show enrichment results if available
 		if (result.enrichment) {
-			console.log(`\n  Enrichment:`);
+			console.log("\n  Enrichment:");
 			console.log(`    Documents:    ${result.enrichment.documentsCreated}`);
 
 			// Show LLM calls and cost
@@ -685,7 +711,7 @@ async function handleIndex(args: string[]): Promise<void> {
 				console.log("\n  Enrichment errors:");
 				for (const [error, { count, files }] of errorGroups) {
 					const truncatedError =
-						error.length > 100 ? error.slice(0, 100) + "..." : error;
+						error.length > 100 ? `${error.slice(0, 100)}...` : error;
 					console.log(`    ✖ ${truncatedError}`);
 					console.log(
 						`      (${count}x) files: ${files.join(", ")}${count > files.length ? ` +${count - files.length} more` : ""}`,
@@ -724,7 +750,9 @@ async function handleSearch(args: string[]): Promise<void> {
 	// Parse arguments
 	const limitIdx = args.findIndex((a) => a === "-n" || a === "--limit");
 	const limit =
-		limitIdx >= 0 && args[limitIdx + 1] ? parseInt(args[limitIdx + 1], 10) : 10;
+		limitIdx >= 0 && args[limitIdx + 1]
+			? Number.parseInt(args[limitIdx + 1], 10)
+			: 10;
 
 	const langIdx = args.findIndex((a) => a === "-l" || a === "--language");
 	const language = langIdx >= 0 ? args[langIdx + 1] : undefined;
@@ -886,8 +914,8 @@ async function handleSearch(args: string[]): Promise<void> {
 		if (results.length === 0) {
 			if (compactMode) {
 				console.log(`✗ No results for "${query}"`);
-				console.log(`Index may be stale: claudemem index`);
-				console.log(`Try: claudemem map | claudemem symbol <name>`);
+				console.log("Index may be stale: claudemem index");
+				console.log("Try: claudemem map | claudemem symbol <name>");
 			} else {
 				console.log("\nNo results found.");
 				console.log("Make sure the codebase is indexed: claudemem index");
@@ -1022,8 +1050,8 @@ async function handleStatus(args: string[]): Promise<void> {
 		if (!status.exists) {
 			if (compactMode) {
 				console.log(`✗ No index at ${compactPath(projectPath, 40)}`);
-				console.log(`Create: claudemem index`);
-				console.log(`Docs: https://github.com/MadAppGang/claudemem`);
+				console.log("Create: claudemem index");
+				console.log("Docs: https://github.com/MadAppGang/claudemem");
 			} else {
 				console.log("\nNo index found for this project.");
 				console.log("Run 'claudemem index' to create one.");
@@ -1034,7 +1062,7 @@ async function handleStatus(args: string[]): Promise<void> {
 		// Compact mode: 3-line status
 		if (compactMode) {
 			const age = status.lastUpdated
-				? compactDuration(Date.now() - status.lastUpdated.getTime()) + " ago"
+				? `${compactDuration(Date.now() - status.lastUpdated.getTime())} ago`
 				: "unknown";
 			console.log(
 				`✓ Index: ${status.totalFiles} files, ${status.totalChunks} chunks (${age})`,
@@ -1043,7 +1071,7 @@ async function handleStatus(args: string[]): Promise<void> {
 				`Languages: ${status.languages.join(", ") || "none"} | Model: ${status.embeddingModel || "none"}`,
 			);
 			console.log(
-				`Commands: search map symbol callers callees context dead-code test-gaps impact`,
+				"Commands: search map symbol callers callees context dead-code test-gaps impact",
 			);
 			return;
 		}
@@ -1739,7 +1767,8 @@ async function fetchOpenAICompatibleModels(
 		// Filter by type if specified
 		if (filter === "embedding") {
 			return models.filter((m) => m.type === "embeddings");
-		} else if (filter === "llm") {
+		}
+		if (filter === "llm") {
 			return models.filter((m) => m.type === "llm");
 		}
 
@@ -1853,7 +1882,7 @@ async function handleModels(args: string[]): Promise<void> {
 
 	// Helper to print a model row
 	const printModel = (model: (typeof allModels)[0], prefix = "  ") => {
-		const id = model.id.length > 35 ? model.id.slice(0, 32) + "..." : model.id;
+		const id = model.id.length > 35 ? `${model.id.slice(0, 32)}...` : model.id;
 		const price = model.isFree
 			? `${c.green}FREE${c.reset}`
 			: `$${model.pricePerMillion.toFixed(3)}/1M`;
@@ -1869,7 +1898,7 @@ async function handleModels(args: string[]): Promise<void> {
 		console.log(
 			`  ${"Model".padEnd(36)} ${"Provider".padEnd(10)} ${"Price".padEnd(12)} ${"Context".padEnd(6)} Dim`,
 		);
-		console.log("  " + "─".repeat(78));
+		console.log(`  ${"─".repeat(78)}`);
 	};
 
 	if (freeOnly) {
@@ -2538,11 +2567,11 @@ async function handleBenchmark(args: string[]): Promise<void> {
 	console.log(
 		`  ${"Model".padEnd(28)} ${"Speed".padEnd(7)} ${"Cost".padEnd(11)} ${"Ctx".padEnd(6)} ${"Dim".padEnd(6)} ${"NDCG".padEnd(6)} ${"MRR".padEnd(6)} ${"Hit@5"}`,
 	);
-	console.log("  " + "─".repeat(82));
+	console.log(`  ${"─".repeat(82)}`);
 
 	// Truncate long model names
 	const truncate = (s: string, max = 26) =>
-		s.length > max ? s.slice(0, max - 1) + "…" : s;
+		s.length > max ? `${s.slice(0, max - 1)}…` : s;
 
 	// Format context length (e.g., 32000 -> "32K")
 	const fmtCtx = (ctx: number) =>
@@ -2642,7 +2671,10 @@ async function handleBenchmark(args: string[]): Promise<void> {
 		const cheapest =
 			costsWithValues.length > 0
 				? costsWithValues.reduce((a, b) =>
-						(a.cost || Infinity) < (b.cost || Infinity) ? a : b,
+						(a.cost || Number.POSITIVE_INFINITY) <
+						(b.cost || Number.POSITIVE_INFINITY)
+							? a
+							: b,
 					)
 				: null;
 		const bestQuality = successResults.reduce((a, b) =>
@@ -2900,7 +2932,7 @@ async function extractAutoTestQueries(
 			if (!byCategory.has(q.category)) {
 				byCategory.set(q.category, []);
 			}
-			byCategory.get(q.category)!.push(q);
+			byCategory.get(q.category)?.push(q);
 		}
 
 		const selected: TestQuery[] = [];
@@ -2978,7 +3010,7 @@ async function handleMap(args: string[]): Promise<void> {
 	let maxTokens = 2000;
 	const tokensIdx = args.findIndex((a) => a === "--tokens");
 	if (tokensIdx !== -1 && args[tokensIdx + 1]) {
-		maxTokens = parseInt(args[tokensIdx + 1], 10) || 2000;
+		maxTokens = Number.parseInt(args[tokensIdx + 1], 10) || 2000;
 	}
 
 	// Parse --path flag for project path
@@ -3001,9 +3033,9 @@ async function handleMap(args: string[]): Promise<void> {
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
 		if (compactMode) {
-			console.log(`✗ No index found`);
-			console.log(`Create: claudemem index`);
-			console.log(`Docs: https://github.com/MadAppGang/claudemem`);
+			console.log("✗ No index found");
+			console.log("Create: claudemem index");
+			console.log("Docs: https://github.com/MadAppGang/claudemem");
 		} else {
 			console.error("No index found. Run 'claudemem index' first.");
 		}
@@ -3051,8 +3083,8 @@ async function handleSymbol(args: string[]): Promise<void> {
 	const symbolName = args.find((a) => !a.startsWith("-"));
 	if (!symbolName) {
 		if (compactMode) {
-			console.log(`Missing symbol name`);
-			console.log(`Usage: claudemem --agent symbol <name>`);
+			console.log("Missing symbol name");
+			console.log("Usage: claudemem --agent symbol <name>");
 		} else {
 			console.error("Usage: claudemem symbol <name> [--file <hint>]");
 		}
@@ -3069,9 +3101,9 @@ async function handleSymbol(args: string[]): Promise<void> {
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
 		if (compactMode) {
-			console.log(`✗ No index found`);
-			console.log(`Create: claudemem index`);
-			console.log(`Docs: https://github.com/MadAppGang/claudemem`);
+			console.log("✗ No index found");
+			console.log("Create: claudemem index");
+			console.log("Docs: https://github.com/MadAppGang/claudemem");
 		} else {
 			console.error("No index found. Run 'claudemem index' first.");
 		}
@@ -3091,7 +3123,7 @@ async function handleSymbol(args: string[]): Promise<void> {
 				console.log(
 					`Try: claudemem map "${symbolName}" | claudemem search "${symbolName}"`,
 				);
-				console.log(`Fuzzy: similar names may exist with different casing`);
+				console.log("Fuzzy: similar names may exist with different casing");
 			} else {
 				console.error(`Symbol '${symbolName}' not found.`);
 			}
@@ -3133,9 +3165,9 @@ async function handleCallers(args: string[]): Promise<void> {
 	const symbolName = args.find((a) => !a.startsWith("-"));
 	if (!symbolName) {
 		if (compactMode) {
-			console.log(`✗ Missing symbol name`);
-			console.log(`Usage: claudemem callers <name>`);
-			console.log(`Example: claudemem callers handleSearch`);
+			console.log("✗ Missing symbol name");
+			console.log("Usage: claudemem callers <name>");
+			console.log("Example: claudemem callers handleSearch");
 		} else {
 			console.error("Usage: claudemem callers <name>");
 		}
@@ -3145,9 +3177,9 @@ async function handleCallers(args: string[]): Promise<void> {
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
 		if (compactMode) {
-			console.log(`✗ No index found`);
-			console.log(`Create: claudemem index`);
-			console.log(`Docs: https://github.com/MadAppGang/claudemem`);
+			console.log("✗ No index found");
+			console.log("Create: claudemem index");
+			console.log("Docs: https://github.com/MadAppGang/claudemem");
 		} else {
 			console.error("No index found. Run 'claudemem index' first.");
 		}
@@ -3166,7 +3198,7 @@ async function handleCallers(args: string[]): Promise<void> {
 				console.log(
 					`Try: claudemem symbol ${symbolName} | claudemem map "${symbolName}"`,
 				);
-				console.log(`Check spelling and casing`);
+				console.log("Check spelling and casing");
 			} else {
 				console.error(`Symbol '${symbolName}' not found.`);
 			}
@@ -3216,9 +3248,9 @@ async function handleCallees(args: string[]): Promise<void> {
 	const symbolName = args.find((a) => !a.startsWith("-"));
 	if (!symbolName) {
 		if (compactMode) {
-			console.log(`✗ Missing symbol name`);
-			console.log(`Usage: claudemem callees <name>`);
-			console.log(`Example: claudemem callees handleSearch`);
+			console.log("✗ Missing symbol name");
+			console.log("Usage: claudemem callees <name>");
+			console.log("Example: claudemem callees handleSearch");
 		} else {
 			console.error("Usage: claudemem callees <name>");
 		}
@@ -3228,9 +3260,9 @@ async function handleCallees(args: string[]): Promise<void> {
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
 		if (compactMode) {
-			console.log(`✗ No index found`);
-			console.log(`Create: claudemem index`);
-			console.log(`Docs: https://github.com/MadAppGang/claudemem`);
+			console.log("✗ No index found");
+			console.log("Create: claudemem index");
+			console.log("Docs: https://github.com/MadAppGang/claudemem");
 		} else {
 			console.error("No index found. Run 'claudemem index' first.");
 		}
@@ -3249,7 +3281,7 @@ async function handleCallees(args: string[]): Promise<void> {
 				console.log(
 					`Try: claudemem symbol ${symbolName} | claudemem map "${symbolName}"`,
 				);
-				console.log(`Check spelling and casing`);
+				console.log("Check spelling and casing");
 			} else {
 				console.error(`Symbol '${symbolName}' not found.`);
 			}
@@ -3299,9 +3331,9 @@ async function handleContext(args: string[]): Promise<void> {
 	const symbolName = args.find((a) => !a.startsWith("-"));
 	if (!symbolName) {
 		if (compactMode) {
-			console.log(`✗ Missing symbol name`);
-			console.log(`Usage: claudemem context <name>`);
-			console.log(`Example: claudemem context handleSearch`);
+			console.log("✗ Missing symbol name");
+			console.log("Usage: claudemem context <name>");
+			console.log("Example: claudemem context handleSearch");
 		} else {
 			console.error(
 				"Usage: claudemem context <name> [--callers N] [--callees N]",
@@ -3315,19 +3347,19 @@ async function handleContext(args: string[]): Promise<void> {
 	let maxCallees = 15;
 	const callersIdx = args.findIndex((a) => a === "--callers");
 	if (callersIdx !== -1 && args[callersIdx + 1]) {
-		maxCallers = parseInt(args[callersIdx + 1], 10) || 10;
+		maxCallers = Number.parseInt(args[callersIdx + 1], 10) || 10;
 	}
 	const calleesIdx = args.findIndex((a) => a === "--callees");
 	if (calleesIdx !== -1 && args[calleesIdx + 1]) {
-		maxCallees = parseInt(args[calleesIdx + 1], 10) || 15;
+		maxCallees = Number.parseInt(args[calleesIdx + 1], 10) || 15;
 	}
 
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
 		if (compactMode) {
-			console.log(`✗ No index found`);
-			console.log(`Create: claudemem index`);
-			console.log(`Docs: https://github.com/MadAppGang/claudemem`);
+			console.log("✗ No index found");
+			console.log("Create: claudemem index");
+			console.log("Docs: https://github.com/MadAppGang/claudemem");
 		} else {
 			console.error("No index found. Run 'claudemem index' first.");
 		}
@@ -3346,7 +3378,7 @@ async function handleContext(args: string[]): Promise<void> {
 				console.log(
 					`Try: claudemem symbol ${symbolName} | claudemem map "${symbolName}"`,
 				);
-				console.log(`Check spelling and casing`);
+				console.log("Check spelling and casing");
 			} else {
 				console.error(`Symbol '${symbolName}' not found.`);
 			}
@@ -3434,14 +3466,14 @@ async function handleDeadCode(args: string[]): Promise<void> {
 	let maxPageRank = 0.001;
 	const prIdx = args.findIndex((a) => a === "--max-pagerank");
 	if (prIdx !== -1 && args[prIdx + 1]) {
-		maxPageRank = parseFloat(args[prIdx + 1]) || 0.001;
+		maxPageRank = Number.parseFloat(args[prIdx + 1]) || 0.001;
 	}
 
 	// Parse --limit flag
 	let limit = 50;
 	const limitIdx = args.findIndex((a) => a === "--limit" || a === "-n");
 	if (limitIdx !== -1 && args[limitIdx + 1]) {
-		limit = parseInt(args[limitIdx + 1], 10) || 50;
+		limit = Number.parseInt(args[limitIdx + 1], 10) || 50;
 	}
 
 	// Parse --include-exported flag
@@ -3450,9 +3482,9 @@ async function handleDeadCode(args: string[]): Promise<void> {
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
 		if (compactMode) {
-			console.log(`✗ No index found`);
-			console.log(`Create: claudemem index`);
-			console.log(`Docs: https://github.com/MadAppGang/claudemem`);
+			console.log("✗ No index found");
+			console.log("Create: claudemem index");
+			console.log("Docs: https://github.com/MadAppGang/claudemem");
 		} else {
 			console.error("No index found. Run 'claudemem index' first.");
 		}
@@ -3515,22 +3547,22 @@ async function handleTestGaps(args: string[]): Promise<void> {
 	let minPageRank = 0.01;
 	const prIdx = args.findIndex((a) => a === "--min-pagerank");
 	if (prIdx !== -1 && args[prIdx + 1]) {
-		minPageRank = parseFloat(args[prIdx + 1]) || 0.01;
+		minPageRank = Number.parseFloat(args[prIdx + 1]) || 0.01;
 	}
 
 	// Parse --limit flag
 	let limit = 30;
 	const limitIdx = args.findIndex((a) => a === "--limit" || a === "-n");
 	if (limitIdx !== -1 && args[limitIdx + 1]) {
-		limit = parseInt(args[limitIdx + 1], 10) || 30;
+		limit = Number.parseInt(args[limitIdx + 1], 10) || 30;
 	}
 
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
 		if (compactMode) {
-			console.log(`✗ No index found`);
-			console.log(`Create: claudemem index`);
-			console.log(`Docs: https://github.com/MadAppGang/claudemem`);
+			console.log("✗ No index found");
+			console.log("Create: claudemem index");
+			console.log("Docs: https://github.com/MadAppGang/claudemem");
 		} else {
 			console.error("No index found. Run 'claudemem index' first.");
 		}
@@ -3597,9 +3629,9 @@ async function handleImpact(args: string[]): Promise<void> {
 	const symbolName = args.find((a) => !a.startsWith("-"));
 	if (!symbolName) {
 		if (compactMode) {
-			console.log(`✗ Missing symbol name`);
-			console.log(`Usage: claudemem impact <name>`);
-			console.log(`Example: claudemem impact handleSearch`);
+			console.log("✗ Missing symbol name");
+			console.log("Usage: claudemem impact <name>");
+			console.log("Example: claudemem impact handleSearch");
 		} else {
 			console.error("Usage: claudemem impact <symbol> [--max-depth N]");
 		}
@@ -3610,7 +3642,7 @@ async function handleImpact(args: string[]): Promise<void> {
 	let maxDepth = 10;
 	const depthIdx = args.findIndex((a) => a === "--max-depth");
 	if (depthIdx !== -1 && args[depthIdx + 1]) {
-		maxDepth = parseInt(args[depthIdx + 1], 10) || 10;
+		maxDepth = Number.parseInt(args[depthIdx + 1], 10) || 10;
 	}
 
 	// Parse --file flag for disambiguation
@@ -3623,9 +3655,9 @@ async function handleImpact(args: string[]): Promise<void> {
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
 		if (compactMode) {
-			console.log(`✗ No index found`);
-			console.log(`Create: claudemem index`);
-			console.log(`Docs: https://github.com/MadAppGang/claudemem`);
+			console.log("✗ No index found");
+			console.log("Create: claudemem index");
+			console.log("Docs: https://github.com/MadAppGang/claudemem");
 		} else {
 			console.error("No index found. Run 'claudemem index' first.");
 		}
@@ -3644,7 +3676,7 @@ async function handleImpact(args: string[]): Promise<void> {
 				console.log(
 					`Try: claudemem symbol ${symbolName} | claudemem map "${symbolName}"`,
 				);
-				console.log(`Check spelling and casing`);
+				console.log("Check spelling and casing");
 			} else {
 				console.error(`Symbol '${symbolName}' not found.`);
 			}
@@ -3659,7 +3691,7 @@ async function handleImpact(args: string[]): Promise<void> {
 
 		if (!impact) {
 			if (compactMode) {
-				console.log(`✗ Failed to analyze impact`);
+				console.log("✗ Failed to analyze impact");
 				console.log(
 					`Symbol: ${symbolName} at ${target.filePath}:${target.startLine}`,
 				);
@@ -3734,7 +3766,7 @@ async function handleWatch(args: string[]): Promise<void> {
 	let debounceMs = 1000;
 	const debounceIdx = args.findIndex((a) => a === "--debounce");
 	if (debounceIdx !== -1 && args[debounceIdx + 1]) {
-		debounceMs = parseInt(args[debounceIdx + 1], 10) || 1000;
+		debounceMs = Number.parseInt(args[debounceIdx + 1], 10) || 1000;
 	}
 
 	const tracker = getFileTracker(projectPath);
@@ -3829,7 +3861,7 @@ Subcommands:
 			}
 			break;
 
-		case "status":
+		case "status": {
 			const status = await hookManager.status();
 			printLogo();
 			console.log("\n🔗 Git Hook Status\n");
@@ -3839,6 +3871,7 @@ Subcommands:
 			}
 			console.log("");
 			break;
+		}
 
 		default:
 			console.error(`Unknown subcommand: ${subcommand}`);
@@ -3960,8 +3993,8 @@ async function handleOpenCodeIntegration(
 				printLogo();
 				console.log("\n✅ OpenCode integration installed!\n");
 				console.log(`  Plugin type: ${pluginType}`);
-				console.log(`  Location: .opencode/plugin/`);
-				console.log(`  Config: opencode.json (updated)\n`);
+				console.log("  Location: .opencode/plugin/");
+				console.log("  Config: opencode.json (updated)\n");
 
 				if (pluginType === "tools" || pluginType === "both") {
 					console.log("  Available tools:");
@@ -4002,7 +4035,7 @@ async function handleOpenCodeIntegration(
 			}
 			break;
 
-		case "status":
+		case "status": {
 			const status = await manager.status();
 			printLogo();
 			console.log("\n🔌 OpenCode Integration Status\n");
@@ -4020,6 +4053,7 @@ async function handleOpenCodeIntegration(
 			}
 			console.log("");
 			break;
+		}
 
 		default:
 			// Treat unknown subcommand as install with --type
@@ -4356,8 +4390,8 @@ async function handleDocsProviders(projectPath: string): Promise<void> {
 	console.log(
 		`  Context7:  ${context7Configured ? "✓ Configured" : "✗ No API key"}`,
 	);
-	console.log(`  llms.txt:  ✓ Available (free)`);
-	console.log(`  DevDocs:   ✓ Available (free)`);
+	console.log("  llms.txt:  ✓ Available (free)");
+	console.log("  DevDocs:   ✓ Available (free)");
 
 	if (!context7Configured) {
 		console.log("\n  To enable Context7:");
@@ -4549,7 +4583,7 @@ async function handleFeedback(args: string[]): Promise<void> {
 			console.log(`  Query: "${query}"`);
 			console.log(`  Helpful: ${helpfulIds.length} result(s)`);
 			console.log(`  Unhelpful: ${unhelpfulIds.length} result(s)`);
-			console.log(`\n📊 Updated weights:`);
+			console.log("\n📊 Updated weights:");
 			console.log(`  Vector: ${(weights.vectorWeight * 100).toFixed(1)}%`);
 			console.log(`  BM25: ${(weights.bm25Weight * 100).toFixed(1)}%`);
 			console.log(`  Confidence: ${(weights.confidence * 100).toFixed(0)}%`);
@@ -4631,7 +4665,7 @@ async function handleLearn(args: string[]): Promise<void> {
 				);
 			} else {
 				printLogo();
-				console.log("\n" + formatSessionStats(stats));
+				console.log(`\n${formatSessionStats(stats)}`);
 				console.log("");
 			}
 			return;
@@ -4714,7 +4748,7 @@ async function handleLearn(args: string[]): Promise<void> {
 				console.log(`patterns:${stats.totalPatterns}`);
 			} else {
 				printLogo();
-				console.log("\n" + formatPatternStats(stats));
+				console.log(`\n${formatPatternStats(stats)}`);
 				console.log("");
 			}
 			return;
@@ -4948,6 +4982,112 @@ function handleAiInstructions(args: string[]): void {
 	}
 }
 
+// ============================================================================
+// Update Command
+// ============================================================================
+
+/**
+ * Handle update command - update to latest version from npm
+ */
+async function handleUpdate(args: string[]): Promise<void> {
+	const autoApprove = args.includes("--yes") || args.includes("-y");
+
+	if (!agentMode) {
+		printLogo();
+	}
+
+	const { UpdateManager } = await import("./updater/index.js");
+	const updater = new UpdateManager();
+
+	if (agentMode) {
+		// Compact output for AI agents
+		const check = await updater.checkForUpdate();
+
+		if (!check.isUpdateAvailable) {
+			console.log(`claudemem v${check.currentVersion} - already latest`);
+			return;
+		}
+
+		console.log(
+			`claudemem v${check.currentVersion} - Update available: v${check.latestVersion}`,
+		);
+
+		if (!autoApprove) {
+			console.log("Use --yes flag to auto-approve");
+			return;
+		}
+
+		console.log("Updating...");
+		const result = await updater.performUpdate({ verbose: false });
+
+		if (result.success) {
+			console.log(`Updated to v${result.newVersion}`);
+		} else {
+			console.log(`Update failed: ${result.error}`);
+			process.exit(1);
+		}
+	} else {
+		// Interactive output
+		console.log("Checking for updates...\n");
+		const check = await updater.checkForUpdate();
+
+		if (!check.isUpdateAvailable) {
+			console.log(`✓ Already on latest version: v${check.currentVersion}`);
+			return;
+		}
+
+		console.log(
+			`Update available: v${check.currentVersion} → v${check.latestVersion}`,
+		);
+		if (check.publishedAt) {
+			const date = new Date(check.publishedAt).toLocaleDateString();
+			console.log(`Published: ${date}`);
+		}
+		console.log();
+
+		const shouldUpdate =
+			autoApprove || (await confirm({ message: "Update now?", default: true }));
+
+		if (!shouldUpdate) {
+			console.log("Update cancelled.");
+			return;
+		}
+
+		console.log("\nUpdating claudemem...");
+		const result = await updater.performUpdate({ verbose: true });
+
+		if (result.success) {
+			console.log(`\n✓ Successfully updated to v${result.newVersion}`);
+			console.log("Run 'claudemem --version' to verify.");
+		} else {
+			console.error(`\n✗ Update failed: ${result.error}`);
+
+			// Provide helpful error messages
+			if (
+				result.error?.includes("EACCES") ||
+				result.error?.includes("permission")
+			) {
+				console.error(
+					"\nPermission denied. Try running with elevated privileges:",
+				);
+				console.error("  sudo npm install -g claude-codemem@latest");
+			} else if (
+				result.error?.includes("spawn") ||
+				result.error?.includes("not found")
+			) {
+				console.error(
+					"\nPackage manager not found. Please install npm or bun.",
+				);
+			} else {
+				console.error("\nPlease try updating manually:");
+				console.error("  npm install -g claude-codemem@latest");
+			}
+
+			process.exit(1);
+		}
+	}
+}
+
 function printHelp(): void {
 	// Colors (matching claudish style)
 	const c = {
@@ -4995,6 +5135,7 @@ ${c.yellow}${c.bold}COMMANDS${c.reset}
   ${c.green}benchmark-list${c.reset}         List all benchmark runs
   ${c.green}benchmark-show${c.reset}         Show results for a specific run
   ${c.green}ai${c.reset} <role>             Print AI agent instructions (architect|developer|tester|debugger)
+  ${c.green}update${c.reset}                 Update to latest version from npm
 
 ${c.yellow}${c.bold}SYMBOL GRAPH COMMANDS${c.reset} ${c.dim}(use --agent for compact output)${c.reset}
   ${c.green}map${c.reset} [query]            Get repo structure ${c.dim}(optionally filtered by query)${c.reset}
@@ -5193,7 +5334,7 @@ async function handleBenchmarkList(args: string[]): Promise<void> {
 	};
 
 	// Parse arguments
-	const limitArg = parseInt(
+	const limitArg = Number.parseInt(
 		args.find((a) => a.startsWith("--limit="))?.split("=")[1] || "20",
 		10,
 	);
@@ -5281,10 +5422,10 @@ async function handleBenchmarkShow(args: string[]): Promise<void> {
 	const runId = args.find((a) => !a.startsWith("--"));
 	if (!runId) {
 		console.log(`${c.red}Error: Please provide a run ID${c.reset}`);
-		console.log(`Usage: claudemem benchmark-show <run-id>`);
-		console.log(`       claudemem benchmark-show <run-id> --json`);
+		console.log("Usage: claudemem benchmark-show <run-id>");
+		console.log("       claudemem benchmark-show <run-id> --json");
 		console.log(
-			`       claudemem benchmark-show <run-id> --project=/path/to/project`,
+			"       claudemem benchmark-show <run-id> --project=/path/to/project",
 		);
 		return;
 	}
