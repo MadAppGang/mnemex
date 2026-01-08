@@ -183,7 +183,7 @@ export async function runCli(args: string[]): Promise<void> {
 
 		// Async check for updates (non-blocking with timeout)
 		const { UpdateManager } = await import("./updater/index.js");
-		const updater = new UpdateManager();
+		const updater = new UpdateManager(VERSION);
 
 		try {
 			// Try to check for update with 2s timeout
@@ -4997,7 +4997,7 @@ async function handleUpdate(args: string[]): Promise<void> {
 	}
 
 	const { UpdateManager } = await import("./updater/index.js");
-	const updater = new UpdateManager();
+	const updater = new UpdateManager(VERSION);
 
 	if (agentMode) {
 		// Compact output for AI agents

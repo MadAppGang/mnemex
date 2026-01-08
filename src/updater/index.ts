@@ -9,9 +9,6 @@
  */
 
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { clearCache, isCacheValid, readCache, writeCache } from "./cache.js";
 import { fetchLatestVersion } from "./registry.js";
 import { isNewerVersion } from "./version.js";
@@ -40,20 +37,20 @@ export interface UpdateResult {
 const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export class UpdateManager {
-	constructor(private packageName = "claude-codemem") {}
+	private currentVersion: string;
+
+	constructor(
+		currentVersion: string,
+		private packageName = "claude-codemem",
+	) {
+		this.currentVersion = currentVersion;
+	}
 
 	/**
-	 * Get current installed version from package.json
+	 * Get current installed version
 	 */
 	getCurrentVersion(): string {
-		try {
-			const __dirname = dirname(fileURLToPath(import.meta.url));
-			const pkgPath = join(__dirname, "../../package.json");
-			const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
-			return pkg.version || "0.0.0";
-		} catch {
-			return "0.0.0";
-		}
+		return this.currentVersion;
 	}
 
 	/**
@@ -112,8 +109,30 @@ export class UpdateManager {
 	}
 
 	/**
-	 * Perform self-update using package manager
+	 * Detect how the package was installed (bun or npm)
 	 */
+	private detectPackageManager(): "bun" | "npm" {
+		// Check if running under Bun runtime
+		const isBunRuntime =
+			typeof (globalThis as { Bun?: unknown }).Bun !== "undefined";
+
+		// Check process.execPath for bun
+		const execPath = process.execPath.toLowerCase();
+		const isBunExec = execPath.includes("bun");
+
+		// Check if the script path suggests bun installation
+		const scriptPath = process.argv[1] || "";
+		const isBunInstall =
+			scriptPath.includes(".bun") || scriptPath.includes("/bun/");
+
+		// If any indicator suggests bun, use bun
+		if (isBunRuntime || isBunExec || isBunInstall) {
+			return "bun";
+		}
+
+		return "npm";
+	}
+
 	async performUpdate(options: UpdateOptions = {}): Promise<UpdateResult> {
 		const check = await this.checkForUpdate();
 
@@ -121,9 +140,8 @@ export class UpdateManager {
 			return { success: false, error: "Already on latest version" };
 		}
 
-		// Detect runtime (Bun vs Node)
-		const isBun = typeof (globalThis as { Bun?: unknown }).Bun !== "undefined";
-		const packageManager = isBun ? "bun" : "npm";
+		// Detect package manager based on installation method
+		const packageManager = this.detectPackageManager();
 		const args = ["install", "-g", `${this.packageName}@latest`];
 
 		if (options.verbose) {
