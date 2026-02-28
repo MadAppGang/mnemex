@@ -80,7 +80,6 @@ import {
 	renderTable,
 	truncate,
 } from "./ui/index.js";
-import { createOutput } from "./output/index.js";
 import { agentOutput } from "./output/agent.js";
 
 // ============================================================================
@@ -610,10 +609,10 @@ async function handleIndex(args: string[]): Promise<void> {
 		console.log("");
 	}
 
-	// Create output router for progress rendering
-	const output = createOutput(agentMode);
-	await output.start();
-	const progress = agentMode ? null : output.renderProgress();
+	// Use ANSI cursor-based progress for TTY (OpenTUI incremental renderer
+	// appends lines instead of overwriting, causing duplicate rows).
+	const progress = agentMode ? null : createProgressRenderer();
+	if (progress) progress.start();
 	let waitingMessageShown = false;
 
 	const { createIndexer, IndexLockError } = await import("./core/indexer.js");
@@ -647,7 +646,6 @@ async function handleIndex(args: string[]): Promise<void> {
 			const { agentOutput } = await import("./output/agent.js");
 			agentOutput.indexComplete(result);
 			await indexer.close();
-			await output.stop();
 			return;
 		}
 
@@ -757,8 +755,6 @@ async function handleIndex(args: string[]): Promise<void> {
 	} finally {
 		if (progress) progress.stop();
 		await indexer.close();
-		// Ensure output is cleaned up (no-op if already stopped by progress.finish())
-		await output.stop();
 	}
 }
 
