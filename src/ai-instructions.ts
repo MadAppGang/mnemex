@@ -12,6 +12,9 @@
  * - test-gaps: find untested high-PageRank symbols
  * - impact: analyze change blast radius (transitive callers)
  *
+ * Pack command:
+ * - pack: export codebase to single AI-friendly file (XML, Markdown, Plain)
+ *
  * Developer experience:
  * - watch: auto-reindex on file changes
  * - hooks: git post-commit hook for auto-indexing

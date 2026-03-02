@@ -80,6 +80,12 @@ SEARCH (secondary - after structure understood):
   claudemem search "query"    # Semantic search, returns file:line + code
   claudemem search "q" --map  # Search + include repo map context
 
+PACK (export codebase for AI):
+  claudemem pack [path]       # Pack to XML file (repomix-compatible)
+  claudemem pack --stdout     # Write to stdout
+  claudemem pack --format md  # Markdown format
+  claudemem pack --include "src/**" --exclude "*.test.ts"
+
 INDEX/STATUS:
   claudemem index [path] [-f] # Index codebase (force with -f)
   claudemem status            # Show index info
@@ -265,6 +271,10 @@ CODE ANALYSIS:
   claudemem test-gaps         # Find untested (high PageRank + no test callers)
   claudemem impact <name>     # ALL transitive callers (blast radius)
 
+PACK:
+  claudemem pack [path]       # Export codebase to single AI file (XML/MD/plain)
+  claudemem pack --stdout     # Write to stdout
+
 SEARCH (after structure understood):
   claudemem search "query"    # Semantic search → file:line results
 
@@ -308,6 +318,7 @@ PREFERRED CLI WORKFLOW:
   claudemem callees <name>          # Dependencies
   claudemem dead-code               # Find unused code
   claudemem test-gaps               # Find untested code
+  claudemem pack --stdout            # Export codebase to single AI file
   claudemem search "query"          # When needed
 
 WHEN TO USE MCP:

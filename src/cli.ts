@@ -124,7 +124,7 @@ function isAgentMode(): boolean {
 function printCompactHelp(): void {
 	console.log(`claudemem v${VERSION} - Semantic code search with AST analysis`);
 	console.log(
-		"Commands: index search status clear map symbol callers callees context dead-code test-gaps impact watch hooks hook install docs feedback learn update",
+		"Commands: index search status clear map symbol callers callees context dead-code test-gaps impact pack watch hooks hook install docs feedback learn update",
 	);
 	console.log(
 		"Use: claudemem --agent <cmd> | Docs: https://github.com/MadAppGang/claudemem",
@@ -343,6 +343,10 @@ export async function runCli(args: string[]): Promise<void> {
 		// Update command
 		case "update":
 			await handleUpdate(args.slice(1));
+			break;
+		// Pack command - export codebase to a single file
+		case "pack":
+			await handlePack(args.slice(1));
 			break;
 		default:
 			// Check if it looks like a search query
@@ -5352,6 +5356,7 @@ ${c.yellow}${c.bold}DEVELOPER EXPERIENCE${c.reset}
   ${c.green}hooks${c.reset} <subcommand>     Manage git hooks ${c.dim}(install|uninstall|status)${c.reset}
   ${c.green}hook${c.reset}                   Claude Code hook handler ${c.dim}(reads JSON from stdin)${c.reset}
   ${c.green}install${c.reset} <tool>         Install integration ${c.dim}(opencode|claude-code)${c.reset}
+  ${c.green}pack${c.reset} [path]            Pack codebase into a single file ${c.dim}(for AI analysis)${c.reset}
   ${c.green}docs${c.reset} <subcommand>     Manage library documentation ${c.dim}(status|fetch|refresh|providers|clear)${c.reset}
 
 ${c.yellow}${c.bold}SELF-LEARNING SYSTEM${c.reset} ${c.dim}(enabled by default, learns from interactions)${c.reset}
@@ -5415,6 +5420,16 @@ ${c.yellow}${c.bold}CODE ANALYSIS OPTIONS${c.reset}
   ${c.cyan}--max-depth${c.reset} <n>        Impact analysis depth (default: 10)
   ${c.cyan}--include-exported${c.reset}     Include exported symbols in dead-code scan
   ${c.cyan}-n, --limit${c.reset} <n>        Max results (default: 50 for dead-code, 30 for test-gaps)
+
+${c.yellow}${c.bold}PACK OPTIONS${c.reset}
+  ${c.cyan}-o, --output${c.reset} <file>    Output file path (default: <name>-pack.xml)
+  ${c.cyan}--format${c.reset} <fmt>         Output format: xml|markdown|plain (default: xml)
+  ${c.cyan}--stdout${c.reset}               Write to stdout instead of a file
+  ${c.cyan}--include${c.reset} <pattern>    Glob pattern to include (repeatable)
+  ${c.cyan}--exclude${c.reset} <pattern>    Additional glob pattern to exclude (repeatable)
+  ${c.cyan}--no-gitignore${c.reset}         Don't use .gitignore patterns
+  ${c.cyan}--max-file-size${c.reset} <n>    Max file size in bytes (default: 1048576)
+  ${c.cyan}--tokens${c.reset}               Show token count report
 
 ${c.yellow}${c.bold}WATCH/HOOKS OPTIONS${c.reset}
   ${c.cyan}--debounce${c.reset} <ms>        Watch debounce time (default: 1000ms)
@@ -5846,5 +5861,187 @@ async function handleBenchmarkShow(args: string[]): Promise<void> {
 		} finally {
 			clearInterval(keepalive);
 		}
+	}
+}
+
+// ============================================================================
+// Pack Command Handler
+// ============================================================================
+
+/**
+ * Handle 'pack' command - export codebase to a single file for AI analysis.
+ *
+ * Usage:
+ *   claudemem pack [path] [options]
+ *
+ * Options:
+ *   -o, --output <file>     Output file path (default: <project>-pack.xml)
+ *   --format <fmt>          Output format: xml|markdown|plain (default: xml)
+ *   --stdout                Write to stdout instead of a file
+ *   --include <pattern>     Glob pattern(s) to include (repeatable)
+ *   --exclude <pattern>     Additional glob pattern(s) to exclude (repeatable)
+ *   --no-gitignore          Don't use .gitignore patterns
+ *   --max-file-size <n>     Max file size in bytes (default: 1048576)
+ *   --tokens                Show token count report
+ */
+async function handlePack(args: string[]): Promise<void> {
+	const { packCommand } = await import("./pack/index.js");
+	const { basename, resolve } = await import("node:path");
+
+	// ─── Parse arguments ──────────────────────────────────────────────────────
+
+	// Project path is first non-flag argument
+	let projectPath = resolve(".");
+	const includePatterns: string[] = [];
+	const excludePatterns: string[] = [];
+	let outputPath: string | undefined;
+	let format: "xml" | "markdown" | "plain" = "xml";
+	let stdout = false;
+	let useGitignore = true;
+	let maxFileSize = 1024 * 1024;
+	let showTokens = false;
+
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i];
+
+		if ((arg === "-o" || arg === "--output") && args[i + 1]) {
+			outputPath = args[++i];
+		} else if (arg === "--format" && args[i + 1]) {
+			const f = args[++i];
+			if (f === "xml" || f === "markdown" || f === "plain") {
+				format = f;
+			} else {
+				console.error(`Unknown format: ${f}. Use xml, markdown, or plain.`);
+				process.exit(1);
+			}
+		} else if (arg.startsWith("--format=")) {
+			const f = arg.slice("--format=".length);
+			if (f === "xml" || f === "markdown" || f === "plain") {
+				format = f;
+			} else {
+				console.error(`Unknown format: ${f}. Use xml, markdown, or plain.`);
+				process.exit(1);
+			}
+		} else if (arg === "--stdout") {
+			stdout = true;
+		} else if (arg === "--include" && args[i + 1]) {
+			includePatterns.push(args[++i]);
+		} else if (arg.startsWith("--include=")) {
+			includePatterns.push(arg.slice("--include=".length));
+		} else if (arg === "--exclude" && args[i + 1]) {
+			excludePatterns.push(args[++i]);
+		} else if (arg.startsWith("--exclude=")) {
+			excludePatterns.push(arg.slice("--exclude=".length));
+		} else if (arg === "--no-gitignore") {
+			useGitignore = false;
+		} else if (arg === "--max-file-size" && args[i + 1]) {
+			maxFileSize = Number.parseInt(args[++i], 10) || maxFileSize;
+		} else if (arg.startsWith("--max-file-size=")) {
+			maxFileSize =
+				Number.parseInt(arg.slice("--max-file-size=".length), 10) || maxFileSize;
+		} else if (arg === "--tokens") {
+			showTokens = true;
+		} else if (!arg.startsWith("-")) {
+			// Non-flag argument: treat as project path
+			projectPath = resolve(arg);
+		}
+	}
+
+	// Default output path if not stdout and not specified
+	if (!stdout && !outputPath) {
+		const ext = format === "xml" ? "xml" : format === "markdown" ? "md" : "txt";
+		outputPath = `${basename(projectPath)}-pack.${ext}`;
+	}
+
+	// ─── Run pack pipeline ────────────────────────────────────────────────────
+
+	if (!agentMode && !stdout) {
+		printLogo();
+		console.log(`\nPacking codebase: ${projectPath}`);
+		console.log(`Format: ${format}`);
+		if (outputPath) {
+			console.log(`Output: ${outputPath}`);
+		}
+		console.log("");
+	}
+
+	try {
+		const result = await packCommand(
+			{
+				projectPath,
+				outputPath,
+				format,
+				includePatterns,
+				excludePatterns,
+				useGitignore,
+				maxFileSize,
+				stdout,
+				showTokens,
+			},
+			stdout || agentMode
+				? undefined
+				: (phase, current, total) => {
+						// Simple progress to stderr when interactive
+						if (total > 0 && !agentMode) {
+							process.stderr.write(
+								`\r  [${phase}] ${current}/${total}    `,
+							);
+						}
+					},
+		);
+
+		if (!stdout) {
+			// Clear progress line
+			if (!agentMode) {
+				process.stderr.write("\r" + " ".repeat(60) + "\r");
+			}
+		}
+
+		if (agentMode) {
+			// Machine-readable output
+			console.log(`files=${result.fileCount}`);
+			console.log(`binary_skipped=${result.binarySkipped}`);
+			console.log(`size_skipped=${result.sizeSkipped}`);
+			console.log(`total_bytes=${result.totalBytes}`);
+			console.log(`estimated_tokens=${result.estimatedTokens}`);
+			console.log(`duration_ms=${result.durationMs}`);
+			if (result.outputPath) {
+				console.log(`output=${result.outputPath}`);
+			}
+		} else if (!stdout) {
+			// Human-readable summary
+			console.log(`  Files packed:       ${result.fileCount}`);
+			console.log(`  Binary skipped:     ${result.binarySkipped}`);
+			console.log(`  Size skipped:       ${result.sizeSkipped}`);
+			console.log(
+				`  Total size:         ${(result.totalBytes / 1024).toFixed(1)} KB`,
+			);
+			console.log(`  Tokens (est.):      ${result.estimatedTokens.toLocaleString()}`);
+			console.log(`  Duration:           ${result.durationMs}ms`);
+			if (result.outputPath) {
+				console.log(`  Output:             ${result.outputPath}`);
+			}
+
+			// Token report
+			if (showTokens && result.tokenReport) {
+				console.log("\n  Top files by token count:");
+				const top = result.tokenReport.byFile.slice(0, 10);
+				for (const f of top) {
+					console.log(
+						`    ${f.tokens.toLocaleString().padStart(8)} ${f.relativePath}`,
+					);
+				}
+			}
+
+			console.log("");
+		}
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		if (agentMode) {
+			agentOutput.error(`pack failed: ${message}`);
+		} else {
+			console.error(`\nError: ${message}`);
+		}
+		process.exit(1);
 	}
 }

@@ -7,7 +7,10 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { minimatch } from "minimatch";
+import {
+	shouldExclude as sharedShouldExclude,
+	shouldInclude as sharedShouldInclude,
+} from "../shared/pattern-matcher.js";
 import {
 	ensureProjectDir,
 	getDocsConfig,
@@ -1126,7 +1129,7 @@ export class Indexer {
 				const relativePath = relative(this.projectPath, fullPath);
 
 				// Check exclude patterns
-				if (this.shouldExclude(relativePath, entry.isDirectory())) {
+				if (sharedShouldExclude(relativePath, entry.isDirectory(), this.excludePatterns)) {
 					continue;
 				}
 
@@ -1136,7 +1139,7 @@ export class Indexer {
 					// Check include patterns if specified
 					if (
 						this.includePatterns.length > 0 &&
-						!this.shouldInclude(relativePath)
+						!sharedShouldInclude(relativePath, this.includePatterns)
 					) {
 						continue;
 					}
@@ -1152,71 +1155,6 @@ export class Indexer {
 
 		walk(this.projectPath);
 		return files;
-	}
-
-	/** Directories to always exclude (fast path, no glob matching needed) */
-	private static readonly ALWAYS_EXCLUDE_DIRS = new Set([
-		"node_modules",
-		".git",
-		".svn",
-		".hg",
-		"dist",
-		"build",
-		"out",
-		".next",
-		".nuxt",
-		"coverage",
-		"__pycache__",
-		"venv",
-		".venv",
-		"target",
-		"vendor",
-		".idea",
-		".vscode",
-		".cache",
-		".claudemem",
-		".turbo",
-		".expo",
-	]);
-
-	/**
-	 * Check if a path should be excluded
-	 */
-	private shouldExclude(relativePath: string, isDirectory: boolean): boolean {
-		// Fast path: check if any path segment is in the always-exclude list
-		const segments = relativePath.split("/");
-		for (const segment of segments) {
-			if (Indexer.ALWAYS_EXCLUDE_DIRS.has(segment)) {
-				return true;
-			}
-		}
-
-		// Slow path: check glob patterns
-		const pathToCheck = isDirectory ? relativePath + "/" : relativePath;
-
-		for (const pattern of this.excludePatterns) {
-			if (minimatch(pathToCheck, pattern, { dot: true })) {
-				return true;
-			}
-			// Also check without trailing slash
-			if (minimatch(relativePath, pattern, { dot: true })) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
-	 * Check if a path matches include patterns
-	 */
-	private shouldInclude(relativePath: string): boolean {
-		for (const pattern of this.includePatterns) {
-			if (minimatch(relativePath, pattern, { dot: true })) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	/**

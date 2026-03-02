@@ -350,8 +350,15 @@ export function parseGitignore(projectPath: string): string[] {
 /**
  * Get all exclude patterns for a project
  * Combines: defaults + global config + project config + gitignore (if enabled)
+ *
+ * @param projectPath - Root directory of the project
+ * @param useGitignore - Override whether to include gitignore patterns.
+ *   If undefined, falls back to the project config value (default: true).
  */
-export function getExcludePatterns(projectPath: string): string[] {
+export function getExcludePatterns(
+	projectPath: string,
+	useGitignore?: boolean,
+): string[] {
 	const patterns = new Set<string>(DEFAULT_EXCLUDE_PATTERNS);
 
 	// Add global config patterns
@@ -370,9 +377,13 @@ export function getExcludePatterns(projectPath: string): string[] {
 		}
 	}
 
-	// Add gitignore patterns (enabled by default)
-	const useGitignore = projectConfig?.useGitignore !== false;
-	if (useGitignore) {
+	// Determine whether to include gitignore patterns:
+	// caller override → project config → default (true)
+	const shouldUseGitignore =
+		useGitignore !== undefined
+			? useGitignore
+			: projectConfig?.useGitignore !== false;
+	if (shouldUseGitignore) {
 		const gitignorePatterns = parseGitignore(projectPath);
 		for (const p of gitignorePatterns) {
 			patterns.add(p);

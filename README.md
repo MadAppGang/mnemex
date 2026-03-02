@@ -183,6 +183,41 @@ This repo also contains an experimental VS Code inline completion extension that
 4. **Hybrid search** — BM25 for exact matches + vector similarity for semantic. Combines both.
 5. **Builds symbol graph** — tracks references between symbols, computes PageRank for importance
 
+## Pack — export codebase for AI
+
+Pack your entire codebase into a single AI-friendly file. Works like [repomix](https://github.com/yamadashy/repomix) but with correct XML escaping and built right into claudemem.
+
+```bash
+# XML format (default, repomix-compatible)
+claudemem pack
+
+# Markdown or plain text
+claudemem pack --format markdown
+claudemem pack --format plain
+
+# Pipe to stdout
+claudemem pack --stdout | pbcopy
+
+# Filter files
+claudemem pack --include "src/**/*.ts" --exclude "**/*.test.ts"
+
+# Custom output path
+claudemem pack -o context.xml
+```
+
+### Why not just use repomix?
+
+You can — claudemem's XML output is structurally compatible with repomix. But claudemem pack actually produces **more correct XML**. In independent testing by multiple AI models (GPT-5, Kimi K2.5), claudemem scored higher:
+
+| Criterion | claudemem pack | repomix v1.12 |
+|-----------|---------------|---------------|
+| XML well-formedness | **Correct** — escapes `&` `<` `>` in content | Broken — raw `<div>`, `&` in content |
+| Binary file marking | `[binary]` tag in directory tree | Listed but not marked |
+| Directory tree | Tree characters (`├──` `└──` `│`) | Flat indentation |
+| .gitignore in output | Included | Omitted |
+
+The key issue: repomix v1.12 doesn't XML-escape file content, so files containing `<`, `>`, or `&` produce **invalid XML** that breaks parsers. claudemem handles this correctly.
+
 ## Symbol graph & code analysis
 
 Beyond semantic search, claudemem builds a **symbol graph** with PageRank scores. This enables powerful code analysis:
@@ -312,6 +347,26 @@ claudemem context <name>    # symbol + callers + callees
 claudemem dead-code         # find potentially dead code (zero callers + low PageRank)
 claudemem test-gaps         # find important code without test coverage
 claudemem impact <symbol>   # analyze change impact (transitive callers)
+```
+
+### Pack commands
+```
+claudemem pack [path]       # pack codebase to XML (default: <name>-pack.xml)
+claudemem pack --format md  # markdown format
+claudemem pack --stdout     # write to stdout
+claudemem pack --include "src/**" --exclude "*.test.ts"
+```
+
+### Pack flags
+```
+-o, --output <file>       # output file path
+--format <xml|markdown|plain>  # output format (default: xml)
+--stdout                  # write to stdout instead of file
+--include <pattern>       # glob pattern to include (repeatable)
+--exclude <pattern>       # additional exclusion pattern (repeatable)
+--no-gitignore            # don't use .gitignore patterns
+--max-file-size <bytes>   # max file size (default: 1048576)
+--tokens                  # show token count report
 ```
 
 ### Developer experience
