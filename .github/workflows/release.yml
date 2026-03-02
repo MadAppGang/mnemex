@@ -20,7 +20,6 @@ jobs:
           - os: macos-latest
             target: bun-darwin-x64
             artifact: claudemem-darwin-x64
-            cross_platform_pkg: "@opentui/core-darwin-x64@0.1.82"
           - os: ubuntu-latest
             target: bun-linux-x64
             artifact: claudemem-linux-x64
@@ -41,15 +40,11 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Install cross-platform native packages
-        if: matrix.cross_platform_pkg
-        run: bun add ${{ matrix.cross_platform_pkg }}
-
       - name: Download grammars
         run: bun run download-grammars
 
       - name: Build binary
-        run: bun build src/index.ts --compile --target=${{ matrix.target }} --outfile ${{ matrix.artifact }}
+        run: bun build src/index.ts --compile --target=${{ matrix.target }} --external @opentui/core --external @opentui/react --outfile ${{ matrix.artifact }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
