@@ -46,7 +46,7 @@ import {
 	type ToolDeps,
 } from "./tools/index.js";
 
-const SERVER_VERSION = "0.20.0";
+const SERVER_VERSION = "0.20.1";
 
 /**
  * Run a blocking initial index when no index.db exists yet.
