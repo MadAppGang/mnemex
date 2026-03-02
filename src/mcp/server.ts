@@ -21,7 +21,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { loadMcpConfig } from "./config.js";
 import { createLogger } from "./logger.js";
@@ -46,7 +48,10 @@ import {
 	type ToolDeps,
 } from "./tools/index.js";
 
-const SERVER_VERSION = "0.21.0";
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SERVER_VERSION: string = JSON.parse(
+	readFileSync(join(__dirname, "../../package.json"), "utf-8"),
+).version;
 
 /**
  * Run a blocking initial index when no index.db exists yet.
