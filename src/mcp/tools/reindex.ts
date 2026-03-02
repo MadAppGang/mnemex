@@ -48,8 +48,8 @@ export function registerReindexTools(server: McpServer, deps: ToolDeps): void {
 					};
 				}
 
-				// Check if already running
-				if (reindexer.isLocked()) {
+				// Check if already running (in-memory flag OR disk lock from any process)
+				if (reindexer.isRunning()) {
 					if (blocking && completionDetector) {
 						logger.info("reindex: lock held, waiting for completion");
 						const completed = await completionDetector.waitForCompletion();

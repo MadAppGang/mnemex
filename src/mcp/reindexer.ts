@@ -67,6 +67,14 @@ export class DebounceReindexer {
 	}
 
 	/**
+	 * Check whether a reindex is already running — either our own in-memory
+	 * flag or an external process holding the disk lock.
+	 */
+	isRunning(): boolean {
+		return this.running || this.isLocked();
+	}
+
+	/**
 	 * Check whether an indexing lock is currently held (by any process).
 	 */
 	isLocked(): boolean {
