@@ -142,7 +142,8 @@ export class UpdateManager {
 
 		// Detect package manager based on installation method
 		const packageManager = this.detectPackageManager();
-		const args = ["install", "-g", `${this.packageName}@latest`];
+		const subcommand = packageManager === "bun" ? "add" : "install";
+		const args = [subcommand, "-g", `${this.packageName}@latest`];
 
 		if (options.verbose) {
 			console.log(`Running: ${packageManager} ${args.join(" ")}`);
@@ -169,19 +170,11 @@ export class UpdateManager {
 					return;
 				}
 
-				// Verify update
-				clearCache(); // Clear cache so next check is fresh
-				const newVersion = this.getCurrentVersion();
-
-				if (newVersion === check.currentVersion) {
-					resolve({
-						success: false,
-						error: "Update completed but version unchanged",
-					});
-					return;
-				}
-
-				resolve({ success: true, newVersion });
+				// Trust the package manager exit code (like claudish does).
+				// We can't verify the new version in-process because
+				// this.currentVersion is frozen at process start.
+				clearCache();
+				resolve({ success: true, newVersion: check.latestVersion });
 			});
 		});
 	}

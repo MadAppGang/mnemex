@@ -1,6 +1,6 @@
 {
 	"name": "claude-codemem",
-	"version": "0.21.0",
+	"version": "0.21.1",
 	"description": "Local code indexing tool with semantic search for Claude Code - MCP server and CLI",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -46,7 +46,11 @@
 		"@types/bun": "latest",
 		"typescript": "^5.7.2"
 	},
-	"files": ["dist/", "grammars/", "scripts/"],
+	"files": [
+		"dist/",
+		"grammars/",
+		"scripts/"
+	],
 	"engines": {
 		"node": ">=18.0.0",
 		"bun": ">=1.0.0"
