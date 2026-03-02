@@ -17,9 +17,10 @@ jobs:
           - os: macos-latest
             target: bun-darwin-arm64
             artifact: claudemem-darwin-arm64
-          - os: macos-13
+          - os: macos-latest
             target: bun-darwin-x64
             artifact: claudemem-darwin-x64
+            cross_platform_pkg: "@opentui/core-darwin-x64@0.1.82"
           - os: ubuntu-latest
             target: bun-linux-x64
             artifact: claudemem-linux-x64
@@ -39,6 +40,10 @@ jobs:
 
       - name: Install dependencies
         run: bun install
+
+      - name: Install cross-platform native packages
+        if: matrix.cross_platform_pkg
+        run: bun add ${{ matrix.cross_platform_pkg }}
 
       - name: Download grammars
         run: bun run download-grammars
