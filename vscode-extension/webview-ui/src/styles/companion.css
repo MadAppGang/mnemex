@@ -1,0 +1,264 @@
+/* Companion panel styles — VS Code CSS variables only */
+
+.companion-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  line-height: 1.4;
+}
+
+/* --- Toolbar (pin toggle) --- */
+.companion-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  flex-shrink: 0;
+}
+
+.companion-pin-btn {
+  background: none;
+  border: 1px solid var(--vscode-panel-border);
+  color: var(--vscode-descriptionForeground);
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.companion-pin-btn:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.companion-pin-btn.pinned {
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  border-color: var(--vscode-badge-background);
+}
+
+/* --- Content scroll area --- */
+.companion-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* --- Empty state --- */
+.companion-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+}
+
+.companion-empty-text {
+  color: var(--vscode-descriptionForeground);
+  font-size: 13px;
+  max-width: 280px;
+  line-height: 1.5;
+}
+
+/* --- Loading state --- */
+.companion-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  justify-content: center;
+}
+
+.companion-loading-text {
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+
+/* --- Symbol header --- */
+.companion-header {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.companion-header-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.companion-symbol-name {
+  font-weight: 600;
+  font-size: 14px;
+  font-family: var(--vscode-editor-font-family);
+}
+
+.companion-kind-badge {
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  border: 1px solid var(--vscode-panel-border);
+  padding: 0 4px;
+  border-radius: 2px;
+}
+
+.companion-exported-badge {
+  color: var(--vscode-badge-foreground);
+  background: var(--vscode-badge-background);
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+/* --- PageRank badge --- */
+.pagerank-badge {
+  color: #fff;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-family: var(--vscode-editor-font-family);
+  white-space: nowrap;
+}
+
+/* --- Meta row --- */
+.companion-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+
+.companion-language {
+  color: var(--vscode-badge-foreground);
+  background: var(--vscode-badge-background);
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 2px;
+  text-transform: uppercase;
+}
+
+.companion-lines {
+  color: var(--vscode-descriptionForeground);
+}
+
+.companion-signature {
+  margin: 6px 0 2px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size, 12px);
+  background: var(--vscode-textCodeBlock-background, var(--vscode-input-background));
+  padding: 4px 8px;
+  border-radius: 2px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--vscode-editor-foreground);
+}
+
+/* --- Sections (summary, callers, callees, code) --- */
+.companion-section {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.companion-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.companion-empty-hint {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-style: italic;
+}
+
+/* --- Summary --- */
+.companion-summary-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--vscode-editor-foreground);
+}
+
+/* --- Reference list (callers/callees) --- */
+.companion-ref-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.companion-ref-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  flex-wrap: wrap;
+}
+
+.companion-ref-item:last-child {
+  border-bottom: none;
+}
+
+.companion-ref-name {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.companion-ref-kind {
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  border: 1px solid var(--vscode-panel-border);
+  padding: 0 3px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* --- Code preview --- */
+.companion-code-block {
+  background: var(--vscode-textCodeBlock-background, var(--vscode-input-background));
+  border-radius: 2px;
+  overflow-x: auto;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.companion-code-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size, 12px);
+  line-height: 1.5;
+}
+
+.companion-code-row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.companion-line-number {
+  color: var(--vscode-editorLineNumber-foreground, var(--vscode-descriptionForeground));
+  text-align: right;
+  padding: 0 8px 0 4px;
+  user-select: none;
+  white-space: nowrap;
+  min-width: 36px;
+  vertical-align: top;
+}
+
+.companion-code-line {
+  white-space: pre;
+  padding: 0 8px 0 0;
+  color: var(--vscode-editor-foreground);
+}
