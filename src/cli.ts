@@ -348,6 +348,10 @@ export async function runCli(args: string[]): Promise<void> {
 		case "pack":
 			await handlePack(args.slice(1));
 			break;
+		// Doctor command
+		case "doctor":
+			await handleDoctor(args.slice(1));
+			break;
 		default:
 			// Check if it looks like a search query
 			if (!command.startsWith("-")) {
@@ -5184,6 +5188,91 @@ function handleAiInstructions(args: string[]): void {
 }
 
 // ============================================================================
+// Doctor Command
+// ============================================================================
+
+/**
+ * Handle doctor command - diagnose and generate optimized context files
+ *
+ * Modes:
+ *   --agent (global)  Non-interactive: generate CLAUDE.md and print to stdout
+ *   --generate        Interactive: run Q&A generator flow
+ *   --json            Output diagnosis as JSON
+ *   (default)         Print diagnostic report
+ */
+async function handleDoctor(args: string[]): Promise<void> {
+	const isGenerate = args.includes("--generate");
+	const isJson = args.includes("--json");
+
+	// Resolve project path (first non-flag arg, or cwd)
+	const projectPath = resolve(
+		args.find((a) => !a.startsWith("-")) || process.cwd(),
+	);
+
+	if (!agentMode) {
+		printLogo();
+	}
+
+	// Lazy imports to avoid loading doctor modules at startup
+	const {
+		scanForContextFiles,
+		analyzeContextFile,
+		aggregateDiagnoses,
+		aggregateScore,
+		formatDoctorReport,
+		formatDoctorJSON,
+		runGenerator,
+		runGeneratorAgent,
+	} = await import("./core/doctor/index.js");
+
+	// Open FileTracker (may be null if project not indexed yet)
+	const tracker = getFileTracker(projectPath);
+
+	// Scan and analyze context files
+	const contextFiles = scanForContextFiles(projectPath);
+	const diagnoses = contextFiles.map((f) =>
+		analyzeContextFile(f, tracker, projectPath),
+	);
+	const topRecommendations = aggregateDiagnoses(diagnoses);
+
+	// Compute overall health from all criteria
+	const allCriteria = diagnoses.flatMap((d) => d.criteria);
+	const overallHealth =
+		allCriteria.length > 0 ? aggregateScore(allCriteria) : 100;
+
+	const result = {
+		projectPath,
+		timestamp: new Date().toISOString(),
+		filesFound: contextFiles,
+		diagnoses,
+		overallHealth,
+		topRecommendations,
+		researchCitations: [] as string[],
+	};
+
+	if (agentMode) {
+		// Non-interactive agent mode: generate and print CLAUDE.md to stdout
+		const generated = await runGeneratorAgent(projectPath, result, tracker);
+		process.stdout.write(generated.claudeMd);
+		return;
+	}
+
+	if (isGenerate) {
+		// Interactive generator mode
+		await runGenerator(projectPath, result, tracker);
+		return;
+	}
+
+	if (isJson) {
+		console.log(formatDoctorJSON(result));
+		return;
+	}
+
+	// Default: print diagnostic report
+	console.log(formatDoctorReport(result));
+}
+
+// ============================================================================
 // Update Command
 // ============================================================================
 
@@ -5199,6 +5288,7 @@ async function handleUpdate(args: string[]): Promise<void> {
 
 	const { UpdateManager } = await import("./updater/index.js");
 	const updater = new UpdateManager(VERSION);
+	updater.clearCache(); // Explicit update always checks npm fresh
 
 	if (agentMode) {
 		// Compact output for AI agents
