@@ -12,16 +12,26 @@ import { loadConfig } from "./config.js";
 async function main() {
 	const config = loadConfig();
 
-	// Run schema migration
+	// Run schema migration (retry up to 3 times for Neon cold-start)
 	console.log("[boot] Running schema migration...");
-	const sql = createDatabase(config.databaseUrl);
-	try {
-		const schemaPath = resolve(dirname(new URL(import.meta.url).pathname), "schema.sql");
-		const schema = readFileSync(schemaPath, "utf-8");
-		await sql.unsafe(schema);
-		console.log("[boot] Schema migration complete.");
-	} finally {
-		await sql.end();
+	const schemaPath = resolve(dirname(new URL(import.meta.url).pathname), "schema.sql");
+	const schema = readFileSync(schemaPath, "utf-8");
+	for (let attempt = 1; attempt <= 3; attempt++) {
+		const migrationSql = createDatabase(config.databaseUrl);
+		try {
+			await migrationSql.unsafe(schema);
+			console.log("[boot] Schema migration complete.");
+			break;
+		} catch (err) {
+			console.error(`[boot] Migration attempt ${attempt}/3 failed:`, err);
+			if (attempt === 3) {
+				console.error("[boot] All migration attempts failed, starting server anyway (tables may already exist).");
+			} else {
+				await new Promise(r => setTimeout(r, 3000));
+			}
+		} finally {
+			await migrationSql.end();
+		}
 	}
 
 	// Start server

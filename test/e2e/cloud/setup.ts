@@ -60,7 +60,7 @@ export async function startTestInfra(port?: number): Promise<TestContext> {
 	}
 
 	// Clean slate
-	await sql`TRUNCATE TABLE enrichment_docs, commit_files, commits, chunks, repos, orgs RESTART IDENTITY CASCADE`;
+	await sql`TRUNCATE TABLE api_key_usage, api_keys, enrichment_docs, commit_files, commits, chunks, repos, orgs RESTART IDENTITY CASCADE`;
 
 	// Start the Bun server
 	const serverPort = port ?? 4520 + Math.floor(Math.random() * 80);
@@ -82,7 +82,7 @@ export async function startTestInfra(port?: number): Promise<TestContext> {
 			await sql.end();
 		},
 		async resetDb() {
-			await sql`TRUNCATE TABLE enrichment_docs, commit_files, commits, chunks, repos, orgs RESTART IDENTITY CASCADE`;
+			await sql`TRUNCATE TABLE api_key_usage, api_keys, enrichment_docs, commit_files, commits, chunks, repos, orgs RESTART IDENTITY CASCADE`;
 		},
 	};
 

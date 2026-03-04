@@ -69,6 +69,13 @@ export interface RequestMetrics {
 
 	/** True if request exceeded the slow-request threshold for this endpoint */
 	slow?: boolean;
+
+	// --- Auth ---
+
+	/** ID of the authenticated API key (undefined if master key or auth disabled) */
+	apiKeyId?: number;
+	/** Source of auth: "master" | "key" | "none" */
+	apiKeySource?: "master" | "key" | "none";
 }
 
 // ============================================================================
@@ -130,6 +137,7 @@ function matchRoute(
 
 import { check } from "./handlers/chunks.js";
 import { uploadIndex } from "./handlers/index-handler.js";
+import { createKey, deleteKey, listKeys } from "./handlers/keys.js";
 import { register } from "./handlers/repos.js";
 import { search } from "./handlers/search.js";
 import { getStatus } from "./handlers/status.js";
@@ -187,6 +195,27 @@ const routes: Route[] = [
 			segments: parsePattern("/v1/health"),
 		},
 		handler: async (_ctx) => json({ ok: true }, 200),
+	},
+	{
+		pattern: {
+			method: "POST",
+			segments: parsePattern("/v1/keys"),
+		},
+		handler: createKey,
+	},
+	{
+		pattern: {
+			method: "GET",
+			segments: parsePattern("/v1/keys"),
+		},
+		handler: listKeys,
+	},
+	{
+		pattern: {
+			method: "DELETE",
+			segments: parsePattern("/v1/keys/:keyId"),
+		},
+		handler: deleteKey,
 	},
 ];
 

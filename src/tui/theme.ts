@@ -26,6 +26,20 @@ export const theme = {
 	selected: "#1E3A5F", // dark blue for selected items
 	tabActive: "#FF8C57", // active tab color
 	tabInactive: "#6B7280", // inactive tab color
+
+	// btop-inspired additions
+	borderDim: "#2D3748", // very dim border for secondary panels
+	labelDim: "#4A5568", // dim label color (column headers etc.)
+	valueBright: "#F9FAFB", // bright white for key values
+	accentCyan: "#22D3EE", // accent for highlights
+	accentGreen: "#4ADE80", // accent for success/active
+	selectedBright: "#E5E7EB", // bright text when selected
+	headerBg: "#0F172A", // very dark bg for header areas
+	dangerBorder: "#7F1D1D", // dark red border for danger dialogs
+	dangerText: "#FCA5A5", // soft red for danger text
+	secretBright: "#FCD34D", // bright amber for secrets (stands out)
+	shortcutKey: "#FF8C57", // orange for shortcut letters
+	shortcutBracket: "#374151", // dim for shortcut brackets
 } as const;
 
 // ============================================================================

@@ -208,6 +208,15 @@ export async function runCli(args: string[]): Promise<void> {
 		args = args.filter((a) => a !== "--cloud");
 	}
 
+	// Parse --endpoint and --master-key for the admin command.
+	// Resolution: CLI flag → env var → project config (team.cloudEndpoint + stored token).
+	const endpointIdx = args.indexOf("--endpoint");
+	const adminEndpointOverride =
+		endpointIdx !== -1 ? args[endpointIdx + 1] : process.env.CLAUDEMEM_ENDPOINT;
+	const masterKeyIdx = args.indexOf("--master-key");
+	const adminMasterKeyOverride =
+		masterKeyIdx !== -1 ? args[masterKeyIdx + 1] : process.env.MASTER_API_KEY;
+
 	// Parse command
 	const command = args[0];
 
@@ -372,6 +381,38 @@ export async function runCli(args: string[]): Promise<void> {
 		case "sync":
 			await handleSync(args.slice(1));
 			break;
+		// Admin command — manage cloud API keys
+		case "admin": {
+			// Resolve endpoint: flag → env → project config
+			let adminEndpoint = adminEndpointOverride;
+			let adminMasterKey = adminMasterKeyOverride;
+			if (!adminEndpoint || !adminMasterKey) {
+				const { getCloudEndpoint, getTeamConfig } = await import("./cloud/config.js");
+				const { getDefaultAuthManager } = await import("./cloud/auth.js");
+				const teamConfig = getTeamConfig(process.cwd());
+				if (!adminEndpoint && teamConfig) {
+					adminEndpoint = getCloudEndpoint(process.cwd());
+				}
+				if (!adminMasterKey && teamConfig?.orgSlug) {
+					adminMasterKey = getDefaultAuthManager().getToken(teamConfig.orgSlug);
+				}
+			}
+			if (!adminEndpoint) {
+				console.error(
+					"claudemem admin requires --endpoint <url>, CLAUDEMEM_ENDPOINT env, or team.cloudEndpoint in claudemem.json",
+				);
+				process.exit(1);
+			}
+			if (!adminMasterKey) {
+				console.error(
+					"claudemem admin requires --master-key <key>, MASTER_API_KEY env, or a stored token via 'claudemem team login'",
+				);
+				process.exit(1);
+			}
+			const { startAdminTUI } = await import("./tui/admin/index.js");
+			await startAdminTUI({ endpoint: adminEndpoint, masterKey: adminMasterKey });
+			break;
+		}
 		default:
 			// Check if it looks like a search query
 			if (!command.startsWith("-")) {
@@ -6203,6 +6244,9 @@ ${c.yellow}${c.bold}CLOUD / TEAM${c.reset} ${c.dim}(requires team.orgSlug in cla
   ${c.green}team login${c.reset}             Store org API key ${c.dim}(--org <orgSlug> --key <apiKey>)${c.reset}
   ${c.green}team logout${c.reset}            Remove stored credentials ${c.dim}(--org <orgSlug>)${c.reset}
   ${c.green}team status${c.reset}            Show cloud config and auth status
+  ${c.green}admin${c.reset}                  Manage API keys ${c.dim}(uses team config, or override with flags)${c.reset}
+    ${c.cyan}--endpoint${c.reset} <url>       Cloud server URL ${c.dim}(flag → CLAUDEMEM_ENDPOINT → team config)${c.reset}
+    ${c.cyan}--master-key${c.reset} <key>     Master API key ${c.dim}(flag → MASTER_API_KEY → stored token)${c.reset}
 
 ${c.yellow}${c.bold}SELF-LEARNING SYSTEM${c.reset} ${c.dim}(enabled by default, learns from interactions)${c.reset}
   ${c.green}feedback${c.reset}               Report search feedback ${c.dim}(--query, --helpful, --unhelpful)${c.reset}

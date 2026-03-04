@@ -17,7 +17,7 @@ export function createDatabase(connectionString: string): Sql {
 	return postgres(connectionString, {
 		max: 10,
 		idle_timeout: 30,
-		connect_timeout: 10,
+		connect_timeout: 30,
 	});
 }
 
@@ -25,5 +25,5 @@ export function createDatabase(connectionString: string): Sql {
  * Truncate all tables for test isolation.
  */
 export async function resetDatabase(sql: Sql): Promise<void> {
-	await sql`TRUNCATE TABLE enrichment_docs, commit_files, commits, chunks, repos RESTART IDENTITY CASCADE`;
+	await sql`TRUNCATE TABLE api_key_usage, api_keys, enrichment_docs, commit_files, commits, chunks, repos RESTART IDENTITY CASCADE`;
 }

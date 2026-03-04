@@ -5,7 +5,7 @@
 
 import { type ServerConfig, loadConfig } from "./config.js";
 import { type Sql, createDatabase } from "./db.js";
-import { runMiddleware, versionMiddleware } from "./middleware.js";
+import { authMiddleware, runMiddleware, versionMiddleware } from "./middleware.js";
 import { type RequestContext, router } from "./router.js";
 
 let server: ReturnType<typeof Bun.serve> | null = null;
@@ -43,8 +43,9 @@ export async function startServer(
 
 			let response: Response;
 			try {
-				// Run middleware chain (version check only, no auth)
+				// Run middleware chain: auth first, then version check
 				const middlewareResult = await runMiddleware(ctx, [
+					authMiddleware,
 					versionMiddleware,
 				]);
 
@@ -64,6 +65,20 @@ export async function startServer(
 						headers: { "Content-Type": "application/json" },
 					},
 				);
+			}
+
+			// Fire-and-forget usage tracking for regular API keys
+			if (ctx.metrics.apiKeyId !== undefined) {
+				const endpoint = `${req.method} ${url.pathname}`;
+				const keyId = ctx.metrics.apiKeyId;
+				const responseStatus = response.status;
+				sql`INSERT INTO api_key_usage (key_id, endpoint, status_code)
+					VALUES (${keyId}, ${endpoint}, ${responseStatus})`
+					.then(() => {
+						return sql`UPDATE api_keys SET last_used_at = now()
+							WHERE id = ${keyId}`.execute();
+					})
+					.catch(() => {}); // swallow errors — never block response
 			}
 
 			const durationMs = Date.now() - startMs;
