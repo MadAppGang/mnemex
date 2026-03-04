@@ -397,14 +397,84 @@ function comparison() {
 }
 
 // ════════════════════════════════════════════════════════════
-// MAIN
+// EXPORTS
 // ════════════════════════════════════════════════════════════
-console.log();
-console.log(bold('  ╔══════════════════════════════════════════════════════════╗'));
-console.log(bold('  ║          CLAUDEMEM DEPLOYMENT MODE DIAGRAMS             ║'));
-console.log(bold('  ╚══════════════════════════════════════════════════════════╝'));
 
-mode1();
-mode2();
-mode3();
-comparison();
+export { mode1, mode2, mode3, comparison };
+
+/** Interactive mode selector — press 1/2/3 or arrows to browse, Enter to confirm. */
+export async function selectMode(): Promise<'local' | 'shared' | 'full-cloud'> {
+  const modes = ['local', 'shared', 'full-cloud'] as const;
+  const labels = ['Local', 'Team', 'Cloud'];
+  const renderers = [mode1, mode2, mode3];
+  let selected = 0;
+
+  const render = () => {
+    process.stdout.write('\x1b[2J\x1b[H'); // clear screen + cursor home
+    console.log();
+    console.log(`  ${gray('┌─')} ${bold('claudemem')} ${gray('─')} Setup ${gray('─')} Step 1 ${gray('─ Choose Deployment Mode ─┐')}`);
+
+    renderers[selected]();
+
+    // Mode tabs
+    const tabs = labels.map((label, i) => {
+      if (i === selected) return white(`▸ [${i + 1}] ${label}`);
+      return gray(`  [${i + 1}] ${label}`);
+    }).join('   ');
+    console.log(`  ${tabs}`);
+    console.log();
+    console.log(`  ${gray('└─')} ${gray('[1/2/3] select   [←/→] navigate   [Enter] confirm   [q] quit')} ${gray('─┘')}`);
+  };
+
+  return new Promise((resolve) => {
+    const { stdin } = process;
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+
+    render();
+
+    const onData = (data: string) => {
+      if (data === '1') { selected = 0; render(); }
+      else if (data === '2') { selected = 1; render(); }
+      else if (data === '3') { selected = 2; render(); }
+      else if (data === '\x1b[C' || data === '\x1b[B' || data === 'j' || data === 'l') {
+        selected = Math.min(selected + 1, 2); render();
+      }
+      else if (data === '\x1b[D' || data === '\x1b[A' || data === 'k' || data === 'h') {
+        selected = Math.max(selected - 1, 0); render();
+      }
+      else if (data === '\r' || data === '\n') {
+        stdin.removeListener('data', onData);
+        stdin.setRawMode(false);
+        stdin.pause();
+        process.stdout.write('\x1b[2J\x1b[H');
+        resolve(modes[selected]);
+      }
+      else if (data === 'q' || data === '\x03') {
+        stdin.removeListener('data', onData);
+        stdin.setRawMode(false);
+        stdin.pause();
+        process.stdout.write('\x1b[2J\x1b[H');
+        process.exit(0);
+      }
+    };
+
+    stdin.on('data', onData);
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// MAIN (standalone execution)
+// ════════════════════════════════════════════════════════════
+if (import.meta.main) {
+  console.log();
+  console.log(bold('  ╔══════════════════════════════════════════════════════════╗'));
+  console.log(bold('  ║          CLAUDEMEM DEPLOYMENT MODE DIAGRAMS             ║'));
+  console.log(bold('  ╚══════════════════════════════════════════════════════════╝'));
+
+  mode1();
+  mode2();
+  mode3();
+  comparison();
+}
