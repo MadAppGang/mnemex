@@ -7,10 +7,10 @@
  *   2. Run all 50 queries via OpenAI-compatible API
  *   3. Score outputs
  *   4. Unload model (lms unload)
- *   5. Save results to eval/query-expansion-bench/results/<model>.json
+ *   5. Save results to experiments/query-expansion/results/base/<model>.json
  *
  * Usage:
- *   bun run eval/query-expansion-bench/run.ts [options]
+ *   bun run experiments/query-expansion/bench/run.ts [options]
  *
  * Options:
  *   --model <name>     Run a single model only (partial match)
@@ -73,7 +73,7 @@ interface RawResult {
 // ============================================================================
 
 const BENCH_DIR = dirname(new URL(import.meta.url).pathname);
-const RESULTS_DIR = join(BENCH_DIR, "results");
+const RESULTS_DIR = join(BENCH_DIR, "..", "results", "base");
 const QUERIES_PATH = join(BENCH_DIR, "queries.json");
 
 const SYSTEM_PROMPT = `You are a code search query expansion engine. Given a search query, expand it into three types:
@@ -479,7 +479,7 @@ async function main() {
 	console.log(
 		`\nRun report.ts to generate comparison table:`,
 	);
-	console.log(`  bun run eval/query-expansion-bench/report.ts`);
+	console.log(`  bun run experiments/query-expansion/bench/report.ts`);
 }
 
 main().catch((error) => {

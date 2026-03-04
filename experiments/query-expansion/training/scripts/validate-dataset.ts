@@ -12,7 +12,7 @@
  *
  * Then splits into train/eval (90/10, stratified by category).
  *
- * Usage: bun run finetune/scripts/validate-dataset.ts [--fix] [--split]
+ * Usage: bun run experiments/query-expansion/training/scripts/validate-dataset.ts [--fix] [--split]
  *   --fix    Remove bad examples and write cleaned file
  *   --split  Write train.jsonl and eval.jsonl splits
  */

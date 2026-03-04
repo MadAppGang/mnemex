@@ -5,14 +5,14 @@
  * qmd format:  {"query": "...", "output": [["lex", "..."], ["vec", "..."], ["hyde", "..."]]}
  * our format:  {"id", "seed_query", "model", "category", "lex", "vec", "hyde", "messages": [...]}
  *
- * Reads from finetune/data/qmd-source/ and appends to finetune/data/train.jsonl
+ * Reads from training/data/sources/ and appends to training/data/train.jsonl
  */
 
 import { readFileSync, appendFileSync, existsSync } from "fs";
 import { join } from "path";
 
 const ROOT = join(import.meta.dir, "..");
-const SOURCE_DIR = join(ROOT, "data/qmd-source");
+const SOURCE_DIR = join(ROOT, "data/sources");
 const OUTPUT = join(ROOT, "data/train.jsonl");
 
 const SYSTEM_PROMPT = `You are a code search query expansion engine. Given a search query, expand it into three types:

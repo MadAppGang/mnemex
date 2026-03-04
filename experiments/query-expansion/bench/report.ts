@@ -2,11 +2,11 @@
 /**
  * Query Expansion Benchmark Report Generator
  *
- * Reads results from eval/query-expansion-bench/results/*.json
+ * Reads results from experiments/query-expansion/results/{base,finetuned}/*.json
  * and generates a comparison table.
  *
  * Usage:
- *   bun run eval/query-expansion-bench/report.ts [options]
+ *   bun run experiments/query-expansion/bench/report.ts [options]
  *
  * Options:
  *   --format <md|csv|json>   Output format (default: md)
@@ -72,7 +72,7 @@ interface ReportRow {
 // ============================================================================
 
 const BENCH_DIR = dirname(new URL(import.meta.url).pathname);
-const RESULTS_DIR = join(BENCH_DIR, "results");
+const RESULTS_DIR = join(BENCH_DIR, "..", "results");
 
 function parseArgs(): {
 	format: "md" | "csv" | "json";
@@ -113,20 +113,29 @@ function parseArgs(): {
 function loadResults(): ResultFile[] {
 	if (!existsSync(RESULTS_DIR)) {
 		console.error(`No results directory found: ${RESULTS_DIR}`);
-		console.error("Run the benchmark first: bun run eval/query-expansion-bench/run.ts");
+		console.error("Run the benchmark first: bun run experiments/query-expansion/bench/run.ts");
 		process.exit(1);
 	}
 
-	const files = readdirSync(RESULTS_DIR).filter((f) => f.endsWith(".json"));
-	if (files.length === 0) {
+	const results: ResultFile[] = [];
+	const subdirs = ["base", "finetuned"];
+
+	for (const subdir of subdirs) {
+		const dir = join(RESULTS_DIR, subdir);
+		if (!existsSync(dir)) continue;
+		const files = readdirSync(dir).filter((f) => f.endsWith(".json"));
+		for (const f of files) {
+			const content = readFileSync(join(dir, f), "utf-8");
+			results.push(JSON.parse(content) as ResultFile);
+		}
+	}
+
+	if (results.length === 0) {
 		console.error("No result files found. Run the benchmark first.");
 		process.exit(1);
 	}
 
-	return files.map((f) => {
-		const content = readFileSync(join(RESULTS_DIR, f), "utf-8");
-		return JSON.parse(content) as ResultFile;
-	});
+	return results;
 }
 
 function buildRows(results: ResultFile[], sort: string): ReportRow[] {

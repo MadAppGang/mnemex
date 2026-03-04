@@ -18,16 +18,16 @@ Trains LoRA adapter, merges, pushes to HuggingFace Hub.
 
 Usage (cloud via HF Jobs):
     hf jobs uv run --flavor a10g-large --secrets HF_TOKEN --timeout 2h \
-        finetune/jobs/sft.py --model qwen3-1.7b
+        experiments/query-expansion/training/jobs/sft.py --model qwen3-1.7b
 
     hf jobs uv run --flavor a10g-large --secrets HF_TOKEN --timeout 3h \
-        finetune/jobs/sft.py --model qwen3-4b-2507
+        experiments/query-expansion/training/jobs/sft.py --model qwen3-4b-2507
 
     hf jobs uv run --flavor a10g-large --secrets HF_TOKEN --timeout 2h \
-        finetune/jobs/sft.py --model lfm2-1.2b
+        experiments/query-expansion/training/jobs/sft.py --model lfm2-1.2b
 
     hf jobs uv run --flavor a10g-large --secrets HF_TOKEN --timeout 2h \
-        finetune/jobs/sft.py --model lfm2-700m
+        experiments/query-expansion/training/jobs/sft.py --model lfm2-700m
 """
 
 import argparse

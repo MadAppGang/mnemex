@@ -7,11 +7,11 @@
  * higher-quality data through natural variation.
  *
  * Usage:
- *   bun run finetune/scripts/generate-data.ts [options]
+ *   bun run experiments/query-expansion/training/scripts/generate-data.ts [options]
  *
  * Options:
- *   --seeds <path>       Path to seed queries JSONL (default: finetune/seeds/code-queries.jsonl)
- *   --output <path>      Output JSONL path (default: finetune/data/train.jsonl)
+ *   --seeds <path>       Path to seed queries JSONL (default: training/seeds/code-queries.jsonl)
+ *   --output <path>      Output JSONL path (default: training/data/train.jsonl)
  *   --models <list>      Comma-separated model IDs (default: all 7)
  *   --limit <n>          Max seeds to process (default: all)
  *   --concurrency <n>    Parallel requests per model (default: 3)
@@ -101,8 +101,9 @@ interface Config {
 
 function parseArgs(): Config {
 	const args = process.argv.slice(2);
-	let seedsPath = "finetune/seeds/code-queries.jsonl";
-	let outputPath = "finetune/data/train.jsonl";
+	const ROOT = join(dirname(new URL(import.meta.url).pathname), "..");
+	let seedsPath = join(ROOT, "seeds/code-queries.jsonl");
+	let outputPath = join(ROOT, "data/train.jsonl");
 	let selectedModels = [...MODELS];
 	let limit = Infinity;
 	let concurrency = 3;

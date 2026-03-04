@@ -16,8 +16,8 @@ Loads each model from HuggingFace Hub, runs all queries, scores them,
 and saves results in the same JSON format as the LM Studio benchmark.
 
 Usage:
-    uv run eval/query-expansion-bench/run-finetuned.py [--model <name>]
-    uv run eval/query-expansion-bench/run-finetuned.py --all
+    uv run experiments/query-expansion/bench/run-finetuned.py [--model <name>]
+    uv run experiments/query-expansion/bench/run-finetuned.py --all
 
 Models:
     qwen3-1.7b    jackrudenko/claudemem-expansion-qwen3-1.7b
@@ -76,7 +76,7 @@ hyde: ..."""
 
 BENCH_DIR = Path(__file__).parent
 QUERIES_PATH = BENCH_DIR / "queries.json"
-RESULTS_DIR = BENCH_DIR / "results"
+RESULTS_DIR = BENCH_DIR.parent / "results" / "finetuned"
 
 # ─── Scoring (mirrors scorer.ts) ─────────────────────────────────────
 
@@ -458,7 +458,7 @@ def main():
             )
 
     print(f"\nRun report.ts for full comparison:")
-    print(f"  bun run eval/query-expansion-bench/report.ts")
+    print(f"  bun run experiments/query-expansion/bench/report.ts")
 
 
 if __name__ == "__main__":
