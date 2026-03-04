@@ -402,28 +402,77 @@ function comparison() {
 
 export { mode1, mode2, mode3, comparison };
 
-/** Interactive mode selector — press 1/2/3 or arrows to browse, Enter to confirm. */
+// Capture console.log output as line array
+const captureLines = (fn: () => void): string[] => {
+  const lines: string[] = [];
+  const orig = console.log;
+  console.log = (...args: unknown[]) => lines.push(args.map(String).join(' '));
+  fn();
+  console.log = orig;
+  return lines;
+};
+
+/** Interactive mode selector — sidebar on left, diagram on right. */
 export async function selectMode(): Promise<'local' | 'shared' | 'full-cloud'> {
   const modes = ['local', 'shared', 'full-cloud'] as const;
-  const labels = ['Local', 'Team', 'Cloud'];
   const renderers = [mode1, mode2, mode3];
   let selected = 0;
 
+  const SB_W = 22; // sidebar total visible width
+  const SB_IN = SB_W - 2; // inner content width
+
+  const sbi = (s: string) => `│${pad(s, SB_IN)}│`;
+
+  const buildSidebar = (sel: number): string[] => {
+    const items = [
+      { n: '1', label: 'Local',  desc: 'your machine' },
+      { n: '2', label: 'Team',   desc: 'code is local' },
+      { n: '3', label: 'Cloud',  desc: 'server-side' },
+    ];
+    const sb: string[] = [];
+    sb.push(`╭${'─'.repeat(SB_IN)}╮`);
+    sb.push(sbi(''));
+    sb.push(sbi(bold(' DEPLOYMENT MODE')));
+    sb.push(sbi(''));
+
+    for (let i = 0; i < items.length; i++) {
+      const { n, label, desc } = items[i];
+      const isSel = i === sel;
+      const marker = isSel ? bgreen('▸') : ' ';
+      const title = isSel ? white(bold(`[${n}] ${label}`)) : gray(`[${n}] ${label}`);
+      const sub = isSel ? green(desc) : dim(desc);
+      sb.push(sbi(` ${marker} ${title}`));
+      sb.push(sbi(`    ${sub}`));
+      if (i < 2) sb.push(sbi(''));
+    }
+
+    sb.push(sbi(''));
+    sb.push(`├${'─'.repeat(SB_IN)}┤`);
+    sb.push(sbi(` ${gray('↑↓ 1/2/3')}  ${gray('select')}`));
+    sb.push(sbi(` ${gray('Enter')}    ${gray('confirm')}`));
+    sb.push(sbi(` ${gray('q')}        ${gray('quit')}`));
+    sb.push(`╰${'─'.repeat(SB_IN)}╯`);
+    return sb;
+  };
+
   const render = () => {
-    process.stdout.write('\x1b[2J\x1b[H'); // clear screen + cursor home
-    console.log();
-    console.log(`  ${gray('┌─')} ${bold('claudemem')} ${gray('─')} Setup ${gray('─')} Step 1 ${gray('─ Choose Deployment Mode ─┐')}`);
+    process.stdout.write('\x1b[2J\x1b[H');
 
-    renderers[selected]();
+    const dLines = captureLines(() => renderers[selected]());
+    const sbLines = buildSidebar(selected);
 
-    // Mode tabs
-    const tabs = labels.map((label, i) => {
-      if (i === selected) return white(`▸ [${i + 1}] ${label}`);
-      return gray(`  [${i + 1}] ${label}`);
-    }).join('   ');
-    console.log(`  ${tabs}`);
+    // Header
     console.log();
-    console.log(`  ${gray('└─')} ${gray('[1/2/3] select   [←/→] navigate   [Enter] confirm   [q] quit')} ${gray('─┘')}`);
+    console.log(`${gray('┌─')} ${bold('claudemem')} ${gray('─ Setup ─ Step 1 ─ Choose Deployment Mode ─┐')}`);
+
+    // Merge sidebar + diagram side by side
+    const maxLen = Math.max(sbLines.length, dLines.length);
+    const sbBlank = ' '.repeat(SB_W);
+    for (let i = 0; i < maxLen; i++) {
+      const left = i < sbLines.length ? sbLines[i] : sbBlank;
+      const right = i < dLines.length ? dLines[i] : '';
+      console.log(`${left}${right}`);
+    }
   };
 
   return new Promise((resolve) => {
