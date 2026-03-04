@@ -143,53 +143,28 @@ function mode1() {
   rTop('Pipeline Flow');
   o('');
   o(gray('source files'));
-  o(`  ${cyan('│')}`);
   oT(`  ${cyan('▼')}  ${step('[parse]')}  ${gray('tree-sitter')}`, 5);
-  o(`  ${cyan('│')}  ${gray('AST → text chunks')}`);
-  o(`  ${cyan('▼')}`);
+  o(`  ${cyan('│')}`);
 
   modelPanel('▓▓▓▓░░░░░', yellow, '[embed]', 'auto-detected', 30,
     'embed', 'nomic-embed-text or equiv',
     'model', 'GPU required');
-  o(`  ${cyan('│')}  ${gray('vectors')}`);
-  o(`  ${cyan('▼')}`);
-  oT(`  ${step('[index]')}   ${gray('LanceDB local')}`, 5);
-  o(`  ${cyan('│')}  ${gray('vector index')}`);
-  o(`  ${cyan('▼')}`);
-  oT(`  ${step('[search]')}  ${gray('vector + BM25')}`, 15);
-  o(`  ${cyan('│')}  ${gray('candidates')}`);
-  o(`  ${cyan('▼')}`);
+  oT(`  ${cyan('│')}  ${step('[index]')}   ${gray('LanceDB local')}`, 5);
+  oT(`  ${cyan('▼')}  ${step('[search]')}  ${gray('vector + BM25')}`, 15);
+  o(`  ${cyan('│')}`);
 
   modelPanel('▓▓▓▓▓▓▓▓▓', bred, '[rerank]', 'auto-detected', 100,
     'LLM', 'llama3/codellama or equiv',
     'model', 'GPU required');
-  o(`  ${cyan('│')}  ${gray('scored results')}`);
-  o(`  ${cyan('▼')}`);
-  oT(`  ${step('[enrich]')}  ${gray('code summaries')}`, 500);
-  o(`  ${cyan('│')}  ${gray('optional')}        ${gray('(same LLM)')}`);
+  oT(`  ${cyan('│')}  ${step('[enrich]')}  ${gray('code summaries')}`, 500);
   o(`  ${cyan('▼')}`);
   o(bgreen('▓▓▓ RESULTS ▓▓▓'));
   o('');
 
   rDiv();
-  o(`${green('●')} Runtime   ${white('Ollama / LM Studio')}`);
+  o(`${green('●')} Runtime   ${white('Ollama / LM Studio')} ${gray('— 100% local')}`);
   o(`${green('●')} Privacy   ${bgreen(bold('AIR-GAPPED'))} ${gray('zero bytes leave machine')}`);
-  o(`${green('●')} Requires  ${white('Apple Silicon / NVIDIA GPU')}`);
-  o(`${green('●')} Memory    ${byellow('≥16 GB RAM')}`);
-
-  rDiv('LATENCY');
-  o(gray('Step     Latency  Gauge      Note'));
-  o(gray('──────── ──────── ────────── ───────────────────'));
-  latRow('parse', 5, 'tree-sitter (CPU)');
-  latRow('embed', 30, 'embed model (GPU)');
-  latRow('index', 5, 'LanceDB (disk)');
-  latRow('search', 15, 'vector+BM25 (CPU)');
-  latRow('rerank', 100, 'LLM scoring (GPU)');
-  latRow('enrich', 500, 'LLM summary (opt)');
-  o(gray('──────────────────────────────────────────────'));
-  o(`${bold('search')}   ${pad(lat(130), 9)}search + rerank`);
-  o(`${bold('full')}     ${pad(lat(630), 9)}all steps end-to-end`);
-  o(gray('approximate — depends on hardware'));
+  o(`${green('●')} Requires  ${white('Apple Silicon / NVIDIA GPU')}  ${byellow('≥16 GB')}`);
 
   rBot('Ollama / LM Studio');
   console.log();
@@ -206,29 +181,19 @@ function mode2() {
   rTop('Pipeline Flow');
   o('');
   o(gray('source files'));
-  o(`  ${cyan('│')}`);
   oT(`  ${cyan('▼')}  ${step('[parse]')}  ${gray('tree-sitter')}`, 5);
-  o(`  ${cyan('│')}  ${gray('AST → text chunks')}`);
-  o(`  ${cyan('▼')}`);
+  o(`  ${cyan('│')}`);
 
   modelPanel('▓▓▓▓░░░░░', yellow, '[embed]', 'auto-detected', 30,
     'embed', 'nomic-embed-text or equiv',
     'model', 'local GPU');
-  o(`  ${cyan('│')}  ${gray('vectors 768-dim')}`);
 
-  // Network transition: local → cloud
-  o('');
   oT(`  ${cyan('═══════')} ${bgGreen(' vectors → cloud ')} ${cyan('═══════')}`, 80);
   o(`  ${gray('~3KB per chunk, anonymous, no source code')}`);
-  o('');
 
-  o(`  ${cyan('│')}`);
   oT(`  ${cyan('▼')}  ${step('[index]')}   ${gray('pgvector (shared)')}`, 5);
-  o(`  ${cyan('│')}  ${gray('candidates')}`);
-  o(`  ${cyan('▼')}`);
-  oT(`  ${step('[search]')}  ${gray('vector + BM25')}`, 15);
-  o(`  ${cyan('│')}  ${gray('top-K results')}`);
-  o(`  ${cyan('▼')}`);
+  oT(`  ${cyan('▼')}  ${step('[search]')}  ${gray('vector + BM25')}`, 15);
+  o(`  ${cyan('│')}`);
 
   // Cloud rerank model panel
   o(`${gray('┌───────────┐')}`);
@@ -236,18 +201,10 @@ function mode2() {
   o(`${gray('│')} ${pad(magenta('Claude'), 9)} ${gray('│')}  ${gray('Claude Sonnet ~175B')}`);
   o(`${gray('│')} ${pad(magenta('Sonnet'), 9)} ${gray('│')}  ${gray('H100 server-side')}`);
   o(`${gray('└─────┬─────┘')}`);
-  o(`  ${cyan('│')}  ${gray('scored results')}`);
 
-  // Network transition: cloud → local
-  o('');
   oT(`  ${cyan('═══════')} ${bgBlue(' results ← cloud ')} ${cyan('═══════')}`, 80);
-  o(`  ${gray('paths + scores, ~1KB')}`);
-  o('');
 
-  o(`  ${cyan('│')}`);
-  o(`  ${cyan('▼')}`);
-  oT(`  ${step('[enrich]')}  ${gray('code summaries')}`, 500);
-  o(`  ${cyan('│')}  ${gray('optional, local LLM (same as rerank)')}`);
+  oT(`  ${cyan('▼')}  ${step('[enrich]')}  ${gray('code summaries')}`, 500);
   o(`  ${cyan('▼')}`);
   o(bgreen('▓▓▓ RESULTS ▓▓▓'));
   o('');
@@ -255,25 +212,7 @@ function mode2() {
   rDiv();
   o(`${green('●')} Runtime   ${white('Ollama local + cloud server')}`);
   o(`${green('●')} Privacy   ${bgreen(bold('CODE NEVER LEAVES'))} ${gray('only vectors')}`);
-  o(`${green('●')} Storage   ${white('PostgreSQL + pgvector (cloud)')}`);
-  o(`${green('●')} Requires  ${white('Apple Silicon / NVIDIA GPU')}`);
-  o(`${green('●')} Memory    ${byellow('≥5 GB VRAM')}`);
-
-  rDiv('LATENCY');
-  o(gray('Step     Where  Latency  Gauge      Note'));
-  o(gray('──────── ────── ──────── ────────── ───────────────'));
-  latRowLoc('parse', tagLocal, 5, 'tree-sitter');
-  latRowLoc('embed', tagLocal, 30, 'embed (GPU)');
-  latRowLoc('net →', tagWire, 80, '~3KB vectors');
-  latRowLoc('index', tagCloud, 5, 'pgvector');
-  latRowLoc('search', tagCloud, 30, 'vector+BM25');
-  latRowLoc('rerank', tagCloud, 80, 'Claude ~175B');
-  latRowLoc('net ←', tagWire, 80, '~1KB results');
-  latRowLoc('enrich', tagLocal, 500, 'local LLM');
-  o(gray('──────────────────────────────────────────────'));
-  o(`${bold('search')}   ${pad(lat(240), 9)}net + cloud (no enrich)`);
-  o(`${bold('full')}     ${pad(lat(810), 9)}all steps end-to-end`);
-  o(gray('approximate — depends on network'));
+  o(`${green('●')} Requires  ${white('Apple Silicon / NVIDIA GPU')}  ${byellow('≥5 GB')}`);
 
   rBot('Ollama + cloud server');
   console.log();
@@ -291,16 +230,11 @@ function mode3() {
   o('');
   o(gray('source files'));
 
-  // Network transition: upload
-  o('');
   oT(`  ${cyan('═══════')} ${bgBlue(' source → cloud ')} ${cyan('════════')}`, 150);
   o(`  ${gray('~50KB-5MB upload')}`);
-  o('');
 
-  o(`  ${cyan('│')}`);
   oT(`  ${cyan('▼')}  ${step('[parse]')}  ${gray('tree-sitter')}`, 5);
-  o(`  ${cyan('│')}  ${gray('AST → text chunks')}`);
-  o(`  ${cyan('▼')}`);
+  o(`  ${cyan('│')}`);
 
   // Cloud embed model panel
   o(`${gray('┌───────────┐')}`);
@@ -308,14 +242,9 @@ function mode3() {
   o(`${gray('│')} ${pad(magenta('OpenAI'), 9)} ${gray('│')}  ${gray('text-embedding-3-large')}`);
   o(`${gray('│')} ${pad(magenta('cluster'), 9)} ${gray('│')}  ${gray('~1-2B params, 3072-dim')}`);
   o(`${gray('└─────┬─────┘')}`);
-  o(`  ${cyan('│')}  ${gray('vectors')}`);
-  o(`  ${cyan('▼')}`);
-  oT(`  ${step('[index]')}   ${gray('pgvector')}`, 5);
-  o(`  ${cyan('│')}  ${gray('candidates')}`);
-  o(`  ${cyan('▼')}`);
-  oT(`  ${step('[search]')}  ${gray('vector + BM25')}`, 30);
-  o(`  ${cyan('│')}  ${gray('top-K results')}`);
-  o(`  ${cyan('▼')}`);
+  oT(`  ${cyan('│')}  ${step('[index]')}   ${gray('pgvector')}`, 5);
+  oT(`  ${cyan('▼')}  ${step('[search]')}  ${gray('vector + BM25')}`, 30);
+  o(`  ${cyan('│')}`);
 
   // Cloud rerank model panel
   o(`${gray('┌───────────┐')}`);
@@ -323,17 +252,10 @@ function mode3() {
   o(`${gray('│')} ${pad(magenta('Claude'), 9)} ${gray('│')}  ${gray('Claude Sonnet ~175B')}`);
   o(`${gray('│')} ${pad(magenta('Sonnet'), 9)} ${gray('│')}  ${gray('Anthropic H100 cluster')}`);
   o(`${gray('└─────┬─────┘')}`);
-  o(`  ${cyan('│')}  ${gray('scored results')}`);
-  o(`  ${cyan('▼')}`);
-  oT(`  ${step('[enrich]')}  ${gray('code summaries')}`, 200);
-  o(`  ${cyan('│')}  ${gray('Claude Sonnet (shared)')}`);
+  oT(`  ${cyan('│')}  ${step('[enrich]')}  ${gray('code summaries')}`, 200);
   o(`  ${cyan('▼')}`);
 
-  // Network transition: download
-  o('');
   oT(`  ${cyan('═══════')} ${bgBlue(' results ← cloud ')} ${cyan('═══════')}`, 50);
-  o(`  ${gray('~1KB download')}`);
-  o('');
 
   o(bgreen('▓▓▓ RESULTS ▓▓▓'));
   o('');
@@ -341,25 +263,7 @@ function mode3() {
   rDiv();
   o(`${bblue('●')} Runtime   ${white('Cloud server (mem.madappgang.com)')}`);
   o(`${bred('●')} Privacy   ${bred('Source code uploaded to cloud')}`);
-  o(`${bblue('●')} Storage   ${white('PostgreSQL + pgvector (cloud)')}`);
   o(`${bblue('●')} Requires  ${bgreen('API key only — no GPU, no Ollama')}`);
-  o(`${bblue('●')} Memory    ${bgreen('no local requirements')}`);
-
-  rDiv('LATENCY');
-  o(gray('Step     Where  Latency  Gauge      Note'));
-  o(gray('──────── ────── ──────── ────────── ───────────────'));
-  latRowLoc('net →', tagWire, 150, '~50KB-5MB up');
-  latRowLoc('parse', tagCloud, 5, 'tree-sitter');
-  latRowLoc('embed', tagCloud, 20, 'embed-3-lg');
-  latRowLoc('index', tagCloud, 5, 'pgvector');
-  latRowLoc('search', tagCloud, 30, 'vector+BM25');
-  latRowLoc('rerank', tagCloud, 80, 'Claude ~175B');
-  latRowLoc('enrich', tagCloud, 200, 'Claude ~175B');
-  latRowLoc('net ←', tagWire, 50, '~1KB results');
-  o(gray('──────────────────────────────────────────────'));
-  o(`${bold('search')}   ${pad(lat(310), 9)}upload + cloud (no enrich)`);
-  o(`${bold('full')}     ${pad(lat(540), 9)}all steps end-to-end`);
-  o(gray('approximate — depends on file size'));
 
   rBot('cloud server');
   console.log();
