@@ -103,6 +103,13 @@ Multiple skill document variants for different contexts:
 - `CLAUDEMEM_MCP_SKILL` - MCP server integration
 - `CLAUDEMEM_QUICK_REF` - Minimal token reference
 
+## AgentBench Evaluation
+
+Evaluation harness lives in the sibling `../agentbench/` repo. See the `agentbench-eval` skill (`.claude/skills/agentbench-eval`) for full details on:
+- Pre-indexed repos (12 repos, ~39K symbols, ~1.9GB indexes in `../agentbench/data/`)
+- Experiment conditions (no_plan, claudemem_full, dc_planner, ace_planner)
+- Running benchmarks, restoring indexes, analyzing results
+
 ## Common Gotchas
 
 1. **Always use `--agent`** for machine-parseable output (replaces --nologo --raw --plain)
