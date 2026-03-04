@@ -45,8 +45,16 @@ import {
 	registerStatusTools,
 	registerReindexTools,
 	registerLegacyTools,
+	registerEditTools,
+	registerLspTools,
+	registerRenameTools,
+	registerMemoryTools,
+	registerThinkTools,
 	type ToolDeps,
 } from "./tools/index.js";
+import { LspManager } from "../lsp/manager.js";
+import { SymbolEditor } from "../editor/editor.js";
+import { MemoryStore } from "../memory/store.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -179,6 +187,39 @@ export async function startMcpServer(): Promise<void> {
 	const watcherActive = true;
 
 	// -------------------------------------------------------------------------
+	// Step 8a: Create LspManager (lazy — no servers spawned yet)
+	// -------------------------------------------------------------------------
+	const lspManager = config.lsp.enabled
+		? new LspManager({
+				enabled: true,
+				timeoutMs: config.lsp.timeoutMs,
+				maxServers: config.lsp.maxServers,
+				disabledLanguages: config.lsp.disabledLanguages,
+				workspaceRoot: config.workspaceRoot,
+				commandOverrides: {
+					...(config.lsp.tsCommand ? { typescript: config.lsp.tsCommand } : {}),
+					...(config.lsp.pyCommand ? { python: config.lsp.pyCommand } : {}),
+					...(config.lsp.goCommand ? { go: config.lsp.goCommand } : {}),
+					...(config.lsp.rsCommand ? { rust: config.lsp.rsCommand } : {}),
+				},
+			})
+		: null;
+
+	if (lspManager) {
+		logger.debug("LSP manager created (lazy initialization)");
+	}
+
+	// -------------------------------------------------------------------------
+	// Step 8b: Create SymbolEditor
+	// -------------------------------------------------------------------------
+	const editor = new SymbolEditor(cache, config, lspManager);
+
+	// -------------------------------------------------------------------------
+	// Step 8c: Create MemoryStore
+	// -------------------------------------------------------------------------
+	const memoryStore = new MemoryStore(config.indexDir);
+
+	// -------------------------------------------------------------------------
 	// Step 9: Build ToolDeps and create McpServer
 	// -------------------------------------------------------------------------
 	const serverStartTime = Date.now();
@@ -192,6 +233,9 @@ export async function startMcpServer(): Promise<void> {
 		completionDetector,
 		serverStartTime,
 		watcherActive,
+		lspManager,
+		editor,
+		memoryStore,
 	};
 
 	const server = new McpServer({
@@ -219,6 +263,13 @@ export async function startMcpServer(): Promise<void> {
 	// get_learning_stats)
 	registerLegacyTools(server, deps);
 
+	// Editor, LSP, rename, memory, and think tools
+	registerEditTools(server, deps);
+	registerLspTools(server, deps);
+	registerRenameTools(server, deps);
+	registerMemoryTools(server, deps);
+	registerThinkTools(server);
+
 	// -------------------------------------------------------------------------
 	// Step 11: Connect stdio transport
 	// -------------------------------------------------------------------------
@@ -230,11 +281,15 @@ export async function startMcpServer(): Promise<void> {
 	// -------------------------------------------------------------------------
 	// Step 12: Register shutdown handlers
 	// -------------------------------------------------------------------------
-	const shutdown = (signal: string) => {
+	const shutdown = async (signal: string) => {
 		logger.info(`Received ${signal}, shutting down`);
 		reindexer.cancelPending();
 		watcher.stop();
 		completionDetector.stop();
+		// Shut down LSP servers before exiting (review fix: async shutdown before process.exit)
+		if (lspManager) {
+			await lspManager.shutdown();
+		}
 		cache.close();
 		process.exit(0);
 	};

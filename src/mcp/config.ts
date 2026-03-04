@@ -24,6 +24,24 @@ export interface McpConfig {
 	completionPollMs: number;
 	/** Minimum log level (CLAUDEMEM_LOG_LEVEL, default "warn") */
 	logLevel: LogLevel;
+	/** LSP configuration */
+	lsp: LspConfig;
+}
+
+export interface LspConfig {
+	/** Whether LSP integration is enabled (CLAUDEMEM_LSP, default false) */
+	enabled: boolean;
+	/** Request timeout in ms (CLAUDEMEM_LSP_TIMEOUT_MS, default 10000) */
+	timeoutMs: number;
+	/** Maximum concurrent language servers (CLAUDEMEM_LSP_MAX_SERVERS, default 2) */
+	maxServers: number;
+	/** Languages to disable (CLAUDEMEM_LSP_DISABLE, comma-separated) */
+	disabledLanguages: string[];
+	/** Per-language command overrides */
+	tsCommand?: string;
+	pyCommand?: string;
+	goCommand?: string;
+	rsCommand?: string;
 }
 
 const DEFAULT_WATCH_PATTERNS = [
@@ -83,6 +101,17 @@ export function loadMcpConfig(): McpConfig {
 
 	const logLevel = parseLogLevel(process.env.CLAUDEMEM_LOG_LEVEL);
 
+	const lsp: LspConfig = {
+		enabled: parseBool(process.env.CLAUDEMEM_LSP, false),
+		timeoutMs: parseIntWithDefault(process.env.CLAUDEMEM_LSP_TIMEOUT_MS, 10000),
+		maxServers: parseIntWithDefault(process.env.CLAUDEMEM_LSP_MAX_SERVERS, 2),
+		disabledLanguages: parsePatterns(process.env.CLAUDEMEM_LSP_DISABLE, []),
+		tsCommand: process.env.CLAUDEMEM_LSP_TS_CMD,
+		pyCommand: process.env.CLAUDEMEM_LSP_PY_CMD,
+		goCommand: process.env.CLAUDEMEM_LSP_GO_CMD,
+		rsCommand: process.env.CLAUDEMEM_LSP_RS_CMD,
+	};
+
 	return {
 		workspaceRoot,
 		indexDir,
@@ -92,6 +121,7 @@ export function loadMcpConfig(): McpConfig {
 		maxMemoryMB,
 		completionPollMs,
 		logLevel,
+		lsp,
 	};
 }
 
@@ -108,6 +138,11 @@ function parsePatterns(value: string | undefined, defaultValue: string[]): strin
 		.map((p) => p.trim())
 		.filter((p) => p.length > 0);
 	return patterns.length > 0 ? patterns : defaultValue;
+}
+
+function parseBool(value: string | undefined, defaultValue: boolean): boolean {
+	if (value === undefined || value === "") return defaultValue;
+	return value === "true" || value === "1";
 }
 
 function parseLogLevel(value: string | undefined): LogLevel {
