@@ -6,7 +6,7 @@
         "repo": "anthropics/claude-code"
       }
     },
-    "mag-claude-plugins": {
+    "magus": {
       "source": {
         "source": "github",
         "repo": "MadAppGang/claude-code"
@@ -22,21 +22,29 @@
     "learning-output-style@claude-code-plugins": false,
     "plugin-dev@claude-code-plugins": false,
     "ralph-wiggum@claude-code-plugins": false,
-    "code-analysis@mag-claude-plugins": true,
-    "orchestration@mag-claude-plugins": true,
-    "seo@mag-claude-plugins": true,
-    "agentdev@mag-claude-plugins": true,
+    "code-analysis@magus": true,
+    "seo@magus": true,
+    "agentdev@magus": true,
     "feature-dev@claude-plugins-official": true,
     "github@claude-plugins-official": true,
-    "dev@mag-claude-plugins": true
+    "dev@magus": true,
+    "multimodel@magus": true,
+    "statusline@magus": true,
+    "terminal@magus": true,
+    "browser-use@magus": true,
+    "designer@magus": true
   },
   "installedPluginVersions": {
-    "code-analysis@mag-claude-plugins": "2.13.0",
-    "orchestration@mag-claude-plugins": "0.8.1",
-    "seo@mag-claude-plugins": "1.5.0",
-    "agentdev@mag-claude-plugins": "1.3.0",
+    "code-analysis@magus": "4.0.2",
+    "seo@magus": "1.6.5",
+    "agentdev@magus": "1.5.5",
     "feature-dev@claude-plugins-official": "0.0.0",
     "github@claude-plugins-official": "0.0.0",
-    "dev@mag-claude-plugins": "1.12.0"
+    "dev@magus": "1.41.0",
+    "multimodel@magus": "2.6.2",
+    "statusline@magus": "1.4.1",
+    "terminal@magus": "2.1.0",
+    "browser-use@magus": "1.0.2",
+    "designer@magus": "0.2.0"
   }
 }
