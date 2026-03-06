@@ -163,6 +163,7 @@ Write for developers who are new to the codebase.`,
 	framework_doc: "", // Not used - fetched from external sources
 	best_practice: "", // Not used - fetched from external sources
 	api_reference: "", // Not used - fetched from external sources
+	session_observation: "", // Not used - written directly by users/agents
 };
 
 // ============================================================================

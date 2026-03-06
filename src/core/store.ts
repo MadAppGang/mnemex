@@ -448,7 +448,7 @@ export class VectorStore implements IVectorStore {
 					}
 				}
 			} else {
-				// code_chunk, code_unit, etc.
+				// code_chunk, code_unit, session_observation, etc.
 				codeResults.push(r);
 			}
 		}
@@ -457,28 +457,36 @@ export class VectorStore implements IVectorStore {
 		// Prefer symbol-level summary (more specific), fall back to file-level
 		const topResults = codeResults.slice(0, limit);
 		const maxFused = topResults.length > 0 ? topResults[0].fusedScore : 1;
-		return topResults.map((r) => ({
-			chunk: {
-				id: r.id,
-				contentHash: r.contentHash || "",
-				content: r.content,
-				filePath: r.filePath,
-				startLine: r.startLine,
-				endLine: r.endLine,
-				language: r.language,
-				chunkType: r.chunkType as any,
-				name: r.name || undefined,
-				parentName: r.parentName || undefined,
-				signature: r.signature || undefined,
-				fileHash: r.fileHash,
-			},
-			score: maxFused > 0 ? r.fusedScore / maxFused : 0,
-			vectorScore: r.vectorScore || 0,
-			keywordScore: r.keywordScore || 0,
-			summary: r.summary || symbolSummaryById.get(r.id) || fileSummaryById.get(r.id) || undefined,
-			fileSummary: fileSummaryById.get(r.id) || undefined,
-			unitType: r.unitType || undefined,
-		}));
+		return topResults.map((r) => {
+			const docType = (r.documentType || "code_chunk") as string;
+			const meta = r.metadata ? (typeof r.metadata === "string" ? JSON.parse(r.metadata) : r.metadata) : undefined;
+			return {
+				chunk: {
+					id: r.id,
+					contentHash: r.contentHash || "",
+					content: r.content,
+					filePath: r.filePath,
+					startLine: r.startLine,
+					endLine: r.endLine,
+					language: r.language,
+					chunkType: r.chunkType as any,
+					name: r.name || undefined,
+					parentName: r.parentName || undefined,
+					signature: r.signature || undefined,
+					fileHash: r.fileHash,
+				},
+				score: maxFused > 0 ? r.fusedScore / maxFused : 0,
+				vectorScore: r.vectorScore || 0,
+				keywordScore: r.keywordScore || 0,
+				summary: r.summary || symbolSummaryById.get(r.id) || fileSummaryById.get(r.id) || undefined,
+				fileSummary: fileSummaryById.get(r.id) || undefined,
+				unitType: r.unitType || undefined,
+				...(docType === "session_observation" ? {
+					documentType: "session_observation" as const,
+					observationMetadata: meta,
+				} : {}),
+			};
+		});
 	}
 
 	/**
@@ -1425,6 +1433,7 @@ const USE_CASE_WEIGHTS: Record<
 		api_reference: 0.1, // API docs help with completion
 		framework_doc: 0.07, // Framework patterns
 		best_practice: 0.03, // Light best practice guidance
+		session_observation: 0.05, // Low — observations less useful for completion
 	},
 	// Human search: balanced across summaries, code, and external docs
 	search: {
@@ -1437,6 +1446,7 @@ const USE_CASE_WEIGHTS: Record<
 		framework_doc: 0.1, // Official framework docs
 		best_practice: 0.05, // Best practices
 		api_reference: 0.05, // API reference
+		session_observation: 0.20, // High — observations most useful for search
 	},
 	// Agent navigation: prioritize understanding structure and patterns
 	navigation: {
@@ -1448,6 +1458,7 @@ const USE_CASE_WEIGHTS: Record<
 		framework_doc: 0.1, // Framework understanding
 		api_reference: 0.08, // API navigation
 		best_practice: 0.02, // Light guidance
+		session_observation: 0.15, // Medium — useful for understanding architecture
 	},
 };
 
@@ -1472,6 +1483,7 @@ function getUseCaseWeights(
 		framework_doc: 0.1,
 		best_practice: 0.05,
 		api_reference: 0.05,
+		session_observation: 0.15,
 	};
 }
 

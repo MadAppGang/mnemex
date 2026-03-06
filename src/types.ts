@@ -249,6 +249,10 @@ export interface SearchResult {
 	fileSummary?: string;
 	/** Unit type from AST hierarchy (function, class, method, etc.) */
 	unitType?: string;
+	/** Document type (defaults to code_chunk for backward compat) */
+	documentType?: DocumentType;
+	/** Observation metadata (only for session_observation results) */
+	observationMetadata?: Record<string, unknown>;
 }
 
 export interface SearchOptions {
@@ -342,6 +346,10 @@ export interface EmbedResult {
 	cost?: number;
 	/** Warnings/errors that occurred during embedding (non-fatal) */
 	warnings?: string[];
+	/** Wall-clock time for this embed() call in milliseconds */
+	latencyMs?: number;
+	/** Throughput in tokens/second (totalTokens / latencyMs * 1000) */
+	throughputTokensPerSec?: number;
 }
 
 /**
@@ -434,6 +442,16 @@ export interface GlobalConfig {
 	anthropicApiKey?: string;
 	/** Enable LLM enrichment during indexing (default: true) */
 	enableEnrichment?: boolean;
+
+	// ─── Cloud / Team Settings ───
+	/** Cloud API key for authenticating with the shared index server */
+	cloudApiKey?: string;
+	/**
+	 * Global team/org configuration for cloud shared index.
+	 * Used when scope is "global" (no project config). Project-level
+	 * team config in ProjectConfig.team takes precedence when present.
+	 */
+	team?: TeamConfig;
 
 	// ─── External Documentation Settings ───
 	/** Context7 API key for fetching framework documentation */
@@ -778,7 +796,8 @@ export type DocumentType =
 	// External documentation types
 	| "framework_doc" // Official framework documentation
 	| "best_practice" // Recommended patterns from docs
-	| "api_reference"; // API reference documentation
+	| "api_reference" // API reference documentation
+	| "session_observation"; // Cognitive memory: session observations
 
 /** Provider types for external documentation */
 export type DocProviderType = "context7" | "llms_txt" | "devdocs";

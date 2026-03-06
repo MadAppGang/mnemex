@@ -301,6 +301,140 @@ export async function getRecentRuns(
 	}
 }
 
+// ============================================================================
+// Embedding Benchmark Upload
+// ============================================================================
+
+export interface EmbeddingBenchmarkResult {
+	model: string;
+	speedMs: number;
+	cost: number | undefined;
+	dimension: number;
+	contextLength: number;
+	chunks: number;
+	ndcg: number;
+	mrr: number;
+	hitRate: { k1: number; k3: number; k5: number };
+	error?: string;
+}
+
+/**
+ * Upload embedding benchmark results via Cloud Function.
+ * Uses a dedicated endpoint for the lightweight embedding benchmark
+ * (separate from the full benchmark-v2 upload).
+ */
+export async function uploadEmbeddingBenchmark(
+	results: EmbeddingBenchmarkResult[],
+	meta: {
+		projectPath: string;
+		chunks: number;
+		durationMs: number;
+	},
+): Promise<{ success: boolean; docId?: string; error?: string }> {
+	const UPLOAD_TIMEOUT_MS = 30_000;
+
+	try {
+		const runId = `emb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const projectName = meta.projectPath.split("/").pop() || "unknown";
+
+		// Map to ModelScoreEntry format for compatibility with existing leaderboard
+		const modelScores: ModelScoreEntry[] = results
+			.filter((r) => !r.error)
+			.map((r) => {
+				const isLocal =
+					r.model.startsWith("ollama/") || r.model.startsWith("lmstudio/");
+				return {
+					modelId: r.model,
+					displayName: r.model.split("/").pop() || r.model,
+					quality: {
+						retrieval: r.ndcg / 100,
+						contrastive: r.mrr / 100,
+						judge: r.hitRate.k5 / 100,
+						overall: r.ndcg / 100,
+					},
+					operational: {
+						latencyMs: r.speedMs,
+						cost: isLocal ? 0 : (r.cost ?? 0),
+						refinementRounds: 0,
+						selfEvalScore: 0,
+					},
+					details: {
+						judge: { pointwise: 0, pairwise: 0 },
+						retrieval: {
+							precision1: r.hitRate.k1 / 100,
+							precision5: r.hitRate.k5 / 100,
+							mrr: r.mrr / 100,
+						},
+					},
+				};
+			})
+			.sort((a, b) => b.quality.overall - a.quality.overall);
+
+		const payload: BenchmarkRunDocument = {
+			runId,
+			timestamp: new Date().toISOString(),
+			projectName,
+			projectPath: meta.projectPath,
+			codebaseType: {
+				language: "mixed",
+				category: "embedding-benchmark",
+				stack: "embedding",
+				label: "Embedding Model Benchmark",
+				tags: ["embedding", "benchmark"],
+			},
+			generators: results.map((r) => r.model),
+			judges: [],
+			sampleSize: meta.chunks,
+			status: "completed",
+			durationMs: meta.durationMs,
+			totalCost: results.reduce(
+				(sum, r) => sum + (r.cost ?? 0),
+				0,
+			),
+			modelScores,
+			claudememVersion: "0.7.0",
+		};
+
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+
+		const response = await fetch(
+			`${CLOUD_FUNCTION_BASE_URL}/uploadBenchmarkResults`,
+			{
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"X-API-Key": API_KEY,
+				},
+				body: JSON.stringify(payload),
+				signal: controller.signal,
+			},
+		);
+
+		clearTimeout(timeoutId);
+
+		if (!response.ok) {
+			const errorText = await response.text().catch(() => "");
+			return {
+				success: false,
+				error: `HTTP ${response.status}: ${errorText || response.statusText}`,
+			};
+		}
+
+		const resultText = await response.text();
+		const result = JSON.parse(resultText);
+		return { success: true, docId: result.docId };
+	} catch (error) {
+		const message =
+			error instanceof Error
+				? error.name === "AbortError"
+					? "Upload timed out"
+					: error.message
+				: String(error);
+		return { success: false, error: message };
+	}
+}
+
 /**
  * Check if Cloud Functions are configured and accessible
  */

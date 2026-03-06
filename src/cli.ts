@@ -286,6 +286,16 @@ export async function runCli(args: string[]): Promise<void> {
 		case "init":
 			await handleInit();
 			break;
+		case "setup":
+		case "configure":
+		case "profile":
+			if (process.stdout.isTTY) {
+				const { startSetupWizard } = await import("./tui/setup/index.js");
+				await startSetupWizard();
+			} else {
+				await handleInit();
+			}
+			break;
 		case "models":
 			await handleModels(args.slice(1));
 			break;
@@ -349,6 +359,10 @@ export async function runCli(args: string[]): Promise<void> {
 			break;
 		case "install":
 			await handleInstall(args.slice(1));
+			break;
+		// Cognitive memory commands
+		case "observe":
+			await handleObserve(args.slice(1));
 			break;
 		// Documentation commands
 		case "docs":
@@ -1637,8 +1651,11 @@ async function handleSearch(args: string[]): Promise<void> {
 
 		for (let i = 0; i < results.length; i++) {
 			const r = results[i];
-			const chunk = r.chunk;
-			printSearchResult(chunk, r.score, queryTerms);
+			if (r.documentType === "session_observation") {
+				printObservationResult(r);
+			} else {
+				printSearchResult(r.chunk, r.score, queryTerms);
+			}
 		}
 
 		// Show feedback hint for agents
@@ -1665,6 +1682,7 @@ const ANSI_DIM = "\x1b[2m";
 const ANSI_GREEN = "\x1b[32m";
 const ANSI_YELLOW = "\x1b[33m";
 const ANSI_RED = "\x1b[31m";
+const ANSI_MAGENTA = "\x1b[35m";
 
 const CHUNK_TYPE_ABBREV: Record<string, string> = {
 	function: "fn",
@@ -1754,6 +1772,30 @@ function getMatchLines(
 		prev = idx;
 	}
 	return result;
+}
+
+function printObservationResult(r: { chunk: { content: string; filePath: string }; score: number; observationMetadata?: Record<string, unknown> }): void {
+	const termWidth = process.stdout.columns || 80;
+	const divider = "─".repeat(termWidth);
+
+	const meta = r.observationMetadata || {};
+	const obsType = (meta.observationType as string) || "observation";
+	const confidence = (meta.confidence as number) ?? 0.7;
+	const files = (meta.affectedFiles as string[]) || (r.chunk.filePath ? [r.chunk.filePath] : []);
+
+	const pct = Math.round(r.score * 100);
+	const scoreColor = pct >= 70 ? ANSI_GREEN : pct >= 40 ? ANSI_YELLOW : ANSI_RED;
+
+	const leftPart = ` [observation] ${obsType}`;
+	const scorePart = `${pct}%`;
+	const padding = Math.max(1, termWidth - leftPart.length - scorePart.length - 1);
+	console.log(`${ANSI_MAGENTA}${leftPart}${ANSI_RESET}${" ".repeat(padding)}${scoreColor}${scorePart}${ANSI_RESET}`);
+	console.log(divider);
+	console.log(`  ${r.chunk.content}`);
+	if (files.length > 0) {
+		console.log(`${ANSI_DIM}  files: ${files.join(", ")}  confidence: ${confidence}${ANSI_RESET}`);
+	}
+	console.log("");
 }
 
 function printSearchResult(
@@ -3208,9 +3250,15 @@ async function handleBenchmark(args: string[]): Promise<void> {
 		mkdirSync(benchDbBase, { recursive: true });
 	}
 
-	// Separate local (Ollama) and cloud models
-	const ollamaModels = models.filter((m) => m.startsWith("ollama/"));
-	const cloudModels = models.filter((m) => !m.startsWith("ollama/"));
+	// Separate models into execution groups:
+	// - Cloud: parallel (different APIs, no resource conflicts)
+	// - Local: sequential queue (Ollama + LM Studio share the same GPU)
+	const localModels = models.filter(
+		(m) => m.startsWith("ollama/") || m.startsWith("lmstudio/"),
+	);
+	const cloudModels = models.filter(
+		(m) => !m.startsWith("ollama/") && !m.startsWith("lmstudio/"),
+	);
 
 	// Helper to benchmark a single model
 	const benchmarkModel = async (modelId: string): Promise<BenchmarkResult> => {
@@ -3382,18 +3430,13 @@ async function handleBenchmark(args: string[]): Promise<void> {
 		}
 	};
 
-	// Run cloud models in PARALLEL (they use different APIs)
-	const cloudPromises = cloudModels.map((modelId) => benchmarkModel(modelId));
-	const cloudResults = await Promise.all(cloudPromises);
-
-	// Run Ollama models SEQUENTIALLY (they share local GPU/CPU)
-	const ollamaResults: BenchmarkResult[] = [];
-	for (const modelId of ollamaModels) {
-		const result = await benchmarkModel(modelId);
-		ollamaResults.push(result);
+	// All models run SEQUENTIALLY to avoid Bun fetch response corruption
+	// under concurrent HTTP connections. Cloud models first, then local.
+	const results: BenchmarkResult[] = [];
+	for (const modelId of [...cloudModels, ...localModels]) {
+		results.push(await benchmarkModel(modelId));
 	}
 
-	const results = [...cloudResults, ...ollamaResults];
 	progress.stop();
 
 	// Show warnings/errors collected during embedding (after progress display is done)
@@ -3477,8 +3520,8 @@ async function handleBenchmark(args: string[]): Promise<void> {
 			speed = `${c.red}${speedVal.padEnd(7)}${c.reset}`;
 		}
 
-		// Cost with highlighting (FREE for local/ollama models)
-		const isLocal = r.model.startsWith("ollama/");
+		// Cost with highlighting (FREE for local/ollama/lmstudio models)
+		const isLocal = r.model.startsWith("ollama/") || r.model.startsWith("lmstudio/");
 		const costVal = isLocal
 			? "FREE"
 			: r.cost !== undefined
@@ -3566,6 +3609,30 @@ async function handleBenchmark(args: string[]): Promise<void> {
 	console.log(
 		`${c.dim}Use --verbose for detailed per-query results${c.reset}\n`,
 	);
+
+	// Upload results to Firebase for persistent history
+	try {
+		const { uploadEmbeddingBenchmark } = await import(
+			"./benchmark-v2/firebase/index.js"
+		);
+		const totalDurationMs = results.reduce((sum, r) => sum + r.speedMs, 0);
+		const uploadResult = await uploadEmbeddingBenchmark(results, {
+			projectPath,
+			chunks: chunksWithPaths.length,
+			durationMs: totalDurationMs,
+		});
+		if (uploadResult.success) {
+			console.log(
+				`${c.dim}Results saved to Firebase (${uploadResult.docId})${c.reset}`,
+			);
+		} else {
+			console.log(
+				`${c.dim}Firebase upload skipped: ${uploadResult.error}${c.reset}`,
+			);
+		}
+	} catch {
+		// Firebase upload is best-effort, don't fail the command
+	}
 }
 
 // ============================================================================
@@ -5458,6 +5525,112 @@ async function handleDocsClear(
 // ============================================================================
 
 /**
+ * Handle 'observe' command - write a session observation to the index
+ *
+ * Usage:
+ *   claudemem observe "PageRank > 0.05 means high importance" --file src/core/analysis/analyzer.ts --type gotcha
+ *   claudemem observe --content "embedding mismatch causes table clear" --file src/core/store.ts
+ */
+async function handleObserve(args: string[]): Promise<void> {
+	const pathIdx = args.findIndex((a) => a === "-p" || a === "--path");
+	const projectPath = pathIdx >= 0 ? resolve(args[pathIdx + 1]) : process.cwd();
+
+	// Parse --content or positional text
+	const contentIdx = args.findIndex((a) => a === "--content");
+	let content: string;
+	if (contentIdx >= 0) {
+		content = args[contentIdx + 1];
+	} else {
+		// First arg that doesn't start with -- is the content
+		content = args.find((a, i) => !a.startsWith("--") && (i === 0 || !args[i - 1].startsWith("--"))) || "";
+	}
+
+	if (!content) {
+		const msg = "Usage: claudemem observe <text> --file <path> [--type <type>] [--confidence <0-1>]";
+		if (agentMode) {
+			const { agentOutput } = await import("./output/agent.js");
+			agentOutput.error(msg);
+		} else {
+			console.error(msg);
+		}
+		process.exit(1);
+	}
+
+	// Parse --file (comma-separated)
+	const fileIdx = args.findIndex((a) => a === "--file");
+	const affectedFiles = fileIdx >= 0 ? args[fileIdx + 1].split(",") : [];
+
+	// Parse --type (default: "pattern")
+	const typeIdx = args.findIndex((a) => a === "--type");
+	const observationType = typeIdx >= 0 ? args[typeIdx + 1] : "pattern";
+
+	// Parse --confidence (default: 0.7)
+	const confIdx = args.findIndex((a) => a === "--confidence");
+	const confidence = confIdx >= 0 ? Number.parseFloat(args[confIdx + 1]) : 0.7;
+
+	const { createIndexer } = await import("./core/indexer.js");
+	const indexer = createIndexer({ projectPath });
+
+	try {
+		const embeddingsClient = createEmbeddingsClient();
+
+		// Generate embedding for the observation content
+		const embedding = await embeddingsClient.embedOne(content);
+
+		// Create document ID from content hash
+		const id = createHash("sha256").update(`observation:${content}:${affectedFiles.join(",")}`).digest("hex").slice(0, 16);
+
+		const now = new Date().toISOString();
+		const doc = {
+			id,
+			content,
+			documentType: "session_observation" as const,
+			filePath: affectedFiles[0] || "",
+			fileHash: "",
+			createdAt: now,
+			enrichedAt: now,
+			sourceIds: [],
+			metadata: {
+				observationType,
+				confidence,
+				affectedFiles,
+			},
+			vector: embedding,
+		};
+
+		// Write to LanceDB via vectorStore
+		const { createVectorStore } = await import("./core/store.js");
+		const store = await createVectorStore(projectPath);
+		await store.addDocuments([doc]);
+		await store.close();
+
+		if (agentMode) {
+			console.log(`observation_id=${id}`);
+			console.log(`type=${observationType}`);
+			console.log(`confidence=${confidence}`);
+			console.log(`files=${affectedFiles.join(",")}`);
+		} else {
+			console.log(`\n✅ Observation recorded (${observationType}, confidence=${confidence})`);
+			console.log(`   ID: ${id}`);
+			if (affectedFiles.length > 0) {
+				console.log(`   Files: ${affectedFiles.join(", ")}`);
+			}
+			console.log(`   "${content}"\n`);
+		}
+	} catch (error) {
+		if (agentMode) {
+			const { agentOutput } = await import("./output/agent.js");
+			agentOutput.error(`observe failed: ${String(error)}`);
+		} else {
+			console.error(`Error: ${String(error)}`);
+		}
+		process.exit(1);
+	} finally {
+		await indexer.close();
+	}
+}
+
+/**
  * Handle 'feedback' command - report search feedback for adaptive ranking
  *
  * Usage:
@@ -6237,6 +6410,7 @@ ${c.yellow}${c.bold}DEVELOPER EXPERIENCE${c.reset}
   ${c.green}install${c.reset} <tool>         Install integration ${c.dim}(opencode|claude-code)${c.reset}
   ${c.green}pack${c.reset} [path]            Pack codebase into a single file ${c.dim}(for AI analysis)${c.reset}
   ${c.green}docs${c.reset} <subcommand>     Manage library documentation ${c.dim}(status|fetch|refresh|providers|clear)${c.reset}
+  ${c.green}observe${c.reset} <text>         Record a session observation ${c.dim}(--file <path> --type <type>)${c.reset}
 
 ${c.yellow}${c.bold}CLOUD / TEAM${c.reset} ${c.dim}(requires team.orgSlug in claudemem.json)${c.reset}
   ${c.green}index --cloud${c.reset} [path]   Upload changed files to cloud API ${c.dim}(git-diff based)${c.reset}

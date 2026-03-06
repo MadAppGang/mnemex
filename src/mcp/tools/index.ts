@@ -18,5 +18,6 @@ export { registerEditTools } from "./edit.js";
 export { registerLspTools } from "./lsp.js";
 export { registerRenameTools } from "./rename.js";
 export { registerMemoryTools } from "./memory.js";
+export { registerObserveTools } from "./observe.js";
 export { registerThinkTools } from "./think.js";
 export type { ToolDeps } from "./deps.js";

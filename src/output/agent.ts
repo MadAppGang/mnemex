@@ -57,15 +57,21 @@ function searchResults(query: string, results: SearchResult[]): void {
 	console.log(`query=${query}`);
 	console.log(`result_count=${results.length}`);
 	for (const r of results) {
-		let line = `result file=${r.chunk.filePath} line=${r.chunk.startLine} end_line=${r.chunk.endLine} score=${r.score.toFixed(3)} type=${r.chunk.chunkType} name=${r.chunk.name ?? ""}`;
-		if (r.summary) {
-			// Extract first sentence of summary for agent context
-			const summaryMatch = r.summary.match(/Summary:\s*(.+?)(?:\n|$)/);
-			if (summaryMatch) {
-				line += ` summary=${summaryMatch[1].trim()}`;
+		if (r.documentType === "session_observation") {
+			const meta = r.observationMetadata || {};
+			const files = (meta.affectedFiles as string[]) || [];
+			console.log(`observation score=${r.score.toFixed(3)} type=${meta.observationType ?? "pattern"} confidence=${meta.confidence ?? 0.7} files=${files.join(",")} content=${r.chunk.content}`);
+		} else {
+			let line = `result file=${r.chunk.filePath} line=${r.chunk.startLine} end_line=${r.chunk.endLine} score=${r.score.toFixed(3)} type=${r.chunk.chunkType} name=${r.chunk.name ?? ""}`;
+			if (r.summary) {
+				// Extract first sentence of summary for agent context
+				const summaryMatch = r.summary.match(/Summary:\s*(.+?)(?:\n|$)/);
+				if (summaryMatch) {
+					line += ` summary=${summaryMatch[1].trim()}`;
+				}
 			}
+			console.log(line);
 		}
-		console.log(line);
 	}
 }
 
@@ -235,7 +241,7 @@ function benchmarkResults(
 			console.log(`benchmark model=${r.model} error=${r.error}`);
 		} else {
 			console.log(
-				`benchmark model=${r.model} speed_ms=${r.speedMs} cost=${r.cost?.toFixed(6) ?? "N/A"} dim=${r.dimension} ctx=${r.contextLength} ndcg=${r.ndcg.toFixed(1)} mrr=${r.mrr.toFixed(1)} hit_k5=${r.hitRate.k5.toFixed(1)}`,
+				`benchmark model=${r.model} speed_ms=${r.speedMs} cost=${r.model.startsWith("ollama/") || r.model.startsWith("lmstudio/") ? "FREE" : r.cost?.toFixed(6) ?? "N/A"} dim=${r.dimension} ctx=${r.contextLength} ndcg=${r.ndcg.toFixed(1)} mrr=${r.mrr.toFixed(1)} hit_k5=${r.hitRate.k5.toFixed(1)}`,
 			);
 		}
 	}

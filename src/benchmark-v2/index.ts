@@ -67,6 +67,7 @@ import { createIterativePhaseExecutor } from "./evaluators/iterative/index.js";
 import { createScoringPhaseExecutor } from "./scorers/index.js";
 import { createReportingPhaseExecutor } from "./reporters/index.js";
 import type { ILLMClient, IEmbeddingsClient } from "../types.js";
+import { withLatencyTracking } from "../core/embeddings.js";
 import type { PhaseResult } from "./pipeline/orchestrator.js";
 
 // ============================================================================
@@ -310,6 +311,8 @@ export interface BenchmarkOptions {
 	clients?: {
 		createLLMClient?: (modelId: string) => ILLMClient;
 		createEmbeddingsClient?: () => IEmbeddingsClient;
+		/** Factory for multiple embedding clients to compare (v3+) */
+		createEmbeddingClients?: () => IEmbeddingsClient[];
 	};
 	/** Progress callback */
 	onProgress?: (
@@ -546,7 +549,15 @@ export async function runBenchmarkV2(
 		}
 	}
 
-	const embeddingsClient = clients.createEmbeddingsClient?.();
+	const embeddingsClient = clients.createEmbeddingsClient
+		? withLatencyTracking(clients.createEmbeddingsClient())
+		: undefined;
+
+	// Build multiple embedding clients for comparison (v3+)
+	const embeddingClients: IEmbeddingsClient[] | undefined =
+		clients.createEmbeddingClients
+			? clients.createEmbeddingClients().map(withLatencyTracking)
+			: undefined;
 
 	// Create phase executors
 	const extractionExecutor = createExtractionPhaseExecutor(projectPath);
@@ -563,7 +574,7 @@ export async function runBenchmarkV2(
 		? createContrastivePhaseExecutor(firstJudgeClient, embeddingsClient)
 		: undefined;
 	const retrievalExecutor = embeddingsClient
-		? createRetrievalPhaseExecutor(embeddingsClient, firstJudgeClient)
+		? createRetrievalPhaseExecutor(embeddingsClient, firstJudgeClient, embeddingClients)
 		: undefined;
 	const downstreamExecutor = firstJudgeClient
 		? createDownstreamPhaseExecutor(firstJudgeClient)
@@ -936,6 +947,10 @@ export async function runBenchmarkCLI(args: string[]): Promise<void> {
 		args.includes("--no-self-eval") || args.includes("--no-self");
 	const noIterative =
 		args.includes("--no-iterative") || args.includes("--no-refine");
+	const embeddingModelsStr = getFlag("embedding-models");
+	const embeddingModelList = embeddingModelsStr
+		? embeddingModelsStr.split(",").map((s) => s.trim()).filter(Boolean)
+		: undefined;
 	const localParallelismStr = getFlag("local-parallelism") || getFlag("lp");
 	const localModelParallelism = localParallelismStr
 		? localParallelismStr === "all"
@@ -1060,6 +1075,9 @@ export async function runBenchmarkCLI(args: string[]): Promise<void> {
 	);
 	if (hasLocalModels) {
 		console.log(row(`${c.dim}Local ∥${c.reset}     ${c.bold}${localModelParallelism === 0 ? "all" : localModelParallelism}${c.reset}`));
+	}
+	if (embeddingModelList && embeddingModelList.length > 1) {
+		console.log(row(`${c.dim}Embed models${c.reset} ${c.bold}${embeddingModelList.join(", ")}${c.reset}`));
 	}
 	if (resumeRunId) {
 		console.log(row(`${c.dim}Resuming${c.reset}    ${c.green}${resumeRunId}${c.reset}`));
@@ -1438,9 +1456,17 @@ export async function runBenchmarkCLI(args: string[]): Promise<void> {
 					} as ILLMClient;
 				},
 				createEmbeddingsClient: () => {
-					// Create embeddings client for contrastive and retrieval evaluations
-					return createEmbeddingsClient();
+					// Create embeddings client using first model in list (or default)
+					const primaryModel = embeddingModelList?.[0];
+					return createEmbeddingsClient(primaryModel ? { model: primaryModel } : undefined);
 				},
+				createEmbeddingClients:
+					embeddingModelList && embeddingModelList.length > 1
+						? () =>
+								embeddingModelList.map((model) =>
+									createEmbeddingsClient({ model }),
+								)
+						: undefined,
 			},
 		});
 

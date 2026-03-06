@@ -49,6 +49,7 @@ import {
 	registerLspTools,
 	registerRenameTools,
 	registerMemoryTools,
+	registerObserveTools,
 	registerThinkTools,
 	type ToolDeps,
 } from "./tools/index.js";
@@ -268,6 +269,7 @@ export async function startMcpServer(): Promise<void> {
 	registerLspTools(server, deps);
 	registerRenameTools(server, deps);
 	registerMemoryTools(server, deps);
+	registerObserveTools(server, deps);
 	registerThinkTools(server);
 
 	// -------------------------------------------------------------------------

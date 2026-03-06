@@ -142,6 +142,8 @@ class SimpleVectorIndex {
 export interface RetrievalEvaluatorOptions {
 	embeddingsClient: IEmbeddingsClient;
 	kValues: number[];
+	/** Multiple embedding clients for comparison (v3+, optional) */
+	embeddingClients?: IEmbeddingsClient[];
 }
 
 export class RetrievalEvaluator extends BaseEvaluator<EvaluationResult[]> {
@@ -394,15 +396,39 @@ export interface AggregatedRetrievalMetrics {
 	winRate: number;
 	/** Average model rank (1 = best, lower is better) */
 	avgModelRank: number;
+	/** NDCG@K for each K in kValues */
+	ndcg: Record<number, number>;
 	byQueryType: Record<
 		QueryType,
 		{
 			precision: Record<number, number>;
 			mrr: number;
 			winRate: number;
+			ndcg: Record<number, number>;
 			count: number;
 		}
 	>;
+	/** Latency stats per embedding model (optional, populated in multi-model mode) */
+	latencyStats?: {
+		medianMs: number;
+		p95Ms: number;
+		throughputTokensPerSec?: number;
+	};
+}
+
+/**
+ * Compute NDCG@K for binary relevance (one correct item per query).
+ * DCG@K = 1/log2(rank + 1) if retrievedRank <= K, else 0.
+ * IDCG@K = 1/log2(2) = 1 (ideal: target at rank 1).
+ * NDCG@K = DCG@K / IDCG@K = DCG@K.
+ */
+function computeNdcgAtK(results: RetrievalResults[], k: number): number {
+	if (results.length === 0) return 0;
+	const sum = results.reduce((acc, r) => {
+		if (r.retrievedRank === null || r.retrievedRank > k) return acc;
+		return acc + 1 / Math.log2(r.retrievedRank + 1);
+	}, 0);
+	return sum / results.length;
 }
 
 export function aggregateRetrievalResults(
@@ -416,6 +442,7 @@ export function aggregateRetrievalResults(
 			mrr: 0,
 			winRate: 0,
 			avgModelRank: 0,
+			ndcg: Object.fromEntries(kValues.map((k) => [k, 0])),
 			byQueryType: {} as any,
 		};
 	}
@@ -446,6 +473,12 @@ export function aggregateRetrievalResults(
 				resultsWithModelRank.length
 			: 0;
 
+	// Calculate NDCG@K
+	const ndcg: Record<number, number> = {};
+	for (const k of kValues) {
+		ndcg[k] = computeNdcgAtK(results, k);
+	}
+
 	// Group by query type
 	const byType = new Map<QueryType, RetrievalResults[]>();
 	for (const result of results) {
@@ -459,9 +492,11 @@ export function aggregateRetrievalResults(
 	const byQueryType: AggregatedRetrievalMetrics["byQueryType"] = {} as any;
 	for (const [type, typeResults] of byType) {
 		const typePrecision: Record<number, number> = {};
+		const typeNdcg: Record<number, number> = {};
 		for (const k of kValues) {
 			const hits = typeResults.filter((r) => r.hitAtK[k]).length;
 			typePrecision[k] = hits / typeResults.length;
+			typeNdcg[k] = computeNdcgAtK(typeResults, k);
 		}
 
 		const typeResultsWithRank = typeResults.filter(
@@ -479,6 +514,7 @@ export function aggregateRetrievalResults(
 				typeResults.reduce((sum, r) => sum + r.reciprocalRank, 0) /
 				typeResults.length,
 			winRate: typeWinRate,
+			ndcg: typeNdcg,
 			count: typeResults.length,
 		};
 	}
@@ -489,6 +525,7 @@ export function aggregateRetrievalResults(
 		mrr,
 		winRate,
 		avgModelRank,
+		ndcg,
 		byQueryType,
 	};
 }
@@ -513,10 +550,15 @@ export function createRetrievalEvaluator(
  * Uses CROSS-MODEL COMPETITION: All models' summaries are indexed together.
  * For each query, we measure which model's summary ranks highest.
  * This provides much better model discrimination than per-model indexing.
+ *
+ * When multiple embeddingClients are provided (v3+), the phase runs once per
+ * embedding model, building a separate index for each and tagging results with
+ * the embedding model ID. This enables embedding model comparison.
  */
 export function createRetrievalPhaseExecutor(
 	embeddingsClient: IEmbeddingsClient,
 	llmClient?: ILLMClient,
+	embeddingClients?: IEmbeddingsClient[],
 ): (context: PhaseContext) => Promise<PhaseResult> {
 	return async (context: PhaseContext): Promise<PhaseResult> => {
 		const { db, run, config, stateMachine } = context;
@@ -542,28 +584,14 @@ export function createRetrievalPhaseExecutor(
 
 			const numModels = summariesByModel.size;
 
-			// Resume support: get existing evaluation results
-			const existingResults = db.getEvaluationResults(run.id, "retrieval");
-			const evaluatedRetrieval = new Set<string>(); // key: queryId (all models evaluated together)
-			// Count how many results exist per query - a query is complete when it has numModels results
-			const resultCountByQuery = new Map<string, number>();
-			for (const result of existingResults) {
-				if (result.retrievalResults) {
-					const queryId = result.retrievalResults.queryId;
-					resultCountByQuery.set(
-						queryId,
-						(resultCountByQuery.get(queryId) || 0) + 1,
-					);
-				}
-			}
-			// Mark queries as evaluated if they have results for all models
-			for (const [queryId, count] of resultCountByQuery) {
-				if (count >= numModels) {
-					evaluatedRetrieval.add(queryId);
-				}
-			}
+			// Determine which embedding clients to use
+			// Prefer the multi-client array when provided, fall back to single client
+			const clients: IEmbeddingsClient[] =
+				embeddingClients && embeddingClients.length > 0
+					? embeddingClients
+					: [embeddingsClient];
 
-			// Generate queries if needed
+			// Generate queries if needed (shared across all embedding models)
 			let queries = db.getQueries(run.id);
 			if (queries.length === 0) {
 				stateMachine.startPhase("evaluation:retrieval", 0);
@@ -587,66 +615,102 @@ export function createRetrievalPhaseExecutor(
 				db.insertQueries(run.id, queries);
 			}
 
-			// Total: each query produces one result per model
-			const totalItems = queries.length * numModels;
-			let completed = 0;
+			// Total: each query produces one result per model, per embedding client
+			const totalItems = queries.length * numModels * clients.length;
+			let totalCompleted = 0;
 
 			stateMachine.startPhase("evaluation:retrieval", totalItems);
 
-			// Create evaluator and build COMBINED index with ALL models' summaries
-			const evaluator = createRetrievalEvaluator({
-				embeddingsClient,
-				kValues: evalConfig.kValues,
-			});
+			// Run evaluation for each embedding client
+			for (const embClient of clients) {
+				const embModelId = embClient.getModel();
 
-			stateMachine.updateProgress(
-				"evaluation:retrieval",
-				0,
-				undefined,
-				`Building combined index (${summaries.length} summaries from ${numModels} models)...`,
-			);
-
-			// Build ONE index with ALL summaries - models compete!
-			// Pass progress callback for embedding visibility
-			await evaluator.buildCombinedIndex(summariesByModel, (msg) => {
-				stateMachine.updateProgress("evaluation:retrieval", 0, undefined, msg);
-			});
-
-			// Evaluate each query with cross-model competition
-			for (const query of queries) {
-				// Resume support: skip already-evaluated queries
-				if (evaluatedRetrieval.has(query.id)) {
-					completed += numModels;
-					continue;
+				// Resume support: per embedding model — check if results already exist for this model
+				const existingForModel = db.getEvaluationResults(
+					run.id,
+					"retrieval",
+					embModelId,
+				);
+				const evaluatedQueries = new Set<string>();
+				const resultCountByQuery = new Map<string, number>();
+				for (const result of existingForModel) {
+					if (result.retrievalResults) {
+						const queryId = result.retrievalResults.queryId;
+						resultCountByQuery.set(
+							queryId,
+							(resultCountByQuery.get(queryId) || 0) + 1,
+						);
+					}
+				}
+				// Mark queries as evaluated if they have results for all LLM models
+				for (const [queryId, count] of resultCountByQuery) {
+					if (count >= numModels) {
+						evaluatedQueries.add(queryId);
+					}
 				}
 
-				try {
-					// This returns results for ALL models in one call
-					const results = await evaluator.evaluateQueryCrossModel(
-						query,
-						summariesByModel,
-					);
+				stateMachine.updateProgress(
+					"evaluation:retrieval",
+					totalCompleted,
+					undefined,
+					`Building index for ${embModelId} (${summaries.length} summaries from ${numModels} models)...`,
+				);
 
-					for (const result of results) {
-						db.insertEvaluationResult(run.id, result);
-						completed++;
-					}
+				// Build combined index using this embedding client
+				const evaluator = createRetrievalEvaluator({
+					embeddingsClient: embClient,
+					kValues: evalConfig.kValues,
+				});
 
+				await evaluator.buildCombinedIndex(summariesByModel, (msg) => {
 					stateMachine.updateProgress(
 						"evaluation:retrieval",
-						completed,
-						query.id,
-						`Cross-model: ${completed}/${totalItems}`,
+						totalCompleted,
+						undefined,
+						msg,
 					);
-				} catch (error) {
-					// Skip query but count the models we would have evaluated
-					completed += numModels;
+				});
+
+				// Evaluate each query with cross-model competition
+				for (const query of queries) {
+					// Resume support: skip already-evaluated queries for this embedding model
+					if (evaluatedQueries.has(query.id)) {
+						totalCompleted += numModels;
+						continue;
+					}
+
+					try {
+						// This returns results for ALL LLM models in one call
+						const results = await evaluator.evaluateQueryCrossModel(
+							query,
+							summariesByModel,
+						);
+
+						for (const result of results) {
+							// Tag each result with the embedding model ID
+							if (result.retrievalResults) {
+								result.retrievalResults.embeddingModelId = embModelId;
+							}
+							db.insertEvaluationResult(run.id, result);
+							totalCompleted++;
+						}
+
+						stateMachine.updateProgress(
+							"evaluation:retrieval",
+							totalCompleted,
+							query.id,
+							`${embModelId}: ${totalCompleted}/${totalItems}`,
+						);
+					} catch {
+						// Skip query but count the models we would have evaluated
+						totalCompleted += numModels;
+					}
 				}
 			}
 
 			return {
 				success: true,
-				itemsProcessed: completed,
+				itemsProcessed: totalCompleted,
 			};
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);

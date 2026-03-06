@@ -176,6 +176,8 @@ export interface RetrievalResults {
 	isWinner?: boolean;
 	/** Total items in the combined index */
 	poolSize?: number;
+	/** Which embedding model was used for this retrieval (multi-model comparison) */
+	embeddingModelId?: string;
 }
 
 /** Downstream task types */
@@ -593,6 +595,8 @@ export interface EvaluationConfig {
 		queriesPerUnit: number;
 		kValues: number[];
 		embeddingModel?: string;
+		/** Multiple embedding models to compare (v3+) */
+		embeddingModels?: string[];
 	};
 	downstream: {
 		enabled: boolean;

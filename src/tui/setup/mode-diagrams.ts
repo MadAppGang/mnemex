@@ -135,20 +135,20 @@ const modelPanel = (
 // ════════════════════════════════════════════════════════════
 // MODE 1: LOCAL
 // ════════════════════════════════════════════════════════════
-function mode1() {
-  console.log();
-  console.log(`  ${bold('MODE 1: LOCAL')}  ${gray('everything on your machine')}`);
+function mode1(showTable = false) {
   console.log();
 
   rTop('Pipeline Flow');
   o('');
   o(gray('source files'));
+  o(`  ${cyan('│')}`);
   oT(`  ${cyan('▼')}  ${step('[parse]')}  ${gray('tree-sitter')}`, 5);
   o(`  ${cyan('│')}`);
 
   modelPanel('▓▓▓▓░░░░░', yellow, '[embed]', 'auto-detected', 30,
     'embed', 'nomic-embed-text or equiv',
     'model', 'GPU required');
+  o(`  ${cyan('│')}`);
   oT(`  ${cyan('│')}  ${step('[index]')}   ${gray('LanceDB local')}`, 5);
   oT(`  ${cyan('▼')}  ${step('[search]')}  ${gray('vector + BM25')}`, 15);
   o(`  ${cyan('│')}`);
@@ -166,6 +166,20 @@ function mode1() {
   o(`${green('●')} Privacy   ${bgreen(bold('AIR-GAPPED'))} ${gray('zero bytes leave machine')}`);
   o(`${green('●')} Requires  ${white('Apple Silicon / NVIDIA GPU')}  ${byellow('≥16 GB')}`);
 
+  if (showTable) {
+    rDiv('LATENCY');
+    o(gray('Step     Latency  Gauge      Note'));
+    o(gray('──────── ──────── ────────── ───────────────────'));
+    latRow('parse', 5, 'tree-sitter (CPU)');
+    latRow('embed', 30, 'embed model (GPU)');
+    latRow('index', 5, 'LanceDB (disk)');
+    latRow('search', 15, 'vector+BM25 (CPU)');
+    latRow('rerank', 100, 'LLM scoring (GPU)');
+    latRow('enrich', 500, 'LLM summary (opt)');
+    o(gray('──────────────────────────────────────────────'));
+    o(`${bold('total')}    ${pad(lat(630), 9)}all steps end-to-end`);
+  }
+
   rBot('Ollama / LM Studio');
   console.log();
 }
@@ -173,24 +187,23 @@ function mode1() {
 // ════════════════════════════════════════════════════════════
 // MODE 2: TEAM
 // ════════════════════════════════════════════════════════════
-function mode2() {
-  console.log();
-  console.log(`  ${bold('MODE 2: TEAM')}  ${gray('code stays local, search in cloud')}`);
+function mode2(showTable = false) {
   console.log();
 
   rTop('Pipeline Flow');
   o('');
   o(gray('source files'));
+  o(`  ${cyan('│')}`);
   oT(`  ${cyan('▼')}  ${step('[parse]')}  ${gray('tree-sitter')}`, 5);
   o(`  ${cyan('│')}`);
 
   modelPanel('▓▓▓▓░░░░░', yellow, '[embed]', 'auto-detected', 30,
     'embed', 'nomic-embed-text or equiv',
     'model', 'local GPU');
-
+  o('');
   oT(`  ${cyan('═══════')} ${bgGreen(' vectors → cloud ')} ${cyan('═══════')}`, 80);
   o(`  ${gray('~3KB per chunk, anonymous, no source code')}`);
-
+  o('');
   oT(`  ${cyan('▼')}  ${step('[index]')}   ${gray('pgvector (shared)')}`, 5);
   oT(`  ${cyan('▼')}  ${step('[search]')}  ${gray('vector + BM25')}`, 15);
   o(`  ${cyan('│')}`);
@@ -201,9 +214,9 @@ function mode2() {
   o(`${gray('│')} ${pad(magenta('Claude'), 9)} ${gray('│')}  ${gray('Claude Sonnet ~175B')}`);
   o(`${gray('│')} ${pad(magenta('Sonnet'), 9)} ${gray('│')}  ${gray('H100 server-side')}`);
   o(`${gray('└─────┬─────┘')}`);
-
+  o('');
   oT(`  ${cyan('═══════')} ${bgBlue(' results ← cloud ')} ${cyan('═══════')}`, 80);
-
+  o('');
   oT(`  ${cyan('▼')}  ${step('[enrich]')}  ${gray('code summaries')}`, 500);
   o(`  ${cyan('▼')}`);
   o(bgreen('▓▓▓ RESULTS ▓▓▓'));
@@ -214,6 +227,22 @@ function mode2() {
   o(`${green('●')} Privacy   ${bgreen(bold('CODE NEVER LEAVES'))} ${gray('only vectors')}`);
   o(`${green('●')} Requires  ${white('Apple Silicon / NVIDIA GPU')}  ${byellow('≥5 GB')}`);
 
+  if (showTable) {
+    rDiv('LATENCY');
+    o(gray('Step     Where  Latency  Gauge      Note'));
+    o(gray('──────── ────── ──────── ────────── ───────────────'));
+    latRowLoc('parse', tagLocal, 5, 'tree-sitter');
+    latRowLoc('embed', tagLocal, 30, 'embed (GPU)');
+    latRowLoc('net →', tagWire, 80, '~3KB vectors');
+    latRowLoc('index', tagCloud, 5, 'pgvector');
+    latRowLoc('search', tagCloud, 30, 'vector+BM25');
+    latRowLoc('rerank', tagCloud, 80, 'Claude ~175B');
+    latRowLoc('net ←', tagWire, 80, '~1KB results');
+    latRowLoc('enrich', tagLocal, 500, 'local LLM');
+    o(gray('──────────────────────────────────────────────'));
+    o(`${bold('total')}    ${pad(lat(810), 9)}all steps end-to-end`);
+  }
+
   rBot('Ollama + cloud server');
   console.log();
 }
@@ -221,9 +250,7 @@ function mode2() {
 // ════════════════════════════════════════════════════════════
 // MODE 3: CLOUD
 // ════════════════════════════════════════════════════════════
-function mode3() {
-  console.log();
-  console.log(`  ${bold('MODE 3: CLOUD')}  ${gray('everything runs server-side')}`);
+function mode3(showTable = false) {
   console.log();
 
   rTop('Pipeline Flow');
@@ -232,6 +259,7 @@ function mode3() {
 
   oT(`  ${cyan('═══════')} ${bgBlue(' source → cloud ')} ${cyan('════════')}`, 150);
   o(`  ${gray('~50KB-5MB upload')}`);
+  o('');
 
   oT(`  ${cyan('▼')}  ${step('[parse]')}  ${gray('tree-sitter')}`, 5);
   o(`  ${cyan('│')}`);
@@ -242,6 +270,7 @@ function mode3() {
   o(`${gray('│')} ${pad(magenta('OpenAI'), 9)} ${gray('│')}  ${gray('text-embedding-3-large')}`);
   o(`${gray('│')} ${pad(magenta('cluster'), 9)} ${gray('│')}  ${gray('~1-2B params, 3072-dim')}`);
   o(`${gray('└─────┬─────┘')}`);
+  o(`  ${cyan('│')}`);
   oT(`  ${cyan('│')}  ${step('[index]')}   ${gray('pgvector')}`, 5);
   oT(`  ${cyan('▼')}  ${step('[search]')}  ${gray('vector + BM25')}`, 30);
   o(`  ${cyan('│')}`);
@@ -264,6 +293,22 @@ function mode3() {
   o(`${bblue('●')} Runtime   ${white('Cloud server (mem.madappgang.com)')}`);
   o(`${bred('●')} Privacy   ${bred('Source code uploaded to cloud')}`);
   o(`${bblue('●')} Requires  ${bgreen('API key only — no GPU, no Ollama')}`);
+
+  if (showTable) {
+    rDiv('LATENCY');
+    o(gray('Step     Where  Latency  Gauge      Note'));
+    o(gray('──────── ────── ──────── ────────── ───────────────'));
+    latRowLoc('upload', tagWire, 150, '~50KB-5MB');
+    latRowLoc('parse', tagCloud, 5, 'tree-sitter');
+    latRowLoc('embed', tagCloud, 20, 'embed-3-lg');
+    latRowLoc('index', tagCloud, 5, 'pgvector');
+    latRowLoc('search', tagCloud, 30, 'vector+BM25');
+    latRowLoc('rerank', tagCloud, 80, 'Claude ~175B');
+    latRowLoc('enrich', tagCloud, 200, 'Claude LLM');
+    latRowLoc('net ←', tagWire, 50, '~1KB results');
+    o(gray('──────────────────────────────────────────────'));
+    o(`${bold('total')}    ${pad(lat(540), 9)}all steps end-to-end`);
+  }
 
   rBot('cloud server');
   console.log();
@@ -321,6 +366,7 @@ export async function selectMode(): Promise<'local' | 'shared' | 'full-cloud'> {
   const modes = ['local', 'shared', 'full-cloud'] as const;
   const renderers = [mode1, mode2, mode3];
   let selected = 0;
+  let showTable = true;
 
   const SB_W = 22; // sidebar total visible width
   const SB_IN = SB_W - 2; // inner content width
@@ -353,6 +399,7 @@ export async function selectMode(): Promise<'local' | 'shared' | 'full-cloud'> {
     sb.push(sbi(''));
     sb.push(`├${'─'.repeat(SB_IN)}┤`);
     sb.push(sbi(` ${gray('↑↓ 1/2/3')}  ${gray('select')}`));
+    sb.push(sbi(` ${gray('t')}        ${gray('table')}`));
     sb.push(sbi(` ${gray('Enter')}    ${gray('confirm')}`));
     sb.push(sbi(` ${gray('q')}        ${gray('quit')}`));
     sb.push(`╰${'─'.repeat(SB_IN)}╯`);
@@ -362,7 +409,7 @@ export async function selectMode(): Promise<'local' | 'shared' | 'full-cloud'> {
   const render = () => {
     process.stdout.write('\x1b[2J\x1b[H');
 
-    const dLines = captureLines(() => renderers[selected]());
+    const dLines = captureLines(() => renderers[selected](showTable));
     const sbLines = buildSidebar(selected);
 
     // Header
@@ -388,7 +435,8 @@ export async function selectMode(): Promise<'local' | 'shared' | 'full-cloud'> {
     render();
 
     const onData = (data: string) => {
-      if (data === '1') { selected = 0; render(); }
+      if (data === 't') { showTable = !showTable; render(); }
+      else if (data === '1') { selected = 0; render(); }
       else if (data === '2') { selected = 1; render(); }
       else if (data === '3') { selected = 2; render(); }
       else if (data === '\x1b[C' || data === '\x1b[B' || data === 'j' || data === 'l') {

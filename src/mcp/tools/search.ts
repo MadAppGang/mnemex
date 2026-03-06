@@ -154,16 +154,29 @@ export function registerSearchTools(server: McpServer, deps: ToolDeps): void {
 							})
 						: results;
 
-				const resultItems = filtered.map((r) => ({
-					file: r.chunk.filePath,
-					line: r.chunk.startLine,
-					lineEnd: r.chunk.endLine,
-					symbol: r.chunk.name ?? null,
-					snippet: r.chunk.content.slice(0, 800),
-					score: r.score,
-					vectorScore: r.vectorScore,
-					keywordScore: r.keywordScore,
-				}));
+				const resultItems = filtered.map((r) => {
+					if (r.documentType === "session_observation") {
+						const meta = r.observationMetadata || {};
+						return {
+							type: "observation" as const,
+							content: r.chunk.content,
+							observationType: meta.observationType ?? "pattern",
+							confidence: meta.confidence ?? 0.7,
+							affectedFiles: (meta.affectedFiles as string[]) || [],
+							score: r.score,
+						};
+					}
+					return {
+						file: r.chunk.filePath,
+						line: r.chunk.startLine,
+						lineEnd: r.chunk.endLine,
+						symbol: r.chunk.name ?? null,
+						snippet: r.chunk.content.slice(0, 800),
+						score: r.score,
+						vectorScore: r.vectorScore,
+						keywordScore: r.keywordScore,
+					};
+				});
 
 				return {
 					content: [

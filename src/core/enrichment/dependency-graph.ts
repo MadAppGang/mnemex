@@ -42,6 +42,9 @@ const DEFAULT_DEPENDENCIES: Record<DocumentType, DocumentType[]> = {
 	framework_doc: [],
 	best_practice: [],
 	api_reference: [],
+
+	// Session observations - no dependencies (written directly)
+	session_observation: [],
 };
 
 // ============================================================================

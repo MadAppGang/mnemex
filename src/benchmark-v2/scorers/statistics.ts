@@ -311,6 +311,73 @@ function normalCDF(x: number): number {
 }
 
 /**
+ * Paired Wilcoxon signed-rank test.
+ * Non-parametric alternative to paired t-test. Suitable for small n and
+ * non-normal distributions (MRR scores are bounded [0,1] and right-skewed).
+ *
+ * Uses normal approximation (valid for n >= 6 with continuity correction).
+ *
+ * @param group1 - Per-query scores for model A (e.g., reciprocalRank values)
+ * @param group2 - Per-query scores for model B (same queries, same order)
+ * @returns { wStatistic, pValue, effectSize }
+ */
+export function wilcoxonSignedRankTest(
+	group1: number[],
+	group2: number[],
+): { wStatistic: number; pValue: number; effectSize: number } {
+	if (group1.length !== group2.length || group1.length === 0) {
+		return { wStatistic: 0, pValue: 1, effectSize: 0 };
+	}
+
+	const differences = group1.map((v, i) => v - group2[i]);
+
+	// Remove zero differences
+	const nonZero = differences.filter((d) => d !== 0);
+	const n = nonZero.length;
+
+	if (n === 0) {
+		return { wStatistic: 0, pValue: 1, effectSize: 0 };
+	}
+
+	// Rank absolute differences
+	const absWithSign = nonZero.map((d) => ({ abs: Math.abs(d), sign: Math.sign(d) }));
+	absWithSign.sort((a, b) => a.abs - b.abs);
+
+	// Assign ranks (handle ties with average rank)
+	const ranks = new Array(n);
+	let i = 0;
+	while (i < n) {
+		let j = i;
+		while (j < n - 1 && absWithSign[j + 1].abs === absWithSign[j].abs) j++;
+		const avgRank = (i + j) / 2 + 1; // 1-indexed average rank
+		for (let k = i; k <= j; k++) ranks[k] = avgRank;
+		i = j + 1;
+	}
+
+	// W+ (sum of ranks for positive differences)
+	let wPlus = 0;
+	for (let k = 0; k < n; k++) {
+		if (absWithSign[k].sign > 0) wPlus += ranks[k];
+	}
+
+	const wStatistic = wPlus;
+
+	// Normal approximation (valid for n >= 10; acceptable for n >= 6 with continuity correction)
+	const meanW = (n * (n + 1)) / 4;
+	const varW = (n * (n + 1) * (2 * n + 1)) / 24;
+	const stdW = Math.sqrt(varW);
+
+	// Apply continuity correction
+	const z = stdW > 0 ? (Math.abs(wStatistic - meanW) - 0.5) / stdW : 0;
+	const pValue = 2 * (1 - normalCDF(z)); // Two-tailed
+
+	// Effect size: r = Z / sqrt(N)
+	const effectSize = n > 0 ? z / Math.sqrt(n) : 0;
+
+	return { wStatistic, pValue, effectSize };
+}
+
+/**
  * Calculate Cohen's Kappa for inter-rater agreement
  */
 export function calculateKappa(

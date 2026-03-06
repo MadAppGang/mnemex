@@ -88,6 +88,11 @@ const MODEL_CONTEXT_LENGTHS: Record<string, number> = {
 	"bge-m3": 8192,
 	"bge-large": 512,
 	embeddinggemma: 2048,
+	"all-minilm": 512,
+	"granite-embedding": 512,
+	"paraphrase-multilingual": 512,
+	"qwen3-embedding": 8192,
+	"nomic-embed-text-v2-moe": 8192,
 };
 
 // ============================================================================
@@ -110,6 +115,11 @@ interface OpenRouterEmbeddingResponse {
 
 interface OllamaEmbeddingResponse {
 	embedding: number[];
+}
+
+interface OllamaEmbedResponse {
+	model: string;
+	embeddings: number[][];
 }
 
 export interface EmbeddingsClientOptions {
@@ -274,8 +284,9 @@ export class OpenRouterEmbeddingsClient extends BaseEmbeddingsClient {
 
 	private async embedBatch(texts: string[]): Promise<EmbedResult> {
 		let lastError: Error | undefined;
+		const maxRetries = MAX_RETRIES + 3; // Extra retries for transient JSON parse errors
 
-		for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+		for (let attempt = 0; attempt < maxRetries; attempt++) {
 			try {
 				const response = await this.makeRequest(texts);
 
@@ -299,8 +310,10 @@ export class OpenRouterEmbeddingsClient extends BaseEmbeddingsClient {
 					throw lastError;
 				}
 
-				if (attempt < MAX_RETRIES - 1) {
-					const delay = BASE_RETRY_DELAY * Math.pow(2, attempt);
+				if (attempt < maxRetries - 1) {
+					const delay = lastError.message.includes("JSON")
+						? 2000 // Longer delay for parse errors
+						: BASE_RETRY_DELAY * Math.pow(2, attempt);
 					await this.sleep(delay);
 				}
 			}
@@ -335,7 +348,10 @@ export class OpenRouterEmbeddingsClient extends BaseEmbeddingsClient {
 				);
 			}
 
-			const data: OpenRouterEmbeddingResponse = await response.json();
+			// Use text() + JSON.parse() instead of json() for better error handling
+			// Bun's response.json() can corrupt data under concurrent fetch load
+			const responseText = await response.text();
+			const data: OpenRouterEmbeddingResponse = JSON.parse(responseText);
 			const sorted = [...data.data].sort((a, b) => a.index - b.index);
 
 			return {
@@ -373,19 +389,27 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 	): Promise<EmbedResult> {
 		if (texts.length === 0) return { embeddings: [] };
 
+		// Warmup: trigger model loading before processing the batch
+		await this.warmup();
+
+		// Pre-truncate texts client-side to avoid context length errors
+		// Ollama's truncate:true helps but some models still reject long inputs
+		const maxTokens = getModelContextLength(this.model);
+		const truncatedTexts = texts.map((t) => truncateToTokenLimit(t, maxTokens));
+
 		// Ollama processes one text at a time
 		const results: number[][] = [];
 		let failedCount = 0;
 		const warnings: string[] = [];
 
-		for (let i = 0; i < texts.length; i++) {
+		for (let i = 0; i < truncatedTexts.length; i++) {
 			// Report "starting to process" (1 item at a time)
 			if (onProgress) {
-				onProgress(i, texts.length, 1);
+				onProgress(i, truncatedTexts.length, 1);
 			}
 
 			try {
-				const embedding = await this.embedSingle(texts[i]);
+				const embedding = await this.embedSingle(truncatedTexts[i]);
 				results.push(embedding);
 
 				// Store dimension on first result
@@ -409,45 +433,116 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 
 		// Final progress report
 		if (onProgress) {
-			onProgress(texts.length, texts.length, 0);
+			onProgress(truncatedTexts.length, truncatedTexts.length, 0);
 		}
 
 		if (failedCount > 0) {
-			warnings.push(`${failedCount}/${texts.length} chunks skipped`);
+			warnings.push(`${failedCount}/${truncatedTexts.length} chunks skipped`);
 		}
 
 		// Ollama doesn't report cost (local model)
 		return { embeddings: results, warnings: warnings.length > 0 ? warnings : undefined };
 	}
 
+	private useNewApi = true;
+	private warmedUp = false;
+
+	/**
+	 * Warmup: trigger model loading and wait for valid response.
+	 * Ollama unloads the previous model and loads the new one on first request,
+	 * which can return garbage JSON during the transition.
+	 */
+	private async warmup(): Promise<void> {
+		if (this.warmedUp) return;
+
+		const maxWarmupAttempts = 8; // Up to ~20s total with backoff
+		for (let attempt = 0; attempt < maxWarmupAttempts; attempt++) {
+			try {
+				const controller = new AbortController();
+				const timeoutId = setTimeout(() => controller.abort(), 30000);
+				try {
+					const response = await fetch(`${this.endpoint}/api/embed`, {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ model: this.model, input: "test", truncate: true }),
+						signal: controller.signal,
+					});
+
+					if (response.status === 404) {
+						// /api/embed not available, use legacy
+						this.useNewApi = false;
+						this.warmedUp = true;
+						return;
+					}
+
+					if (response.ok) {
+						const data = await response.json() as OllamaEmbedResponse;
+						if (data.embeddings && Array.isArray(data.embeddings) && data.embeddings[0]?.length > 0) {
+							// Model loaded — let it stabilize in GPU memory before real requests
+							await this.sleep(500);
+							this.warmedUp = true;
+							return;
+						}
+					}
+				} finally {
+					clearTimeout(timeoutId);
+				}
+			} catch {
+				// JSON parse error or network issue — model still loading
+			}
+			// Wait with backoff: 2s, 3s, 4s, 5s...
+			await this.sleep(Math.min(2000 + 1000 * attempt, 5000));
+		}
+		// If warmup fails after all attempts, proceed anyway — embed will handle errors
+		this.warmedUp = true;
+	}
+
 	private async embedSingle(text: string): Promise<number[]> {
 		let lastError: Error | undefined;
+		// More retries for model-loading race conditions
+		const maxRetries = MAX_RETRIES + 3;
 
-		for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+		for (let attempt = 0; attempt < maxRetries; attempt++) {
 			try {
 				const controller = new AbortController();
 				const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
 				try {
-					const response = await fetch(`${this.endpoint}/api/embeddings`, {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({
-							model: this.model,
-							prompt: text,
-						}),
-						signal: controller.signal,
-					});
+					if (this.useNewApi) {
+						// Try newer /api/embed endpoint (supports truncate)
+						const response = await fetch(`${this.endpoint}/api/embed`, {
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({
+								model: this.model,
+								input: text,
+								truncate: true,
+							}),
+							signal: controller.signal,
+						});
 
-					if (!response.ok) {
-						const errorText = await response.text();
-						throw new Error(
-							`Ollama API error: ${response.status} - ${errorText}`,
-						);
+						if (!response.ok) {
+							const errorText = await response.text();
+							// Only fall back to legacy on 404 (endpoint truly not available)
+							if (response.status === 404) {
+								this.useNewApi = false;
+								return this.embedSingleLegacy(text);
+							}
+							throw new Error(
+								`Ollama API error: ${response.status} - ${errorText}`,
+							);
+						}
+
+						const responseText = await response.text();
+						const data = JSON.parse(responseText) as OllamaEmbedResponse;
+						if (!data.embeddings || !Array.isArray(data.embeddings) || data.embeddings[0]?.length === 0) {
+							// Transient bad response (model still loading) — retry, don't permanently fall back
+							throw new Error("Ollama returned empty/invalid embeddings (model may still be loading)");
+						}
+						return data.embeddings[0];
+					} else {
+						return await this.embedSingleLegacy(text);
 					}
-
-					const data: OllamaEmbeddingResponse = await response.json();
-					return data.embedding;
 				} finally {
 					clearTimeout(timeoutId);
 				}
@@ -461,14 +556,48 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 					);
 				}
 
-				if (attempt < MAX_RETRIES - 1) {
-					const delay = BASE_RETRY_DELAY * Math.pow(2, attempt);
+				// JSON parse errors during model loading are transient — retry with delay
+				// Only fall back to legacy on persistent 404 (handled above)
+				if (attempt < maxRetries - 1) {
+					const delay = lastError.message.includes("JSON Parse error")
+						? 3000 // Longer delay for model-loading race condition
+						: BASE_RETRY_DELAY * Math.pow(2, attempt);
 					await this.sleep(delay);
 				}
 			}
 		}
 
 		throw lastError || new Error("Failed to generate embeddings");
+	}
+
+	private async embedSingleLegacy(text: string): Promise<number[]> {
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+		try {
+			const response = await fetch(`${this.endpoint}/api/embeddings`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					model: this.model,
+					prompt: text,
+				}),
+				signal: controller.signal,
+			});
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				throw new Error(
+					`Ollama API error: ${response.status} - ${errorText}`,
+				);
+			}
+
+			const responseText = await response.text();
+			const data: OllamaEmbeddingResponse = JSON.parse(responseText);
+			return data.embedding;
+		} finally {
+			clearTimeout(timeoutId);
+		}
 	}
 }
 
@@ -478,6 +607,7 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 
 export class LocalEmbeddingsClient extends BaseEmbeddingsClient {
 	private endpoint: string;
+	private warmedUp = false;
 	// Smaller batch size for local models to show progress more frequently
 	private static readonly LOCAL_BATCH_SIZE = 10;
 
@@ -489,11 +619,51 @@ export class LocalEmbeddingsClient extends BaseEmbeddingsClient {
 		this.endpoint = options.endpoint || DEFAULT_LOCAL_ENDPOINT;
 	}
 
+	/**
+	 * Warmup: trigger model loading and wait for valid response.
+	 * LM Studio may need time to load a model when switching between them.
+	 */
+	private async warmup(): Promise<void> {
+		if (this.warmedUp) return;
+
+		const maxWarmupAttempts = 8;
+		for (let attempt = 0; attempt < maxWarmupAttempts; attempt++) {
+			try {
+				const controller = new AbortController();
+				const timeoutId = setTimeout(() => controller.abort(), 30000);
+				try {
+					const response = await fetch(`${this.endpoint}/embeddings`, {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ model: this.model, input: "test" }),
+						signal: controller.signal,
+					});
+					if (response.ok) {
+						const data: OpenRouterEmbeddingResponse = await response.json();
+						if (data.data?.[0]?.embedding?.length > 0) {
+							this.warmedUp = true;
+							return;
+						}
+					}
+				} finally {
+					clearTimeout(timeoutId);
+				}
+			} catch {
+				// Model still loading — retry
+			}
+			await this.sleep(Math.min(1000 * (attempt + 1), 3000));
+		}
+		this.warmedUp = true;
+	}
+
 	async embed(
 		texts: string[],
 		onProgress?: EmbeddingProgressCallback,
 	): Promise<EmbedResult> {
 		if (texts.length === 0) return { embeddings: [] };
+
+		// Warmup: trigger model loading before processing the batch
+		await this.warmup();
 
 		// Split into batches for progress reporting
 		const batches: string[][] = [];
@@ -534,8 +704,10 @@ export class LocalEmbeddingsClient extends BaseEmbeddingsClient {
 	 */
 	private async embedBatch(texts: string[]): Promise<number[][]> {
 		let lastError: Error | undefined;
+		// More retries for model-loading race conditions
+		const maxRetries = MAX_RETRIES + 3;
 
-		for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+		for (let attempt = 0; attempt < maxRetries; attempt++) {
 			try {
 				const controller = new AbortController();
 				const timeoutId = setTimeout(() => controller.abort(), this.timeout);
@@ -559,7 +731,8 @@ export class LocalEmbeddingsClient extends BaseEmbeddingsClient {
 						);
 					}
 
-					const data: OpenRouterEmbeddingResponse = await response.json();
+					const responseText = await response.text();
+					const data: OpenRouterEmbeddingResponse = JSON.parse(responseText);
 					const sorted = [...data.data].sort((a, b) => a.index - b.index);
 					const embeddings = sorted.map((item) => item.embedding);
 
@@ -580,8 +753,10 @@ export class LocalEmbeddingsClient extends BaseEmbeddingsClient {
 					);
 				}
 
-				if (attempt < MAX_RETRIES - 1) {
-					const delay = BASE_RETRY_DELAY * Math.pow(2, attempt);
+				if (attempt < maxRetries - 1) {
+					const delay = lastError.message.includes("JSON Parse error")
+						? 3000 // Longer delay for model-loading race condition
+						: BASE_RETRY_DELAY * Math.pow(2, attempt);
 					await this.sleep(delay);
 				}
 			}
@@ -711,8 +886,9 @@ export class VoyageEmbeddingsClient extends BaseEmbeddingsClient {
 
 	private async embedBatch(texts: string[]): Promise<EmbedResult> {
 		let lastError: Error | undefined;
+		const maxRetries = MAX_RETRIES + 3;
 
-		for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+		for (let attempt = 0; attempt < maxRetries; attempt++) {
 			try {
 				const controller = new AbortController();
 				const timeoutId = setTimeout(() => controller.abort(), this.timeout);
@@ -738,7 +914,8 @@ export class VoyageEmbeddingsClient extends BaseEmbeddingsClient {
 						);
 					}
 
-					const data = (await response.json()) as {
+					const responseText = await response.text();
+					const data = JSON.parse(responseText) as {
 						data: Array<{ embedding: number[]; index: number }>;
 						usage?: { total_tokens: number };
 					};
@@ -768,8 +945,10 @@ export class VoyageEmbeddingsClient extends BaseEmbeddingsClient {
 					throw lastError;
 				}
 
-				if (attempt < MAX_RETRIES - 1) {
-					const delay = BASE_RETRY_DELAY * Math.pow(2, attempt);
+				if (attempt < maxRetries - 1) {
+					const delay = lastError.message.includes("JSON")
+						? 2000
+						: BASE_RETRY_DELAY * Math.pow(2, attempt);
 					await this.sleep(delay);
 				}
 			}
@@ -833,6 +1012,12 @@ export function createEmbeddingsClient(
 	} else if (isOllamaModel(model)) {
 		provider = "ollama";
 		model = extractModelName(model); // Strip "ollama/" prefix
+	} else if (model.startsWith("lmstudio/")) {
+		provider = "lmstudio";
+		model = model.slice("lmstudio/".length);
+	} else if (model.includes("/")) {
+		// Models with provider/name format (e.g. openai/text-embedding-3-small) -> OpenRouter
+		provider = "openrouter";
 	} else if (!provider) {
 		// Fall back to openrouter only if no provider detected
 		provider = "openrouter";
@@ -880,6 +1065,32 @@ export function createEmbeddingsClient(
 }
 
 // ============================================================================
+// Latency Tracking Wrapper
+// ============================================================================
+
+/**
+ * Wrap an embeddings client to add latency tracking to EmbedResult.
+ * Non-invasive: wraps the public embed() method without modifying concrete classes.
+ */
+export function withLatencyTracking(client: IEmbeddingsClient): IEmbeddingsClient {
+	const originalEmbed = client.embed.bind(client);
+	client.embed = async (
+		texts: string[],
+		onProgress?: EmbeddingProgressCallback,
+	): Promise<EmbedResult> => {
+		const startMs = Date.now();
+		const result = await originalEmbed(texts, onProgress);
+		const latencyMs = Date.now() - startMs;
+		const throughputTokensPerSec =
+			result.totalTokens && latencyMs > 0
+				? Math.round((result.totalTokens / latencyMs) * 1000)
+				: undefined;
+		return { ...result, latencyMs, throughputTokensPerSec };
+	};
+	return client;
+}
+
+// ============================================================================
 // Utility Functions
 // ============================================================================
 
@@ -924,6 +1135,11 @@ export function getModelContextLength(modelId: string): number {
 	const modelName = modelId.includes("/") ? modelId.split("/").pop()! : modelId;
 	if (MODEL_CONTEXT_LENGTHS[modelName]) {
 		return MODEL_CONTEXT_LENGTHS[modelName];
+	}
+	// Strip Ollama size/tag suffix (e.g., "bge-large:335m" -> "bge-large", "all-minilm:22m" -> "all-minilm")
+	const baseName = modelName.includes(":") ? modelName.split(":")[0] : modelName;
+	if (baseName !== modelName && MODEL_CONTEXT_LENGTHS[baseName]) {
+		return MODEL_CONTEXT_LENGTHS[baseName];
 	}
 	// Default context length
 	return 8192;

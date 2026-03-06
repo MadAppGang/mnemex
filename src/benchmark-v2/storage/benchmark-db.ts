@@ -73,6 +73,15 @@ export class BenchmarkDatabase {
 			);
 			const schema = readFileSync(schemaPath, "utf-8");
 			this.db.exec(schema);
+
+			// Migrate existing databases: add embedding_model column if missing
+			try {
+				this.db.exec(
+					"ALTER TABLE evaluation_results ADD COLUMN embedding_model TEXT",
+				);
+			} catch {
+				// Column already exists - safe to ignore
+			}
 		} catch (error) {
 			throw new DatabaseError(
 				"initialize",
@@ -477,8 +486,8 @@ export class BenchmarkDatabase {
 	insertEvaluationResult(runId: string, result: EvaluationResult): void {
 		const stmt = this.db.prepare(`
 			INSERT INTO evaluation_results (
-				id, run_id, summary_id, evaluation_type, results_json, evaluated_at
-			) VALUES (?, ?, ?, ?, ?, ?)
+				id, run_id, summary_id, evaluation_type, results_json, evaluated_at, embedding_model
+			) VALUES (?, ?, ?, ?, ?, ?, ?)
 		`);
 
 		// Build results JSON based on evaluation type
@@ -506,6 +515,12 @@ export class BenchmarkDatabase {
 				resultsJson = "{}";
 		}
 
+		// Extract embedding model from retrieval/contrastive results if present
+		const embeddingModel =
+			result.retrievalResults?.embeddingModelId ??
+			result.contrastiveResults?.embeddingModel ??
+			null;
+
 		stmt.run(
 			result.id,
 			runId,
@@ -513,12 +528,14 @@ export class BenchmarkDatabase {
 			result.evaluationType,
 			resultsJson,
 			result.evaluatedAt,
+			embeddingModel,
 		);
 	}
 
 	getEvaluationResults(
 		runId: string,
 		evaluationType?: string,
+		embeddingModel?: string,
 	): EvaluationResult[] {
 		let query = "SELECT * FROM evaluation_results WHERE run_id = ?";
 		const params: string[] = [runId];
@@ -526,6 +543,11 @@ export class BenchmarkDatabase {
 		if (evaluationType) {
 			query += " AND evaluation_type = ?";
 			params.push(evaluationType);
+		}
+
+		if (embeddingModel !== undefined) {
+			query += " AND embedding_model = ?";
+			params.push(embeddingModel);
 		}
 
 		const stmt = this.db.prepare(query);

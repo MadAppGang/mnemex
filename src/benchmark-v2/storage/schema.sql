@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS evaluation_results (
         CHECK (evaluation_type IN ('iterative', 'judge', 'contrastive', 'retrieval', 'downstream', 'self')),
     results_json TEXT NOT NULL,
     evaluated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    embedding_model TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
