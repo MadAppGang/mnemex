@@ -1,10 +1,11 @@
 {
-	"name": "claude-codemem",
-	"version": "0.23.0",
+	"name": "mnemex",
+	"version": "0.24.0",
 	"description": "Local code indexing tool with semantic search for Claude Code - MCP server and CLI",
 	"type": "module",
 	"main": "./dist/index.js",
 	"bin": {
+		"mnemex": "dist/index.js",
 		"claudemem": "dist/index.js"
 	},
 	"scripts": {
@@ -12,11 +13,11 @@
 		"dev:mcp": "bun run src/index.ts --mcp",
 		"download-grammars": "bun run scripts/download-grammars.ts",
 		"build": "rm -rf dist && bun run download-grammars && bun build src/index.ts --outdir dist --target bun --external @lancedb/lancedb --external better-sqlite3 && cp src/benchmark-v2/storage/schema.sql dist/ && chmod +x dist/index.js",
-		"build:binary": "bun run download-grammars && bun build src/index.ts --compile --external @opentui/core --external @opentui/react --outfile claudemem",
-		"build:binary:linux": "bun run download-grammars && bun build src/index.ts --compile --target=bun-linux-x64 --external @opentui/core --external @opentui/react --outfile claudemem-linux-x64",
-		"build:binary:mac": "bun run download-grammars && bun build src/index.ts --compile --target=bun-darwin-arm64 --external @opentui/core --external @opentui/react --outfile claudemem-darwin-arm64",
+		"build:binary": "bun run download-grammars && bun build src/index.ts --compile --external @opentui/core --external @opentui/react --outfile mnemex",
+		"build:binary:linux": "bun run download-grammars && bun build src/index.ts --compile --target=bun-linux-x64 --external @opentui/core --external @opentui/react --outfile mnemex-linux-x64",
+		"build:binary:mac": "bun run download-grammars && bun build src/index.ts --compile --target=bun-darwin-arm64 --external @opentui/core --external @opentui/react --outfile mnemex-darwin-arm64",
 		"link": "npm link",
-		"unlink": "npm unlink -g claudemem",
+		"unlink": "npm unlink -g mnemex",
 		"install-global": "bun run build && npm link",
 		"postinstall": "node scripts/postinstall.cjs || true",
 		"typecheck": "tsc --noEmit",

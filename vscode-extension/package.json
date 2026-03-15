@@ -1,6 +1,6 @@
 {
-  "name": "claude-codemem",
-  "displayName": "claudemem",
+  "name": "mnemex",
+  "displayName": "mnemex",
   "description": "Semantic code search and symbol navigation for your codebase. AST-aware chunking, vector embeddings, and PageRank symbol graph.",
   "version": "0.1.0",
   "publisher": "MadAppGang",

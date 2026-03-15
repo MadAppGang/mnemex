@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/claude-codemem"><img src="https://img.shields.io/npm/v/claude-codemem.svg" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/mnemex"><img src="https://img.shields.io/npm/v/mnemex.svg" alt="npm version"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://github.com/MadAppGang/claudemem"><img src="https://img.shields.io/github/stars/MadAppGang/claudemem?style=social" alt="GitHub stars"></a>
 </p>
@@ -16,10 +16,10 @@ Local semantic code search for Claude Code. Index your codebase once, search it 
 
 ```bash
 # npm
-npm install -g claude-codemem
+npm install -g mnemex
 
 # homebrew (macOS)
-brew tap MadAppGang/claude-mem && brew install --cask claudemem
+brew tap MadAppGang/tap && brew install mnemex
 
 # or just curl it
 curl -fsSL https://raw.githubusercontent.com/MadAppGang/claudemem/main/install.sh | bash
@@ -434,4 +434,4 @@ MIT
 
 ---
 
-[GitHub](https://github.com/MadAppGang/claudemem) · [npm](https://www.npmjs.com/package/claude-codemem) · [OpenRouter](https://openrouter.ai)
+[GitHub](https://github.com/MadAppGang/claudemem) · [npm](https://www.npmjs.com/package/mnemex) · [OpenRouter](https://openrouter.ai)

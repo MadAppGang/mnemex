@@ -41,7 +41,7 @@ export class UpdateManager {
 
 	constructor(
 		currentVersion: string,
-		private packageName = "claude-codemem",
+		private packageName = "mnemex",
 	) {
 		this.currentVersion = currentVersion;
 	}
@@ -109,24 +109,25 @@ export class UpdateManager {
 	}
 
 	/**
-	 * Detect how the package was installed (bun or npm)
+	 * Detect how the package was installed (brew, bun, or npm)
 	 */
-	private detectPackageManager(): "bun" | "npm" {
-		// Check if running under Bun runtime
-		const isBunRuntime =
-			typeof (globalThis as { Bun?: unknown }).Bun !== "undefined";
-
-		// Check process.execPath for bun
-		const execPath = process.execPath.toLowerCase();
-		const isBunExec = execPath.includes("bun");
-
-		// Check if the script path suggests bun installation
+	private detectPackageManager(): "brew" | "bun" | "npm" {
 		const scriptPath = process.argv[1] || "";
-		const isBunInstall =
-			scriptPath.includes(".bun") || scriptPath.includes("/bun/");
 
-		// If any indicator suggests bun, use bun
-		if (isBunRuntime || isBunExec || isBunInstall) {
+		// Priority 1: Homebrew
+		if (scriptPath.includes("/opt/homebrew/") || scriptPath.includes("/usr/local/Cellar/")) {
+			return "brew";
+		}
+
+		// Priority 2: Bun
+		if (scriptPath.includes("/.bun/") || scriptPath.includes("/bun/")) {
+			return "bun";
+		}
+
+		// Check Bun runtime as fallback
+		const isBunRuntime = typeof (globalThis as { Bun?: unknown }).Bun !== "undefined";
+		const isBunExec = process.execPath.toLowerCase().includes("bun");
+		if (isBunRuntime || isBunExec) {
 			return "bun";
 		}
 
@@ -142,8 +143,13 @@ export class UpdateManager {
 
 		// Detect package manager based on installation method
 		const packageManager = this.detectPackageManager();
-		const subcommand = packageManager === "bun" ? "add" : "install";
-		const args = [subcommand, "-g", `${this.packageName}@latest`];
+		let args: string[];
+		if (packageManager === "brew") {
+			args = ["upgrade", "mnemex"];
+		} else {
+			const subcommand = packageManager === "bun" ? "add" : "install";
+			args = [subcommand, "-g", `${this.packageName}@latest`];
+		}
 
 		if (options.verbose) {
 			console.log(`Running: ${packageManager} ${args.join(" ")}`);

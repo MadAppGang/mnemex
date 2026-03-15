@@ -10,7 +10,7 @@ export interface RegistryPackageInfo {
 
 /**
  * Fetch latest version from npm registry
- * @param packageName Package name (e.g., "claude-codemem")
+ * @param packageName Package name (e.g., "mnemex")
  * @param timeout Timeout in milliseconds (default: 5000)
  */
 export async function fetchLatestVersion(

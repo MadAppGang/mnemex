@@ -23,10 +23,10 @@ interface Manifest {
 }
 
 const PLATFORM_MAP: Record<string, string> = {
-	"claudemem-darwin-arm64": "darwin-arm64",
-	"claudemem-darwin-x64": "darwin-x64",
-	"claudemem-linux-x64": "linux-x64",
-	"claudemem-linux-arm64": "linux-arm64",
+	"mnemex-darwin-arm64": "darwin-arm64",
+	"mnemex-darwin-x64": "darwin-x64",
+	"mnemex-linux-x64": "linux-x64",
+	"mnemex-linux-arm64": "linux-arm64",
 };
 
 function computeSha256(filePath: string): string {

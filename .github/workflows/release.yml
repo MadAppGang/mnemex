@@ -16,16 +16,16 @@ jobs:
         include:
           - os: macos-latest
             target: bun-darwin-arm64
-            artifact: claudemem-darwin-arm64
+            artifact: mnemex-darwin-arm64
           - os: macos-latest
             target: bun-darwin-x64
-            artifact: claudemem-darwin-x64
+            artifact: mnemex-darwin-x64
           - os: ubuntu-latest
             target: bun-linux-x64
-            artifact: claudemem-linux-x64
+            artifact: mnemex-linux-x64
           - os: ubuntu-24.04-arm
             target: bun-linux-arm64
-            artifact: claudemem-linux-arm64
+            artifact: mnemex-linux-arm64
 
     runs-on: ${{ matrix.os }}
 
@@ -93,7 +93,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release/claudemem-*
+            release/mnemex-*
             release/manifest.json
             release/checksums.txt
           generate_release_notes: true
@@ -104,7 +104,7 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     # OIDC trusted publishing - no NPM_TOKEN needed!
-    # Configure at: https://www.npmjs.com/package/claudemem/access (Trusted Publishers)
+    # Configure at: https://www.npmjs.com/package/mnemex/access (Trusted Publishers)
 
     steps:
       - uses: actions/checkout@v4
@@ -162,49 +162,46 @@ jobs:
       - name: Update Homebrew tap
         uses: actions/checkout@v4
         with:
-          repository: MadAppGang/homebrew-claude-mem
+          repository: MadAppGang/tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: tap
 
       - name: Update formula
         run: |
-          cat > tap/Casks/claudemem.rb << 'EOF'
-          cask "claudemem" do
+          mkdir -p tap/Formula
+          cat > tap/Formula/mnemex.rb << 'FORMULA'
+          class Mnemex < Formula
+            desc "Local code indexing with semantic search for Claude Code"
+            homepage "https://github.com/MadAppGang/claudemem"
             version "${{ steps.release.outputs.version }}"
+            license "MIT"
 
             on_arm do
-              url "https://github.com/MadAppGang/claudemem/releases/download/v#{version}/claudemem-darwin-arm64"
+              url "https://github.com/MadAppGang/claudemem/releases/download/v#{version}/mnemex-darwin-arm64"
               sha256 "${{ steps.release.outputs.arm64_sha }}"
             end
 
             on_intel do
-              url "https://github.com/MadAppGang/claudemem/releases/download/v#{version}/claudemem-darwin-x64"
+              url "https://github.com/MadAppGang/claudemem/releases/download/v#{version}/mnemex-darwin-x64"
               sha256 "${{ steps.release.outputs.x64_sha }}"
             end
 
-            name "claudemem"
-            desc "Local code indexing with semantic search for Claude Code"
-            homepage "https://github.com/MadAppGang/claudemem"
-
-            binary "claudemem-darwin-#{Hardware::CPU.arch == :arm64 ? 'arm64' : 'x64'}", target: "claudemem"
-
-            livecheck do
-              url :url
-              strategy :github_latest
+            def install
+              binary = "mnemex-darwin-#{Hardware::CPU.arch == :arm64 ? "arm64" : "x64"}"
+              bin.install binary => "mnemex"
             end
 
-            zap trash: [
-              "~/.claudemem",
-              "~/.config/claudemem",
-            ]
+            test do
+              assert_match "mnemex v#{version}", shell_output("#{bin}/mnemex --version")
+            end
           end
-          EOF
+          FORMULA
 
       - name: Push to tap
         run: |
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Casks/claudemem.rb
-          git commit -m "Update claudemem to v${{ steps.release.outputs.version }}"
+          git add Formula/mnemex.rb
+          git commit -m "Update mnemex to v${{ steps.release.outputs.version }}"
           git push

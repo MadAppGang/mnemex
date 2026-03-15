@@ -1,11 +1,11 @@
 #!/bin/bash
-# claudemem installer
+# mnemex installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/MadAppGang/claudemem/main/install.sh | bash
 
 set -e
 
 REPO="MadAppGang/claudemem"
-INSTALL_DIR="${CLAUDE_MEM_INSTALL_DIR:-$HOME/.local/bin}"
+INSTALL_DIR="${MNEMEX_INSTALL_DIR:-$HOME/.local/bin}"
 
 # Colors
 RED='\033[0;31m'
@@ -57,7 +57,7 @@ verify_checksum() {
     local checksums_url="https://github.com/${REPO}/releases/download/v${version}/checksums.txt"
     local expected actual
 
-    expected=$(curl -fsSL "$checksums_url" 2>/dev/null | grep "claudemem-${platform}" | cut -d' ' -f1)
+    expected=$(curl -fsSL "$checksums_url" 2>/dev/null | grep "mnemex-${platform}" | cut -d' ' -f1)
 
     if [ -z "$expected" ]; then
         warn "Checksums not available, skipping verification"
@@ -88,7 +88,7 @@ install() {
     [ -z "$version" ] && error "Could not determine latest version"
     info "Version: ${CYAN}v${version}${NC}"
 
-    download_url="https://github.com/${REPO}/releases/download/v${version}/claudemem-${platform}"
+    download_url="https://github.com/${REPO}/releases/download/v${version}/mnemex-${platform}"
     info "Downloading: ${download_url}"
 
     tmp_file=$(mktemp)
@@ -98,9 +98,9 @@ install() {
 
     mkdir -p "$INSTALL_DIR"
     chmod +x "$tmp_file"
-    mv "$tmp_file" "${INSTALL_DIR}/claudemem"
+    mv "$tmp_file" "${INSTALL_DIR}/mnemex"
 
-    success "Installed to ${INSTALL_DIR}/claudemem"
+    success "Installed to ${INSTALL_DIR}/mnemex"
 
     if [[ ":$PATH:" != *":${INSTALL_DIR}:"* ]]; then
         warn "${INSTALL_DIR} is not in PATH"
@@ -113,7 +113,7 @@ install() {
 main() {
     echo ""
     echo -e "${CYAN}╔════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}  ${GREEN}claudemem${NC} installer                 ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}  ${GREEN}mnemex${NC} installer                    ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}  Local code indexing for Claude        ${CYAN}║${NC}"
     echo -e "${CYAN}╚════════════════════════════════════════╝${NC}"
     echo ""
@@ -126,12 +126,12 @@ main() {
     success "Installation complete!"
     echo ""
     echo "Quick start:"
-    echo "  ${CYAN}claudemem init${NC}            # Set up API key"
-    echo "  ${CYAN}claudemem index${NC}           # Index your codebase"
-    echo "  ${CYAN}claudemem search \"...\"${NC}   # Search code"
+    echo "  ${CYAN}mnemex init${NC}            # Set up API key"
+    echo "  ${CYAN}mnemex index${NC}           # Index your codebase"
+    echo "  ${CYAN}mnemex search \"...\"${NC}   # Search code"
     echo ""
     echo "MCP server (Claude Code integration):"
-    echo "  ${CYAN}claudemem --mcp${NC}"
+    echo "  ${CYAN}mnemex --mcp${NC}"
     echo ""
 }
 
