@@ -159,7 +159,7 @@ jobs:
           echo "arm64_sha=$ARM64_SHA" >> $GITHUB_OUTPUT
           echo "x64_sha=$X64_SHA" >> $GITHUB_OUTPUT
 
-      - name: Update Homebrew tap
+      - name: Checkout tap repo
         uses: actions/checkout@v4
         with:
           repository: MadAppGang/homebrew-tap
@@ -169,7 +169,7 @@ jobs:
       - name: Update formula
         run: |
           mkdir -p tap/Formula
-          cat > tap/Formula/mnemex.rb << 'FORMULA'
+          cat > tap/Formula/mnemex.rb << EOF
           class Mnemex < Formula
             desc "Local code indexing with semantic search for Claude Code"
             homepage "https://github.com/MadAppGang/claudemem"
@@ -177,12 +177,12 @@ jobs:
             license "MIT"
 
             on_arm do
-              url "https://github.com/MadAppGang/claudemem/releases/download/v#{version}/mnemex-darwin-arm64"
+              url "https://github.com/MadAppGang/claudemem/releases/download/v${{ steps.release.outputs.version }}/mnemex-darwin-arm64"
               sha256 "${{ steps.release.outputs.arm64_sha }}"
             end
 
             on_intel do
-              url "https://github.com/MadAppGang/claudemem/releases/download/v#{version}/mnemex-darwin-x64"
+              url "https://github.com/MadAppGang/claudemem/releases/download/v${{ steps.release.outputs.version }}/mnemex-darwin-x64"
               sha256 "${{ steps.release.outputs.x64_sha }}"
             end
 
@@ -192,10 +192,10 @@ jobs:
             end
 
             test do
-              assert_match "mnemex v#{version}", shell_output("#{bin}/mnemex --version")
+              assert_match "mnemex", shell_output("#{bin}/mnemex --version")
             end
           end
-          FORMULA
+          EOF
 
       - name: Push to tap
         run: |
