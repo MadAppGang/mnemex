@@ -185,7 +185,7 @@ export const OPENROUTER_EMBEDDING_MODELS_URL = `${OPENROUTER_API_URL}/embeddings
 
 /** OpenRouter request headers */
 export const OPENROUTER_HEADERS = {
-	"HTTP-Referer": "https://github.com/MadAppGang/claudemem",
+	"HTTP-Referer": "https://github.com/MadAppGang/mnemex",
 	"X-Title": "mnemex",
 };
 

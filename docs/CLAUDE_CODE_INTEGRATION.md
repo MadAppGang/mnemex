@@ -87,7 +87,7 @@ npm install -g claude-codemem
 brew tap MadAppGang/claude-mem && brew install --cask claudemem
 
 # or curl
-curl -fsSL https://raw.githubusercontent.com/MadAppGang/claudemem/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/MadAppGang/mnemex/main/install.sh | bash
 ```
 
 ### Step 2: Configure and Index
@@ -658,7 +658,7 @@ Other languages fall back to line-based chunking.
 
 ## More Information
 
-- **claudemem GitHub:** https://github.com/MadAppGang/claudemem
+- **claudemem GitHub:** https://github.com/MadAppGang/mnemex
 - **claudemem npm:** https://www.npmjs.com/package/claude-codemem
 - **Claude Code Plugins:** https://docs.anthropic.com/en/docs/claude-code/plugins
 - **Plugin Marketplace:** mag-claude-plugins

@@ -74,7 +74,7 @@ mkdir -p .opencode/plugin
 
 # Download the plugin
 curl -o .opencode/plugin/claudemem.ts \
-  https://raw.githubusercontent.com/MadAppGang/claudemem/main/integrations/opencode/claudemem.ts
+  https://raw.githubusercontent.com/MadAppGang/mnemex/main/integrations/opencode/claudemem.ts
 ```
 
 Or create it manually (see [Plugin Installation](#plugin-installation)).

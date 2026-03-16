@@ -6,13 +6,13 @@
 	"publisher": "MadAppGang",
 	"license": "MIT",
 	"icon": "icon.png",
-	"homepage": "https://github.com/MadAppGang/claudemem",
+	"homepage": "https://github.com/MadAppGang/mnemex",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/MadAppGang/claudemem"
+		"url": "https://github.com/MadAppGang/mnemex"
 	},
 	"bugs": {
-		"url": "https://github.com/MadAppGang/claudemem/issues"
+		"url": "https://github.com/MadAppGang/mnemex/issues"
 	},
 	"engines": {
 		"vscode": "^1.85.0"

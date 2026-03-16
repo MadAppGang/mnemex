@@ -27,7 +27,7 @@ npm install -g claude-codemem
 brew tap MadAppGang/claude-mem && brew install --cask claudemem
 
 # or curl
-curl -fsSL https://raw.githubusercontent.com/MadAppGang/claudemem/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/MadAppGang/mnemex/main/install.sh | bash
 ```
 
 ---
@@ -655,5 +655,5 @@ Other languages fall back to line-based chunking.
 
 ## More Information
 
-- GitHub: https://github.com/MadAppGang/claudemem
+- GitHub: https://github.com/MadAppGang/mnemex
 - npm: https://www.npmjs.com/package/claude-codemem

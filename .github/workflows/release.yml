@@ -172,17 +172,17 @@ jobs:
           cat > tap/Formula/mnemex.rb << EOF
           class Mnemex < Formula
             desc "Local code indexing with semantic search for Claude Code"
-            homepage "https://github.com/MadAppGang/claudemem"
+            homepage "https://github.com/MadAppGang/mnemex"
             version "${{ steps.release.outputs.version }}"
             license "MIT"
 
             on_arm do
-              url "https://github.com/MadAppGang/claudemem/releases/download/v${{ steps.release.outputs.version }}/mnemex-darwin-arm64"
+              url "https://github.com/MadAppGang/mnemex/releases/download/v${{ steps.release.outputs.version }}/mnemex-darwin-arm64"
               sha256 "${{ steps.release.outputs.arm64_sha }}"
             end
 
             on_intel do
-              url "https://github.com/MadAppGang/claudemem/releases/download/v${{ steps.release.outputs.version }}/mnemex-darwin-x64"
+              url "https://github.com/MadAppGang/mnemex/releases/download/v${{ steps.release.outputs.version }}/mnemex-darwin-x64"
               sha256 "${{ steps.release.outputs.x64_sha }}"
             end
 

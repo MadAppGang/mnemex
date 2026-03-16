@@ -1,10 +1,10 @@
 #!/bin/bash
 # mnemex installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/MadAppGang/claudemem/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/MadAppGang/mnemex/main/install.sh | bash
 
 set -e
 
-REPO="MadAppGang/claudemem"
+REPO="MadAppGang/mnemex"
 INSTALL_DIR="${MNEMEX_INSTALL_DIR:-$HOME/.local/bin}"
 
 # Colors
