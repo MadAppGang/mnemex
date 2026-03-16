@@ -15,9 +15,13 @@ export function registerSymbolTools(server: McpServer, deps: ToolDeps): void {
 
 	server.tool(
 		"symbol",
-		"Find a symbol definition and its usages (callers) using the AST reference graph.",
+		"Find a symbol definition and its usages (callers) using the AST reference graph. Supports dot-path notation like 'ClassName.methodName' for scoped resolution.",
 		{
-			symbol: z.string().describe("Symbol name to look up"),
+			symbol: z
+				.string()
+				.describe(
+					"Symbol name to look up. Use 'Class.method' notation to find a method on a specific class.",
+				),
 			kind: z
 				.enum(["function", "class", "interface", "type", "variable", "any"])
 				.default("any")

@@ -279,6 +279,43 @@ export class ReferenceGraphManager {
 	): SymbolDefinition | null {
 		const { preferExported = true, fileHint } = options;
 
+		// Dot-path resolution: "Class.method" → find method scoped to class
+		const dotIndex = name.indexOf(".");
+		if (dotIndex > 0) {
+			const className = name.slice(0, dotIndex);
+			const memberName = name.slice(dotIndex + 1);
+
+			// Find the parent class/interface/struct
+			const classCandidates = this.tracker.getSymbolByName(className);
+			const classSymbol =
+				classCandidates.find(
+					(s) =>
+						s.kind === "class" || s.kind === "interface" || s.kind === "type",
+				) ?? classCandidates[0];
+
+			if (classSymbol) {
+				// Find children of that class with matching name
+				const memberCandidates = this.tracker.getSymbolByName(memberName);
+				const scoped = memberCandidates.filter(
+					(s) => s.parentId === classSymbol.id,
+				);
+				if (scoped.length === 1) return scoped[0];
+				if (scoped.length > 1) {
+					// Multiple matches — use existing disambiguation
+					if (fileHint) {
+						const fromFile = scoped.filter((c) =>
+							c.filePath.includes(fileHint),
+						);
+						if (fromFile.length === 1) return fromFile[0];
+					}
+					return scoped.sort((a, b) => b.pagerankScore - a.pagerankScore)[0];
+				}
+				// Class found but member not scoped — fall through to flat search
+			}
+			// Class not found — fall through to flat search with the full dotted name
+			// (which will likely return null, then try the member name alone)
+		}
+
 		const candidates = this.tracker.getSymbolByName(name);
 
 		if (candidates.length === 0) {

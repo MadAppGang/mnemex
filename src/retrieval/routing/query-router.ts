@@ -270,6 +270,12 @@ export class QueryRouter {
 	private extractEntities(query: string): string[] {
 		const entities: string[] = [];
 
+		// Preserve dot-path tokens (e.g., "Tensor.realize", "module.Class.method")
+		const dotPathMatches = query.match(
+			/\b[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_.]*\b/g,
+		);
+		if (dotPathMatches) entities.push(...dotPathMatches);
+
 		// Extract PascalCase names (likely classes/types)
 		const pascalMatches = query.match(/\b[A-Z][a-zA-Z0-9]+\b/g);
 		if (pascalMatches) entities.push(...pascalMatches);

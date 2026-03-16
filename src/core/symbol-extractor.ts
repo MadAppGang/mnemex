@@ -370,7 +370,9 @@ export class SymbolExtractor {
 		// For methods, find enclosing class
 		if (
 			node.type === "method_definition" ||
-			node.type === "method_declaration"
+			node.type === "method_declaration" ||
+			// Python: function_definition inside a class body is a method
+			(node.type === "function_definition" && this.isInsideClass(node))
 		) {
 			let parent = node.parent;
 			while (parent) {
@@ -398,6 +400,27 @@ export class SymbolExtractor {
 			}
 		}
 		return undefined;
+	}
+
+	/**
+	 * Check if a node is inside a class definition (for Python methods)
+	 */
+	private isInsideClass(node: Node): boolean {
+		let parent = node.parent;
+		while (parent) {
+			if (
+				parent.type === "class_definition" ||
+				parent.type === "class_declaration"
+			) {
+				return true;
+			}
+			// Stop at module level
+			if (parent.type === "module" || parent.type === "program") {
+				return false;
+			}
+			parent = parent.parent;
+		}
+		return false;
 	}
 
 	/**

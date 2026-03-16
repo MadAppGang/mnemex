@@ -142,6 +142,7 @@ export interface IFileTracker {
 	getSymbol(id: string): SymbolDefinition | null;
 	getSymbolsByFile(filePath: string): SymbolDefinition[];
 	getSymbolByName(name: string, kind?: SymbolKind): SymbolDefinition[];
+	getSymbolsByParent(parentId: string): SymbolDefinition[];
 	getAllSymbols(): SymbolDefinition[];
 	getTopSymbols(limit: number): SymbolDefinition[];
 	deleteSymbolsByFile(filePath: string): void;
@@ -1216,6 +1217,15 @@ export class FileTracker implements IFileTracker {
 			rows = stmt.all(name) as Array<Record<string, unknown>>;
 		}
 
+		return rows.map((row) => this.rowToSymbol(row));
+	}
+
+	/**
+	 * Get all symbols whose parent_id matches the given parentId
+	 */
+	getSymbolsByParent(parentId: string): SymbolDefinition[] {
+		const stmt = this.db.prepare("SELECT * FROM symbols WHERE parent_id = ?");
+		const rows = stmt.all(parentId) as Array<Record<string, unknown>>;
 		return rows.map((row) => this.rowToSymbol(row));
 	}
 
