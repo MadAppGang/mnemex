@@ -2,7 +2,7 @@
  * LSP Protocol Types
  *
  * Minimal LSP type definitions for the 12 methods we use.
- * Not the full LSP spec — just what claudemem needs.
+ * Not the full LSP spec — just what mnemex needs.
  */
 
 // ============================================================================
@@ -35,7 +35,8 @@ export interface TextDocumentPositionParams {
 	position: Position;
 }
 
-export interface VersionedTextDocumentIdentifier extends TextDocumentIdentifier {
+export interface VersionedTextDocumentIdentifier
+	extends TextDocumentIdentifier {
 	version: number;
 }
 
@@ -102,7 +103,9 @@ export interface ClientCapabilities {
 }
 
 export interface ServerCapabilities {
-	textDocumentSync?: number | { openClose?: boolean; change?: number; save?: boolean };
+	textDocumentSync?:
+		| number
+		| { openClose?: boolean; change?: number; save?: boolean };
 	definitionProvider?: boolean;
 	referencesProvider?: boolean;
 	hoverProvider?: boolean;
@@ -118,7 +121,10 @@ export interface InitializeResult {
 // ============================================================================
 
 export interface Hover {
-	contents: MarkupContent | string | Array<string | { language: string; value: string }>;
+	contents:
+		| MarkupContent
+		| string
+		| Array<string | { language: string; value: string }>;
 	range?: Range;
 }
 

@@ -947,9 +947,13 @@ export class BenchmarkDatabase {
 	 * Get phases where items_completed < items_total (i.e., had failures).
 	 * Returns error info that can be used for the Errors tab in the TUI.
 	 */
-	getPhaseFailureSummary(
-		runId: string,
-	): Array<{ phase: string; total: number; completed: number; failed: number; error: string | null }> {
+	getPhaseFailureSummary(runId: string): Array<{
+		phase: string;
+		total: number;
+		completed: number;
+		failed: number;
+		error: string | null;
+	}> {
 		const stmt = this.db.prepare(`
 			SELECT phase, items_total, items_completed, error
 			FROM phase_progress
@@ -1001,10 +1005,10 @@ export function createBenchmarkDatabase(dbPath: string): BenchmarkDatabase {
 	return new BenchmarkDatabase(dbPath);
 }
 
-/** Create a benchmark database in the project's .claudemem directory */
+/** Create a benchmark database in the project's .mnemex directory */
 export function createProjectBenchmarkDatabase(
 	projectPath: string,
 ): BenchmarkDatabase {
-	const dbPath = join(projectPath, ".claudemem", "benchmark.db");
+	const dbPath = join(projectPath, ".mnemex", "benchmark.db");
 	return createBenchmarkDatabase(dbPath);
 }

@@ -5,9 +5,13 @@
  * Activated for: location
  */
 
-import type { QueryClassification } from "../../types.js";
 import type { IFileTracker } from "../../core/tracker.js";
-import type { ISearchBackend, BackendResult, SearchOptions } from "../pipeline/types.js";
+import type { QueryClassification } from "../../types.js";
+import type {
+	BackendResult,
+	ISearchBackend,
+	SearchOptions,
+} from "../pipeline/types.js";
 
 export class LocationBackend implements ISearchBackend {
 	readonly name = "location" as const;
@@ -25,7 +29,11 @@ export class LocationBackend implements ISearchBackend {
 		const limit = options.limit ?? 10;
 
 		// Build pattern from: options.filePattern, extracted entities, or the query itself
-		const pattern = buildPattern(options.filePattern, intent.extractedEntities, query);
+		const pattern = buildPattern(
+			options.filePattern,
+			intent.extractedEntities,
+			query,
+		);
 		if (!pattern) return [];
 
 		// Get all indexed files
@@ -52,13 +60,14 @@ export class LocationBackend implements ISearchBackend {
 		// Sort by path length (shorter = more specific match)
 		matched.sort((a, b) => a.path.length - b.path.length);
 
+		const backendName = this.name;
 		return matched.slice(0, limit).map((f, idx) => ({
 			file: f.path,
 			startLine: 1,
 			snippet: f.path,
 			// Score based on position in sorted list
 			score: 1 - idx / Math.max(matched.length, 1),
-			backend: this.name as const,
+			backend: backendName,
 		}));
 	}
 }
@@ -87,7 +96,9 @@ function buildPattern(
 	// Use the query as a folder/name fragment
 	const words = query
 		.split(/\s+/)
-		.filter((w) => w.length > 2 && !/^(in|the|for|of|at|under|inside)$/i.test(w));
+		.filter(
+			(w) => w.length > 2 && !/^(in|the|for|of|at|under|inside)$/i.test(w),
+		);
 	if (words.length > 0) {
 		return `*${words[0]}*`;
 	}

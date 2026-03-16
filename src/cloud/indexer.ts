@@ -2,7 +2,7 @@
  * CloudAwareIndexer — orchestrates the 10-step cloud indexing flow
  *
  * Wraps the existing local chunking pipeline and uploads results to the
- * claudemem cloud API using an ICloudIndexClient.
+ * mnemex cloud API using an ICloudIndexClient.
  *
  * The indexer is deliberately decoupled from the local Indexer class —
  * it uses chunkFileByPath and the symbol extractor directly, rather than
@@ -88,7 +88,7 @@ export interface CloudIndexerOptions {
 	 * Omit to skip enrichment upload.
 	 */
 	vectorStore?: IVectorStore;
-	/** Team configuration from claudemem.json */
+	/** Team configuration from mnemex.json */
 	teamConfig: TeamConfig;
 	/** Optional progress callback for UI feedback */
 	onProgress?: (message: string) => void;
@@ -234,8 +234,14 @@ export class CloudAwareIndexer {
 
 		// ── Step 7b: Collect enrichment docs (optional) ──────────────────────
 		let enrichmentDocs: CloudEnrichmentDoc[] | undefined;
-		if (this.teamConfig.uploadEnrichment && this.vectorStore && filesToProcess.length > 0) {
-			enrichmentDocs = await this.collectEnrichmentDocs(filesToProcess.map((f) => f.filePath));
+		if (
+			this.teamConfig.uploadEnrichment &&
+			this.vectorStore &&
+			filesToProcess.length > 0
+		) {
+			enrichmentDocs = await this.collectEnrichmentDocs(
+				filesToProcess.map((f) => f.filePath),
+			);
 			if (enrichmentDocs.length > 0) {
 				this.onProgress(
 					`Collected ${enrichmentDocs.length} enrichment docs for upload.`,
@@ -252,7 +258,10 @@ export class CloudAwareIndexer {
 			chunks: chunksToUpload,
 			deletedFiles: deletedFiles.length > 0 ? deletedFiles : undefined,
 			mode,
-			enrichmentDocs: enrichmentDocs && enrichmentDocs.length > 0 ? enrichmentDocs : undefined,
+			enrichmentDocs:
+				enrichmentDocs && enrichmentDocs.length > 0
+					? enrichmentDocs
+					: undefined,
 		};
 
 		// ── Step 9: Upload index ─────────────────────────────────────────────
@@ -309,7 +318,8 @@ export class CloudAwareIndexer {
 			return this.teamConfig.repoSlug;
 		}
 		// Fallback: use orgSlug/project-path-basename
-		const baseName = this.projectPath.split("/").filter(Boolean).pop() ?? "repo";
+		const baseName =
+			this.projectPath.split("/").filter(Boolean).pop() ?? "repo";
 		return `${this.teamConfig.orgSlug}/${baseName}`;
 	}
 
@@ -340,18 +350,20 @@ export class CloudAwareIndexer {
 		const fileHash = computeContentHash(source);
 		const codeChunks = await chunkFileByPath(source, file.filePath, fileHash);
 
-		return codeChunks.map((chunk): UploadChunk => ({
-			contentHash: chunk.contentHash,
-			filePath: chunk.filePath,
-			startLine: chunk.startLine,
-			endLine: chunk.endLine,
-			language: chunk.language,
-			chunkType: chunk.chunkType,
-			name: chunk.name,
-			// Include raw source text in smart mode so the cloud can embed it.
-			// Omit in thin mode to save upload bandwidth (vectors carry the semantics).
-			text: mode === "smart" ? chunk.content : undefined,
-		}));
+		return codeChunks.map(
+			(chunk): UploadChunk => ({
+				contentHash: chunk.contentHash,
+				filePath: chunk.filePath,
+				startLine: chunk.startLine,
+				endLine: chunk.endLine,
+				language: chunk.language,
+				chunkType: chunk.chunkType,
+				name: chunk.name,
+				// Include raw source text in smart mode so the cloud can embed it.
+				// Omit in thin mode to save upload bandwidth (vectors carry the semantics).
+				text: mode === "smart" ? chunk.content : undefined,
+			}),
+		);
 	}
 
 	/**
@@ -420,7 +432,8 @@ export class CloudAwareIndexer {
 		// we use name + chunkType as fallback for chunks that have no text.
 		// In a real flow the text should have been set by processFile.
 		const texts = chunks.map(
-			(c) => c.text ?? [c.name, c.chunkType, c.filePath].filter(Boolean).join(" "),
+			(c) =>
+				c.text ?? [c.name, c.chunkType, c.filePath].filter(Boolean).join(" "),
 		);
 
 		const embedResult = await this.embeddingsClient.embed(texts);

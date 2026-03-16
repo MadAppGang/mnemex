@@ -1,7 +1,7 @@
 /**
  * IndexProgress
  *
- * Multi-phase animated progress display for `claudemem index`.
+ * Multi-phase animated progress display for `mnemex index`.
  * Replaces the manual ANSI-based createProgressRenderer() in cli.ts.
  *
  * Renders each indexing phase as a row in the exact same format as the
@@ -17,7 +17,10 @@
  */
 
 import { useState, useEffect } from "react";
-import type { ProgressStore, PhaseState } from "../../../output/progress-store.js";
+import type {
+	ProgressStore,
+	PhaseState,
+} from "../../../output/progress-store.js";
 import { theme } from "../../theme.js";
 import { formatElapsed } from "../../../ui/progress.js";
 
@@ -154,9 +157,9 @@ function PhaseRow({ phase, animFrame }: PhaseRowProps) {
 	// Bar color: green when done, primary (orange) while in progress
 	const barColor = phase.isComplete ? theme.success : theme.primary;
 	// Empty-bar portion is always dimmed
-	const emptyStart = phase.isComplete ? BAR_WIDTH : Math.round(
-		(phase.completed / Math.max(phase.total, 1)) * BAR_WIDTH,
-	);
+	const emptyStart = phase.isComplete
+		? BAR_WIDTH
+		: Math.round((phase.completed / Math.max(phase.total, 1)) * BAR_WIDTH);
 	const filledPart = bar.slice(0, emptyStart);
 	const emptyPart = bar.slice(emptyStart);
 
@@ -169,9 +172,7 @@ function PhaseRow({ phase, animFrame }: PhaseRowProps) {
 			<text fg={theme.dimmed}>{" │ "}</text>
 			<text fg={barColor}>{filledPart}</text>
 			<text fg={theme.dimmed}>{emptyPart}</text>
-			<text fg={theme.muted}>
-				{` ${percent.toString().padStart(3)}%`}
-			</text>
+			<text fg={theme.muted}>{` ${percent.toString().padStart(3)}%`}</text>
 			<text fg={theme.dimmed}>{" │ "}</text>
 			<text fg={theme.text}>{phaseName}</text>
 			<text fg={theme.dimmed}>{" │ "}</text>
@@ -222,17 +223,15 @@ export function IndexProgress({
 	return (
 		<box flexDirection="column">
 			{phases.map((phase) => (
-				<PhaseRow
-					key={phase.name}
-					phase={phase}
-					animFrame={animFrame}
-				/>
+				<PhaseRow key={phase.name} phase={phase} animFrame={animFrame} />
 			))}
 			{/* Total elapsed line (shown when there are multiple phases or done) */}
 			{(phases.length > 1 || finished) && (
 				<box flexDirection="row" height={1}>
 					<text fg={theme.muted}>{"⏱ "}</text>
-					<text fg={finished ? theme.success : theme.muted}>{totalElapsed}</text>
+					<text fg={finished ? theme.success : theme.muted}>
+						{totalElapsed}
+					</text>
 					<text fg={theme.dimmed}>{" total"}</text>
 				</box>
 			)}

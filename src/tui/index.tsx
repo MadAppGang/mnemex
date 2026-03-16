@@ -22,7 +22,7 @@ export async function startTui(projectPath?: string): Promise<void> {
 export async function startTUI(projectPath?: string): Promise<void> {
 	// Ensure we have a TTY
 	if (!process.stdout.isTTY) {
-		console.error("claudemem tui requires a TTY terminal");
+		console.error("mnemex tui requires a TTY terminal");
 		process.exit(1);
 	}
 
@@ -63,7 +63,7 @@ export async function startTUI(projectPath?: string): Promise<void> {
 /** Start monitor mode — passive display of MCP activity */
 export async function startMonitor(projectPath?: string): Promise<void> {
 	if (!process.stdout.isTTY) {
-		console.error("claudemem monitor requires a TTY terminal");
+		console.error("mnemex monitor requires a TTY terminal");
 		process.exit(1);
 	}
 

@@ -1,7 +1,7 @@
 /**
  * Admin TUI Entry Point
  *
- * Starts the claudemem admin panel for API key management.
+ * Starts the mnemex admin panel for API key management.
  * Mirrors the pattern of src/tui/index.tsx.
  */
 
@@ -14,7 +14,7 @@ import { AdminApp } from "./AdminApp.js";
 // ============================================================================
 
 export interface AdminOptions {
-	/** Cloud server URL, e.g. "https://cloud.claudemem.dev" */
+	/** Cloud server URL, e.g. "https://cloud.mnemex.dev" */
 	endpoint: string;
 	/** Master API key value */
 	masterKey: string;
@@ -26,7 +26,7 @@ export interface AdminOptions {
 
 export async function startAdminTUI(options: AdminOptions): Promise<void> {
 	if (!process.stdout.isTTY) {
-		console.error("claudemem admin requires a TTY terminal");
+		console.error("mnemex admin requires a TTY terminal");
 		process.exit(1);
 	}
 

@@ -5,37 +5,47 @@
  */
 
 import { join } from "node:path";
+import {
+	DEFAULT_PIPELINE_CONFIG,
+	type PipelineConfig,
+	loadPipelineConfig,
+} from "../retrieval/pipeline/config.js";
 import type { LogLevel } from "./logger.js";
+
+export type { PipelineConfig };
+export { DEFAULT_PIPELINE_CONFIG };
 
 export interface McpConfig {
 	/** Workspace root (CWD at startup) */
 	workspaceRoot: string;
-	/** Index directory (CLAUDEMEM_INDEX_DIR relative to workspaceRoot, or ".claudemem") */
+	/** Pipeline configuration */
+	pipeline: PipelineConfig;
+	/** Index directory (MNEMEX_INDEX_DIR relative to workspaceRoot, or ".mnemex") */
 	indexDir: string;
-	/** Debounce delay for reindexing in ms (CLAUDEMEM_DEBOUNCE_MS, default 120000) */
+	/** Debounce delay for reindexing in ms (MNEMEX_DEBOUNCE_MS, default 120000) */
 	debounceMs: number;
-	/** Glob patterns for files to watch (CLAUDEMEM_WATCH_PATTERNS, comma-separated) */
+	/** Glob patterns for files to watch (MNEMEX_WATCH_PATTERNS, comma-separated) */
 	watchPatterns: string[];
-	/** Glob patterns to ignore (CLAUDEMEM_IGNORE_PATTERNS, comma-separated) */
+	/** Glob patterns to ignore (MNEMEX_IGNORE_PATTERNS, comma-separated) */
 	ignorePatterns: string[];
-	/** Max memory usage in MB (CLAUDEMEM_MAX_MEMORY_MB, default 500) */
+	/** Max memory usage in MB (MNEMEX_MAX_MEMORY_MB, default 500) */
 	maxMemoryMB: number;
-	/** Polling interval for completion detection in ms (CLAUDEMEM_COMPLETION_POLL_MS, default 2000) */
+	/** Polling interval for completion detection in ms (MNEMEX_COMPLETION_POLL_MS, default 2000) */
 	completionPollMs: number;
-	/** Minimum log level (CLAUDEMEM_LOG_LEVEL, default "warn") */
+	/** Minimum log level (MNEMEX_LOG_LEVEL, default "warn") */
 	logLevel: LogLevel;
 	/** LSP configuration */
 	lsp: LspConfig;
 }
 
 export interface LspConfig {
-	/** Whether LSP integration is enabled (CLAUDEMEM_LSP, default false) */
+	/** Whether LSP integration is enabled (MNEMEX_LSP, default false) */
 	enabled: boolean;
-	/** Request timeout in ms (CLAUDEMEM_LSP_TIMEOUT_MS, default 10000) */
+	/** Request timeout in ms (MNEMEX_LSP_TIMEOUT_MS, default 10000) */
 	timeoutMs: number;
-	/** Maximum concurrent language servers (CLAUDEMEM_LSP_MAX_SERVERS, default 2) */
+	/** Maximum concurrent language servers (MNEMEX_LSP_MAX_SERVERS, default 2) */
 	maxServers: number;
-	/** Languages to disable (CLAUDEMEM_LSP_DISABLE, comma-separated) */
+	/** Languages to disable (MNEMEX_LSP_DISABLE, comma-separated) */
 	disabledLanguages: string[];
 	/** Per-language command overrides */
 	tsCommand?: string;
@@ -69,47 +79,47 @@ const DEFAULT_LOG_LEVEL: LogLevel = "warn";
 export function loadMcpConfig(): McpConfig {
 	const workspaceRoot = process.cwd();
 
-	const indexDirEnv = process.env.CLAUDEMEM_INDEX_DIR;
+	const indexDirEnv = process.env.MNEMEX_INDEX_DIR;
 	const indexDir = indexDirEnv
 		? join(workspaceRoot, indexDirEnv)
-		: join(workspaceRoot, ".claudemem");
+		: join(workspaceRoot, ".mnemex");
 
 	const debounceMs = parseIntWithDefault(
-		process.env.CLAUDEMEM_DEBOUNCE_MS,
+		process.env.MNEMEX_DEBOUNCE_MS,
 		DEFAULT_DEBOUNCE_MS,
 	);
 
 	const watchPatterns = parsePatterns(
-		process.env.CLAUDEMEM_WATCH_PATTERNS,
+		process.env.MNEMEX_WATCH_PATTERNS,
 		DEFAULT_WATCH_PATTERNS,
 	);
 
 	const ignorePatterns = parsePatterns(
-		process.env.CLAUDEMEM_IGNORE_PATTERNS,
+		process.env.MNEMEX_IGNORE_PATTERNS,
 		DEFAULT_IGNORE_PATTERNS,
 	);
 
 	const maxMemoryMB = parseIntWithDefault(
-		process.env.CLAUDEMEM_MAX_MEMORY_MB,
+		process.env.MNEMEX_MAX_MEMORY_MB,
 		DEFAULT_MAX_MEMORY_MB,
 	);
 
 	const completionPollMs = parseIntWithDefault(
-		process.env.CLAUDEMEM_COMPLETION_POLL_MS,
+		process.env.MNEMEX_COMPLETION_POLL_MS,
 		DEFAULT_COMPLETION_POLL_MS,
 	);
 
-	const logLevel = parseLogLevel(process.env.CLAUDEMEM_LOG_LEVEL);
+	const logLevel = parseLogLevel(process.env.MNEMEX_LOG_LEVEL);
 
 	const lsp: LspConfig = {
-		enabled: parseBool(process.env.CLAUDEMEM_LSP, false),
-		timeoutMs: parseIntWithDefault(process.env.CLAUDEMEM_LSP_TIMEOUT_MS, 10000),
-		maxServers: parseIntWithDefault(process.env.CLAUDEMEM_LSP_MAX_SERVERS, 2),
-		disabledLanguages: parsePatterns(process.env.CLAUDEMEM_LSP_DISABLE, []),
-		tsCommand: process.env.CLAUDEMEM_LSP_TS_CMD,
-		pyCommand: process.env.CLAUDEMEM_LSP_PY_CMD,
-		goCommand: process.env.CLAUDEMEM_LSP_GO_CMD,
-		rsCommand: process.env.CLAUDEMEM_LSP_RS_CMD,
+		enabled: parseBool(process.env.MNEMEX_LSP, false),
+		timeoutMs: parseIntWithDefault(process.env.MNEMEX_LSP_TIMEOUT_MS, 10000),
+		maxServers: parseIntWithDefault(process.env.MNEMEX_LSP_MAX_SERVERS, 2),
+		disabledLanguages: parsePatterns(process.env.MNEMEX_LSP_DISABLE, []),
+		tsCommand: process.env.MNEMEX_LSP_TS_CMD,
+		pyCommand: process.env.MNEMEX_LSP_PY_CMD,
+		goCommand: process.env.MNEMEX_LSP_GO_CMD,
+		rsCommand: process.env.MNEMEX_LSP_RS_CMD,
 	};
 
 	return {
@@ -122,16 +132,23 @@ export function loadMcpConfig(): McpConfig {
 		completionPollMs,
 		logLevel,
 		lsp,
+		pipeline: loadPipelineConfig(),
 	};
 }
 
-function parseIntWithDefault(value: string | undefined, defaultValue: number): number {
+function parseIntWithDefault(
+	value: string | undefined,
+	defaultValue: number,
+): number {
 	if (value === undefined || value === "") return defaultValue;
-	const parsed = parseInt(value, 10);
-	return isNaN(parsed) ? defaultValue : parsed;
+	const parsed = Number.parseInt(value, 10);
+	return Number.isNaN(parsed) ? defaultValue : parsed;
 }
 
-function parsePatterns(value: string | undefined, defaultValue: string[]): string[] {
+function parsePatterns(
+	value: string | undefined,
+	defaultValue: string[],
+): string[] {
 	if (!value || value.trim() === "") return defaultValue;
 	const patterns = value
 		.split(",")

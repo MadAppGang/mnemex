@@ -340,7 +340,10 @@ export function wilcoxonSignedRankTest(
 	}
 
 	// Rank absolute differences
-	const absWithSign = nonZero.map((d) => ({ abs: Math.abs(d), sign: Math.sign(d) }));
+	const absWithSign = nonZero.map((d) => ({
+		abs: Math.abs(d),
+		sign: Math.sign(d),
+	}));
 	absWithSign.sort((a, b) => a.abs - b.abs);
 
 	// Assign ranks (handle ties with average rank)

@@ -39,7 +39,7 @@ export class TestCaseSelector {
 
 	constructor(projectPath: string) {
 		this.projectPath = projectPath;
-		const dbPath = join(projectPath, ".claudemem", "index.db");
+		const dbPath = join(projectPath, ".mnemex", "index.db");
 		this.tracker = new FileTracker(dbPath, projectPath);
 	}
 
@@ -52,7 +52,7 @@ export class TestCaseSelector {
 		// Get all indexed files
 		const fileStates = this.tracker.getAllFiles();
 		if (fileStates.length === 0) {
-			throw new Error("No indexed files found. Run 'claudemem index' first.");
+			throw new Error("No indexed files found. Run 'mnemex index' first.");
 		}
 
 		const testCases: TestCase[] = [];

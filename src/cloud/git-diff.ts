@@ -89,9 +89,7 @@ export class GitDiffChangeDetector implements IChangeDetector {
 	async getParentShas(commitSha: string): Promise<string[]> {
 		try {
 			// `^@` expands to all parent refs; `--` prevents ambiguity
-			const output = await this.run(
-				`git rev-parse ${commitSha}^@`,
-			);
+			const output = await this.run(`git rev-parse ${commitSha}^@`);
 			return output
 				.split("\n")
 				.map((s) => s.trim())

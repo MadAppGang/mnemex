@@ -3,7 +3,7 @@
  *
  * Runs when Claude Code session starts:
  * - Cleans up old temporary session directories
- * - Checks claudemem version and index status
+ * - Checks mnemex version and index status
  * - Initializes interaction monitoring
  * - Returns context about available features
  */
@@ -29,7 +29,7 @@ import { logSessionStart, cleanupStaleSessions } from "./interaction-logger.js";
 let _version: string | null = null;
 
 /**
- * Get claudemem version from package.json
+ * Get mnemex version from package.json
  */
 function getVersion(): string | null {
 	if (_version) return _version;
@@ -45,7 +45,7 @@ function getVersion(): string | null {
 		for (const path of paths) {
 			if (existsSync(path)) {
 				const pkg = JSON.parse(readFileSync(path, "utf-8"));
-				if (pkg.name === "claude-codemem" || pkg.name === "claudemem") {
+				if (pkg.name === "mnemex" || pkg.name === "mnemex") {
 					_version = pkg.version || null;
 					return _version;
 				}
@@ -82,7 +82,7 @@ function versionGte(version: string, required: string): boolean {
  * Check if project is indexed
  */
 function isIndexed(cwd: string): IndexStatus {
-	const indexDir = join(cwd, ".claudemem");
+	const indexDir = join(cwd, ".mnemex");
 	if (!existsSync(indexDir)) {
 		return { indexed: false };
 	}
@@ -175,17 +175,17 @@ export async function handleSessionStart(
 		// Don't fail the hook if logging fails
 	}
 
-	// Get claudemem version
+	// Get mnemex version
 	const version = getVersion();
 	if (!version) {
 		return {
-			additionalContext: `**claudemem not properly installed**
+			additionalContext: `**mnemex not properly installed**
 
 Reinstall with:
 \`\`\`bash
-npm install -g claude-codemem@latest
-claudemem init
-claudemem index
+npm install -g mnemex@latest
+mnemex init
+mnemex index
 \`\`\``,
 		};
 	}
@@ -193,15 +193,15 @@ claudemem index
 	// Check minimum version
 	if (!versionGte(version, "0.3.0")) {
 		return {
-			additionalContext: `**claudemem update required**
+			additionalContext: `**mnemex update required**
 
 Current: v${version}
 Required: v0.3.0+
 
 Update with:
 \`\`\`bash
-npm install -g claude-codemem@latest
-claudemem index
+npm install -g mnemex@latest
+mnemex index
 \`\`\``,
 		};
 	}
@@ -210,7 +210,7 @@ claudemem index
 	const hasV4 = versionGte(version, "0.4.0");
 	const hasV8 = versionGte(version, "0.8.0");
 
-	let featureMsg = `**claudemem v${version}**\n\n`;
+	let featureMsg = `**mnemex v${version}**\n\n`;
 
 	if (hasV8) {
 		featureMsg += `Available commands:
@@ -236,7 +236,7 @@ Upgrade to v0.4.0+ for: \`dead-code\`, \`test-gaps\`, \`impact\``;
 
 **Not indexed for this project**
 
-Run \`claudemem index\` to enable AST analysis.`,
+Run \`mnemex index\` to enable AST analysis.`,
 		};
 	}
 

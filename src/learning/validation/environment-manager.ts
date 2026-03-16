@@ -95,7 +95,7 @@ export class TempEnvironmentManager implements EnvironmentManager {
 
 	constructor(config: Partial<EnvironmentConfig> = {}) {
 		this.envId = this.generateId();
-		this.baseDirectory = config.baseDirectory ?? "/tmp/claudemem-validation";
+		this.baseDirectory = config.baseDirectory ?? "/tmp/mnemex-validation";
 		this.retainOnError = config.retainOnError ?? false;
 
 		// Ensure base directory exists
@@ -331,7 +331,7 @@ export class DockerEnvironmentManager implements EnvironmentManager {
 	}
 
 	async setup(templatePath: string): Promise<EnvironmentInfo> {
-		const containerName = `claudemem-validation-${this.envId}`;
+		const containerName = `mnemex-validation-${this.envId}`;
 		this.workingDirectory = "/workspace";
 
 		// Create container with mounted template
@@ -362,7 +362,7 @@ export class DockerEnvironmentManager implements EnvironmentManager {
 
 	async snapshot(): Promise<SnapshotInfo> {
 		const snapshotId = `snap_${Date.now()}`;
-		const volumeName = `claudemem-snap-${this.envId}-${snapshotId}`;
+		const volumeName = `mnemex-snap-${this.envId}-${snapshotId}`;
 
 		// Create a volume from current container state
 		await $`docker commit ${this.containerId} ${volumeName}`.quiet();

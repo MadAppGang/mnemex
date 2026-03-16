@@ -50,7 +50,7 @@ describe("FeedbackStore - Safe JSON Parsing", () => {
 	let testDbPath: string;
 
 	beforeEach(() => {
-		testDbPath = `/tmp/claudemem-test-feedback-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
+		testDbPath = `/tmp/mnemex-test-feedback-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
 		db = createDatabaseSync(testDbPath);
 		store = createFeedbackStore(db);
 	});
@@ -141,7 +141,7 @@ describe("FeedbackStore - Statistics Optimization", () => {
 	let testDbPath: string;
 
 	beforeEach(() => {
-		testDbPath = `/tmp/claudemem-test-stats-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
+		testDbPath = `/tmp/mnemex-test-stats-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
 		db = createDatabaseSync(testDbPath);
 		store = createFeedbackStore(db);
 	});
@@ -202,7 +202,7 @@ describe("FeedbackStore - Rate Limiting", () => {
 	let testDbPath: string;
 
 	beforeEach(() => {
-		testDbPath = `/tmp/claudemem-test-rate-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
+		testDbPath = `/tmp/mnemex-test-rate-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
 		db = createDatabaseSync(testDbPath);
 		store = createFeedbackStore(db);
 	});
@@ -323,7 +323,7 @@ describe("LearningEngine - Error Recovery in train()", () => {
 	let testDbPath: string;
 
 	beforeEach(() => {
-		testDbPath = `/tmp/claudemem-test-engine-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
+		testDbPath = `/tmp/mnemex-test-engine-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
 		db = createDatabaseSync(testDbPath);
 		store = createFeedbackStore(db);
 		engine = createLearningEngine(store);

@@ -11,7 +11,11 @@ import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { atomicWrite } from "./editor.js";
 import type { EditHistory } from "./history.js";
-import type { WorkspaceEdit, TextEdit, TextDocumentEdit } from "../lsp/protocol.js";
+import type {
+	WorkspaceEdit,
+	TextEdit,
+	TextDocumentEdit,
+} from "../lsp/protocol.js";
 import { uriToPath } from "../lsp/protocol.js";
 
 export interface ApplyResult {

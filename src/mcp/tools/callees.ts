@@ -40,10 +40,10 @@ export function registerCalleesTools(server: McpServer, deps: ToolDeps): void {
 						const orgSlug = deps.teamConfig.orgSlug;
 						const repoSlug =
 							deps.teamConfig.repoSlug ??
-							`${orgSlug}/${deps.config.workspaceRoot
-								.split("/")
-								.filter(Boolean)
-								.pop() ?? "repo"}`;
+							`${orgSlug}/${
+								deps.config.workspaceRoot.split("/").filter(Boolean).pop() ??
+								"repo"
+							}`;
 
 						const calleesResult = await deps.cloudClient.getCallees(
 							repoSlug,

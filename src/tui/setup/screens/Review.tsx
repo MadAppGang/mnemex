@@ -108,7 +108,7 @@ export function ReviewScreen({
 		filesToWrite.push(GLOBAL_CONFIG_PATH);
 	}
 	if (ws.scope === "project" || ws.scope === "both") {
-		filesToWrite.push(".claudemem/config.json");
+		filesToWrite.push(".mnemex/config.json");
 	}
 
 	return (
@@ -116,7 +116,7 @@ export function ReviewScreen({
 			{/* Header */}
 			<box flexDirection="row" paddingLeft={1} paddingTop={1}>
 				<text fg={theme.borderDim}>{"┌─"}</text>
-				<text fg={theme.primary}>{" claudemem "}</text>
+				<text fg={theme.primary}>{" mnemex "}</text>
 				<text fg={theme.borderDim}>{"─"}</text>
 				<text fg={theme.muted}>{" Setup "}</text>
 				<text fg={theme.borderDim}>{"─"}</text>
@@ -152,9 +152,10 @@ export function ReviewScreen({
 						<Row label="LLM enrichment" value="disabled" />
 					)}
 					<Row label="Config scope" value={ws.scope} />
-					{(ws.mode === "shared" || ws.mode === "full-cloud") && ws.cloudEndpoint && (
-						<Row label="Cloud endpoint" value={ws.cloudEndpoint} />
-					)}
+					{(ws.mode === "shared" || ws.mode === "full-cloud") &&
+						ws.cloudEndpoint && (
+							<Row label="Cloud endpoint" value={ws.cloudEndpoint} />
+						)}
 					{ws.orgSlug && <Row label="Org slug" value={ws.orgSlug} />}
 					{ws.repoSlug && <Row label="Repo slug" value={ws.repoSlug} />}
 				</box>
@@ -186,7 +187,7 @@ export function ReviewScreen({
 				>
 					<box>
 						<text fg={theme.text}>
-							{"Run `claudemem index .` after saving? [y/n]"}
+							{"Run `mnemex index .` after saving? [y/n]"}
 						</text>
 					</box>
 				</box>

@@ -21,10 +21,18 @@ export type { BenchmarkRunSummary };
 /**
  * Convert BenchmarkRun objects to the summary format needed by the TUI.
  */
-function toRunSummaries(runs: BenchmarkRun[], db: BenchmarkDatabase): BenchmarkRunSummary[] {
+function toRunSummaries(
+	runs: BenchmarkRun[],
+	db: BenchmarkDatabase,
+): BenchmarkRunSummary[] {
 	return runs.map((r) => {
 		// Collect errors from phase failures
-		let errors: Array<{ phase: string; model: string; count: number; error: string }> = [];
+		let errors: Array<{
+			phase: string;
+			model: string;
+			count: number;
+			error: string;
+		}> = [];
 		try {
 			const phaseFailures = db.getPhaseFailureSummary(r.id);
 			if (phaseFailures.length > 0) {
@@ -32,7 +40,9 @@ function toRunSummaries(runs: BenchmarkRun[], db: BenchmarkDatabase): BenchmarkR
 					phase: pf.phase,
 					model: "unknown",
 					count: pf.failed,
-					error: pf.error || `${pf.failed} of ${pf.total} items failed in ${pf.phase}`,
+					error:
+						pf.error ||
+						`${pf.failed} of ${pf.total} items failed in ${pf.phase}`,
 				}));
 			}
 		} catch {
@@ -46,7 +56,10 @@ function toRunSummaries(runs: BenchmarkRun[], db: BenchmarkDatabase): BenchmarkR
 			let best: { name: string; score: number } | undefined;
 			for (const [modelId, s] of scores) {
 				if (!best || s.overall > best.score) {
-					best = { name: modelId.split("/").pop() || modelId, score: s.overall };
+					best = {
+						name: modelId.split("/").pop() || modelId,
+						score: s.overall,
+					};
 				}
 			}
 			topModel = best;
@@ -57,7 +70,8 @@ function toRunSummaries(runs: BenchmarkRun[], db: BenchmarkDatabase): BenchmarkR
 		// Compute duration
 		let durationMs: number | undefined;
 		if (r.completedAt && r.startedAt) {
-			durationMs = new Date(r.completedAt).getTime() - new Date(r.startedAt).getTime();
+			durationMs =
+				new Date(r.completedAt).getTime() - new Date(r.startedAt).getTime();
 			if (durationMs < 0) durationMs = undefined;
 		}
 
@@ -69,7 +83,8 @@ function toRunSummaries(runs: BenchmarkRun[], db: BenchmarkDatabase): BenchmarkR
 			generators: r.config.generators.map((g) => g.id),
 			judges: r.config.judges,
 			codeUnitCount: db.getCodeUnitCount(r.id),
-			projectName: r.config.projectPath.split("/").pop() || r.config.projectPath,
+			projectName:
+				r.config.projectPath.split("/").pop() || r.config.projectPath,
 			errors,
 			topModel,
 			durationMs,
@@ -124,16 +139,20 @@ async function showRunResults(
 	);
 
 	// Detect codebase type
-	let codebaseType: { language: string; category: string; stack: string; label: string } | undefined;
+	let codebaseType:
+		| { language: string; category: string; stack: string; label: string }
+		| undefined;
 	try {
 		const { detectCodebaseType } = await import("./codebase-detector.js");
-		codebaseType = await detectCodebaseType(run.config.projectPath || process.cwd());
+		codebaseType = await detectCodebaseType(
+			run.config.projectPath || process.cwd(),
+		);
 	} catch {
 		// Ignore
 	}
 
 	// Look for output files
-	const benchmarkDir = join(projectPath, ".claudemem", "benchmark");
+	const benchmarkDir = join(projectPath, ".mnemex", "benchmark");
 	const outputFiles: { json?: string; markdown?: string; html?: string } = {};
 	try {
 		const { readdirSync } = await import("node:fs");
@@ -152,7 +171,9 @@ async function showRunResults(
 	}
 
 	// Reconstruct errors from phase_progress
-	let errors: Array<{ phase: string; model: string; count: number; error: string }> | undefined;
+	let errors:
+		| Array<{ phase: string; model: string; count: number; error: string }>
+		| undefined;
 	try {
 		const phaseFailures = db.getPhaseFailureSummary(runId);
 		if (phaseFailures.length > 0) {
@@ -160,7 +181,8 @@ async function showRunResults(
 				phase: pf.phase,
 				model: "unknown",
 				count: pf.failed,
-				error: pf.error || `${pf.failed} of ${pf.total} items failed in ${pf.phase}`,
+				error:
+					pf.error || `${pf.failed} of ${pf.total} items failed in ${pf.phase}`,
 			}));
 		}
 	} catch {
@@ -201,7 +223,9 @@ export async function renderBenchmarkListTui(
 	projectPath: string,
 ): Promise<void> {
 	if (!process.stdout.isTTY) {
-		console.log("[benchmark] Run list ready. Run with a TTY to see interactive TUI.");
+		console.log(
+			"[benchmark] Run list ready. Run with a TTY to see interactive TUI.",
+		);
 		return;
 	}
 

@@ -7,7 +7,10 @@
  */
 
 import { createThinCloudClient } from "../../../../src/cloud/thin-client.js";
-import type { UploadChunk, UploadIndexResponse } from "../../../../src/cloud/types.js";
+import type {
+	UploadChunk,
+	UploadIndexResponse,
+} from "../../../../src/cloud/types.js";
 import type { MergedSearchResult } from "../../../../src/cloud/merger.js";
 import type { CloudSearchResult } from "../../../../src/cloud/types.js";
 
@@ -28,10 +31,7 @@ export const REPO_SLUG = `${ORG_SLUG}/${BARE_REPO_SLUG}`;
  * Same algorithm as thin-mode.test.ts syntheticVector() for consistency.
  */
 export function syntheticVector(seed: number): number[] {
-	const v = Array.from(
-		{ length: 8 },
-		(_, i) => Math.sin(seed * 1.7 + i * 0.5),
-	);
+	const v = Array.from({ length: 8 }, (_, i) => Math.sin(seed * 1.7 + i * 0.5));
 	const norm = Math.sqrt(v.reduce((s, x) => s + x * x, 0));
 	return v.map((x) => x / norm);
 }

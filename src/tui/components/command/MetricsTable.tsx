@@ -118,13 +118,11 @@ export function MetricsTable({
 
 	// Build header row string
 	const headerStr =
-		"  " +
-		columns.map((col) => pad(col.header, col.width)).join(" ");
+		"  " + columns.map((col) => pad(col.header, col.width)).join(" ");
 
 	// Build separator row string
 	const separatorStr =
-		"  " +
-		columns.map((col) => "─".repeat(col.width - 1)).join(" ");
+		"  " + columns.map((col) => "─".repeat(col.width - 1)).join(" ");
 
 	return (
 		<box flexDirection="column">
@@ -152,9 +150,13 @@ export function MetricsTable({
 						typeof raw === "number" && !isNaN(raw) && raw > 0 ? raw : NaN;
 					const stats = colStats[colIdx];
 					const isMax =
-						!isNaN(numVal) && round(numVal) === stats.max && stats.min !== stats.max;
+						!isNaN(numVal) &&
+						round(numVal) === stats.max &&
+						stats.min !== stats.max;
 					const isMin =
-						!isNaN(numVal) && round(numVal) === stats.min && stats.min !== stats.max;
+						!isNaN(numVal) &&
+						round(numVal) === stats.min &&
+						stats.min !== stats.max;
 
 					return {
 						text: padded,
@@ -173,7 +175,9 @@ export function MetricsTable({
 								text={cell.text + (cellIdx < cells.length - 1 ? " " : "")}
 								isMax={cell.isMax}
 								isMin={cell.isMin}
-								highlight={cell.highlight as "higher-better" | "lower-better" | "none"}
+								highlight={
+									cell.highlight as "higher-better" | "lower-better" | "none"
+								}
 								shouldHighlight={shouldHighlight}
 							/>
 						))}

@@ -222,7 +222,9 @@ export class LocalCloudStub implements ICloudIndexClient {
 		return results;
 	}
 
-	async registerRepo(request: RegisterRepoRequest): Promise<RegisterRepoResponse> {
+	async registerRepo(
+		request: RegisterRepoRequest,
+	): Promise<RegisterRepoResponse> {
 		const key = `${request.orgSlug}::${request.repoSlug}`;
 		const existed = this.repos.has(key);
 
@@ -357,7 +359,10 @@ export class LocalCloudStub implements ICloudIndexClient {
 		lines.push("");
 
 		// Collect files from chunks
-		const byFile = new Map<string, Array<{ name: string; kind: string; line: number }>>();
+		const byFile = new Map<
+			string,
+			Array<{ name: string; kind: string; line: number }>
+		>();
 		for (const hash of record.chunkHashes) {
 			const chunk = this.chunks.get(hash);
 			if (!chunk?.name) continue;
@@ -374,7 +379,9 @@ export class LocalCloudStub implements ICloudIndexClient {
 		for (const [filePath, symbols] of byFile) {
 			lines.push(`file=${filePath}`);
 			for (const sym of symbols) {
-				lines.push(`  symbol name=${sym.name} kind=${sym.kind} line=${sym.line} rank=0.000`);
+				lines.push(
+					`  symbol name=${sym.name} kind=${sym.kind} line=${sym.line} rank=0.000`,
+				);
 			}
 		}
 
@@ -391,7 +398,10 @@ export class LocalCloudStub implements ICloudIndexClient {
 	}
 
 	/** Return the commit record for a specific commit (for assertions in tests) */
-	getCommitRecord(repoSlug: string, commitSha: string): CommitRecord | undefined {
+	getCommitRecord(
+		repoSlug: string,
+		commitSha: string,
+	): CommitRecord | undefined {
 		return this.commits.get(this.commitKey(repoSlug, commitSha));
 	}
 

@@ -25,7 +25,9 @@ let cachedPricing: Map<string, ModelPricing> | null = null;
  * Fetch model pricing from OpenRouter's public /api/v1/models endpoint.
  * Results are cached for the process lifetime.
  */
-export async function fetchOpenRouterPricing(): Promise<Map<string, ModelPricing>> {
+export async function fetchOpenRouterPricing(): Promise<
+	Map<string, ModelPricing>
+> {
 	if (cachedPricing) return cachedPricing;
 
 	cachedPricing = new Map();
@@ -68,7 +70,8 @@ export function estimateCost(
 	outputTokens: number,
 ): number {
 	// Try exact match first, then try with openrouter/ prefix stripped
-	const p = pricing.get(modelId) || pricing.get(modelId.replace(/^openrouter\//, ""));
+	const p =
+		pricing.get(modelId) || pricing.get(modelId.replace(/^openrouter\//, ""));
 	if (!p) return 0;
 	return p.promptPerToken * inputTokens + p.completionPerToken * outputTokens;
 }

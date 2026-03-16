@@ -51,13 +51,9 @@ export function TabBar() {
 							paddingRight={2}
 						>
 							{isActive ? (
-								<text fg={theme.tabActive}>
-									{"[" + tab.label + "]"}
-								</text>
+								<text fg={theme.tabActive}>{"[" + tab.label + "]"}</text>
 							) : (
-								<text fg={theme.tabInactive}>
-									{" " + tab.label + " "}
-								</text>
+								<text fg={theme.tabInactive}>{" " + tab.label + " "}</text>
 							)}
 						</box>
 					);
@@ -65,7 +61,7 @@ export function TabBar() {
 			</box>
 
 			<box paddingRight={1}>
-				<text fg={theme.muted}>q:quit  ?:help  Tab:next</text>
+				<text fg={theme.muted}>q:quit ?:help Tab:next</text>
 			</box>
 		</box>
 	);

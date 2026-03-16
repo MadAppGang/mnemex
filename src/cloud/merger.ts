@@ -45,25 +45,30 @@ export class OverlayMerger {
 		const dirtySet = new Set(dirtyFilePaths);
 
 		// ── Step 1: Filter cloud results for dirty files ────────────────────
-		const filteredCloud = cloudResults.filter(
-			(r) => !dirtySet.has(r.filePath),
-		);
+		const filteredCloud = cloudResults.filter((r) => !dirtySet.has(r.filePath));
 
 		// ── Step 2: Convert cloud results → SearchResult ────────────────────
-		const cloudAsSearchResults: Array<{ result: SearchResult; rawScore: number }> =
-			filteredCloud.map((r) => ({
-				result: cloudResultToSearchResult(r),
-				rawScore: r.score,
-			}));
+		const cloudAsSearchResults: Array<{
+			result: SearchResult;
+			rawScore: number;
+		}> = filteredCloud.map((r) => ({
+			result: cloudResultToSearchResult(r),
+			rawScore: r.score,
+		}));
 
-		const overlayAsSearchResults: Array<{ result: SearchResult; rawScore: number }> =
-			overlayResults.map((r) => ({
-				result: r,
-				rawScore: r.score,
-			}));
+		const overlayAsSearchResults: Array<{
+			result: SearchResult;
+			rawScore: number;
+		}> = overlayResults.map((r) => ({
+			result: r,
+			rawScore: r.score,
+		}));
 
 		// ── Step 3: Handle fully empty case ──────────────────────────────────
-		if (cloudAsSearchResults.length === 0 && overlayAsSearchResults.length === 0) {
+		if (
+			cloudAsSearchResults.length === 0 &&
+			overlayAsSearchResults.length === 0
+		) {
 			return [];
 		}
 

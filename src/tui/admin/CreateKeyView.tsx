@@ -62,7 +62,11 @@ export function CreateKeyView({
 	useKeyboard((key) => {
 		// If showing secret, only Enter or Escape dismisses
 		if (newSecret !== null) {
-			if (key.name === "return" || key.name === "enter" || key.name === "escape") {
+			if (
+				key.name === "return" ||
+				key.name === "enter" ||
+				key.name === "escape"
+			) {
 				onDismissSecret();
 			}
 			return;
@@ -124,7 +128,9 @@ export function CreateKeyView({
 				>
 					<box flexDirection="row">
 						<text fg={theme.warning}>{"! WARNING  "}</text>
-						<text fg={theme.dangerText}>{"This secret will NOT be shown again"}</text>
+						<text fg={theme.dangerText}>
+							{"This secret will NOT be shown again"}
+						</text>
 					</box>
 
 					<box marginTop={1} flexDirection="row">
@@ -139,7 +145,9 @@ export function CreateKeyView({
 					)}
 					{!copied && (
 						<box marginTop={1} flexDirection="row">
-							<text fg={theme.dimmed}>{"  clipboard unavailable — copy manually"}</text>
+							<text fg={theme.dimmed}>
+								{"  clipboard unavailable — copy manually"}
+							</text>
 						</box>
 					)}
 				</box>

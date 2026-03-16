@@ -735,6 +735,6 @@ export interface SummaryStats {
 export function createValidationStore(
 	projectPath: string = ".",
 ): ValidationStore {
-	const dbPath = `${projectPath}/.claudemem/validation.db`;
+	const dbPath = `${projectPath}/.mnemex/validation.db`;
 	return new ValidationStore(dbPath);
 }

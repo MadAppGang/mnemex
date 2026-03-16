@@ -22,9 +22,7 @@ import { join } from "node:path";
 import { createIndexer } from "../../core/indexer.js";
 import { FileTracker } from "../../core/tracker.js";
 import { existsSync } from "node:fs";
-import {
-	discoverEmbeddingModels,
-} from "../../models/model-discovery.js";
+import { discoverEmbeddingModels } from "../../models/model-discovery.js";
 import { createLearningSystem } from "../../learning/index.js";
 import type { ToolDeps } from "./deps.js";
 import { buildFreshness, errorResponse } from "./deps.js";
@@ -34,7 +32,7 @@ import { buildFreshness, errorResponse } from "./deps.js";
 // ---------------------------------------------------------------------------
 
 function getFileTracker(projectPath: string): FileTracker | null {
-	const dbPath = join(projectPath, ".claudemem", "index.db");
+	const dbPath = join(projectPath, ".mnemex", "index.db");
 	if (!existsSync(dbPath)) {
 		return null;
 	}
@@ -47,7 +45,7 @@ function appendActivityNotification(
 	type: string,
 ): void {
 	try {
-		const jsonlPath = join(projectPath, ".claudemem", "activity.jsonl");
+		const jsonlPath = join(projectPath, ".mnemex", "activity.jsonl");
 		const notification = JSON.stringify({
 			id: activityId,
 			type,
@@ -81,10 +79,7 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 				.boolean()
 				.optional()
 				.describe("Force re-index all files, ignoring cached state"),
-			model: z
-				.string()
-				.optional()
-				.describe("Embedding model to use"),
+			model: z.string().optional().describe("Embedding model to use"),
 			enableEnrichment: z
 				.boolean()
 				.optional()
@@ -113,7 +108,11 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 							filesIndexed: result.filesIndexed,
 							chunksCreated: result.chunksCreated,
 						});
-						appendActivityNotification(projectPath, activityId, "index_codebase");
+						appendActivityNotification(
+							projectPath,
+							activityId,
+							"index_codebase",
+						);
 					} catch {
 						// Silent
 					} finally {
@@ -305,7 +304,8 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 
 				response += `---\n`;
 				response += `*Chunk IDs: ${chunkIds.map((id) => id.slice(0, 8)).join(", ")}*\n`;
-				response += `\n` + JSON.stringify(buildFreshness(stateManager, startTime));
+				response +=
+					`\n` + JSON.stringify(buildFreshness(stateManager, startTime));
 
 				return { content: [{ type: "text" as const, text: response }] };
 			} catch (err) {
@@ -480,7 +480,15 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 				.optional()
 				.describe("Project path (default: current directory)"),
 		},
-		async ({ query, allResultIds, helpfulIds, unhelpfulIds, sessionId, useCase, path }) => {
+		async ({
+			query,
+			allResultIds,
+			helpfulIds,
+			unhelpfulIds,
+			sessionId,
+			useCase,
+			path,
+		}) => {
 			try {
 				const projectPath = path ?? process.cwd();
 				const tracker = getFileTracker(projectPath);

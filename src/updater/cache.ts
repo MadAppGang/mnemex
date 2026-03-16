@@ -1,6 +1,6 @@
 /**
  * Cache management for update checks
- * Cache location: ~/.claudemem/update-cache.json
+ * Cache location: ~/.mnemex/update-cache.json
  * TTL: 24 hours
  */
 
@@ -20,7 +20,7 @@ export interface UpdateCacheEntry {
 	publishedAt?: string;
 }
 
-const CACHE_DIR = join(homedir(), ".claudemem");
+const CACHE_DIR = join(homedir(), ".mnemex");
 const CACHE_FILE = join(CACHE_DIR, "update-cache.json");
 
 export function getCacheFilePath(): string {

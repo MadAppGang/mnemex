@@ -8,6 +8,7 @@
  * - Context formatting with attention-aware positioning
  */
 
+import type { IVectorStore } from "../core/store.js";
 import type {
 	CodeUnit,
 	DocumentType,
@@ -19,18 +20,20 @@ import type {
 	RerankedSearchResult,
 	UnitType,
 } from "../types.js";
-import type { IVectorStore } from "../core/store.js";
 import {
-	QueryRouter,
-	createQueryRouter,
-	type RouteResult,
-} from "./routing/query-router.js";
-import { LLMReranker, createLLMReranker } from "./reranking/llm-reranker.js";
-import {
-	ContextFormatter,
-	createContextFormatter,
+	type ContextFormatter,
 	type FormatInput,
+	createContextFormatter,
 } from "./formatting/context-formatter.js";
+import {
+	type LLMReranker,
+	createLLMReranker,
+} from "./reranking/llm-reranker.js";
+import {
+	type QueryRouter,
+	type RouteResult,
+	createQueryRouter,
+} from "./routing/query-router.js";
 
 // ============================================================================
 // Types
@@ -280,9 +283,6 @@ export class EnhancedRetriever {
 					unitTypes,
 					filePath: pathPattern || strategy.filters?.pathPattern,
 				});
-
-			case "keyword":
-			case "vector":
 			default:
 				// Hybrid search (default)
 				return this.store.searchCodeUnits(query, queryVector, {

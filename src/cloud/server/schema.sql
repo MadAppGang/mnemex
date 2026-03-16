@@ -1,4 +1,4 @@
--- claudemem cloud test server schema
+-- mnemex cloud test server schema
 -- PostgreSQL 16 + pgvector
 -- No authentication tables — simplified for testing.
 

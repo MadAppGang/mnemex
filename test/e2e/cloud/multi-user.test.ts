@@ -88,7 +88,10 @@ describe("E2E: Multi-user scenarios", () => {
 
 			// Register once (shared repo), then upload both commits
 			const clientA = createClient();
-			await clientA.registerRepo({ orgSlug: ORG_SLUG, repoSlug: BARE_REPO_SLUG });
+			await clientA.registerRepo({
+				orgSlug: ORG_SLUG,
+				repoSlug: BARE_REPO_SLUG,
+			});
 
 			const uploadMain = await clientA.uploadIndex({
 				orgSlug: ORG_SLUG,
@@ -134,7 +137,9 @@ describe("E2E: Multi-user scenarios", () => {
 				expect(fp).toMatch(/main_branch_file/);
 			}
 			// No feature-branch files should appear
-			expect(mainFilePaths.some((p) => p.includes("feature_branch"))).toBe(false);
+			expect(mainFilePaths.some((p) => p.includes("feature_branch"))).toBe(
+				false,
+			);
 
 			for (const [fp, source] of mainByFile) {
 				expect(fp).toMatch(/main_branch_file/);
@@ -161,7 +166,9 @@ describe("E2E: Multi-user scenarios", () => {
 				expect(fp).toMatch(/feature_branch_file/);
 			}
 			// No main-branch files should appear
-			expect(featureFilePaths.some((p) => p.includes("main_branch"))).toBe(false);
+			expect(featureFilePaths.some((p) => p.includes("main_branch"))).toBe(
+				false,
+			);
 
 			for (const [fp, source] of featureByFile) {
 				expect(fp).toMatch(/feature_branch_file/);
@@ -231,7 +238,10 @@ describe("E2E: Multi-user scenarios", () => {
 			];
 
 			const client = createClient();
-			await client.registerRepo({ orgSlug: ORG_SLUG, repoSlug: BARE_REPO_SLUG });
+			await client.registerRepo({
+				orgSlug: ORG_SLUG,
+				repoSlug: BARE_REPO_SLUG,
+			});
 
 			const uploadResult = await client.uploadIndex({
 				orgSlug: ORG_SLUG,
@@ -365,7 +375,9 @@ describe("E2E: Multi-user scenarios", () => {
 
 			// The new file should be present at the child commit
 			const childFilePaths = childResults.map((r) => r.filePath);
-			expect(childFilePaths.some((p) => p.includes("new_commit_file"))).toBe(true);
+			expect(childFilePaths.some((p) => p.includes("new_commit_file"))).toBe(
+				true,
+			);
 
 			// ── Verify parent commit is still searchable ────────────────────
 			const parentResults = await client.search({
@@ -384,9 +396,9 @@ describe("E2E: Multi-user scenarios", () => {
 
 			// Parent commit results should only contain parent files
 			const parentFilePaths = parentResults.map((r) => r.filePath);
-			expect(
-				parentFilePaths.some((p) => p.includes("new_commit_file")),
-			).toBe(false);
+			expect(parentFilePaths.some((p) => p.includes("new_commit_file"))).toBe(
+				false,
+			);
 		});
 	});
 
@@ -417,7 +429,10 @@ describe("E2E: Multi-user scenarios", () => {
 			// Register once, then fire both uploads concurrently
 			const clientA = createClient();
 			const clientB = createClient();
-			await clientA.registerRepo({ orgSlug: ORG_SLUG, repoSlug: BARE_REPO_SLUG });
+			await clientA.registerRepo({
+				orgSlug: ORG_SLUG,
+				repoSlug: BARE_REPO_SLUG,
+			});
 
 			const [resultA, resultB] = await Promise.all([
 				clientA.uploadIndex({

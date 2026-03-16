@@ -33,8 +33,7 @@ export async function authMiddleware(
 
 	// Extract Bearer token
 	const authHeader = ctx.req.headers.get("Authorization");
-	const token =
-		authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+	const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
 	if (!token) {
 		return json({ error: "unauthorized" }, 401);
 	}

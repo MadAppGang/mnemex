@@ -29,7 +29,9 @@ export async function renderBenchmarkResultsTui(
 	// Ensure we have a TTY - interactive TUI requires one
 	if (!process.stdout.isTTY) {
 		// Fallback: print a simple message and skip the TUI
-		console.log("[benchmark] Results ready. Run with a TTY to see interactive TUI.");
+		console.log(
+			"[benchmark] Results ready. Run with a TTY to see interactive TUI.",
+		);
 		return "quit";
 	}
 
@@ -61,6 +63,8 @@ export async function renderBenchmarkResultsTui(
 		const quit = () => cleanup("quit");
 		const onBack = () => cleanup("back");
 
-		root.render(<BenchmarkResultsApp data={data} quit={quit} onBack={onBack} />);
+		root.render(
+			<BenchmarkResultsApp data={data} quit={quit} onBack={onBack} />,
+		);
 	});
 }

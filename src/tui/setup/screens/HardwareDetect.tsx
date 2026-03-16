@@ -86,7 +86,7 @@ export function HardwareDetectScreen({
 			{/* Header */}
 			<box flexDirection="row" paddingLeft={1} paddingTop={1}>
 				<text fg={theme.borderDim}>{"┌─"}</text>
-				<text fg={theme.primary}>{" claudemem "}</text>
+				<text fg={theme.primary}>{" mnemex "}</text>
 				<text fg={theme.borderDim}>{"─"}</text>
 				<text fg={theme.muted}>{" Setup "}</text>
 				<text fg={theme.borderDim}>{"─"}</text>
@@ -102,7 +102,9 @@ export function HardwareDetectScreen({
 						<text fg={theme.muted}>{"Detecting hardware..."}</text>
 					</box>
 					<box marginTop={1} paddingLeft={4}>
-						<text fg={theme.dimmed}>{"Checking RAM, CPU, GPU, Ollama, LM Studio"}</text>
+						<text fg={theme.dimmed}>
+							{"Checking RAM, CPU, GPU, Ollama, LM Studio"}
+						</text>
 					</box>
 				</box>
 			)}
@@ -115,11 +117,15 @@ export function HardwareDetectScreen({
 					</box>
 					<box marginTop={1} flexDirection="row">
 						<text fg={theme.labelDim}>{"  RAM       "}</text>
-						<text fg={theme.valueBright}>{`${hw.totalRamGb.toFixed(1)} GB`}</text>
+						<text
+							fg={theme.valueBright}
+						>{`${hw.totalRamGb.toFixed(1)} GB`}</text>
 					</box>
 					<box flexDirection="row">
 						<text fg={theme.labelDim}>{"  CPU       "}</text>
-						<text fg={theme.text}>{`${hw.cpuCores}x ${hw.cpuModel.slice(0, 40)}`}</text>
+						<text
+							fg={theme.text}
+						>{`${hw.cpuCores}x ${hw.cpuModel.slice(0, 40)}`}</text>
 					</box>
 					<box flexDirection="row">
 						<text fg={theme.labelDim}>{"  GPU       "}</text>
@@ -172,7 +178,9 @@ export function HardwareDetectScreen({
 							))}
 							{hw.ollamaModels.length > 5 && (
 								<box paddingLeft={4}>
-									<text fg={theme.dimmed}>{`  ... and ${hw.ollamaModels.length - 5} more`}</text>
+									<text
+										fg={theme.dimmed}
+									>{`  ... and ${hw.ollamaModels.length - 5} more`}</text>
 								</box>
 							)}
 						</box>

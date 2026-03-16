@@ -53,8 +53,8 @@ export class FileWatcher {
 				if (err.code === "ENOSPC") {
 					this.logger.error(
 						"FileWatcher: inotify limit reached (ENOSPC). " +
-						"Increase fs.inotify.max_user_watches: " +
-						"echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf && sudo sysctl -p",
+							"Increase fs.inotify.max_user_watches: " +
+							"echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf && sudo sysctl -p",
 					);
 				} else {
 					this.logger.warn("FileWatcher: watcher error", err.message);
@@ -63,13 +63,19 @@ export class FileWatcher {
 		} catch (err: unknown) {
 			const nodeErr = err as NodeJS.ErrnoException;
 			// On Linux, recursive fs.watch is not supported
-			if (nodeErr.code === "ERR_FEATURE_UNAVAILABLE_ON_PLATFORM" || nodeErr.code === "EINVAL") {
+			if (
+				nodeErr.code === "ERR_FEATURE_UNAVAILABLE_ON_PLATFORM" ||
+				nodeErr.code === "EINVAL"
+			) {
 				this.logger.warn(
 					"FileWatcher: recursive fs.watch not supported on this platform (Linux). " +
-					"File watching is disabled. Run 'claudemem index' manually to update.",
+						"File watching is disabled. Run 'mnemex index' manually to update.",
 				);
 			} else {
-				this.logger.warn("FileWatcher: failed to start watcher", nodeErr.message);
+				this.logger.warn(
+					"FileWatcher: failed to start watcher",
+					nodeErr.message,
+				);
 			}
 		}
 	}
@@ -109,7 +115,9 @@ export class FileWatcher {
 		// Check ignore patterns first (fast reject)
 		for (const pattern of this.ignorePatterns) {
 			if (minimatch(relativePath, pattern, { dot: true })) {
-				this.logger.debug(`FileWatcher: ignoring ${relativePath} (matches ${pattern})`);
+				this.logger.debug(
+					`FileWatcher: ignoring ${relativePath} (matches ${pattern})`,
+				);
 				return;
 			}
 		}

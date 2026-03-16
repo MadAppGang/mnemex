@@ -63,7 +63,7 @@ async function handleAutoReindex(input: HookInput): Promise<HookOutput | null> {
 	if (!CODE_EXTENSIONS.has(ext)) return null;
 
 	// Check if project is indexed
-	const indexDir = join(input.cwd, ".claudemem");
+	const indexDir = join(input.cwd, ".mnemex");
 	if (!existsSync(indexDir)) return null;
 
 	// Debounce check

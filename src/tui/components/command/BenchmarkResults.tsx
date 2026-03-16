@@ -172,7 +172,8 @@ function BarChart({ value, max = 1, width = 20, label, color }: BarChartProps) {
 	const filled = Math.round(ratio * width);
 	const empty = width - filled;
 	const barColor = color || getScoreColor(ratio);
-	const bar = scoreBarChars.filled.repeat(filled) + scoreBarChars.empty.repeat(empty);
+	const bar =
+		scoreBarChars.filled.repeat(filled) + scoreBarChars.empty.repeat(empty);
 	const displayLabel = label !== undefined ? label : fmtPct(ratio);
 
 	return (
@@ -201,7 +202,13 @@ function LeaderboardRow({ rank, name, score, barWidth }: LeaderboardRowProps) {
 	return (
 		<box flexDirection="row" height={1}>
 			<text fg={rank === 1 ? theme.primary : theme.text}>{line}</text>
-			<BarChart value={score} max={1} width={barWidth} color={color} label={fmtPct(score)} />
+			<BarChart
+				value={score}
+				max={1}
+				width={barWidth}
+				color={color}
+				label={fmtPct(score)}
+			/>
 		</box>
 	);
 }
@@ -232,7 +239,13 @@ function MetricRow({
 	return (
 		<box flexDirection="row" height={1}>
 			<text fg={theme.muted}>{label.padEnd(labelWidth)}</text>
-			<BarChart value={value} max={max} width={barWidth} label={formattedValue} color={color} />
+			<BarChart
+				value={value}
+				max={max}
+				width={barWidth}
+				label={formattedValue}
+				color={color}
+			/>
 		</box>
 	);
 }
@@ -274,7 +287,12 @@ function Sidebar({ sections, activeIndex, height, showBack }: SidebarProps) {
 
 					if (isActive) {
 						return (
-							<box key={section.id} height={1} width="100%" backgroundColor={theme.primary}>
+							<box
+								key={section.id}
+								height={1}
+								width="100%"
+								backgroundColor={theme.primary}
+							>
 								<text fg="#000000" bold>
 									{padded}
 								</text>
@@ -283,9 +301,7 @@ function Sidebar({ sections, activeIndex, height, showBack }: SidebarProps) {
 					}
 					return (
 						<box key={section.id} height={1} width="100%">
-							<text fg={theme.text}>
-								{padded}
-							</text>
+							<text fg={theme.text}>{padded}</text>
 						</box>
 					);
 				})}
@@ -388,7 +404,10 @@ function QualitySectionContent({
 									/>
 									<box height={1}>
 										<text fg={theme.muted}>
-											{"Time " + fmtLatency(lat) + "   Cost " + fmtCost(cost, s.modelId)}
+											{"Time " +
+												fmtLatency(lat) +
+												"   Cost " +
+												fmtCost(cost, s.modelId)}
 										</text>
 									</box>
 								</box>
@@ -434,7 +453,9 @@ function OperationalSectionContent({
 	costByModel: Map<string, number>;
 	totalBenchmarkCost: number;
 }) {
-	const latencies = scores.map((s) => latencyByModel.get(s.modelId) ?? 0).filter((v) => v > 0);
+	const latencies = scores
+		.map((s) => latencyByModel.get(s.modelId) ?? 0)
+		.filter((v) => v > 0);
 	const costs = scores
 		.filter((s) => !isLocalModel(s.modelId) && !isSubscriptionModel(s.modelId))
 		.map((s) => costByModel.get(s.modelId) ?? 0)
@@ -458,7 +479,8 @@ function OperationalSectionContent({
 	});
 
 	const showCheapest =
-		!isLocalModel(cheapestModel.modelId) && !isSubscriptionModel(cheapestModel.modelId);
+		!isLocalModel(cheapestModel.modelId) &&
+		!isSubscriptionModel(cheapestModel.modelId);
 
 	const fastestLatency = latencyByModel.get(fastestModel.modelId) ?? 0;
 	const cheapestCost = costByModel.get(cheapestModel.modelId) ?? 0;
@@ -514,13 +536,17 @@ function OperationalSectionContent({
 			<Panel title="Leaders" borderColor={theme.border}>
 				<box height={1}>
 					<text fg={theme.text}>
-						{"Fastest:    " + truncateName(fastestModel.modelId, 24).padEnd(26) + fmtLatency(fastestLatency)}
+						{"Fastest:    " +
+							truncateName(fastestModel.modelId, 24).padEnd(26) +
+							fmtLatency(fastestLatency)}
 					</text>
 				</box>
 				{showCheapest && (
 					<box height={1}>
 						<text fg={theme.text}>
-							{"Cheapest:   " + truncateName(cheapestModel.modelId, 24).padEnd(26) + fmtCost(cheapestCost)}
+							{"Cheapest:   " +
+								truncateName(cheapestModel.modelId, 24).padEnd(26) +
+								fmtCost(cheapestCost)}
 						</text>
 					</box>
 				)}
@@ -581,7 +607,9 @@ function JudgeSectionContent({ scores }: { scores: NormalizedScores[] }) {
 			<Panel title="Scoring Methods" borderColor={theme.border}>
 				<box height={1}>
 					<text fg={theme.muted}>
-						{"Pointwise: Each summary rated independently (accuracy, completeness)"}
+						{
+							"Pointwise: Each summary rated independently (accuracy, completeness)"
+						}
 					</text>
 				</box>
 				<box height={1}>
@@ -642,7 +670,9 @@ function PerJudgeSectionContent({
 		if (!judgeMap.has(summary.modelId)) {
 			judgeMap.set(summary.modelId, []);
 		}
-		judgeMap.get(summary.modelId)!.push(evalResult.judgeResults.weightedAverage);
+		judgeMap
+			.get(summary.modelId)!
+			.push(evalResult.judgeResults.weightedAverage);
 	}
 
 	// Detect same-provider bias
@@ -650,8 +680,20 @@ function PerJudgeSectionContent({
 	const getVendor = (modelId: string): string => {
 		const id = modelId.toLowerCase();
 		if (id.includes("claude") || id.includes("anthropic")) return "anthropic";
-		if (id.includes("gpt") || id.includes("o1") || id.includes("openai") || id.includes("chatgpt")) return "openai";
-		if (id.includes("gemini") || id.includes("palm") || id.includes("google") || id.includes("bard")) return "google";
+		if (
+			id.includes("gpt") ||
+			id.includes("o1") ||
+			id.includes("openai") ||
+			id.includes("chatgpt")
+		)
+			return "openai";
+		if (
+			id.includes("gemini") ||
+			id.includes("palm") ||
+			id.includes("google") ||
+			id.includes("bard")
+		)
+			return "google";
 		if (id.includes("llama") || id.includes("meta")) return "meta";
 		if (id.includes("mistral") || id.includes("mixtral")) return "mistral";
 		if (id.includes("qwen") || id.includes("alibaba")) return "alibaba";
@@ -678,7 +720,10 @@ function PerJudgeSectionContent({
 		let count = 0;
 		for (const judgeId of judgeModels) {
 			const sc = byJudge.get(judgeId)?.get(genId) || [];
-			for (const v of sc) { sum += v; count++; }
+			for (const v of sc) {
+				sum += v;
+				count++;
+			}
 		}
 		return count > 0 ? sum / count / 5 : 0;
 	};
@@ -713,9 +758,10 @@ function PerJudgeSectionContent({
 						{/* One bar per judge */}
 						{judgeModels.map((judgeId, ji) => {
 							const sc = byJudge.get(judgeId)?.get(genId) || [];
-							const avg = sc.length > 0
-								? sc.reduce((a, b) => a + b, 0) / sc.length / 5
-								: 0;
+							const avg =
+								sc.length > 0
+									? sc.reduce((a, b) => a + b, 0) / sc.length / 5
+									: 0;
 							const isBiased = biasedPairs.has(`${genId}:${judgeId}`);
 							const biasTag = isBiased ? " *" : "";
 							const color = judgeColor(ji);
@@ -723,7 +769,9 @@ function PerJudgeSectionContent({
 							return (
 								<box key={judgeId} flexDirection="row" height={1}>
 									<box width={14}>
-										<text fg={color}>{("  " + truncateName(judgeId, 11)).padEnd(14)}</text>
+										<text fg={color}>
+											{("  " + truncateName(judgeId, 11)).padEnd(14)}
+										</text>
 									</box>
 									<BarChart
 										value={avg}
@@ -742,7 +790,9 @@ function PerJudgeSectionContent({
 			<Panel title="Notes" borderColor={theme.border}>
 				<box height={1}>
 					<text fg={theme.muted}>
-						{"Similar scores across judges = reliable. Large differences = potential bias."}
+						{
+							"Similar scores across judges = reliable. Large differences = potential bias."
+						}
 					</text>
 				</box>
 				{biasedPairs.size > 0 && (
@@ -779,9 +829,27 @@ function SelfEvalSectionContent({ scores }: { scores: NormalizedScores[] }) {
 								<strong>{truncateName(s.modelId, 28)}</strong>
 							</text>
 						</box>
-						<MetricRow label="Retrieval" value={s.self!.retrieval} formattedValue={fmtPct(s.self!.retrieval)} barWidth={16} labelWidth={14} />
-						<MetricRow label="Func.Sel." value={s.self!.functionSelection} formattedValue={fmtPct(s.self!.functionSelection)} barWidth={16} labelWidth={14} />
-						<MetricRow label="Overall" value={s.self!.overall} formattedValue={fmtPct(s.self!.overall)} barWidth={16} labelWidth={14} />
+						<MetricRow
+							label="Retrieval"
+							value={s.self!.retrieval}
+							formattedValue={fmtPct(s.self!.retrieval)}
+							barWidth={16}
+							labelWidth={14}
+						/>
+						<MetricRow
+							label="Func.Sel."
+							value={s.self!.functionSelection}
+							formattedValue={fmtPct(s.self!.functionSelection)}
+							barWidth={16}
+							labelWidth={14}
+						/>
+						<MetricRow
+							label="Overall"
+							value={s.self!.overall}
+							formattedValue={fmtPct(s.self!.overall)}
+							barWidth={16}
+							labelWidth={14}
+						/>
 					</box>
 				))}
 				{selfScores.length === 0 && (
@@ -792,13 +860,19 @@ function SelfEvalSectionContent({ scores }: { scores: NormalizedScores[] }) {
 			</Panel>
 			<Panel title="Self-Eval Tasks" borderColor={theme.border}>
 				<box height={1}>
-					<text fg={theme.muted}>{"Retrieval:  Can model pick its own summary from distractors?"}</text>
+					<text fg={theme.muted}>
+						{"Retrieval:  Can model pick its own summary from distractors?"}
+					</text>
 				</box>
 				<box height={1}>
-					<text fg={theme.muted}>{"Func.Sel.:  Can model identify right function from summaries?"}</text>
+					<text fg={theme.muted}>
+						{"Func.Sel.:  Can model identify right function from summaries?"}
+					</text>
 				</box>
 				<box height={1}>
-					<text fg={theme.muted}>{"Overall:    Weighted: 60% retrieval + 40% function selection"}</text>
+					<text fg={theme.muted}>
+						{"Overall:    Weighted: 60% retrieval + 40% function selection"}
+					</text>
 				</box>
 			</Panel>
 		</box>
@@ -811,7 +885,10 @@ function SelfEvalSectionContent({ scores }: { scores: NormalizedScores[] }) {
 
 function IterativeSectionContent({ scores }: { scores: NormalizedScores[] }) {
 	const iterScores = scores.filter((s) => s.iterative);
-	const maxRounds = Math.max(...iterScores.map((s) => s.iterative!.avgRounds), 1);
+	const maxRounds = Math.max(
+		...iterScores.map((s) => s.iterative!.avgRounds),
+		1,
+	);
 
 	return (
 		<box flexDirection="column" paddingY={0} paddingX={1}>
@@ -828,26 +905,56 @@ function IterativeSectionContent({ scores }: { scores: NormalizedScores[] }) {
 								<strong>{truncateName(s.modelId, 28)}</strong>
 							</text>
 						</box>
-						<MetricRow label="Avg Rounds" value={maxRounds - s.iterative!.avgRounds} max={maxRounds} formattedValue={`${s.iterative!.avgRounds.toFixed(1)} rnd`} barWidth={16} labelWidth={14} color={theme.info} />
-						<MetricRow label="Success" value={s.iterative!.successRate} formattedValue={fmtPct(s.iterative!.successRate)} barWidth={16} labelWidth={14} />
-						<MetricRow label="Score" value={s.iterative!.avgRefinementScore} formattedValue={fmtPct(s.iterative!.avgRefinementScore)} barWidth={16} labelWidth={14} />
+						<MetricRow
+							label="Avg Rounds"
+							value={maxRounds - s.iterative!.avgRounds}
+							max={maxRounds}
+							formattedValue={`${s.iterative!.avgRounds.toFixed(1)} rnd`}
+							barWidth={16}
+							labelWidth={14}
+							color={theme.info}
+						/>
+						<MetricRow
+							label="Success"
+							value={s.iterative!.successRate}
+							formattedValue={fmtPct(s.iterative!.successRate)}
+							barWidth={16}
+							labelWidth={14}
+						/>
+						<MetricRow
+							label="Score"
+							value={s.iterative!.avgRefinementScore}
+							formattedValue={fmtPct(s.iterative!.avgRefinementScore)}
+							barWidth={16}
+							labelWidth={14}
+						/>
 					</box>
 				))}
 				{iterScores.length === 0 && (
 					<box height={1}>
-						<text fg={theme.muted}>{"No iterative refinement data available."}</text>
+						<text fg={theme.muted}>
+							{"No iterative refinement data available."}
+						</text>
 					</box>
 				)}
 			</Panel>
 			<Panel title="Iterative Metrics" borderColor={theme.border}>
 				<box height={1}>
-					<text fg={theme.muted}>{"Avg Rounds: Refinement iterations (0 = first try, lower = better)"}</text>
+					<text fg={theme.muted}>
+						{
+							"Avg Rounds: Refinement iterations (0 = first try, lower = better)"
+						}
+					</text>
 				</box>
 				<box height={1}>
-					<text fg={theme.muted}>{"Success:    Achieved target rank within max rounds"}</text>
+					<text fg={theme.muted}>
+						{"Success:    Achieved target rank within max rounds"}
+					</text>
 				</box>
 				<box height={1}>
-					<text fg={theme.muted}>{"Score:      1/log2(rounds+2) \u2014 rewards fewer iterations"}</text>
+					<text fg={theme.muted}>
+						{"Score:      1/log2(rounds+2) \u2014 rewards fewer iterations"}
+					</text>
 				</box>
 			</Panel>
 		</box>
@@ -872,22 +979,29 @@ function SummarySectionContent({
 	const worst = scores[scores.length - 1];
 	const maxScore = best.overall;
 
-	const bestRetr = [...scores].sort((a, b) => b.retrieval.combined - a.retrieval.combined)[0];
-	const bestContr = [...scores].sort((a, b) => b.contrastive.combined - a.contrastive.combined)[0];
-	const bestJudge = [...scores].sort((a, b) => b.judge.combined - a.judge.combined)[0];
+	const bestRetr = [...scores].sort(
+		(a, b) => b.retrieval.combined - a.retrieval.combined,
+	)[0];
+	const bestContr = [...scores].sort(
+		(a, b) => b.contrastive.combined - a.contrastive.combined,
+	)[0];
+	const bestJudge = [...scores].sort(
+		(a, b) => b.judge.combined - a.judge.combined,
+	)[0];
 
 	// Only consider models with actual latency data
 	const modelsWithLatency = scores.filter((s) => {
 		const lat = latencyByModel.get(s.modelId);
 		return lat !== undefined && lat > 0;
 	});
-	const fastestModel = modelsWithLatency.length > 0
-		? modelsWithLatency.reduce((a, b) => {
-			const latA = latencyByModel.get(a.modelId)!;
-			const latB = latencyByModel.get(b.modelId)!;
-			return latA < latB ? a : b;
-		})
-		: null;
+	const fastestModel =
+		modelsWithLatency.length > 0
+			? modelsWithLatency.reduce((a, b) => {
+					const latA = latencyByModel.get(a.modelId)!;
+					const latB = latencyByModel.get(b.modelId)!;
+					return latA < latB ? a : b;
+				})
+			: null;
 
 	// Only consider models with actual cost data (> 0), excluding local/sub
 	const modelsWithCost = scores.filter((s) => {
@@ -895,13 +1009,14 @@ function SummarySectionContent({
 		const cost = costByModel.get(s.modelId);
 		return cost !== undefined && cost > 0;
 	});
-	const cheapestModel = modelsWithCost.length > 0
-		? modelsWithCost.reduce((a, b) => {
-			const costA = costByModel.get(a.modelId)!;
-			const costB = costByModel.get(b.modelId)!;
-			return costA < costB ? a : b;
-		})
-		: null;
+	const cheapestModel =
+		modelsWithCost.length > 0
+			? modelsWithCost.reduce((a, b) => {
+					const costA = costByModel.get(a.modelId)!;
+					const costB = costByModel.get(b.modelId)!;
+					return costA < costB ? a : b;
+				})
+			: null;
 
 	const codebaseLabel =
 		data.codebaseType &&
@@ -921,7 +1036,9 @@ function SummarySectionContent({
 		<box flexDirection="column" paddingY={0} paddingX={1}>
 			{codebaseLabel && (
 				<box height={1} marginBottom={1}>
-					<text fg={theme.info} bold>{"\u2500\u2500 Codebase: " + codebaseLabel + " \u2500\u2500"}</text>
+					<text fg={theme.info} bold>
+						{"\u2500\u2500 Codebase: " + codebaseLabel + " \u2500\u2500"}
+					</text>
 				</box>
 			)}
 
@@ -938,12 +1055,23 @@ function SummarySectionContent({
 					const rank = (i + 1).toString();
 					const pct = fmtPct(s.overall);
 					const winner = i === 0 ? " << WINNER" : "";
-					const bar = scoreBarChars.filled.repeat(filled) + scoreBarChars.empty.repeat(empty);
+					const bar =
+						scoreBarChars.filled.repeat(filled) +
+						scoreBarChars.empty.repeat(empty);
 
 					return (
 						<box key={s.modelId} height={1}>
 							<text fg={color} bold>
-								{" " + icon + " " + rank + ". " + name.padEnd(24) + bar + " " + pct.padStart(4) + winner}
+								{" " +
+									icon +
+									" " +
+									rank +
+									". " +
+									name.padEnd(24) +
+									bar +
+									" " +
+									pct.padStart(4) +
+									winner}
 							</text>
 						</box>
 					);
@@ -953,19 +1081,41 @@ function SummarySectionContent({
 			{/* Category Champions — single <text> per line to avoid overlap */}
 			<Panel title=" Category Champions " borderColor={theme.info}>
 				{[
-					{ cat: "Retrieval",    weight: "45%", model: bestRetr, score: bestRetr.retrieval.combined },
-					{ cat: "Contrastive",  weight: "30%", model: bestContr, score: bestContr.contrastive.combined },
-					{ cat: "Judge",        weight: "25%", model: bestJudge, score: bestJudge.judge.combined },
+					{
+						cat: "Retrieval",
+						weight: "45%",
+						model: bestRetr,
+						score: bestRetr.retrieval.combined,
+					},
+					{
+						cat: "Contrastive",
+						weight: "30%",
+						model: bestContr,
+						score: bestContr.contrastive.combined,
+					},
+					{
+						cat: "Judge",
+						weight: "25%",
+						model: bestJudge,
+						score: bestJudge.judge.combined,
+					},
 				].map(({ cat, weight, model, score }) => {
 					const barW = 14;
 					const filled = Math.round(score * barW);
 					const empty = barW - filled;
-					const bar = scoreBarChars.filled.repeat(filled) + scoreBarChars.empty.repeat(empty);
+					const bar =
+						scoreBarChars.filled.repeat(filled) +
+						scoreBarChars.empty.repeat(empty);
 					const line =
-						" " + cat.padEnd(14) +
-						"(" + weight + ") " +
+						" " +
+						cat.padEnd(14) +
+						"(" +
+						weight +
+						") " +
 						truncateName(model.modelId, 18).padEnd(20) +
-						bar + " " + fmtPct(score);
+						bar +
+						" " +
+						fmtPct(score);
 					return (
 						<box key={cat} height={1}>
 							<text fg={theme.text}>{line}</text>
@@ -979,21 +1129,26 @@ function SummarySectionContent({
 				{fastestModel && (
 					<box height={1}>
 						<text fg={theme.text}>
-							{" Fastest:  " + truncateName(fastestModel.modelId, 22).padEnd(24) + fmtLatency(latencyByModel.get(fastestModel.modelId)!)}
+							{" Fastest:  " +
+								truncateName(fastestModel.modelId, 22).padEnd(24) +
+								fmtLatency(latencyByModel.get(fastestModel.modelId)!)}
 						</text>
 					</box>
 				)}
 				{cheapestModel && (
 					<box height={1}>
 						<text fg={theme.text}>
-							{" Cheapest: " + truncateName(cheapestModel.modelId, 22).padEnd(24) + fmtCost(costByModel.get(cheapestModel.modelId)!)}
+							{" Cheapest: " +
+								truncateName(cheapestModel.modelId, 22).padEnd(24) +
+								fmtCost(costByModel.get(cheapestModel.modelId)!)}
 						</text>
 					</box>
 				)}
 				{data.totalBenchmarkCost > 0 && (
 					<box height={1} marginTop={1}>
 						<text fg={theme.muted}>
-							{"   Total benchmark cost: " + fmtCostTotal(data.totalBenchmarkCost)}
+							{"   Total benchmark cost: " +
+								fmtCostTotal(data.totalBenchmarkCost)}
 						</text>
 					</box>
 				)}
@@ -1006,17 +1161,23 @@ function SummarySectionContent({
 				</box>
 				<box height={1}>
 					<text fg={theme.text}>
-						{" Retrieval    45%   Can agents FIND the right code? (Precision@K, MRR)"}
+						{
+							" Retrieval    45%   Can agents FIND the right code? (Precision@K, MRR)"
+						}
 					</text>
 				</box>
 				<box height={1}>
 					<text fg={theme.text}>
-						{" Contrastive  30%   Can agents DISTINGUISH similar code from distractors?"}
+						{
+							" Contrastive  30%   Can agents DISTINGUISH similar code from distractors?"
+						}
 					</text>
 				</box>
 				<box height={1}>
 					<text fg={theme.text}>
-						{" Judge        25%   Is the summary accurate and complete? (LLM eval)"}
+						{
+							" Judge        25%   Is the summary accurate and complete? (LLM eval)"
+						}
 					</text>
 				</box>
 				<box height={1} marginTop={1}>
@@ -1024,87 +1185,103 @@ function SummarySectionContent({
 				</box>
 				<box height={1}>
 					<text fg={theme.muted}>
-						{" Overall = 0.45 \u00d7 Retrieval + 0.30 \u00d7 Contrastive + 0.25 \u00d7 Judge"}
+						{
+							" Overall = 0.45 \u00d7 Retrieval + 0.30 \u00d7 Contrastive + 0.25 \u00d7 Judge"
+						}
 					</text>
 				</box>
 
-				{scores.length > 1 && (() => {
-					const winner = best;
-					const runnerUp = scores[1];
-					const gap = winner.overall - runnerUp.overall;
-					const isClose = gap < 0.03;
+				{scores.length > 1 &&
+					(() => {
+						const winner = best;
+						const runnerUp = scores[1];
+						const gap = winner.overall - runnerUp.overall;
+						const isClose = gap < 0.03;
 
-					// Find what the winner is best at
-					const strengths: string[] = [];
-					if (winner.retrieval.combined >= bestRetr.retrieval.combined) strengths.push("retrieval");
-					if (winner.contrastive.combined >= bestContr.contrastive.combined) strengths.push("contrastive");
-					if (winner.judge.combined >= bestJudge.judge.combined) strengths.push("judge quality");
+						// Find what the winner is best at
+						const strengths: string[] = [];
+						if (winner.retrieval.combined >= bestRetr.retrieval.combined)
+							strengths.push("retrieval");
+						if (winner.contrastive.combined >= bestContr.contrastive.combined)
+							strengths.push("contrastive");
+						if (winner.judge.combined >= bestJudge.judge.combined)
+							strengths.push("judge quality");
 
-					// Find runner-up's strengths
-					const runnerStrengths: string[] = [];
-					if (runnerUp.retrieval.combined > winner.retrieval.combined) runnerStrengths.push("retrieval");
-					if (runnerUp.contrastive.combined > winner.contrastive.combined) runnerStrengths.push("contrastive");
-					if (runnerUp.judge.combined > winner.judge.combined) runnerStrengths.push("judge quality");
+						// Find runner-up's strengths
+						const runnerStrengths: string[] = [];
+						if (runnerUp.retrieval.combined > winner.retrieval.combined)
+							runnerStrengths.push("retrieval");
+						if (runnerUp.contrastive.combined > winner.contrastive.combined)
+							runnerStrengths.push("contrastive");
+						if (runnerUp.judge.combined > winner.judge.combined)
+							runnerStrengths.push("judge quality");
 
-					const winnerName = truncateName(winner.modelId, 24);
-					const runnerName = truncateName(runnerUp.modelId, 24);
+						const winnerName = truncateName(winner.modelId, 24);
+						const runnerName = truncateName(runnerUp.modelId, 24);
 
-					const recommendation = isClose
-						? `${winnerName} edges out ${runnerName} by ${fmtPct(gap)} \u2014 effectively a tie.`
-						: `${winnerName} leads by ${fmtPct(gap)} over ${runnerName}.`;
+						const recommendation = isClose
+							? `${winnerName} edges out ${runnerName} by ${fmtPct(gap)} \u2014 effectively a tie.`
+							: `${winnerName} leads by ${fmtPct(gap)} over ${runnerName}.`;
 
-					const reasoning = strengths.length > 0
-						? `Winner excels at: ${strengths.join(", ")}.`
-						: runnerStrengths.length > 0
-							? `${runnerName} is stronger at ${runnerStrengths.join(", ")}, but ${winnerName} wins on overall balance.`
-							: `${winnerName} scores consistently across all categories.`;
+						const reasoning =
+							strengths.length > 0
+								? `Winner excels at: ${strengths.join(", ")}.`
+								: runnerStrengths.length > 0
+									? `${runnerName} is stronger at ${runnerStrengths.join(", ")}, but ${winnerName} wins on overall balance.`
+									: `${winnerName} scores consistently across all categories.`;
 
-					return (
-						<box flexDirection="column" marginTop={1}>
-							<box height={1}>
-								<text fg={theme.info}>{"Recommendation"}</text>
-							</box>
-							<box height={1}>
-								<text fg={theme.text}>
-									{" " + recommendation}
-								</text>
-							</box>
-							<box height={1}>
-								<text fg={theme.text}>
-									{" " + reasoning}
-								</text>
-							</box>
-							{isClose && (
+						return (
+							<box flexDirection="column" marginTop={1}>
 								<box height={1}>
-									<text fg={theme.muted}>
-										{" Consider cost and latency as tiebreakers for close results."}
-									</text>
+									<text fg={theme.info}>{"Recommendation"}</text>
 								</box>
-							)}
-						</box>
-					);
-				})()}
+								<box height={1}>
+									<text fg={theme.text}>{" " + recommendation}</text>
+								</box>
+								<box height={1}>
+									<text fg={theme.text}>{" " + reasoning}</text>
+								</box>
+								{isClose && (
+									<box height={1}>
+										<text fg={theme.muted}>
+											{
+												" Consider cost and latency as tiebreakers for close results."
+											}
+										</text>
+									</box>
+								)}
+							</box>
+						);
+					})()}
 			</Panel>
 
 			{/* Reports panel with keyboard shortcuts */}
-			{(data.outputFiles.json || data.outputFiles.markdown || data.outputFiles.html) && (
+			{(data.outputFiles.json ||
+				data.outputFiles.markdown ||
+				data.outputFiles.html) && (
 				<Panel title=" Reports " borderColor={theme.border}>
 					<box height={1} marginBottom={1}>
 						<text fg={theme.muted}>{"Press key to open in default app:"}</text>
 					</box>
 					{data.outputFiles.json && (
 						<box height={1}>
-							<text fg={theme.text}>{"  [j] JSON     " + data.outputFiles.json}</text>
+							<text fg={theme.text}>
+								{"  [j] JSON     " + data.outputFiles.json}
+							</text>
 						</box>
 					)}
 					{data.outputFiles.markdown && (
 						<box height={1}>
-							<text fg={theme.text}>{"  [m] Markdown " + data.outputFiles.markdown}</text>
+							<text fg={theme.text}>
+								{"  [m] Markdown " + data.outputFiles.markdown}
+							</text>
 						</box>
 					)}
 					{data.outputFiles.html && (
 						<box height={1}>
-							<text fg={theme.text}>{"  [h] HTML     " + data.outputFiles.html}</text>
+							<text fg={theme.text}>
+								{"  [h] HTML     " + data.outputFiles.html}
+							</text>
 						</box>
 					)}
 				</Panel>
@@ -1139,7 +1316,9 @@ function ErrorsSectionContent({ errors }: { errors: BenchmarkError[] }) {
 			<box flexDirection="column" paddingY={0} paddingX={1}>
 				<Panel title="Errors" borderColor={theme.success}>
 					<box height={1}>
-						<text fg={theme.success}>{"No errors recorded. All phases completed successfully."}</text>
+						<text fg={theme.success}>
+							{"No errors recorded. All phases completed successfully."}
+						</text>
 					</box>
 				</Panel>
 			</box>
@@ -1150,7 +1329,10 @@ function ErrorsSectionContent({ errors }: { errors: BenchmarkError[] }) {
 
 	return (
 		<box flexDirection="column" paddingY={0} paddingX={1}>
-			<Panel title={`Errors (${totalFailures} failures)`} borderColor={theme.error}>
+			<Panel
+				title={`Errors (${totalFailures} failures)`}
+				borderColor={theme.error}
+			>
 				<box height={1} marginBottom={1}>
 					<text fg={theme.muted}>
 						{"Full error details from all benchmark phases."}
@@ -1164,14 +1346,28 @@ function ErrorsSectionContent({ errors }: { errors: BenchmarkError[] }) {
 						<box key={phase} flexDirection="column" marginBottom={1}>
 							<box height={1}>
 								<text fg={theme.warning}>
-									<strong>{phaseName + " \u2014 " + phaseTotal + " failure" + (phaseTotal !== 1 ? "s" : "")}</strong>
+									<strong>
+										{phaseName +
+											" \u2014 " +
+											phaseTotal +
+											" failure" +
+											(phaseTotal !== 1 ? "s" : "")}
+									</strong>
 								</text>
 							</box>
 							{phaseErrors.map((err, i) => (
-								<box key={i} flexDirection="column" marginBottom={1} paddingLeft={2}>
+								<box
+									key={i}
+									flexDirection="column"
+									marginBottom={1}
+									paddingLeft={2}
+								>
 									<box height={1}>
 										<text fg={theme.error}>
-											{truncateName(err.model, 30) + ": " + err.count + " failed"}
+											{truncateName(err.model, 30) +
+												": " +
+												err.count +
+												" failed"}
 										</text>
 									</box>
 									{/* Show full error - wrap long lines */}
@@ -1192,14 +1388,21 @@ function ErrorsSectionContent({ errors }: { errors: BenchmarkError[] }) {
 				{(() => {
 					const modelCounts = new Map<string, number>();
 					for (const err of errors) {
-						modelCounts.set(err.model, (modelCounts.get(err.model) ?? 0) + err.count);
+						modelCounts.set(
+							err.model,
+							(modelCounts.get(err.model) ?? 0) + err.count,
+						);
 					}
 					return Array.from(modelCounts.entries())
 						.sort((a, b) => b[1] - a[1])
 						.map(([model, count]) => (
 							<box key={model} height={1}>
 								<text fg={theme.text}>
-									{"  " + truncateName(model, 28).padEnd(30) + count + " failure" + (count !== 1 ? "s" : "")}
+									{"  " +
+										truncateName(model, 28).padEnd(30) +
+										count +
+										" failure" +
+										(count !== 1 ? "s" : "")}
 								</text>
 							</box>
 						));
@@ -1225,7 +1428,11 @@ export interface BenchmarkResultsAppProps {
  * Launched with useAlternateScreen: true from renderBenchmarkResultsTui().
  * Layout: left sidebar navigation + right scrollable detail panel.
  */
-export function BenchmarkResultsApp({ data, quit, onBack }: BenchmarkResultsAppProps) {
+export function BenchmarkResultsApp({
+	data,
+	quit,
+	onBack,
+}: BenchmarkResultsAppProps) {
 	const { width, height } = useTerminalDimensions();
 
 	const { scores, judgeModels, evalResults } = data;
@@ -1241,11 +1448,19 @@ export function BenchmarkResultsApp({ data, quit, onBack }: BenchmarkResultsAppP
 		{ id: "quality", label: "Quality", icon: "\u2605" },
 		{ id: "operational", label: "Performance", icon: "\u26a1" },
 		{ id: "judge", label: "Judge Scores", icon: "\u2696" },
-		...(showPerJudge ? [{ id: "per-judge" as SectionId, label: "Per-Judge", icon: "\u2690" }] : []),
-		...(hasSelf ? [{ id: "self-eval" as SectionId, label: "Self-Eval", icon: "\u21ba" }] : []),
-		...(hasIterative ? [{ id: "iterative" as SectionId, label: "Iterative", icon: "\u27f3" }] : []),
+		...(showPerJudge
+			? [{ id: "per-judge" as SectionId, label: "Per-Judge", icon: "\u2690" }]
+			: []),
+		...(hasSelf
+			? [{ id: "self-eval" as SectionId, label: "Self-Eval", icon: "\u21ba" }]
+			: []),
+		...(hasIterative
+			? [{ id: "iterative" as SectionId, label: "Iterative", icon: "\u27f3" }]
+			: []),
 		{ id: "summary", label: "Summary", icon: "\u2691" },
-		...(hasErrors ? [{ id: "errors" as SectionId, label: "Errors", icon: "\u2718" }] : []),
+		...(hasErrors
+			? [{ id: "errors" as SectionId, label: "Errors", icon: "\u2718" }]
+			: []),
 	];
 
 	const [activeIndex, setActiveIndex] = useState(0);
@@ -1253,7 +1468,12 @@ export function BenchmarkResultsApp({ data, quit, onBack }: BenchmarkResultsAppP
 	// Open report file handler
 	const openFile = (path: string) => {
 		import("node:child_process").then(({ exec }) => {
-			const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+			const cmd =
+				process.platform === "darwin"
+					? "open"
+					: process.platform === "win32"
+						? "start"
+						: "xdg-open";
 			exec(`${cmd} "${path}"`);
 		});
 	};
@@ -1270,12 +1490,14 @@ export function BenchmarkResultsApp({ data, quit, onBack }: BenchmarkResultsAppP
 			return;
 		}
 
-		if (key.name === "tab" && !key.shift || key.name === "down") {
+		if ((key.name === "tab" && !key.shift) || key.name === "down") {
 			setActiveIndex((prev) => (prev + 1) % allSections.length);
 			return;
 		}
-		if (key.name === "tab" && key.shift || key.name === "up") {
-			setActiveIndex((prev) => (prev - 1 + allSections.length) % allSections.length);
+		if ((key.name === "tab" && key.shift) || key.name === "up") {
+			setActiveIndex(
+				(prev) => (prev - 1 + allSections.length) % allSections.length,
+			);
 			return;
 		}
 
@@ -1313,7 +1535,12 @@ export function BenchmarkResultsApp({ data, quit, onBack }: BenchmarkResultsAppP
 			{/* Main area: sidebar + content */}
 			<box flexDirection="row" flexGrow={1}>
 				{/* Left sidebar */}
-				<Sidebar sections={allSections} activeIndex={activeIndex} height={sidebarHeight} showBack={!!onBack} />
+				<Sidebar
+					sections={allSections}
+					activeIndex={activeIndex}
+					height={sidebarHeight}
+					showBack={!!onBack}
+				/>
 
 				{/* Right detail panel */}
 				<box flexDirection="column" width={contentWidth} height={sidebarHeight}>
@@ -1383,7 +1610,9 @@ export function BenchmarkResultsApp({ data, quit, onBack }: BenchmarkResultsAppP
 						{(onBack ? "b:back  " : "") +
 							(activeSection.id === "summary"
 								? "q:quit  j:JSON  m:Markdown  h:HTML  Tab:nav"
-								: "q:quit  \u2191\u2193/Tab:nav  1-" + allSections.length + ":jump  j/k:scroll")}
+								: "q:quit  \u2191\u2193/Tab:nav  1-" +
+									allSections.length +
+									":jump  j/k:scroll")}
 					</text>
 				</box>
 			</box>
@@ -1401,7 +1630,8 @@ export function BenchmarkResultsApp({ data, quit, onBack }: BenchmarkResultsAppP
  * For interactive use, prefer BenchmarkResultsApp.
  */
 export function BenchmarkResults({ data, onDone }: BenchmarkResultsProps) {
-	const { scores, latencyByModel, costByModel, judgeModels, evalResults } = data;
+	const { scores, latencyByModel, costByModel, judgeModels, evalResults } =
+		data;
 
 	const shouldHighlight = scores.length > 1;
 

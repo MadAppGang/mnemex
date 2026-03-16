@@ -1,11 +1,11 @@
-# claudemem Development Guide
+# mnemex Development Guide
 
 ## Publishing
 - We publish with CI/CD (automated releases)
 
 ## Architecture Overview
 
-claudemem is a local semantic code search tool that combines:
+mnemex is a local semantic code search tool that combines:
 - **AST parsing** (tree-sitter) for intelligent code chunking
 - **Embeddings** (OpenRouter/Ollama) for semantic similarity
 - **Symbol graph** with PageRank for importance ranking
@@ -98,16 +98,16 @@ Role-based prompts for different agent personas:
 
 ### AI Skills (ai-skill.ts)
 Multiple skill document variants for different contexts:
-- `CLAUDEMEM_SKILL` - Full comprehensive skill (~200 lines)
-- `CLAUDEMEM_SKILL_COMPACT` - Tight context budgets
-- `CLAUDEMEM_MCP_SKILL` - MCP server integration
-- `CLAUDEMEM_QUICK_REF` - Minimal token reference
+- `MNEMEX_SKILL` - Full comprehensive skill (~200 lines)
+- `MNEMEX_SKILL_COMPACT` - Tight context budgets
+- `MNEMEX_MCP_SKILL` - MCP server integration
+- `MNEMEX_QUICK_REF` - Minimal token reference
 
 ## AgentBench Evaluation
 
 Evaluation harness lives in the sibling `../agentbench/` repo. See the `agentbench-eval` skill (`.claude/skills/agentbench-eval`) for full details on:
 - Pre-indexed repos (12 repos, ~39K symbols, ~1.9GB indexes in `../agentbench/data/`)
-- Experiment conditions (no_plan, claudemem_full, dc_planner, ace_planner)
+- Experiment conditions (no_plan, mnemex_full, dc_planner, ace_planner)
 - Running benchmarks, restoring indexes, analyzing results
 
 ## Common Gotchas
@@ -120,3 +120,5 @@ Evaluation harness lives in the sibling `../agentbench/` repo. See the `agentben
 6. **OpenTUI `<text>` overlap**: Multiple `<text>` siblings in a `<box>` render at (0,0). Use single `<text>` per `<box>`, or `<box flexDirection="row">` with each `<text>` in its own `<box>`
 7. **OpenTUI `useAlternateScreen: false`** appends lines on re-render instead of overwriting — not suitable for progress bars. Use ANSI cursor-based rendering (`\x1b[${lines}A`) for progress displays
 8. **CLI alias ordering**: Flag-style command aliases (e.g. `--watch` → `watch`) must mutate `args` BEFORE `const command = args[0]` to take effect
+9. **Data directory**: mnemex uses `.mnemex/` (migrated from `.claudemem/` automatically on first run)
+10. **Env vars**: `MNEMEX_MODEL`, `MNEMEX_LLM`, `MNEMEX_DOCS_ENABLED` (renamed from CLAUDEMEM_*)

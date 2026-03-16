@@ -6,6 +6,12 @@
  * Now includes structural repo map context for better LLM understanding.
  */
 
+import {
+	type RepoMapGenerator,
+	createRepoMapGenerator,
+} from "../core/repo-map.js";
+import type { IVectorStore } from "../core/store.js";
+import type { IFileTracker } from "../core/tracker.js";
 import type {
 	DocumentType,
 	EnrichedSearchOptions,
@@ -14,12 +20,6 @@ import type {
 	RetrieverSearchResponse,
 	SearchUseCase,
 } from "../types.js";
-import type { IVectorStore } from "../core/store.js";
-import type { IFileTracker } from "../core/tracker.js";
-import {
-	createRepoMapGenerator,
-	type RepoMapGenerator,
-} from "../core/repo-map.js";
 
 // ============================================================================
 // Default Weights

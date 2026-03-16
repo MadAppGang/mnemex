@@ -15,7 +15,7 @@ import { createSmartCloudClient } from "./smart-client.js";
 const execAsync = promisify(exec);
 
 /** Default cloud API endpoint */
-export const DEFAULT_CLOUD_ENDPOINT = "https://api.claudemem.dev";
+export const DEFAULT_CLOUD_ENDPOINT = "https://api.mnemex.dev";
 
 // ============================================================================
 // Configuration Helpers
@@ -27,7 +27,7 @@ export const DEFAULT_CLOUD_ENDPOINT = "https://api.claudemem.dev";
  */
 export function isCloudEnabled(projectPath: string): boolean {
 	const config = loadProjectConfig(projectPath);
-	return !!(config?.team?.orgSlug);
+	return !!config?.team?.orgSlug;
 }
 
 /**
@@ -94,7 +94,7 @@ export async function getRepoSlug(projectPath: string): Promise<string> {
 	if (!team) {
 		throw new Error(
 			`No team configuration found for project at ${projectPath}. ` +
-				"Add a 'team' block with 'orgSlug' to your claudemem.json.",
+				"Add a 'team' block with 'orgSlug' to your mnemex.json.",
 		);
 	}
 
@@ -131,7 +131,7 @@ async function deriveRepoNameFromRemote(projectPath: string): Promise<string> {
 		throw new Error(
 			"Could not determine repository slug: failed to run " +
 				"'git remote get-url origin'. Set team.repoSlug explicitly in " +
-				"your claudemem.json.",
+				"your mnemex.json.",
 		);
 	}
 }
@@ -142,7 +142,10 @@ async function deriveRepoNameFromRemote(projectPath: string): Promise<string> {
  */
 export function parseRepoNameFromUrl(remoteUrl: string): string {
 	// Strip trailing .git suffix and trailing slashes
-	let url = remoteUrl.trim().replace(/\.git$/, "").replace(/\/$/, "");
+	let url = remoteUrl
+		.trim()
+		.replace(/\.git$/, "")
+		.replace(/\/$/, "");
 
 	// Extract the last path segment
 	// Works for both HTTPS (https://github.com/owner/repo) and
@@ -156,7 +159,9 @@ export function parseRepoNameFromUrl(remoteUrl: string): string {
 	}
 
 	if (!url) {
-		throw new Error(`Cannot parse repository name from remote URL: ${remoteUrl}`);
+		throw new Error(
+			`Cannot parse repository name from remote URL: ${remoteUrl}`,
+		);
 	}
 
 	return url;

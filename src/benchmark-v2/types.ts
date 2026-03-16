@@ -336,6 +336,16 @@ export type QueryType =
 	| "doc_api_lookup" // "X API", "X parameters", "X return type"
 	| "doc_best_practice"; // "best way to X", "recommended pattern for X"
 
+/**
+ * 4-class router label used by the code search harness.
+ * Maps from the 8-type QueryType via mapQueryTypeToRouterLabel().
+ */
+export type RouterLabel =
+	| "symbol_lookup"
+	| "semantic_search"
+	| "structural"
+	| "exploratory";
+
 /** A generated search query for testing retrieval */
 export interface GeneratedQuery {
 	id: string;
@@ -343,6 +353,10 @@ export interface GeneratedQuery {
 	type: QueryType;
 	query: string;
 	shouldFind: boolean;
+	/** Router classification label (4-class) used by the code search harness */
+	routerLabel?: RouterLabel;
+	/** File-level ground truth for SWE-bench instances */
+	groundTruthFiles?: string[];
 }
 
 // ============================================================================

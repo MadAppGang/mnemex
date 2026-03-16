@@ -49,10 +49,7 @@ import {
 	createCodeUnitExtractor,
 	type CodeUnitExtractor,
 } from "./ast/code-unit-extractor.js";
-import {
-	setIndexVersion,
-	CURRENT_INDEX_VERSION,
-} from "./index-version.js";
+import { setIndexVersion, CURRENT_INDEX_VERSION } from "./index-version.js";
 import { chunkFileByPath } from "./chunker.js";
 import { createEmbeddingsClient } from "./embeddings.js";
 import { createVectorStore, type IVectorStore } from "./store.js";
@@ -85,9 +82,9 @@ export class EmbeddingModelMismatchError extends Error {
 				`  Index was created with: ${storedModel}\n` +
 				`  You're trying to use: ${requestedModel}\n\n` +
 				`Solutions:\n` +
-				`  1. Use the same model: claudemem search --model ${storedModel} "query"\n` +
-				`  2. Reindex with new model: claudemem index --force --model ${requestedModel}\n` +
-				`  3. Let claudemem auto-detect: claudemem search "query" (uses stored model)`,
+				`  1. Use the same model: mnemex search --model ${storedModel} "query"\n` +
+				`  2. Reindex with new model: mnemex index --force --model ${requestedModel}\n` +
+				`  3. Let mnemex auto-detect: mnemex search "query" (uses stored model)`,
 		);
 		this.name = "EmbeddingModelMismatchError";
 	}
@@ -1017,7 +1014,8 @@ export class Indexer {
 				if (!r.chunk.name) continue;
 				const syms = this.fileTracker.getSymbolByName(r.chunk.name);
 				// Find the symbol in the same file
-				const sym = syms.find(s => s.filePath === r.chunk.filePath) ?? syms[0];
+				const sym =
+					syms.find((s) => s.filePath === r.chunk.filePath) ?? syms[0];
 				if (sym && sym.inDegree === 0 && sym.pagerankScore < 0.001) {
 					r.score *= DEAD_CODE_PENALTY;
 				}
@@ -1129,7 +1127,13 @@ export class Indexer {
 				const relativePath = relative(this.projectPath, fullPath);
 
 				// Check exclude patterns
-				if (sharedShouldExclude(relativePath, entry.isDirectory(), this.excludePatterns)) {
+				if (
+					sharedShouldExclude(
+						relativePath,
+						entry.isDirectory(),
+						this.excludePatterns,
+					)
+				) {
 					continue;
 				}
 

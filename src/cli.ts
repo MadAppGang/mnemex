@@ -1,5 +1,5 @@
 /**
- * claudemem CLI
+ * mnemex CLI
  *
  * Command-line interface for code indexing and search.
  */
@@ -18,10 +18,10 @@ import {
 	listRoles,
 } from "./ai-instructions.js";
 import {
-	CLAUDEMEM_MCP_SKILL,
-	CLAUDEMEM_QUICK_REF,
-	CLAUDEMEM_SKILL,
-	CLAUDEMEM_SKILL_COMPACT,
+	MNEMEX_MCP_SKILL,
+	MNEMEX_QUICK_REF,
+	MNEMEX_SKILL,
+	MNEMEX_SKILL_COMPACT,
 	getCompactSkillWithRole,
 	getFullSkillWithRole,
 } from "./ai-skill.js";
@@ -122,12 +122,12 @@ function isAgentMode(): boolean {
 
 /** Print compact help for AI agents (3 lines) */
 function printCompactHelp(): void {
-	console.log(`claudemem v${VERSION} - Semantic code search with AST analysis`);
+	console.log(`mnemex v${VERSION} - Semantic code search with AST analysis`);
 	console.log(
 		"Commands: index index --cloud search status clear map symbol callers callees context dead-code test-gaps impact pack watch hooks hook install docs feedback learn update team",
 	);
 	console.log(
-		"Use: claudemem --agent <cmd> | Docs: https://github.com/MadAppGang/claudemem",
+		"Use: mnemex --agent <cmd> | Docs: https://github.com/MadAppGang/mnemex",
 	);
 }
 
@@ -212,7 +212,7 @@ export async function runCli(args: string[]): Promise<void> {
 	// Resolution: CLI flag → env var → project config (team.cloudEndpoint + stored token).
 	const endpointIdx = args.indexOf("--endpoint");
 	const adminEndpointOverride =
-		endpointIdx !== -1 ? args[endpointIdx + 1] : process.env.CLAUDEMEM_ENDPOINT;
+		endpointIdx !== -1 ? args[endpointIdx + 1] : process.env.MNEMEX_ENDPOINT;
 	const masterKeyIdx = args.indexOf("--master-key");
 	const adminMasterKeyOverride =
 		masterKeyIdx !== -1 ? args[masterKeyIdx + 1] : process.env.MASTER_API_KEY;
@@ -223,7 +223,7 @@ export async function runCli(args: string[]): Promise<void> {
 	// Handle global flags
 	// Note: -v is reserved for --verbose in subcommands, use --version only for version
 	if (args.includes("--version")) {
-		console.log(`claudemem v${VERSION}`);
+		console.log(`mnemex v${VERSION}`);
 
 		// Async check for updates (non-blocking with timeout)
 		const { UpdateManager } = await import("./updater/index.js");
@@ -240,7 +240,7 @@ export async function runCli(args: string[]): Promise<void> {
 
 			if (check?.isUpdateAvailable) {
 				console.log(`\nUpdate available: v${check.latestVersion}`);
-				console.log("Run: \x1b[36mclaudemem update\x1b[0m");
+				console.log("Run: \x1b[36mmnemex update\x1b[0m");
 			}
 		} catch {
 			// Silently ignore errors (offline, timeout, etc.)
@@ -401,7 +401,9 @@ export async function runCli(args: string[]): Promise<void> {
 			let adminEndpoint = adminEndpointOverride;
 			let adminMasterKey = adminMasterKeyOverride;
 			if (!adminEndpoint || !adminMasterKey) {
-				const { getCloudEndpoint, getTeamConfig } = await import("./cloud/config.js");
+				const { getCloudEndpoint, getTeamConfig } = await import(
+					"./cloud/config.js"
+				);
 				const { getDefaultAuthManager } = await import("./cloud/auth.js");
 				const teamConfig = getTeamConfig(process.cwd());
 				if (!adminEndpoint && teamConfig) {
@@ -413,18 +415,21 @@ export async function runCli(args: string[]): Promise<void> {
 			}
 			if (!adminEndpoint) {
 				console.error(
-					"claudemem admin requires --endpoint <url>, CLAUDEMEM_ENDPOINT env, or team.cloudEndpoint in claudemem.json",
+					"mnemex admin requires --endpoint <url>, MNEMEX_ENDPOINT env, or team.cloudEndpoint in mnemex.json",
 				);
 				process.exit(1);
 			}
 			if (!adminMasterKey) {
 				console.error(
-					"claudemem admin requires --master-key <key>, MASTER_API_KEY env, or a stored token via 'claudemem team login'",
+					"mnemex admin requires --master-key <key>, MASTER_API_KEY env, or a stored token via 'mnemex team login'",
 				);
 				process.exit(1);
 			}
 			const { startAdminTUI } = await import("./tui/admin/index.js");
-			await startAdminTUI({ endpoint: adminEndpoint, masterKey: adminMasterKey });
+			await startAdminTUI({
+				endpoint: adminEndpoint,
+				masterKey: adminMasterKey,
+			});
 			break;
 		}
 		default:
@@ -433,7 +438,7 @@ export async function runCli(args: string[]): Promise<void> {
 				await handleSearch(args);
 			} else {
 				console.error(`Unknown command: ${command}`);
-				console.error('Run "claudemem --help" for usage information.');
+				console.error('Run "mnemex --help" for usage information.');
 				process.exit(1);
 			}
 	}
@@ -719,7 +724,7 @@ async function handleIndex(args: string[]): Promise<void> {
 	// Check for API key (not needed when vector mode is disabled)
 	if (vectorEnabled && !hasApiKey()) {
 		console.error("Error: OpenRouter API key not configured.");
-		console.error("Run 'claudemem init' to set up, or set OPENROUTER_API_KEY.");
+		console.error("Run 'mnemex init' to set up, or set OPENROUTER_API_KEY.");
 		process.exit(1);
 	}
 
@@ -911,7 +916,7 @@ async function handleIndex(args: string[]): Promise<void> {
 // ============================================================================
 
 /**
- * Handle `claudemem index --cloud`
+ * Handle `mnemex index --cloud`
  *
  * Runs the 10-step cloud indexing flow using CloudAwareIndexer:
  *  1. Check cloud is enabled in project config
@@ -939,7 +944,7 @@ async function handleCloudIndex(args: string[]): Promise<void> {
 	if (!isCloudEnabled(projectPath)) {
 		console.error("Error: Cloud mode is not enabled for this project.");
 		console.error(
-			"Add a 'team' block with 'orgSlug' to your claudemem.json to enable cloud indexing.",
+			"Add a 'team' block with 'orgSlug' to your mnemex.json to enable cloud indexing.",
 		);
 		process.exit(1);
 	}
@@ -950,10 +955,10 @@ async function handleCloudIndex(args: string[]): Promise<void> {
 	// 2. Check authentication
 	const authManager = getDefaultAuthManager();
 	if (!authManager.isAuthenticated(orgSlug)) {
+		console.error(`Error: Not authenticated for org '${orgSlug}'.`);
 		console.error(
-			`Error: Not authenticated for org '${orgSlug}'.`,
+			`Run 'mnemex team login --org ${orgSlug}' to authenticate.`,
 		);
-		console.error(`Run 'claudemem team login --org ${orgSlug}' to authenticate.`);
 		process.exit(1);
 	}
 
@@ -1032,7 +1037,7 @@ async function handleCloudIndex(args: string[]): Promise<void> {
 		if (error instanceof CloudApiError) {
 			if (error.statusCode === 401) {
 				console.error(
-					`\nAuthentication failed. Run 'claudemem team login --org ${orgSlug}' to re-authenticate.`,
+					`\nAuthentication failed. Run 'mnemex team login --org ${orgSlug}' to re-authenticate.`,
 				);
 			} else if (error.statusCode === 429 && error.retryAfter) {
 				console.error(
@@ -1052,7 +1057,7 @@ async function handleCloudIndex(args: string[]): Promise<void> {
 // ============================================================================
 
 /**
- * `claudemem sync [path]`
+ * `mnemex sync [path]`
  *
  * Downloads the symbol graph from the cloud index and caches it locally.
  * After syncing, `map`, `callers`, and `callees` commands work offline
@@ -1085,7 +1090,7 @@ async function handleSync(args: string[]): Promise<void> {
 	if (!isCloudEnabled(projectPath)) {
 		console.error("Error: Cloud mode is not enabled for this project.");
 		console.error(
-			"Add a 'team' block with 'orgSlug' to your claudemem.json to enable cloud sync.",
+			"Add a 'team' block with 'orgSlug' to your mnemex.json to enable cloud sync.",
 		);
 		process.exit(1);
 	}
@@ -1097,7 +1102,9 @@ async function handleSync(args: string[]): Promise<void> {
 	const authManager = getDefaultAuthManager();
 	if (!authManager.isAuthenticated(orgSlug)) {
 		console.error(`Error: Not authenticated for org '${orgSlug}'.`);
-		console.error(`Run 'claudemem team login --org ${orgSlug}' to authenticate.`);
+		console.error(
+			`Run 'mnemex team login --org ${orgSlug}' to authenticate.`,
+		);
 		process.exit(1);
 	}
 
@@ -1136,7 +1143,7 @@ async function handleSync(args: string[]): Promise<void> {
 	// 4. Build cloud client and file tracker
 	const cloudClient = createThinCloudClient({ endpoint, token });
 	const { FileTracker } = await import("./core/tracker.js");
-	const dbPath = join(projectPath, ".claudemem", "index.db");
+	const dbPath = join(projectPath, ".mnemex", "index.db");
 	const fileTracker = new FileTracker(dbPath, projectPath);
 
 	// 5. Sync graph
@@ -1173,7 +1180,7 @@ async function handleSync(args: string[]): Promise<void> {
 		if (error instanceof CloudApiError) {
 			if (error.statusCode === 401) {
 				console.error(
-					`\nAuthentication failed. Run 'claudemem team login --org ${orgSlug}' to re-authenticate.`,
+					`\nAuthentication failed. Run 'mnemex team login --org ${orgSlug}' to re-authenticate.`,
 				);
 			} else {
 				console.error(`\nCloud API error: ${error.message}`);
@@ -1189,7 +1196,7 @@ async function handleSync(args: string[]): Promise<void> {
 // ============================================================================
 
 /**
- * Handle `claudemem team <subcommand>`
+ * Handle `mnemex team <subcommand>`
  *
  * Subcommands:
  *   login  [--org <orgSlug>] [--key <apiKey>]  — store credentials
@@ -1229,7 +1236,7 @@ async function handleTeam(args: string[]): Promise<void> {
 			const orgSlug = resolveOrgSlug(args.slice(1));
 			if (!orgSlug) {
 				console.error(
-					"Error: org slug is required. Use --org <orgSlug> or configure 'team.orgSlug' in claudemem.json.",
+					"Error: org slug is required. Use --org <orgSlug> or configure 'team.orgSlug' in mnemex.json.",
 				);
 				process.exit(1);
 			}
@@ -1237,17 +1244,19 @@ async function handleTeam(args: string[]): Promise<void> {
 			// Resolve API key: --key flag, then env var
 			const keyIdx = args.findIndex((a) => a === "--key");
 			const keyArg = keyIdx >= 0 ? args[keyIdx + 1] : undefined;
-			const apiKey = keyArg ?? process.env["CLAUDEMEM_ORG_API_KEY"];
+			const apiKey = keyArg ?? process.env["MNEMEX_ORG_API_KEY"];
 
 			if (!apiKey) {
 				console.error(
-					"Error: API key is required. Use --key <apiKey> or set CLAUDEMEM_ORG_API_KEY.",
+					"Error: API key is required. Use --key <apiKey> or set MNEMEX_ORG_API_KEY.",
 				);
 				process.exit(1);
 			}
 
 			authManager.setToken(orgSlug, apiKey);
-			console.log(`Authenticated as org '${orgSlug}'. Token stored in ~/.claudemem/credentials.json.`);
+			console.log(
+				`Authenticated as org '${orgSlug}'. Token stored in ~/.mnemex/credentials.json.`,
+			);
 			break;
 		}
 
@@ -1255,13 +1264,15 @@ async function handleTeam(args: string[]): Promise<void> {
 			const orgSlug = resolveOrgSlug(args.slice(1));
 			if (!orgSlug) {
 				console.error(
-					"Error: org slug is required. Use --org <orgSlug> or configure 'team.orgSlug' in claudemem.json.",
+					"Error: org slug is required. Use --org <orgSlug> or configure 'team.orgSlug' in mnemex.json.",
 				);
 				process.exit(1);
 			}
 
 			authManager.removeToken(orgSlug);
-			console.log(`Logged out org '${orgSlug}'. Token removed from credentials store.`);
+			console.log(
+				`Logged out org '${orgSlug}'. Token removed from credentials store.`,
+			);
 			break;
 		}
 
@@ -1275,7 +1286,7 @@ async function handleTeam(args: string[]): Promise<void> {
 
 			if (!cloudEnabled) {
 				console.log(
-					"\nTo enable cloud indexing, add a 'team' block with 'orgSlug' to your claudemem.json.",
+					"\nTo enable cloud indexing, add a 'team' block with 'orgSlug' to your mnemex.json.",
 				);
 				break;
 			}
@@ -1294,7 +1305,9 @@ async function handleTeam(args: string[]): Promise<void> {
 				const repoSlug = await getRepoSlug(projectPath);
 				console.log(`Repo slug:      ${repoSlug}`);
 			} catch {
-				console.log(`Repo slug:      (could not determine — set team.repoSlug explicitly)`);
+				console.log(
+					`Repo slug:      (could not determine — set team.repoSlug explicitly)`,
+				);
 			}
 
 			// Auth status
@@ -1302,16 +1315,14 @@ async function handleTeam(args: string[]): Promise<void> {
 			console.log(`\nAuthenticated:  ${authenticated ? "yes" : "no"}`);
 			if (!authenticated) {
 				console.log(
-					`\nRun 'claudemem team login --org ${orgSlug} --key <apiKey>' to authenticate.`,
+					`\nRun 'mnemex team login --org ${orgSlug} --key <apiKey>' to authenticate.`,
 				);
 			}
 			break;
 		}
 
 		default: {
-			console.error(
-				`Unknown team subcommand: '${subcommand ?? "(none)"}'.`,
-			);
+			console.error(`Unknown team subcommand: '${subcommand ?? "(none)"}'.`);
 			console.error("Available subcommands: login, logout, status");
 			process.exit(1);
 		}
@@ -1319,7 +1330,6 @@ async function handleTeam(args: string[]): Promise<void> {
 }
 
 async function handleSearch(args: string[]): Promise<void> {
-
 	// Parse arguments
 	const limitIdx = args.findIndex((a) => a === "-n" || a === "--limit");
 	const limit =
@@ -1384,7 +1394,7 @@ async function handleSearch(args: string[]): Promise<void> {
 
 	if (!query) {
 		console.error("Error: No search query provided.");
-		console.error('Usage: claudemem search "your query"');
+		console.error('Usage: mnemex search "your query"');
 		process.exit(1);
 	}
 
@@ -1414,7 +1424,7 @@ async function handleSearch(args: string[]): Promise<void> {
 						const token = authManager.getToken(orgSlug)!;
 						const changeDetector = createGitDiffChangeDetector(projectPath);
 						const cloudClient = createCloudClientFromConfig(projectPath, token);
-						const overlayDir = join(projectPath, ".claudemem", "overlay");
+						const overlayDir = join(projectPath, ".mnemex", "overlay");
 
 						// Build embeddings client for query embedding
 						const { createEmbeddingsClient: createEmbed } = await import(
@@ -1442,9 +1452,7 @@ async function handleSearch(args: string[]): Promise<void> {
 						});
 
 						if (!agentMode) {
-							console.log(
-								`Searching for: "${query}" (cloud + overlay)`,
-							);
+							console.log(`Searching for: "${query}" (cloud + overlay)`);
 						}
 
 						const results = await cloudSearch.search(query, {
@@ -1462,9 +1470,7 @@ async function handleSearch(args: string[]): Promise<void> {
 							agentOutput.searchResults(query, results);
 						} else {
 							console.log(`Found ${results.length} result(s):\n`);
-							const queryTerms = query
-								.split(/\s+/)
-								.filter((t) => t.length > 0);
+							const queryTerms = query.split(/\s+/).filter((t) => t.length > 0);
 							for (const r of results) {
 								printSearchResult(r.chunk, r.score, queryTerms);
 							}
@@ -1476,18 +1482,18 @@ async function handleSearch(args: string[]): Promise<void> {
 						if (agentMode) {
 							agentOutput.error(`Cloud search failed: ${String(cloudErr)}`);
 						} else {
-							console.error(
-								`\nCloud search failed: ${String(cloudErr)}`,
-							);
+							console.error(`\nCloud search failed: ${String(cloudErr)}`);
 						}
 						process.exit(1);
 					}
 				} else {
 					if (agentMode) {
-						agentOutput.error(`Not authenticated for org '${orgSlug}'. Run 'claudemem team login --org ${orgSlug}' to authenticate.`);
+						agentOutput.error(
+							`Not authenticated for org '${orgSlug}'. Run 'mnemex team login --org ${orgSlug}' to authenticate.`,
+						);
 					} else {
 						console.error(
-							`Error: Not authenticated for org '${orgSlug}'. Run 'claudemem team login --org ${orgSlug}' to authenticate.`,
+							`Error: Not authenticated for org '${orgSlug}'. Run 'mnemex team login --org ${orgSlug}' to authenticate.`,
 						);
 					}
 					process.exit(1);
@@ -1502,7 +1508,7 @@ async function handleSearch(args: string[]): Promise<void> {
 	// Check for API key (not needed for keyword-only search or when vector mode disabled)
 	if (!keywordOnly && vectorEnabled && !hasApiKey()) {
 		console.error("Error: OpenRouter API key not configured.");
-		console.error("Run 'claudemem init' to set up, or set OPENROUTER_API_KEY.");
+		console.error("Run 'mnemex init' to set up, or set OPENROUTER_API_KEY.");
 		process.exit(1);
 	}
 
@@ -1518,7 +1524,7 @@ async function handleSearch(args: string[]): Promise<void> {
 		if (!status.exists) {
 			// No index - in agent mode, just error out
 			if (agentMode) {
-				agentOutput.error("No index found. Run 'claudemem index' first.");
+				agentOutput.error("No index found. Run 'mnemex index' first.");
 				process.exit(1);
 			}
 			// No index - prompt to create or auto-create with -y
@@ -1532,7 +1538,7 @@ async function handleSearch(args: string[]): Promise<void> {
 
 				if (!shouldIndex) {
 					console.log(
-						"Search cancelled. Run 'claudemem index' to create an index.",
+						"Search cancelled. Run 'mnemex index' to create an index.",
 					);
 					return;
 				}
@@ -1601,7 +1607,7 @@ async function handleSearch(args: string[]): Promise<void> {
 				agentOutput.searchResults(query, []);
 			} else {
 				console.log("\nNo results found.");
-				console.log("Make sure the codebase is indexed: claudemem index");
+				console.log("Make sure the codebase is indexed: mnemex index");
 			}
 			return;
 		}
@@ -1626,7 +1632,7 @@ async function handleSearch(args: string[]): Promise<void> {
 				} catch (learningError) {
 					// Learning system errors shouldn't break search (silent in agent mode)
 					if (!agentMode) {
-						console.error("[claudemem] Learning system error:", learningError);
+						console.error("[mnemex] Learning system error:", learningError);
 					}
 				} finally {
 					tracker.close();
@@ -1645,9 +1651,7 @@ async function handleSearch(args: string[]): Promise<void> {
 		// Collect result IDs for feedback hint
 		const resultIds = results.map((r) => r.chunk.id);
 
-		const queryTerms = query
-			.split(/\s+/)
-			.filter((t) => t.length > 0);
+		const queryTerms = query.split(/\s+/).filter((t) => t.length > 0);
 
 		for (let i = 0; i < results.length; i++) {
 			const r = results[i];
@@ -1660,7 +1664,7 @@ async function handleSearch(args: string[]): Promise<void> {
 
 		// Show feedback hint for agents
 		console.log(
-			`💡 To provide feedback: claudemem feedback --query "${query}" --helpful <ids> --unhelpful <ids>`,
+			`💡 To provide feedback: mnemex feedback --query "${query}" --helpful <ids> --unhelpful <ids>`,
 		);
 		console.log(`   Result IDs: ${resultIds.join(",")}\n`);
 	} catch (error) {
@@ -1696,9 +1700,7 @@ function highlightTerms(line: string, terms: string[]): string {
 	if (terms.length === 0) return line;
 	// Sort longest-first to avoid partial matches inside longer terms
 	const sorted = [...terms].sort((a, b) => b.length - a.length);
-	const escaped = sorted.map((t) =>
-		t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-	);
+	const escaped = sorted.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 	const pattern = new RegExp(`(${escaped.join("|")})`, "gi");
 	return line.replace(pattern, `${ANSI_BOLD_YELLOW}$1${ANSI_RESET}`);
 }
@@ -1774,26 +1776,40 @@ function getMatchLines(
 	return result;
 }
 
-function printObservationResult(r: { chunk: { content: string; filePath: string }; score: number; observationMetadata?: Record<string, unknown> }): void {
+function printObservationResult(r: {
+	chunk: { content: string; filePath: string };
+	score: number;
+	observationMetadata?: Record<string, unknown>;
+}): void {
 	const termWidth = process.stdout.columns || 80;
 	const divider = "─".repeat(termWidth);
 
 	const meta = r.observationMetadata || {};
 	const obsType = (meta.observationType as string) || "observation";
 	const confidence = (meta.confidence as number) ?? 0.7;
-	const files = (meta.affectedFiles as string[]) || (r.chunk.filePath ? [r.chunk.filePath] : []);
+	const files =
+		(meta.affectedFiles as string[]) ||
+		(r.chunk.filePath ? [r.chunk.filePath] : []);
 
 	const pct = Math.round(r.score * 100);
-	const scoreColor = pct >= 70 ? ANSI_GREEN : pct >= 40 ? ANSI_YELLOW : ANSI_RED;
+	const scoreColor =
+		pct >= 70 ? ANSI_GREEN : pct >= 40 ? ANSI_YELLOW : ANSI_RED;
 
 	const leftPart = ` [observation] ${obsType}`;
 	const scorePart = `${pct}%`;
-	const padding = Math.max(1, termWidth - leftPart.length - scorePart.length - 1);
-	console.log(`${ANSI_MAGENTA}${leftPart}${ANSI_RESET}${" ".repeat(padding)}${scoreColor}${scorePart}${ANSI_RESET}`);
+	const padding = Math.max(
+		1,
+		termWidth - leftPart.length - scorePart.length - 1,
+	);
+	console.log(
+		`${ANSI_MAGENTA}${leftPart}${ANSI_RESET}${" ".repeat(padding)}${scoreColor}${scorePart}${ANSI_RESET}`,
+	);
 	console.log(divider);
 	console.log(`  ${r.chunk.content}`);
 	if (files.length > 0) {
-		console.log(`${ANSI_DIM}  files: ${files.join(", ")}  confidence: ${confidence}${ANSI_RESET}`);
+		console.log(
+			`${ANSI_DIM}  files: ${files.join(", ")}  confidence: ${confidence}${ANSI_RESET}`,
+		);
 	}
 	console.log("");
 }
@@ -1822,7 +1838,8 @@ function printSearchResult(
 
 	// Score with color
 	const pct = Math.round(score * 100);
-	const scoreColor = pct >= 70 ? ANSI_GREEN : pct >= 40 ? ANSI_YELLOW : ANSI_RED;
+	const scoreColor =
+		pct >= 70 ? ANSI_GREEN : pct >= 40 ? ANSI_YELLOW : ANSI_RED;
 	const scoreStr = `${scoreColor}${pct}%${ANSI_RESET}`;
 
 	// Header: path:range on left, name + score on right
@@ -1838,11 +1855,7 @@ function printSearchResult(
 	console.log(divider);
 
 	// Build context-windowed lines
-	const displayLines = getMatchLines(
-		chunk.content,
-		chunk.startLine,
-		terms,
-	);
+	const displayLines = getMatchLines(chunk.content, chunk.startLine, terms);
 
 	// Determine gutter width from largest line number
 	const maxLineNo = displayLines.reduce(
@@ -1885,7 +1898,7 @@ async function handleStatus(args: string[]): Promise<void> {
 				agentOutput.statusOutput(status);
 			} else {
 				console.log("\nNo index found for this project.");
-				console.log("Run 'claudemem index' to create one.");
+				console.log("Run 'mnemex index' to create one.");
 			}
 			return;
 		}
@@ -2426,7 +2439,7 @@ Documentation providers (used in priority order):
 	// ═══════════════════════════════════════════════════════════════════════════
 	console.log("\n─── Self-Learning System ───\n");
 	console.log(
-		"claudemem can learn from your interactions to improve search quality.",
+		"mnemex can learn from your interactions to improve search quality.",
 	);
 	console.log(
 		"It tracks which results you find helpful and adapts over time.\n",
@@ -2443,9 +2456,9 @@ Learning features:
   • Tracks search interactions and result feedback
   • Learns from user corrections to improve ranking
   • Adapts to your codebase patterns over time
-  • All data stored locally in .claudemem/
+  • All data stored locally in .mnemex/
 
-View stats anytime with: claudemem learn
+View stats anytime with: mnemex learn
 `);
 	}
 
@@ -2498,7 +2511,7 @@ View stats anytime with: claudemem learn
 		`  Self-learning:      ${enableLearning ? "enabled" : "disabled"}`,
 	);
 	console.log("\nYou can now index your codebase:");
-	console.log("  claudemem index\n");
+	console.log("  mnemex index\n");
 }
 
 interface LMStudioModel {
@@ -2866,7 +2879,7 @@ const EXCLUDE_DIRS = new Set([
 	".output",
 	"coverage",
 	".cache",
-	".claudemem",
+	".mnemex",
 	"__pycache__",
 	".pytest_cache",
 	"venv",
@@ -2959,11 +2972,7 @@ async function discoverAndChunkFilesWithPaths(
 	const files: string[] = [];
 
 	// Directories to skip for benchmarking (non-source content)
-	const benchExcludeDirs = new Set([
-		...EXCLUDE_DIRS,
-		"ai-docs",
-		"eval",
-	]);
+	const benchExcludeDirs = new Set([...EXCLUDE_DIRS, "ai-docs", "eval"]);
 
 	// Walk directory to find source files
 	const walk = (dir: string) => {
@@ -3055,7 +3064,7 @@ async function handleBenchmark(args: string[]): Promise<void> {
 	// Check for API key
 	if (!hasApiKey()) {
 		console.error("Error: OpenRouter API key not configured.");
-		console.error("Run 'claudemem init' to set up, or set OPENROUTER_API_KEY.");
+		console.error("Run 'mnemex init' to set up, or set OPENROUTER_API_KEY.");
 		process.exit(1);
 	}
 
@@ -3103,7 +3112,9 @@ async function handleBenchmark(args: string[]): Promise<void> {
 	const projectPath = process.cwd();
 
 	if (!agentMode) {
-		console.log(`\n${c.orange}${c.bold}🏁 EMBEDDING MODEL BENCHMARK${c.reset}\n`);
+		console.log(
+			`\n${c.orange}${c.bold}🏁 EMBEDDING MODEL BENCHMARK${c.reset}\n`,
+		);
 	}
 
 	// Get chunks with file paths (always needed for quality testing)
@@ -3130,7 +3141,7 @@ async function handleBenchmark(args: string[]): Promise<void> {
 			process.exit(1);
 		}
 	} else {
-		// Predefined queries for claudemem codebase
+		// Predefined queries for mnemex codebase
 		testQueries = [
 			{
 				query: "convert text to vector representation",
@@ -3245,7 +3256,7 @@ async function handleBenchmark(args: string[]): Promise<void> {
 	}
 
 	// Benchmark directory for temp stores
-	const benchDbBase = join(projectPath, ".claudemem", "benchmark");
+	const benchDbBase = join(projectPath, ".mnemex", "benchmark");
 	if (!existsSync(benchDbBase)) {
 		mkdirSync(benchDbBase, { recursive: true });
 	}
@@ -3323,7 +3334,11 @@ async function handleBenchmark(args: string[]): Promise<void> {
 			if (chunksForStore.length === 0) {
 				// Include the first warning as the reason (e.g. API error details)
 				const reason = embedResult.warnings?.[0];
-				throw new Error(reason ? `All chunks failed: ${reason}` : "All chunks failed to embed");
+				throw new Error(
+					reason
+						? `All chunks failed: ${reason}`
+						: "All chunks failed to embed",
+				);
 			}
 			await store.addChunks(chunksForStore);
 
@@ -3452,7 +3467,9 @@ async function handleBenchmark(args: string[]): Promise<void> {
 			const key = `${shortModel}:${warning.slice(0, 40)}`;
 			if (seen.has(key)) continue;
 			seen.add(key);
-			console.log(`${c.dim}  ${c.yellow}!${c.reset}${c.dim} ${shortModel}: ${warning}${c.reset}`);
+			console.log(
+				`${c.dim}  ${c.yellow}!${c.reset}${c.dim} ${shortModel}: ${warning}${c.reset}`,
+			);
 		}
 	}
 
@@ -3483,32 +3500,32 @@ async function handleBenchmark(args: string[]): Promise<void> {
 
 	// Extended color palette for the dashboard
 	const bc = {
-		border: "\x1b[38;5;240m",       // dim gray – box borders
-		header: "\x1b[1;36m",           // bold cyan – section titles
-		rowNum: "\x1b[38;5;242m",       // dim row numbers
-		modelName: "\x1b[1;97m",        // bold white – model names
-		errorModel: "\x1b[38;5;203m",   // red – error model names
-		dimText: "\x1b[38;5;242m",      // dim text
-		footer: "\x1b[38;5;238m",       // very dim footer hints
+		border: "\x1b[38;5;240m", // dim gray – box borders
+		header: "\x1b[1;36m", // bold cyan – section titles
+		rowNum: "\x1b[38;5;242m", // dim row numbers
+		modelName: "\x1b[1;97m", // bold white – model names
+		errorModel: "\x1b[38;5;203m", // red – error model names
+		dimText: "\x1b[38;5;242m", // dim text
+		footer: "\x1b[38;5;238m", // very dim footer hints
 		// Speed gradient
-		speedFast: "\x1b[38;5;78m",     // green
-		speedMid: "\x1b[38;5;228m",     // yellow
-		speedSlow: "\x1b[38;5;214m",    // orange
+		speedFast: "\x1b[38;5;78m", // green
+		speedMid: "\x1b[38;5;228m", // yellow
+		speedSlow: "\x1b[38;5;214m", // orange
 		speedSlowest: "\x1b[38;5;203m", // red
 		// Cost
-		costFree: "\x1b[38;5;78m",      // green for FREE
-		costCheap: "\x1b[38;5;78m",     // green for cheapest
-		costExpensive: "\x1b[38;5;203m",// red for most expensive
-		costNa: "\x1b[38;5;242m",       // dim for N/A
+		costFree: "\x1b[38;5;78m", // green for FREE
+		costCheap: "\x1b[38;5;78m", // green for cheapest
+		costExpensive: "\x1b[38;5;203m", // red for most expensive
+		costNa: "\x1b[38;5;242m", // dim for N/A
 		// Metric gradient
-		metricTop: "\x1b[38;5;78m",     // top 25%   – green
-		metricHigh: "\x1b[38;5;228m",   // 25-50%    – yellow-green
-		metricMid: "\x1b[38;5;214m",    // 50-75%    – orange
-		metricLow: "\x1b[38;5;203m",    // bottom 25% – red
+		metricTop: "\x1b[38;5;78m", // top 25%   – green
+		metricHigh: "\x1b[38;5;228m", // 25-50%    – yellow-green
+		metricMid: "\x1b[38;5;214m", // 50-75%    – orange
+		metricLow: "\x1b[38;5;203m", // bottom 25% – red
 		// Awards
-		awardLabel: "\x1b[38;5;250m",   // soft white for award labels
-		awardValue: "\x1b[1;97m",       // bold white for winner names
-		awardStat: "\x1b[38;5;78m",     // green for stat values
+		awardLabel: "\x1b[38;5;250m", // soft white for award labels
+		awardValue: "\x1b[1;97m", // bold white for winner names
+		awardStat: "\x1b[38;5;78m", // green for stat values
 		rst: "\x1b[0m",
 	};
 
@@ -3589,12 +3606,18 @@ async function handleBenchmark(args: string[]): Promise<void> {
 	};
 
 	// Cost gradient (lower = better)
-	const costColor = (r: BenchmarkResult, minCost?: number, maxCost?: number) => {
-		const isLocal = r.model.startsWith("ollama/") || r.model.startsWith("lmstudio/");
+	const costColor = (
+		r: BenchmarkResult,
+		minCost?: number,
+		maxCost?: number,
+	) => {
+		const isLocal =
+			r.model.startsWith("ollama/") || r.model.startsWith("lmstudio/");
 		if (isLocal) return bc.costFree;
 		if (r.cost === undefined) return bc.costNa;
 		if (minCost !== undefined && r.cost === minCost) return bc.costCheap;
-		if (maxCost !== undefined && r.cost === maxCost && minCost !== maxCost) return bc.costExpensive;
+		if (maxCost !== undefined && r.cost === maxCost && minCost !== maxCost)
+			return bc.costExpensive;
 		return rst;
 	};
 
@@ -3602,15 +3625,46 @@ async function handleBenchmark(args: string[]): Promise<void> {
 	const allNdcg = successResults.map((r) => r.ndcg);
 	const allMrr = successResults.map((r) => r.mrr);
 	const allHit5 = successResults.map((r) => r.hitRate.k5);
-	const minCost = costsWithValues.length > 0 ? Math.min(...costsWithValues.map((r) => r.cost!)) : undefined;
-	const maxCost = costsWithValues.length > 0 ? Math.max(...costsWithValues.map((r) => r.cost!)) : undefined;
+	const minCost =
+		costsWithValues.length > 0
+			? Math.min(...costsWithValues.map((r) => r.cost!))
+			: undefined;
+	const maxCost =
+		costsWithValues.length > 0
+			? Math.max(...costsWithValues.map((r) => r.cost!))
+			: undefined;
 
 	// Column widths (visible characters, no ANSI)
 	// #(2) model(28) speed(8) cost(11) ctx(5) dim(5) ndcg(5) mrr(5) h@5(4)
-	const COL = { num: 2, model: 28, speed: 8, cost: 11, ctx: 5, dim: 5, ndcg: 5, mrr: 5, hit5: 4 };
+	const COL = {
+		num: 2,
+		model: 28,
+		speed: 8,
+		cost: 11,
+		ctx: 5,
+		dim: 5,
+		ndcg: 5,
+		mrr: 5,
+		hit5: 4,
+	};
 	const headerRowVisible =
-		COL.num + 1 + COL.model + 1 + COL.speed + 1 + COL.cost + 1 +
-		COL.ctx + 1 + COL.dim + 1 + COL.ndcg + 1 + COL.mrr + 1 + COL.hit5;
+		COL.num +
+		1 +
+		COL.model +
+		1 +
+		COL.speed +
+		1 +
+		COL.cost +
+		1 +
+		COL.ctx +
+		1 +
+		COL.dim +
+		1 +
+		COL.ndcg +
+		1 +
+		COL.mrr +
+		1 +
+		COL.hit5;
 
 	// Header labels
 	const colHeader = [
@@ -3625,7 +3679,17 @@ async function handleBenchmark(args: string[]): Promise<void> {
 		"H@5",
 	].join(" ");
 
-	const colWidths = [COL.num, COL.model, COL.speed, COL.cost, COL.ctx, COL.dim, COL.ndcg, COL.mrr, COL.hit5];
+	const colWidths = [
+		COL.num,
+		COL.model,
+		COL.speed,
+		COL.cost,
+		COL.ctx,
+		COL.dim,
+		COL.ndcg,
+		COL.mrr,
+		COL.hit5,
+	];
 
 	// Build the dashboard output
 	const lines: string[] = [];
@@ -3665,8 +3729,13 @@ async function handleBenchmark(args: string[]): Promise<void> {
 		const speedStr = `${sColor}${pad(speedVal, COL.speed)}${rst}`;
 
 		// Cost
-		const isLocal = r.model.startsWith("ollama/") || r.model.startsWith("lmstudio/");
-		const costVal = isLocal ? "FREE" : r.cost !== undefined ? `$${r.cost.toFixed(5)}` : "N/A";
+		const isLocal =
+			r.model.startsWith("ollama/") || r.model.startsWith("lmstudio/");
+		const costVal = isLocal
+			? "FREE"
+			: r.cost !== undefined
+				? `$${r.cost.toFixed(5)}`
+				: "N/A";
 		const cColor = costColor(r, minCost, maxCost);
 		const costStr = `${cColor}${pad(costVal, COL.cost)}${rst}`;
 
@@ -3696,7 +3765,9 @@ async function handleBenchmark(args: string[]): Promise<void> {
 
 	// Stats summary inside box
 	const statsStr = `${bc.rowNum}${results.length} models tested  •  ${chunksWithPaths.length} chunks  •  ${testQueries.length} queries${rst}`;
-	const statsVisible = `${results.length} models tested  •  ${chunksWithPaths.length} chunks  •  ${testQueries.length} queries`.length;
+	const statsVisible =
+		`${results.length} models tested  •  ${chunksWithPaths.length} chunks  •  ${testQueries.length} queries`
+			.length;
 	lines.push(row(`    ${statsStr}`, 4 + statsVisible));
 	lines.push(emptyRow());
 
@@ -3705,14 +3776,25 @@ async function handleBenchmark(args: string[]): Promise<void> {
 		lines.push(sectionHeader("Awards"));
 		lines.push(emptyRow());
 
-		const fastest = successResults.reduce((a, b) => a.speedMs < b.speedMs ? a : b);
-		const cheapest = costsWithValues.length > 0
-			? costsWithValues.reduce((a, b) =>
-				(a.cost ?? Infinity) < (b.cost ?? Infinity) ? a : b)
-			: null;
-		const bestQuality = successResults.reduce((a, b) => a.ndcg > b.ndcg ? a : b);
+		const fastest = successResults.reduce((a, b) =>
+			a.speedMs < b.speedMs ? a : b,
+		);
+		const cheapest =
+			costsWithValues.length > 0
+				? costsWithValues.reduce((a, b) =>
+						(a.cost ?? Infinity) < (b.cost ?? Infinity) ? a : b,
+					)
+				: null;
+		const bestQuality = successResults.reduce((a, b) =>
+			a.ndcg > b.ndcg ? a : b,
+		);
 
-		const awardRow = (icon: string, label: string, winner: string, stat: string) => {
+		const awardRow = (
+			icon: string,
+			label: string,
+			winner: string,
+			stat: string,
+		) => {
 			const labelPad = pad(label, 14);
 			const winnerPad = pad(truncate(winner, 42), 42);
 			const content = `  ${icon} ${bc.awardLabel}${labelPad}${rst}${bc.awardValue}${winnerPad}${rst}${bc.awardStat}${stat}${rst}`;
@@ -3720,10 +3802,31 @@ async function handleBenchmark(args: string[]): Promise<void> {
 			return row(content, visLen);
 		};
 
-		lines.push(awardRow("🏆", "Best Quality", bestQuality.model, `NDCG ${bestQuality.ndcg.toFixed(0)}%`));
-		lines.push(awardRow("⚡", "Fastest", fastest.model, `${(fastest.speedMs / 1000).toFixed(2)}s`));
+		lines.push(
+			awardRow(
+				"🏆",
+				"Best Quality",
+				bestQuality.model,
+				`NDCG ${bestQuality.ndcg.toFixed(0)}%`,
+			),
+		);
+		lines.push(
+			awardRow(
+				"⚡",
+				"Fastest",
+				fastest.model,
+				`${(fastest.speedMs / 1000).toFixed(2)}s`,
+			),
+		);
 		if (cheapest) {
-			lines.push(awardRow("💰", "Cheapest", cheapest.model, `$${cheapest.cost?.toFixed(5)}`));
+			lines.push(
+				awardRow(
+					"💰",
+					"Cheapest",
+					cheapest.model,
+					`$${cheapest.cost?.toFixed(5)}`,
+				),
+			);
 		}
 
 		lines.push(emptyRow());
@@ -3741,12 +3844,23 @@ async function handleBenchmark(args: string[]): Promise<void> {
 		return row(content, visLen);
 	};
 
-	lines.push(metricRow("NDCG", "Normalized Discounted Cumulative Gain (retrieval quality)"));
-	lines.push(metricRow("MRR", "Mean Reciprocal Rank (first relevant result position)"));
-	lines.push(metricRow("H@5", "Hit Rate at K=5 (found relevant result in top 5)"));
+	lines.push(
+		metricRow(
+			"NDCG",
+			"Normalized Discounted Cumulative Gain (retrieval quality)",
+		),
+	);
+	lines.push(
+		metricRow("MRR", "Mean Reciprocal Rank (first relevant result position)"),
+	);
+	lines.push(
+		metricRow("H@5", "Hit Rate at K=5 (found relevant result in top 5)"),
+	);
 	lines.push(emptyRow());
 
-	lines.push(bottomBorder("--auto for auto-queries  •  --verbose for per-query detail"));
+	lines.push(
+		bottomBorder("--auto for auto-queries  •  --verbose for per-query detail"),
+	);
 	lines.push("");
 
 	console.log(lines.join("\n"));
@@ -3879,7 +3993,7 @@ function calculateNDCG(
 /**
  * Extract test queries automatically from codebase docstrings
  * Uses docstrings as queries and their source file as expected result
- * This enables testing on ANY codebase, not just claudemem
+ * This enables testing on ANY codebase, not just mnemex
  */
 async function extractAutoTestQueries(
 	projectPath: string,
@@ -4060,8 +4174,8 @@ function formatSymbolRaw(symbol: {
  * Get file tracker for a project path
  */
 function getFileTracker(projectPath: string): FileTracker | null {
-	const claudememDir = join(projectPath, ".claudemem");
-	const dbPath = join(claudememDir, "index.db");
+	const mnemexDir = join(projectPath, ".mnemex");
+	const dbPath = join(mnemexDir, "index.db");
 
 	if (!existsSync(dbPath)) {
 		return null;
@@ -4074,7 +4188,6 @@ function getFileTracker(projectPath: string): FileTracker | null {
  * Handle 'map' command - generate repo map
  */
 async function handleMap(args: string[]): Promise<void> {
-
 	// Parse --tokens flag
 	let maxTokens = 2000;
 	const tokensIdx = args.findIndex((a) => a === "--tokens");
@@ -4152,9 +4265,7 @@ async function handleMap(args: string[]): Promise<void> {
 						if (agentMode) {
 							agentOutput.error(`Cloud map failed: ${String(cloudMapErr)}`);
 						} else {
-							console.error(
-								`\nCloud map failed: ${String(cloudMapErr)}`,
-							);
+							console.error(`\nCloud map failed: ${String(cloudMapErr)}`);
 						}
 						process.exit(1);
 					}
@@ -4166,9 +4277,9 @@ async function handleMap(args: string[]): Promise<void> {
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
 		if (agentMode) {
-			agentOutput.error("No index found. Run 'claudemem index' first.");
+			agentOutput.error("No index found. Run 'mnemex index' first.");
 		} else {
-			console.error("No index found. Run 'claudemem index' first.");
+			console.error("No index found. Run 'mnemex index' first.");
 		}
 		process.exit(1);
 	}
@@ -4210,9 +4321,9 @@ async function handleSymbol(args: string[]): Promise<void> {
 	const symbolName = args.find((a) => !a.startsWith("-"));
 	if (!symbolName) {
 		if (agentMode) {
-			agentOutput.error("Usage: claudemem --agent symbol <name>");
+			agentOutput.error("Usage: mnemex --agent symbol <name>");
 		} else {
-			console.error("Usage: claudemem symbol <name> [--file <hint>]");
+			console.error("Usage: mnemex symbol <name> [--file <hint>]");
 		}
 		process.exit(1);
 	}
@@ -4227,9 +4338,9 @@ async function handleSymbol(args: string[]): Promise<void> {
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
 		if (agentMode) {
-			agentOutput.error("No index found. Run 'claudemem index' first.");
+			agentOutput.error("No index found. Run 'mnemex index' first.");
 		} else {
-			console.error("No index found. Run 'claudemem index' first.");
+			console.error("No index found. Run 'mnemex index' first.");
 		}
 		process.exit(1);
 	}
@@ -4285,17 +4396,19 @@ async function handleCallers(args: string[]): Promise<void> {
 	const symbolName = args.find((a) => !a.startsWith("-"));
 	if (!symbolName) {
 		if (agentMode) {
-			agentOutput.error("Usage: claudemem callers <name>");
+			agentOutput.error("Usage: mnemex callers <name>");
 		} else {
-			console.error("Usage: claudemem callers <name>");
+			console.error("Usage: mnemex callers <name>");
 		}
 		process.exit(1);
 	}
 
 	// ── Cloud callers branch ─────────────────────────────────────────────────
 	{
-		const { isCloudEnabled: cloudEnabledCallers, getTeamConfig: getTeamCallers } =
-			await import("./cloud/index.js");
+		const {
+			isCloudEnabled: cloudEnabledCallers,
+			getTeamConfig: getTeamCallers,
+		} = await import("./cloud/index.js");
 		if (cloudEnabledCallers(projectPath)) {
 			const teamConfigCallers = getTeamCallers(projectPath);
 			const orgSlugCallers = teamConfigCallers?.orgSlug;
@@ -4352,7 +4465,9 @@ async function handleCallers(args: string[]): Promise<void> {
 						return;
 					} catch (cloudCallersErr) {
 						if (agentMode) {
-							agentOutput.error(`Cloud callers failed: ${String(cloudCallersErr)}`);
+							agentOutput.error(
+								`Cloud callers failed: ${String(cloudCallersErr)}`,
+							);
 						} else {
 							console.error(
 								`\nCloud callers failed: ${String(cloudCallersErr)}`,
@@ -4368,9 +4483,9 @@ async function handleCallers(args: string[]): Promise<void> {
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
 		if (agentMode) {
-			agentOutput.error("No index found. Run 'claudemem index' first.");
+			agentOutput.error("No index found. Run 'mnemex index' first.");
 		} else {
-			console.error("No index found. Run 'claudemem index' first.");
+			console.error("No index found. Run 'mnemex index' first.");
 		}
 		process.exit(1);
 	}
@@ -4427,17 +4542,19 @@ async function handleCallees(args: string[]): Promise<void> {
 	const symbolName = args.find((a) => !a.startsWith("-"));
 	if (!symbolName) {
 		if (agentMode) {
-			agentOutput.error("Usage: claudemem callees <name>");
+			agentOutput.error("Usage: mnemex callees <name>");
 		} else {
-			console.error("Usage: claudemem callees <name>");
+			console.error("Usage: mnemex callees <name>");
 		}
 		process.exit(1);
 	}
 
 	// ── Cloud callees branch ─────────────────────────────────────────────────
 	{
-		const { isCloudEnabled: cloudEnabledCallees, getTeamConfig: getTeamCallees } =
-			await import("./cloud/index.js");
+		const {
+			isCloudEnabled: cloudEnabledCallees,
+			getTeamConfig: getTeamCallees,
+		} = await import("./cloud/index.js");
 		if (cloudEnabledCallees(projectPath)) {
 			const teamConfigCallees = getTeamCallees(projectPath);
 			const orgSlugCallees = teamConfigCallees?.orgSlug;
@@ -4494,7 +4611,9 @@ async function handleCallees(args: string[]): Promise<void> {
 						return;
 					} catch (cloudCalleesErr) {
 						if (agentMode) {
-							agentOutput.error(`Cloud callees failed: ${String(cloudCalleesErr)}`);
+							agentOutput.error(
+								`Cloud callees failed: ${String(cloudCalleesErr)}`,
+							);
 						} else {
 							console.error(
 								`\nCloud callees failed: ${String(cloudCalleesErr)}`,
@@ -4510,9 +4629,9 @@ async function handleCallees(args: string[]): Promise<void> {
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
 		if (agentMode) {
-			agentOutput.error("No index found. Run 'claudemem index' first.");
+			agentOutput.error("No index found. Run 'mnemex index' first.");
 		} else {
-			console.error("No index found. Run 'claudemem index' first.");
+			console.error("No index found. Run 'mnemex index' first.");
 		}
 		process.exit(1);
 	}
@@ -4569,10 +4688,10 @@ async function handleContext(args: string[]): Promise<void> {
 	const symbolName = args.find((a) => !a.startsWith("-"));
 	if (!symbolName) {
 		if (agentMode) {
-			agentOutput.error("Usage: claudemem context <name>");
+			agentOutput.error("Usage: mnemex context <name>");
 		} else {
 			console.error(
-				"Usage: claudemem context <name> [--callers N] [--callees N]",
+				"Usage: mnemex context <name> [--callers N] [--callees N]",
 			);
 		}
 		process.exit(1);
@@ -4593,9 +4712,9 @@ async function handleContext(args: string[]): Promise<void> {
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
 		if (agentMode) {
-			agentOutput.error("No index found. Run 'claudemem index' first.");
+			agentOutput.error("No index found. Run 'mnemex index' first.");
 		} else {
-			console.error("No index found. Run 'claudemem index' first.");
+			console.error("No index found. Run 'mnemex index' first.");
 		}
 		process.exit(1);
 	}
@@ -4700,9 +4819,9 @@ async function handleDeadCode(args: string[]): Promise<void> {
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
 		if (agentMode) {
-			agentOutput.error("No index found. Run 'claudemem index' first.");
+			agentOutput.error("No index found. Run 'mnemex index' first.");
 		} else {
-			console.error("No index found. Run 'claudemem index' first.");
+			console.error("No index found. Run 'mnemex index' first.");
 		}
 		process.exit(1);
 	}
@@ -4770,9 +4889,9 @@ async function handleTestGaps(args: string[]): Promise<void> {
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
 		if (agentMode) {
-			agentOutput.error("No index found. Run 'claudemem index' first.");
+			agentOutput.error("No index found. Run 'mnemex index' first.");
 		} else {
-			console.error("No index found. Run 'claudemem index' first.");
+			console.error("No index found. Run 'mnemex index' first.");
 		}
 		process.exit(1);
 	}
@@ -4831,9 +4950,9 @@ async function handleImpact(args: string[]): Promise<void> {
 	const symbolName = args.find((a) => !a.startsWith("-"));
 	if (!symbolName) {
 		if (agentMode) {
-			agentOutput.error("Usage: claudemem impact <symbol> [--max-depth N]");
+			agentOutput.error("Usage: mnemex impact <symbol> [--max-depth N]");
 		} else {
-			console.error("Usage: claudemem impact <symbol> [--max-depth N]");
+			console.error("Usage: mnemex impact <symbol> [--max-depth N]");
 		}
 		process.exit(1);
 	}
@@ -4855,9 +4974,9 @@ async function handleImpact(args: string[]): Promise<void> {
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
 		if (agentMode) {
-			agentOutput.error("No index found. Run 'claudemem index' first.");
+			agentOutput.error("No index found. Run 'mnemex index' first.");
 		} else {
-			console.error("No index found. Run 'claudemem index' first.");
+			console.error("No index found. Run 'mnemex index' first.");
 		}
 		process.exit(1);
 	}
@@ -4973,7 +5092,7 @@ async function handleWatch(args: string[]): Promise<void> {
 
 	const tracker = getFileTracker(projectPath);
 	if (!tracker) {
-		console.error("No index found. Run 'claudemem index' first.");
+		console.error("No index found. Run 'mnemex index' first.");
 		process.exit(1);
 	}
 
@@ -5019,7 +5138,7 @@ async function handleHooks(args: string[]): Promise<void> {
 
 	if (!subcommand || subcommand === "help") {
 		console.log(`
-Usage: claudemem hooks <subcommand>
+Usage: mnemex hooks <subcommand>
 
 Subcommands:
   install     Install post-commit hook for auto-indexing
@@ -5077,7 +5196,7 @@ Subcommands:
 
 		default:
 			console.error(`Unknown subcommand: ${subcommand}`);
-			console.error('Run "claudemem hooks help" for usage.');
+			console.error('Run "mnemex hooks help" for usage.');
 			process.exit(1);
 	}
 }
@@ -5115,7 +5234,7 @@ async function handleInstall(args: string[]): Promise<void> {
 
 	if (!tool || tool === "help") {
 		console.log(`
-Usage: claudemem install <tool> [subcommand]
+Usage: mnemex install <tool> [subcommand]
 
 Tools:
   opencode     Install plugin for OpenCode (opencode.ai)
@@ -5130,11 +5249,11 @@ Options:
   --type <type>  Plugin type for OpenCode: both (default) | tools | suggestion
 
 Examples:
-  claudemem install opencode              Install OpenCode plugins
-  claudemem install opencode --type tools Install tools plugin only
-  claudemem install opencode status       Check if installed
-  claudemem install opencode uninstall    Remove plugins
-  claudemem install claude-code           Show Claude Code instructions
+  mnemex install opencode              Install OpenCode plugins
+  mnemex install opencode --type tools Install tools plugin only
+  mnemex install opencode status       Check if installed
+  mnemex install opencode uninstall    Remove plugins
+  mnemex install claude-code           Show Claude Code instructions
 `);
 		return;
 	}
@@ -5152,7 +5271,7 @@ Examples:
 		default:
 			console.error(`Unknown tool: ${tool}`);
 			console.error("Available: opencode, claude-code");
-			console.error('Run "claudemem install help" for usage.');
+			console.error('Run "mnemex install help" for usage.');
 			process.exit(1);
 	}
 }
@@ -5200,12 +5319,12 @@ async function handleOpenCodeIntegration(
 
 				if (pluginType === "tools" || pluginType === "both") {
 					console.log("  Available tools:");
-					console.log("    • claudemem_search  - Semantic code search");
-					console.log("    • claudemem_map     - Structural overview");
-					console.log("    • claudemem_symbol  - Find symbol location");
-					console.log("    • claudemem_callers - Impact analysis");
-					console.log("    • claudemem_callees - Dependency tracing");
-					console.log("    • claudemem_context - Full context\n");
+					console.log("    • mnemex_search  - Semantic code search");
+					console.log("    • mnemex_map     - Structural overview");
+					console.log("    • mnemex_symbol  - Find symbol location");
+					console.log("    • mnemex_callers - Impact analysis");
+					console.log("    • mnemex_callees - Dependency tracing");
+					console.log("    • mnemex_context - Full context\n");
 				}
 
 				// Check if indexed
@@ -5214,7 +5333,7 @@ async function handleOpenCodeIntegration(
 				const store = await createVectorStore(getVectorStorePath(projectPath));
 				const stats = await store.getStats();
 				if (stats.totalChunks === 0) {
-					console.log("  ⚠️  Project not indexed. Run: claudemem index\n");
+					console.log("  ⚠️  Project not indexed. Run: mnemex index\n");
 				}
 			} catch (error) {
 				console.error(
@@ -5267,7 +5386,7 @@ async function handleOpenCodeIntegration(
 				]);
 			} else {
 				console.error(`Unknown subcommand: ${subcommand}`);
-				console.error('Run "claudemem install opencode help" for usage.');
+				console.error('Run "mnemex install opencode help" for usage.');
 				process.exit(1);
 			}
 	}
@@ -5281,7 +5400,7 @@ function handleClaudeCodeIntegration(): void {
 Claude Code Integration
 =======================
 
-Claude Code uses plugin marketplaces. To integrate claudemem:
+Claude Code uses plugin marketplaces. To integrate mnemex:
 
 1. Add the MAG plugins marketplace (one-time):
 
@@ -5297,7 +5416,7 @@ Claude Code uses plugin marketplaces. To integrate claudemem:
 
 3. Commit settings.json so your team gets the same setup.
 
-The code-analysis plugin includes detective skills that use claudemem:
+The code-analysis plugin includes detective skills that use mnemex:
   • developer-detective  - Implementation investigation
   • architect-detective  - Architecture analysis
   • tester-detective     - Test coverage gaps
@@ -5305,7 +5424,7 @@ The code-analysis plugin includes detective skills that use claudemem:
   • ultrathink-detective - Comprehensive analysis
 
 For full documentation:
-  https://github.com/MadAppGang/claudemem/blob/main/docs/CLAUDE_CODE_INTEGRATION.md
+  https://github.com/MadAppGang/mnemex/blob/main/docs/CLAUDE_CODE_INTEGRATION.md
 `);
 }
 
@@ -5322,7 +5441,7 @@ async function handleDocs(args: string[]): Promise<void> {
 
 	if (!subcommand || subcommand === "help") {
 		console.log(`
-Usage: claudemem docs <subcommand> [options]
+Usage: mnemex docs <subcommand> [options]
 
 Subcommands:
   status              Show indexed libraries and cache state
@@ -5365,7 +5484,7 @@ Subcommands:
 
 		default:
 			console.error(`Unknown subcommand: ${subcommand}`);
-			console.error('Run "claudemem docs help" for usage.');
+			console.error('Run "mnemex docs help" for usage.');
 			process.exit(1);
 	}
 }
@@ -5381,7 +5500,7 @@ async function handleDocsStatus(projectPath: string): Promise<void> {
 	const indexDbPath = getIndexDbPath(projectPath);
 	if (!existsSync(indexDbPath)) {
 		console.log("\n📚 Documentation Status\n");
-		console.log("  No index found. Run 'claudemem index' first.\n");
+		console.log("  No index found. Run 'mnemex index' first.\n");
 		return;
 	}
 
@@ -5555,7 +5674,7 @@ async function handleDocsRefresh(projectPath: string): Promise<void> {
 
 	const indexDbPath = getIndexDbPath(projectPath);
 	if (!existsSync(indexDbPath)) {
-		console.log("\n  No index found. Run 'claudemem index' first.\n");
+		console.log("\n  No index found. Run 'mnemex index' first.\n");
 		return;
 	}
 
@@ -5567,7 +5686,7 @@ async function handleDocsRefresh(projectPath: string): Promise<void> {
 
 		printLogo();
 		console.log(
-			"\n📚 Documentation cache cleared. Run 'claudemem index' to refresh.\n",
+			"\n📚 Documentation cache cleared. Run 'mnemex index' to refresh.\n",
 		);
 	} finally {
 		tracker.close();
@@ -5669,8 +5788,8 @@ async function handleDocsClear(
  * Handle 'observe' command - write a session observation to the index
  *
  * Usage:
- *   claudemem observe "PageRank > 0.05 means high importance" --file src/core/analysis/analyzer.ts --type gotcha
- *   claudemem observe --content "embedding mismatch causes table clear" --file src/core/store.ts
+ *   mnemex observe "PageRank > 0.05 means high importance" --file src/core/analysis/analyzer.ts --type gotcha
+ *   mnemex observe --content "embedding mismatch causes table clear" --file src/core/store.ts
  */
 async function handleObserve(args: string[]): Promise<void> {
 	const pathIdx = args.findIndex((a) => a === "-p" || a === "--path");
@@ -5683,11 +5802,16 @@ async function handleObserve(args: string[]): Promise<void> {
 		content = args[contentIdx + 1];
 	} else {
 		// First arg that doesn't start with -- is the content
-		content = args.find((a, i) => !a.startsWith("--") && (i === 0 || !args[i - 1].startsWith("--"))) || "";
+		content =
+			args.find(
+				(a, i) =>
+					!a.startsWith("--") && (i === 0 || !args[i - 1].startsWith("--")),
+			) || "";
 	}
 
 	if (!content) {
-		const msg = "Usage: claudemem observe <text> --file <path> [--type <type>] [--confidence <0-1>]";
+		const msg =
+			"Usage: mnemex observe <text> --file <path> [--type <type>] [--confidence <0-1>]";
 		if (agentMode) {
 			const { agentOutput } = await import("./output/agent.js");
 			agentOutput.error(msg);
@@ -5719,7 +5843,10 @@ async function handleObserve(args: string[]): Promise<void> {
 		const embedding = await embeddingsClient.embedOne(content);
 
 		// Create document ID from content hash
-		const id = createHash("sha256").update(`observation:${content}:${affectedFiles.join(",")}`).digest("hex").slice(0, 16);
+		const id = createHash("sha256")
+			.update(`observation:${content}:${affectedFiles.join(",")}`)
+			.digest("hex")
+			.slice(0, 16);
 
 		const now = new Date().toISOString();
 		const doc = {
@@ -5751,7 +5878,9 @@ async function handleObserve(args: string[]): Promise<void> {
 			console.log(`confidence=${confidence}`);
 			console.log(`files=${affectedFiles.join(",")}`);
 		} else {
-			console.log(`\n✅ Observation recorded (${observationType}, confidence=${confidence})`);
+			console.log(
+				`\n✅ Observation recorded (${observationType}, confidence=${confidence})`,
+			);
 			console.log(`   ID: ${id}`);
 			if (affectedFiles.length > 0) {
 				console.log(`   Files: ${affectedFiles.join(", ")}`);
@@ -5775,8 +5904,8 @@ async function handleObserve(args: string[]): Promise<void> {
  * Handle 'feedback' command - report search feedback for adaptive ranking
  *
  * Usage:
- *   claudemem feedback --query "auth flow" --helpful id1,id2 --unhelpful id3
- *   claudemem feedback --query "auth flow" --helpful id1 --unhelpful id2,id3
+ *   mnemex feedback --query "auth flow" --helpful id1,id2 --unhelpful id3
+ *   mnemex feedback --query "auth flow" --helpful id1 --unhelpful id2,id3
  */
 async function handleFeedback(args: string[]): Promise<void> {
 	const compactMode = agentMode;
@@ -5823,7 +5952,7 @@ async function handleFeedback(args: string[]): Promise<void> {
 		} else {
 			console.error("Error: --query is required.");
 			console.error(
-				'Usage: claudemem feedback --query "your query" --helpful id1,id2 --unhelpful id3',
+				'Usage: mnemex feedback --query "your query" --helpful id1,id2 --unhelpful id3',
 			);
 		}
 		process.exit(1);
@@ -5839,7 +5968,7 @@ async function handleFeedback(args: string[]): Promise<void> {
 				"Error: At least one of --helpful or --unhelpful is required.",
 			);
 			console.error(
-				'Usage: claudemem feedback --query "your query" --helpful id1,id2 --unhelpful id3',
+				'Usage: mnemex feedback --query "your query" --helpful id1,id2 --unhelpful id3',
 			);
 		}
 		process.exit(1);
@@ -5852,7 +5981,7 @@ async function handleFeedback(args: string[]): Promise<void> {
 		} else {
 			console.error("Self-learning is disabled in configuration.");
 			console.error(
-				"Enable it with: claudemem init (or set learning: true in config)",
+				"Enable it with: mnemex init (or set learning: true in config)",
 			);
 		}
 		process.exit(1);
@@ -5863,7 +5992,7 @@ async function handleFeedback(args: string[]): Promise<void> {
 		if (compactMode) {
 			console.log("error: no index found");
 		} else {
-			console.error("No index found. Run 'claudemem index' first.");
+			console.error("No index found. Run 'mnemex index' first.");
 		}
 		process.exit(1);
 	}
@@ -5907,12 +6036,12 @@ async function handleFeedback(args: string[]): Promise<void> {
  * Handle 'learn' command - show learning stats or reset
  *
  * Usage:
- *   claudemem learn                 Show learning statistics
- *   claudemem learn stats           Show detailed learning statistics
- *   claudemem learn sessions        Show session interaction statistics
- *   claudemem learn corrections     Show correction gap statistics
- *   claudemem learn patterns        Show detected patterns
- *   claudemem learn reset           Reset all learned weights
+ *   mnemex learn                 Show learning statistics
+ *   mnemex learn stats           Show detailed learning statistics
+ *   mnemex learn sessions        Show session interaction statistics
+ *   mnemex learn corrections     Show correction gap statistics
+ *   mnemex learn patterns        Show detected patterns
+ *   mnemex learn reset           Reset all learned weights
  */
 async function handleLearn(args: string[]): Promise<void> {
 	const compactMode = agentMode;
@@ -5926,7 +6055,7 @@ async function handleLearn(args: string[]): Promise<void> {
 	if (!learningEnabled && !compactMode) {
 		console.warn("⚠️  Self-learning is disabled in configuration.");
 		console.warn(
-			"   Enable with: claudemem init (or set learning: true in config)\n",
+			"   Enable with: mnemex init (or set learning: true in config)\n",
 		);
 	}
 
@@ -5935,7 +6064,7 @@ async function handleLearn(args: string[]): Promise<void> {
 		if (compactMode) {
 			console.log("error: no index found");
 		} else {
-			console.error("No index found. Run 'claudemem index' first.");
+			console.error("No index found. Run 'mnemex index' first.");
 		}
 		process.exit(1);
 	}
@@ -6075,7 +6204,7 @@ async function handleLearn(args: string[]): Promise<void> {
 					console.error(
 						"Cannot reset: Self-learning is disabled in configuration.",
 					);
-					console.error("Enable it first with: claudemem init");
+					console.error("Enable it first with: mnemex init");
 				}
 				return;
 			}
@@ -6194,12 +6323,12 @@ function handleAiInstructions(args: string[]): void {
 	if (!targetArg) {
 		printLogo();
 		console.log(`\n${c.orange}${c.bold}AI AGENT INSTRUCTIONS${c.reset}\n`);
-		console.log("Print instructions for AI agents using claudemem.\n");
+		console.log("Print instructions for AI agents using mnemex.\n");
 		console.log(`${c.yellow}${c.bold}USAGE${c.reset}`);
-		console.log(`  ${c.cyan}claudemem ai <target>${c.reset} [options]\n`);
+		console.log(`  ${c.cyan}mnemex ai <target>${c.reset} [options]\n`);
 		console.log(`${c.yellow}${c.bold}TARGETS${c.reset}`);
 		console.log(
-			`  ${c.green}skill${c.reset}       Full claudemem skill (all capabilities)`,
+			`  ${c.green}skill${c.reset}       Full mnemex skill (all capabilities)`,
 		);
 		console.log(
 			`  ${c.green}architect${c.reset}   System design, codebase structure`,
@@ -6224,16 +6353,16 @@ function handleAiInstructions(args: string[]): void {
 		console.log(`${c.yellow}${c.bold}EXAMPLES${c.reset}`);
 		console.log(`  ${c.dim}# Full skill document for CLAUDE.md${c.reset}`);
 		console.log(
-			`  ${c.cyan}claudemem --agent ai skill >> CLAUDE.md${c.reset}\n`,
+			`  ${c.cyan}mnemex --agent ai skill >> CLAUDE.md${c.reset}\n`,
 		);
 		console.log(`  ${c.dim}# Compact skill + role for system prompt${c.reset}`);
 		console.log(
-			`  ${c.cyan}claudemem --agent ai developer --compact${c.reset}\n`,
+			`  ${c.cyan}mnemex --agent ai developer --compact${c.reset}\n`,
 		);
 		console.log(`  ${c.dim}# MCP tools reference${c.reset}`);
-		console.log(`  ${c.cyan}claudemem ai skill -m${c.reset}\n`);
+		console.log(`  ${c.cyan}mnemex ai skill -m${c.reset}\n`);
 		console.log(`  ${c.dim}# Quick reference (minimal tokens)${c.reset}`);
-		console.log(`  ${c.cyan}claudemem ai skill --quick${c.reset}\n`);
+		console.log(`  ${c.cyan}mnemex ai skill --quick${c.reset}\n`);
 		return;
 	}
 
@@ -6244,16 +6373,16 @@ function handleAiInstructions(args: string[]): void {
 	// Handle "skill" target
 	if (target === "skill") {
 		if (quick) {
-			output = CLAUDEMEM_QUICK_REF;
+			output = MNEMEX_QUICK_REF;
 			title = "QUICK REFERENCE";
 		} else if (mcp) {
-			output = CLAUDEMEM_MCP_SKILL;
+			output = MNEMEX_MCP_SKILL;
 			title = "MCP SKILL";
 		} else if (compact) {
-			output = CLAUDEMEM_SKILL_COMPACT;
+			output = MNEMEX_SKILL_COMPACT;
 			title = "SKILL (COMPACT)";
 		} else {
-			output = CLAUDEMEM_SKILL;
+			output = MNEMEX_SKILL;
 			title = "SKILL";
 		}
 	}
@@ -6285,7 +6414,7 @@ function handleAiInstructions(args: string[]): void {
 		console.log(output);
 		console.log(`\n${c.dim}${"─".repeat(60)}${c.reset}`);
 		console.log(
-			`${c.dim}For piping: claudemem --agent ai ${target} | pbcopy${c.reset}\n`,
+			`${c.dim}For piping: mnemex --agent ai ${target} | pbcopy${c.reset}\n`,
 		);
 	}
 }
@@ -6398,12 +6527,12 @@ async function handleUpdate(args: string[]): Promise<void> {
 		const check = await updater.checkForUpdate();
 
 		if (!check.isUpdateAvailable) {
-			console.log(`claudemem v${check.currentVersion} - already latest`);
+			console.log(`mnemex v${check.currentVersion} - already latest`);
 			return;
 		}
 
 		console.log(
-			`claudemem v${check.currentVersion} - Update available: v${check.latestVersion}`,
+			`mnemex v${check.currentVersion} - Update available: v${check.latestVersion}`,
 		);
 
 		if (!autoApprove) {
@@ -6447,12 +6576,12 @@ async function handleUpdate(args: string[]): Promise<void> {
 			return;
 		}
 
-		console.log("\nUpdating claudemem...");
+		console.log("\nUpdating mnemex...");
 		const result = await updater.performUpdate({ verbose: true });
 
 		if (result.success) {
 			console.log(`\n✓ Successfully updated to v${result.newVersion}`);
-			console.log("Run 'claudemem --version' to verify.");
+			console.log("Run 'mnemex --version' to verify.");
 		} else {
 			console.error(`\n✗ Update failed: ${result.error}`);
 
@@ -6464,7 +6593,7 @@ async function handleUpdate(args: string[]): Promise<void> {
 				console.error(
 					"\nPermission denied. Try running with elevated privileges:",
 				);
-				console.error("  sudo npm install -g claude-codemem@latest");
+				console.error("  sudo npm install -g mnemex@latest");
 			} else if (
 				result.error?.includes("spawn") ||
 				result.error?.includes("not found")
@@ -6474,7 +6603,7 @@ async function handleUpdate(args: string[]): Promise<void> {
 				);
 			} else {
 				console.error("\nPlease try updating manually:");
-				console.error("  npm install -g claude-codemem@latest");
+				console.error("  npm install -g mnemex@latest");
 			}
 
 			process.exit(1);
@@ -6510,11 +6639,11 @@ ${c.bold}  Local Code Indexing.${c.reset} ${c.green}For Claude Code.${c.reset}
 ${c.dim}  Semantic search powered by embeddings via OpenRouter${c.reset}
 
 ${c.yellow}${c.bold}USAGE${c.reset}
-  ${c.cyan}claudemem${c.reset} <command> [options]
+  ${c.cyan}mnemex${c.reset} <command> [options]
 
 ${c.yellow}${c.bold}SERVER MODES${c.reset}
-  ${c.cyan}claudemem --mcp${c.reset}                         Run MCP server for Claude Code
-  ${c.cyan}claudemem --autocomplete-server${c.reset}         Run JSONL autocomplete server (editors)
+  ${c.cyan}mnemex --mcp${c.reset}                         Run MCP server for Claude Code
+  ${c.cyan}mnemex --autocomplete-server${c.reset}         Run JSONL autocomplete server (editors)
   ${c.cyan}  --project${c.reset} <path>                      Project path (default: cwd)
 
 ${c.yellow}${c.bold}COMMANDS${c.reset}
@@ -6553,14 +6682,14 @@ ${c.yellow}${c.bold}DEVELOPER EXPERIENCE${c.reset}
   ${c.green}docs${c.reset} <subcommand>     Manage library documentation ${c.dim}(status|fetch|refresh|providers|clear)${c.reset}
   ${c.green}observe${c.reset} <text>         Record a session observation ${c.dim}(--file <path> --type <type>)${c.reset}
 
-${c.yellow}${c.bold}CLOUD / TEAM${c.reset} ${c.dim}(requires team.orgSlug in claudemem.json)${c.reset}
+${c.yellow}${c.bold}CLOUD / TEAM${c.reset} ${c.dim}(requires team.orgSlug in mnemex.json)${c.reset}
   ${c.green}index --cloud${c.reset} [path]   Upload changed files to cloud API ${c.dim}(git-diff based)${c.reset}
   ${c.green}sync${c.reset} [path]            Download cloud graph for offline use ${c.dim}(map, callers, callees)${c.reset}
   ${c.green}team login${c.reset}             Store org API key ${c.dim}(--org <orgSlug> --key <apiKey>)${c.reset}
   ${c.green}team logout${c.reset}            Remove stored credentials ${c.dim}(--org <orgSlug>)${c.reset}
   ${c.green}team status${c.reset}            Show cloud config and auth status
   ${c.green}admin${c.reset}                  Manage API keys ${c.dim}(uses team config, or override with flags)${c.reset}
-    ${c.cyan}--endpoint${c.reset} <url>       Cloud server URL ${c.dim}(flag → CLAUDEMEM_ENDPOINT → team config)${c.reset}
+    ${c.cyan}--endpoint${c.reset} <url>       Cloud server URL ${c.dim}(flag → MNEMEX_ENDPOINT → team config)${c.reset}
     ${c.cyan}--master-key${c.reset} <key>     Master API key ${c.dim}(flag → MASTER_API_KEY → stored token)${c.reset}
 
 ${c.yellow}${c.bold}SELF-LEARNING SYSTEM${c.reset} ${c.dim}(enabled by default, learns from interactions)${c.reset}
@@ -6570,7 +6699,7 @@ ${c.yellow}${c.bold}SELF-LEARNING SYSTEM${c.reset} ${c.dim}(enabled by default, 
   ${c.green}learn corrections${c.reset}      Show correction gap analysis
   ${c.green}learn patterns${c.reset}         Show detected patterns
   ${c.green}learn reset${c.reset}            Reset learned weights to defaults
-  ${c.dim}Configure: claudemem init or set "learning: false" in ~/.claudemem/config.json${c.reset}
+  ${c.dim}Configure: mnemex init or set "learning: false" in ~/.mnemex/config.json${c.reset}
 
 ${c.yellow}${c.bold}INDEX OPTIONS${c.reset}
   ${c.cyan}-f, --force${c.reset}            Force re-index all files
@@ -6660,81 +6789,81 @@ ${c.yellow}${c.bold}GLOBAL OPTIONS${c.reset}
   ${c.cyan}--models${c.reset}               List available embedding models (with --free, --refresh)
 
 ${c.yellow}${c.bold}MCP SERVER${c.reset}
-  ${c.cyan}claudemem --mcp${c.reset}        Start as MCP server (for Claude Code)
+  ${c.cyan}mnemex --mcp${c.reset}        Start as MCP server (for Claude Code)
 
 ${c.yellow}${c.bold}ENVIRONMENT${c.reset}
   ${c.magenta}OPENROUTER_API_KEY${c.reset}     API key for embeddings
   ${c.magenta}ANTHROPIC_API_KEY${c.reset}      API key for LLM enrichment (Anthropic provider)
-  ${c.magenta}CLAUDEMEM_MODEL${c.reset}        Override default embedding model
-  ${c.magenta}CLAUDEMEM_LLM${c.reset}          LLM spec (e.g., "a/sonnet", "or/openai/gpt-4o", "cc/haiku")
+  ${c.magenta}MNEMEX_MODEL${c.reset}        Override default embedding model
+  ${c.magenta}MNEMEX_LLM${c.reset}          LLM spec (e.g., "a/sonnet", "or/openai/gpt-4o", "cc/haiku")
 
 ${c.yellow}${c.bold}EXAMPLES${c.reset}
   ${c.dim}# First time setup${c.reset}
-  ${c.cyan}claudemem init${c.reset}
+  ${c.cyan}mnemex init${c.reset}
 
   ${c.dim}# Index current project${c.reset}
-  ${c.cyan}claudemem index${c.reset}
+  ${c.cyan}mnemex index${c.reset}
 
   ${c.dim}# Index without LLM enrichment (faster, code-only)${c.reset}
-  ${c.cyan}claudemem index --no-llm${c.reset}
+  ${c.cyan}mnemex index --no-llm${c.reset}
 
   ${c.dim}# Search (auto-indexes changes)${c.reset}
-  ${c.cyan}claudemem search "authentication flow"${c.reset}
-  ${c.cyan}claudemem search "error handling" -n 5${c.reset}
+  ${c.cyan}mnemex search "authentication flow"${c.reset}
+  ${c.cyan}mnemex search "error handling" -n 5${c.reset}
 
   ${c.dim}# Search without auto-reindex${c.reset}
-  ${c.cyan}claudemem search "query" --no-reindex${c.reset}
+  ${c.cyan}mnemex search "query" --no-reindex${c.reset}
 
   ${c.dim}# Auto-create index on first search${c.reset}
-  ${c.cyan}claudemem search "something" -y${c.reset}
+  ${c.cyan}mnemex search "something" -y${c.reset}
 
   ${c.dim}# Show available embedding models${c.reset}
-  ${c.cyan}claudemem --models${c.reset}
-  ${c.cyan}claudemem --models --free${c.reset}
+  ${c.cyan}mnemex --models${c.reset}
+  ${c.cyan}mnemex --models --free${c.reset}
 
   ${c.dim}# Benchmark embedding models (index speed, search quality, cost)${c.reset}
-  ${c.cyan}claudemem benchmark${c.reset}
-  ${c.cyan}claudemem benchmark --auto${c.reset}  ${c.dim}# works on any codebase${c.reset}
-  ${c.cyan}claudemem benchmark --models=qwen/qwen3-embedding-8b,openai/text-embedding-3-small${c.reset}
+  ${c.cyan}mnemex benchmark${c.reset}
+  ${c.cyan}mnemex benchmark --auto${c.reset}  ${c.dim}# works on any codebase${c.reset}
+  ${c.cyan}mnemex benchmark --models=qwen/qwen3-embedding-8b,openai/text-embedding-3-small${c.reset}
 
   ${c.dim}# Get AI agent instructions${c.reset}
-  ${c.cyan}claudemem ai${c.reset}                              ${c.dim}# show help${c.reset}
-  ${c.cyan}claudemem ai skill${c.reset}                        ${c.dim}# full skill document${c.reset}
-  ${c.cyan}claudemem --agent ai skill >> CLAUDE.md${c.reset}   ${c.dim}# append to CLAUDE.md${c.reset}
-  ${c.cyan}claudemem ai developer --compact${c.reset}          ${c.dim}# role + skill (minimal)${c.reset}
+  ${c.cyan}mnemex ai${c.reset}                              ${c.dim}# show help${c.reset}
+  ${c.cyan}mnemex ai skill${c.reset}                        ${c.dim}# full skill document${c.reset}
+  ${c.cyan}mnemex --agent ai skill >> CLAUDE.md${c.reset}   ${c.dim}# append to CLAUDE.md${c.reset}
+  ${c.cyan}mnemex ai developer --compact${c.reset}          ${c.dim}# role + skill (minimal)${c.reset}
 
   ${c.dim}# Symbol graph commands (for AI agents)${c.reset}
-  ${c.cyan}claudemem --agent map${c.reset}                     ${c.dim}# repo structure${c.reset}
-  ${c.cyan}claudemem --agent map "auth"${c.reset}              ${c.dim}# focused on query${c.reset}
-  ${c.cyan}claudemem --agent symbol Indexer${c.reset}          ${c.dim}# find symbol${c.reset}
-  ${c.cyan}claudemem --agent callers VectorStore${c.reset}     ${c.dim}# what uses it?${c.reset}
-  ${c.cyan}claudemem --agent callees VectorStore${c.reset}     ${c.dim}# what it uses?${c.reset}
-  ${c.cyan}claudemem --agent context VectorStore${c.reset}     ${c.dim}# full context${c.reset}
+  ${c.cyan}mnemex --agent map${c.reset}                     ${c.dim}# repo structure${c.reset}
+  ${c.cyan}mnemex --agent map "auth"${c.reset}              ${c.dim}# focused on query${c.reset}
+  ${c.cyan}mnemex --agent symbol Indexer${c.reset}          ${c.dim}# find symbol${c.reset}
+  ${c.cyan}mnemex --agent callers VectorStore${c.reset}     ${c.dim}# what uses it?${c.reset}
+  ${c.cyan}mnemex --agent callees VectorStore${c.reset}     ${c.dim}# what it uses?${c.reset}
+  ${c.cyan}mnemex --agent context VectorStore${c.reset}     ${c.dim}# full context${c.reset}
 
   ${c.dim}# Code analysis commands${c.reset}
-  ${c.cyan}claudemem dead-code${c.reset}                       ${c.dim}# find dead code${c.reset}
-  ${c.cyan}claudemem test-gaps${c.reset}                       ${c.dim}# find untested code${c.reset}
-  ${c.cyan}claudemem impact createIndexer${c.reset}            ${c.dim}# change impact analysis${c.reset}
+  ${c.cyan}mnemex dead-code${c.reset}                       ${c.dim}# find dead code${c.reset}
+  ${c.cyan}mnemex test-gaps${c.reset}                       ${c.dim}# find untested code${c.reset}
+  ${c.cyan}mnemex impact createIndexer${c.reset}            ${c.dim}# change impact analysis${c.reset}
 
   ${c.dim}# Developer experience${c.reset}
-  ${c.cyan}claudemem watch${c.reset}                           ${c.dim}# auto-reindex on changes${c.reset}
+  ${c.cyan}mnemex watch${c.reset}                           ${c.dim}# auto-reindex on changes${c.reset}
 
   ${c.dim}# Cloud / team indexing${c.reset}
-  ${c.cyan}claudemem team login --org myorg --key \$API_KEY${c.reset}  ${c.dim}# store credentials${c.reset}
-  ${c.cyan}claudemem index --cloud${c.reset}                   ${c.dim}# upload diff to cloud API${c.reset}
-  ${c.cyan}claudemem team status${c.reset}                     ${c.dim}# show cloud config${c.reset}
-  ${c.cyan}claudemem team logout --org myorg${c.reset}         ${c.dim}# remove credentials${c.reset}
+  ${c.cyan}mnemex team login --org myorg --key \$API_KEY${c.reset}  ${c.dim}# store credentials${c.reset}
+  ${c.cyan}mnemex index --cloud${c.reset}                   ${c.dim}# upload diff to cloud API${c.reset}
+  ${c.cyan}mnemex team status${c.reset}                     ${c.dim}# show cloud config${c.reset}
+  ${c.cyan}mnemex team logout --org myorg${c.reset}         ${c.dim}# remove credentials${c.reset}
 
   ${c.dim}# Adaptive learning${c.reset}
-  ${c.cyan}claudemem feedback --query "auth" --helpful id1,id2 --unhelpful id3${c.reset}
-  ${c.cyan}claudemem learn${c.reset}                           ${c.dim}# show learning stats${c.reset}
-  ${c.cyan}claudemem learn sessions${c.reset}                  ${c.dim}# session interactions${c.reset}
-  ${c.cyan}claudemem learn corrections${c.reset}               ${c.dim}# correction gap analysis${c.reset}
-  ${c.cyan}claudemem learn reset -f${c.reset}                  ${c.dim}# reset without prompt${c.reset}
-  ${c.cyan}claudemem hooks install${c.reset}                   ${c.dim}# install git hook${c.reset}
+  ${c.cyan}mnemex feedback --query "auth" --helpful id1,id2 --unhelpful id3${c.reset}
+  ${c.cyan}mnemex learn${c.reset}                           ${c.dim}# show learning stats${c.reset}
+  ${c.cyan}mnemex learn sessions${c.reset}                  ${c.dim}# session interactions${c.reset}
+  ${c.cyan}mnemex learn corrections${c.reset}               ${c.dim}# correction gap analysis${c.reset}
+  ${c.cyan}mnemex learn reset -f${c.reset}                  ${c.dim}# reset without prompt${c.reset}
+  ${c.cyan}mnemex hooks install${c.reset}                   ${c.dim}# install git hook${c.reset}
 
 ${c.yellow}${c.bold}MORE INFO${c.reset}
-  ${c.blue}https://github.com/MadAppGang/claudemem${c.reset}
+  ${c.blue}https://github.com/MadAppGang/mnemex${c.reset}
 `);
 }
 
@@ -6770,13 +6899,13 @@ async function handleBenchmarkList(args: string[]): Promise<void> {
 		args.find((a) => a.startsWith("--project="))?.split("=")[1] ||
 		process.cwd();
 
-	const dbPath = join(projectPath, ".claudemem", "benchmark.db");
+	const dbPath = join(projectPath, ".mnemex", "benchmark.db");
 	if (!existsSync(dbPath)) {
 		console.log(
 			`${c.yellow}No benchmark database found at ${dbPath}${c.reset}`,
 		);
 		console.log(
-			`${c.dim}Run benchmarks first with: claudemem benchmark ...${c.reset}`,
+			`${c.dim}Run benchmarks first with: mnemex benchmark ...${c.reset}`,
 		);
 		return;
 	}
@@ -6805,15 +6934,15 @@ async function handleBenchmarkList(args: string[]): Promise<void> {
 
 	// Interactive TUI when on a TTY
 	if (process.stdout.isTTY) {
-		const { renderBenchmarkListTui } = await import("./benchmark-v2/render-list.js");
+		const { renderBenchmarkListTui } = await import(
+			"./benchmark-v2/render-list.js"
+		);
 		await renderBenchmarkListTui(runs, db, projectPath);
 		return;
 	}
 
 	// Fallback: flat table for non-TTY
-	console.log(
-		`\n${c.cyan}Benchmark Runs${c.reset} (${runs.length} shown)\n`,
-	);
+	console.log(`\n${c.cyan}Benchmark Runs${c.reset} (${runs.length} shown)\n`);
 	console.log(
 		`${"ID".padEnd(38)} ${"Status".padEnd(10)} ${"Date".padEnd(20)} ${"Models".padEnd(8)} ${"Cases".padEnd(6)} Project`,
 	);
@@ -6845,7 +6974,7 @@ async function handleBenchmarkList(args: string[]): Promise<void> {
 	}
 
 	console.log(
-		`\n${c.dim}Use: claudemem benchmark-show <run-id> to view results${c.reset}\n`,
+		`\n${c.dim}Use: mnemex benchmark-show <run-id> to view results${c.reset}\n`,
 	);
 }
 
@@ -6869,10 +6998,10 @@ async function handleBenchmarkShow(args: string[]): Promise<void> {
 	const runId = args.find((a) => !a.startsWith("--"));
 	if (!runId) {
 		console.log(`${c.red}Error: Please provide a run ID${c.reset}`);
-		console.log("Usage: claudemem benchmark-show <run-id>");
-		console.log("       claudemem benchmark-show <run-id> --json");
+		console.log("Usage: mnemex benchmark-show <run-id>");
+		console.log("       mnemex benchmark-show <run-id> --json");
 		console.log(
-			"       claudemem benchmark-show <run-id> --project=/path/to/project",
+			"       mnemex benchmark-show <run-id> --project=/path/to/project",
 		);
 		return;
 	}
@@ -6880,7 +7009,7 @@ async function handleBenchmarkShow(args: string[]): Promise<void> {
 	const projectPath =
 		args.find((a) => a.startsWith("--project="))?.split("=")[1] ||
 		process.cwd();
-	const dbPath = join(projectPath, ".claudemem", "benchmark.db");
+	const dbPath = join(projectPath, ".mnemex", "benchmark.db");
 	if (!existsSync(dbPath)) {
 		console.log(
 			`${c.yellow}No benchmark database found at ${dbPath}${c.reset}`,
@@ -6950,7 +7079,9 @@ async function handleBenchmarkShow(args: string[]): Promise<void> {
 	const latencyByModel = new Map<string, number>();
 	const costByModel = new Map<string, number>();
 	for (const modelId of scores.keys()) {
-		const modelSummaries = summaries.filter((s: { modelId: string }) => s.modelId === modelId);
+		const modelSummaries = summaries.filter(
+			(s: { modelId: string }) => s.modelId === modelId,
+		);
 		if (modelSummaries.length > 0) {
 			const totalLatency = modelSummaries.reduce(
 				(sum: number, s: { generationMetadata?: { latencyMs?: number } }) =>
@@ -6972,20 +7103,28 @@ async function handleBenchmarkShow(args: string[]): Promise<void> {
 	);
 
 	// Detect codebase type from run config
-	let codebaseType: { language: string; category: string; stack: string; label: string } | undefined;
+	let codebaseType:
+		| { language: string; category: string; stack: string; label: string }
+		| undefined;
 	try {
-		const { detectCodebaseType } = await import("./benchmark-v2/codebase-detector.js");
-		codebaseType = await detectCodebaseType(run.config.projectPath || process.cwd());
+		const { detectCodebaseType } = await import(
+			"./benchmark-v2/codebase-detector.js"
+		);
+		codebaseType = await detectCodebaseType(
+			run.config.projectPath || process.cwd(),
+		);
 	} catch {
 		// Ignore if detection fails
 	}
 
 	// Show run info header briefly before TUI
 	console.log(`\n${c.cyan}Benchmark Run: ${run.id}${c.reset}`);
-	console.log(`${c.dim}Status: ${run.status}  Started: ${new Date(run.startedAt).toLocaleString()}${c.reset}\n`);
+	console.log(
+		`${c.dim}Status: ${run.status}  Started: ${new Date(run.startedAt).toLocaleString()}${c.reset}\n`,
+	);
 
 	// Look for output files
-	const benchmarkDir = join(projectPath, ".claudemem", "benchmark");
+	const benchmarkDir = join(projectPath, ".mnemex", "benchmark");
 	const outputFiles: { json?: string; markdown?: string; html?: string } = {};
 	try {
 		const { readdirSync } = await import("node:fs");
@@ -7004,7 +7143,9 @@ async function handleBenchmarkShow(args: string[]): Promise<void> {
 	}
 
 	// Reconstruct errors from phase_progress (phases with incomplete items)
-	let errors: Array<{ phase: string; model: string; count: number; error: string }> | undefined;
+	let errors:
+		| Array<{ phase: string; model: string; count: number; error: string }>
+		| undefined;
 	try {
 		const phaseFailures = db.getPhaseFailureSummary(runId);
 		if (phaseFailures.length > 0) {
@@ -7012,16 +7153,29 @@ async function handleBenchmarkShow(args: string[]): Promise<void> {
 				phase: pf.phase,
 				model: "unknown",
 				count: pf.failed,
-				error: pf.error || `${pf.failed} of ${pf.total} items failed in ${pf.phase}`,
+				error:
+					pf.error || `${pf.failed} of ${pf.total} items failed in ${pf.phase}`,
 			}));
 		}
 	} catch (e) {
 		// Fallback: check phase_progress directly for incomplete phases
 		try {
-			const stmt = (db as unknown as { db: { prepare: (sql: string) => { all: (...args: unknown[]) => unknown[] } } }).db.prepare(
-				`SELECT phase, items_total, items_completed FROM phase_progress WHERE run_id = ? AND items_completed < items_total`
+			const stmt = (
+				db as unknown as {
+					db: {
+						prepare: (sql: string) => {
+							all: (...args: unknown[]) => unknown[];
+						};
+					};
+				}
+			).db.prepare(
+				`SELECT phase, items_total, items_completed FROM phase_progress WHERE run_id = ? AND items_completed < items_total`,
 			);
-			const rows = stmt.all(runId) as Array<{ phase: string; items_total: number; items_completed: number }>;
+			const rows = stmt.all(runId) as Array<{
+				phase: string;
+				items_total: number;
+				items_completed: number;
+			}>;
 			if (rows.length > 0) {
 				errors = rows.map((r) => ({
 					phase: r.phase,
@@ -7036,17 +7190,24 @@ async function handleBenchmarkShow(args: string[]): Promise<void> {
 	}
 
 	// Launch interactive TUI with back-to-list support
-	const { renderBenchmarkResultsTui } = await import("./benchmark-v2/render-results.js");
+	const { renderBenchmarkResultsTui } = await import(
+		"./benchmark-v2/render-results.js"
+	);
 	const action = await renderBenchmarkResultsTui({
 		scores: scoreArray,
 		latencyByModel,
 		costByModel,
 		generatorSpecs,
 		judgeModels,
-		evalResults: evalResults.map((e: { summaryId: string; judgeResults?: { judgeModelId: string; weightedAverage: number } }) => ({
-			summaryId: e.summaryId,
-			judgeResults: e.judgeResults,
-		})),
+		evalResults: evalResults.map(
+			(e: {
+				summaryId: string;
+				judgeResults?: { judgeModelId: string; weightedAverage: number };
+			}) => ({
+				summaryId: e.summaryId,
+				judgeResults: e.judgeResults,
+			}),
+		),
 		summaries: summaries.map((s: { id: string; modelId: string }) => ({
 			id: s.id,
 			modelId: s.modelId,
@@ -7066,7 +7227,9 @@ async function handleBenchmarkShow(args: string[]): Promise<void> {
 		try {
 			const runs = db.listRuns().slice(0, 20);
 			if (runs.length > 0) {
-				const { renderBenchmarkListTui } = await import("./benchmark-v2/render-list.js");
+				const { renderBenchmarkListTui } = await import(
+					"./benchmark-v2/render-list.js"
+				);
 				await renderBenchmarkListTui(runs, db, projectPath);
 			}
 		} finally {
@@ -7083,7 +7246,7 @@ async function handleBenchmarkShow(args: string[]): Promise<void> {
  * Handle 'pack' command - export codebase to a single file for AI analysis.
  *
  * Usage:
- *   claudemem pack [path] [options]
+ *   mnemex pack [path] [options]
  *
  * Options:
  *   -o, --output <file>     Output file path (default: <project>-pack.xml)
@@ -7149,7 +7312,8 @@ async function handlePack(args: string[]): Promise<void> {
 			maxFileSize = Number.parseInt(args[++i], 10) || maxFileSize;
 		} else if (arg.startsWith("--max-file-size=")) {
 			maxFileSize =
-				Number.parseInt(arg.slice("--max-file-size=".length), 10) || maxFileSize;
+				Number.parseInt(arg.slice("--max-file-size=".length), 10) ||
+				maxFileSize;
 		} else if (arg === "--tokens") {
 			showTokens = true;
 		} else if (!arg.startsWith("-")) {
@@ -7194,9 +7358,7 @@ async function handlePack(args: string[]): Promise<void> {
 				: (phase, current, total) => {
 						// Simple progress to stderr when interactive
 						if (total > 0 && !agentMode) {
-							process.stderr.write(
-								`\r  [${phase}] ${current}/${total}    `,
-							);
+							process.stderr.write(`\r  [${phase}] ${current}/${total}    `);
 						}
 					},
 		);
@@ -7227,7 +7389,9 @@ async function handlePack(args: string[]): Promise<void> {
 			console.log(
 				`  Total size:         ${(result.totalBytes / 1024).toFixed(1)} KB`,
 			);
-			console.log(`  Tokens (est.):      ${result.estimatedTokens.toLocaleString()}`);
+			console.log(
+				`  Tokens (est.):      ${result.estimatedTokens.toLocaleString()}`,
+			);
 			console.log(`  Duration:           ${result.durationMs}ms`);
 			if (result.outputPath) {
 				console.log(`  Output:             ${result.outputPath}`);

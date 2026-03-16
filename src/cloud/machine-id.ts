@@ -1,6 +1,6 @@
 /**
  * Generate and persist a stable anonymous machine ID.
- * Stored at ~/.claudemem/machine-id — created on first call, reused thereafter.
+ * Stored at ~/.mnemex/machine-id — created on first call, reused thereafter.
  * Used as X-ClaudeMem-Machine-ID header for server-side device tracking.
  */
 
@@ -9,7 +9,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-const MACHINE_ID_DIR = join(homedir(), ".claudemem");
+const MACHINE_ID_DIR = join(homedir(), ".mnemex");
 const MACHINE_ID_FILE = join(MACHINE_ID_DIR, "machine-id");
 
 /** Get the machine ID, creating it if it doesn't exist. Synchronous for simplicity. */

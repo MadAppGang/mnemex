@@ -1,8 +1,8 @@
 /**
- * Configuration management for claudemem
+ * Configuration management for mnemex
  *
- * Handles both global config (~/.claudemem/config.json) and
- * project-specific config (.claudemem/config.json)
+ * Handles both global config (~/.mnemex/config.json) and
+ * project-specific config (.mnemex/config.json)
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -15,19 +15,19 @@ import type { Config, GlobalConfig, ProjectConfig } from "./types.js";
 // ============================================================================
 
 /** Global config directory */
-export const GLOBAL_CONFIG_DIR = join(homedir(), ".claudemem");
+export const GLOBAL_CONFIG_DIR = join(homedir(), ".mnemex");
 
 /** Global config file path */
 export const GLOBAL_CONFIG_PATH = join(GLOBAL_CONFIG_DIR, "config.json");
 
 /** Project config directory name */
-export const PROJECT_CONFIG_DIR = ".claudemem";
+export const PROJECT_CONFIG_DIR = ".mnemex";
 
-/** Project config file name (inside .claudemem/) */
+/** Project config file name (inside .mnemex/) */
 export const PROJECT_CONFIG_FILE = "config.json";
 
 /** Project config file at root (simpler alternative) */
-export const PROJECT_ROOT_CONFIG_FILE = "claudemem.json";
+export const PROJECT_ROOT_CONFIG_FILE = "mnemex.json";
 
 /** Index database file name */
 export const INDEX_DB_FILE = "index.db";
@@ -166,7 +166,7 @@ export const DEFAULT_EXCLUDE_PATTERNS = [
 	"**/_site/**", // Jekyll output
 
 	// ─── Misc ───
-	"**/.claudemem/**",
+	"**/.mnemex/**",
 	"**/.DS_Store",
 	"**/Thumbs.db",
 	"**/.terraform/**",
@@ -186,7 +186,7 @@ export const OPENROUTER_EMBEDDING_MODELS_URL = `${OPENROUTER_API_URL}/embeddings
 /** OpenRouter request headers */
 export const OPENROUTER_HEADERS = {
 	"HTTP-Referer": "https://github.com/MadAppGang/claudemem",
-	"X-Title": "claudemem",
+	"X-Title": "mnemex",
 };
 
 /** Voyage AI API endpoint */
@@ -200,14 +200,14 @@ export const VOYAGE_EMBEDDINGS_URL = `${VOYAGE_API_URL}/embeddings`;
 export const ENV = {
 	OPENROUTER_API_KEY: "OPENROUTER_API_KEY",
 	VOYAGE_API_KEY: "VOYAGE_API_KEY",
-	CLAUDEMEM_MODEL: "CLAUDEMEM_MODEL",
+	MNEMEX_MODEL: "MNEMEX_MODEL",
 	ANTHROPIC_API_KEY: "ANTHROPIC_API_KEY",
 	/** Unified LLM spec (e.g., "a/sonnet", "or/openai/gpt-4o", "cc/sonnet") */
-	CLAUDEMEM_LLM: "CLAUDEMEM_LLM",
+	MNEMEX_LLM: "MNEMEX_LLM",
 	/** Context7 API key for documentation fetching */
 	CONTEXT7_API_KEY: "CONTEXT7_API_KEY",
 	/** Enable/disable documentation fetching (default: true) */
-	CLAUDEMEM_DOCS_ENABLED: "CLAUDEMEM_DOCS_ENABLED",
+	MNEMEX_DOCS_ENABLED: "MNEMEX_DOCS_ENABLED",
 } as const;
 
 /** Context7 API endpoint */
@@ -227,7 +227,7 @@ export const DEFAULT_DOCS_MAX_PAGES = 10;
 // ============================================================================
 
 /**
- * Load global configuration from ~/.claudemem/config.json
+ * Load global configuration from ~/.mnemex/config.json
  */
 export function loadGlobalConfig(): GlobalConfig {
 	const defaultConfig: GlobalConfig = {
@@ -257,28 +257,28 @@ export function loadGlobalConfig(): GlobalConfig {
 
 /**
  * Load project configuration
- * Checks: 1) claudemem.json (root), 2) .claudemem/config.json
+ * Checks: 1) mnemex.json (root), 2) .mnemex/config.json
  */
 export function loadProjectConfig(projectPath: string): ProjectConfig | null {
-	// First try claudemem.json at project root (preferred, simpler)
+	// First try mnemex.json at project root (preferred, simpler)
 	const rootConfigPath = join(projectPath, PROJECT_ROOT_CONFIG_FILE);
 	if (existsSync(rootConfigPath)) {
 		try {
 			const content = readFileSync(rootConfigPath, "utf-8");
 			return JSON.parse(content) as ProjectConfig;
 		} catch (error) {
-			console.warn("Failed to load claudemem.json:", error);
+			console.warn("Failed to load mnemex.json:", error);
 		}
 	}
 
-	// Fall back to .claudemem/config.json
+	// Fall back to .mnemex/config.json
 	const configPath = join(projectPath, PROJECT_CONFIG_DIR, PROJECT_CONFIG_FILE);
 	if (existsSync(configPath)) {
 		try {
 			const content = readFileSync(configPath, "utf-8");
 			return JSON.parse(content) as ProjectConfig;
 		} catch (error) {
-			console.warn("Failed to load .claudemem/config.json:", error);
+			console.warn("Failed to load .mnemex/config.json:", error);
 		}
 	}
 
@@ -562,7 +562,7 @@ export function hasVoyageApiKey(): boolean {
  */
 export function getEmbeddingModel(projectPath?: string): string {
 	// First check environment variable
-	const envModel = process.env[ENV.CLAUDEMEM_MODEL];
+	const envModel = process.env[ENV.MNEMEX_MODEL];
 	if (envModel) {
 		return envModel;
 	}
@@ -618,11 +618,11 @@ export function hasAnthropicApiKey(): boolean {
  * Get unified LLM spec from environment or config.
  * Supports specs like "a/sonnet", "or/openai/gpt-4o", "cc/sonnet".
  *
- * Priority: CLAUDEMEM_LLM env > project config llm > global config llm > default (cc/sonnet)
+ * Priority: MNEMEX_LLM env > project config llm > global config llm > default (cc/sonnet)
  */
 export function getLLMSpec(projectPath?: string): LLMSpec {
-	// 1. Check unified CLAUDEMEM_LLM env var
-	const envSpec = process.env[ENV.CLAUDEMEM_LLM];
+	// 1. Check unified MNEMEX_LLM env var
+	const envSpec = process.env[ENV.MNEMEX_LLM];
 	if (envSpec) {
 		return LLMResolver.parseSpec(envSpec);
 	}
@@ -722,7 +722,7 @@ export function hasContext7ApiKey(projectPath?: string): boolean {
  */
 export function isDocsEnabled(projectPath?: string): boolean {
 	// Check environment variable first
-	const envEnabled = process.env[ENV.CLAUDEMEM_DOCS_ENABLED];
+	const envEnabled = process.env[ENV.MNEMEX_DOCS_ENABLED];
 	if (envEnabled !== undefined) {
 		return envEnabled.toLowerCase() !== "false" && envEnabled !== "0";
 	}
@@ -780,7 +780,7 @@ export type TestFileMode = "downrank" | "exclude" | "include";
  * Check if self-learning system is enabled.
  * Priority: project config > global config > default (true)
  *
- * When enabled, claudemem tracks interactions and learns from user corrections
+ * When enabled, mnemex tracks interactions and learns from user corrections
  * to improve search quality over time.
  */
 export function isLearningEnabled(projectPath?: string): boolean {

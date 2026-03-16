@@ -157,11 +157,10 @@ function detectLinuxOrWindowsGpu(): {
 
 	// Try rocm-smi for AMD
 	try {
-		const amdResult = spawnSync(
-			"rocm-smi",
-			["--showproductname"],
-			{ encoding: "utf8", timeout: 3000 },
-		);
+		const amdResult = spawnSync("rocm-smi", ["--showproductname"], {
+			encoding: "utf8",
+			timeout: 3000,
+		});
 
 		if (amdResult.status === 0 && amdResult.stdout.trim()) {
 			const lines = amdResult.stdout.trim().split("\n");
@@ -237,8 +236,7 @@ async function checkLmStudio(endpoint: string): Promise<boolean> {
  * Tier 3 (<8GB): all-minilm-l6-v2 (small, fast)
  */
 export function suggestModel(hw: HardwareProfile): string {
-	const hasGoodGpu =
-		hw.gpuType === "apple-silicon" || hw.gpuType === "nvidia";
+	const hasGoodGpu = hw.gpuType === "apple-silicon" || hw.gpuType === "nvidia";
 
 	if (hw.totalRamGb >= 16 && hasGoodGpu) {
 		return "nomic-embed-text";

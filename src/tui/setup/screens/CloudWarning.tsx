@@ -14,11 +14,7 @@ import type { ScreenProps } from "../types.js";
 // Component
 // ============================================================================
 
-export function CloudWarningScreen({
-	onNext,
-	onBack,
-	onQuit,
-}: ScreenProps) {
+export function CloudWarningScreen({ onNext, onBack, onQuit }: ScreenProps) {
 	useKeyboard((key) => {
 		if (key.name === "y") {
 			onNext();
@@ -77,7 +73,9 @@ export function CloudWarningScreen({
 				</box>
 				<box flexDirection="row" paddingLeft={2}>
 					<text fg={theme.error}>{"• "}</text>
-					<text fg={theme.text}>{"Full source code content of indexed files"}</text>
+					<text fg={theme.text}>
+						{"Full source code content of indexed files"}
+					</text>
 				</box>
 				<box flexDirection="row" paddingLeft={2}>
 					<text fg={theme.error}>{"• "}</text>
@@ -89,7 +87,9 @@ export function CloudWarningScreen({
 				</box>
 
 				<box marginTop={2}>
-					<text fg={theme.labelDim}>{"Alternatives that keep code local:"}</text>
+					<text fg={theme.labelDim}>
+						{"Alternatives that keep code local:"}
+					</text>
 				</box>
 				<box flexDirection="row" paddingLeft={2}>
 					<text fg={theme.accentGreen}>{"• "}</text>
@@ -97,15 +97,21 @@ export function CloudWarningScreen({
 				</box>
 				<box flexDirection="row" paddingLeft={2}>
 					<text fg={theme.accentGreen}>{"• "}</text>
-					<text fg={theme.text}>{"Shared mode — only vectors transmitted"}</text>
+					<text fg={theme.text}>
+						{"Shared mode — only vectors transmitted"}
+					</text>
 				</box>
 
 				<box marginTop={2} flexDirection="row">
-					<text fg={theme.dimmed}>{"By continuing, you confirm that you are"}</text>
+					<text fg={theme.dimmed}>
+						{"By continuing, you confirm that you are"}
+					</text>
 				</box>
 				<box>
 					<text fg={theme.dimmed}>
-						{"authorized to transmit this code to the configured cloud endpoint."}
+						{
+							"authorized to transmit this code to the configured cloud endpoint."
+						}
 					</text>
 				</box>
 			</box>

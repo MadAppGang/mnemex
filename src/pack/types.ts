@@ -1,7 +1,7 @@
 /**
  * Pack Types
  *
- * Type definitions for the claudemem pack command.
+ * Type definitions for the mnemex pack command.
  */
 
 // ============================================================================
@@ -39,7 +39,7 @@ export interface PackMeta {
 	projectPath: string;
 	/** ISO timestamp when pack was generated */
 	generatedAt: string;
-	/** claudemem version */
+	/** mnemex version */
 	version: string;
 	/** Total number of files included */
 	fileCount: number;

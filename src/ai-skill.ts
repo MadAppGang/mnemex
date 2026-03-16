@@ -1,5 +1,5 @@
 /**
- * Comprehensive AI Agent Skill for claudemem
+ * Comprehensive AI Agent Skill for mnemex
  *
  * Symbol graph commands:
  * - map: structural overview with PageRank ranking
@@ -27,10 +27,10 @@ import {
 } from "./ai-instructions.js";
 
 /**
- * Full agentic skill document for claudemem
+ * Full agentic skill document for mnemex
  * Designed for embedding in CLAUDE.md or system prompts
  */
-export const CLAUDEMEM_SKILL = `<skill name="claudemem" version="0.3">
+export const MNEMEX_SKILL = `<skill name="mnemex" version="0.3">
 <purpose>
 Code intelligence via symbol graph + semantic search + code analysis.
 Provides STRUCTURE FIRST understanding before reading code.
@@ -65,36 +65,36 @@ INDEXING:
 
 <tools>
 SYMBOL GRAPH COMMANDS (primary - always use --agent):
-  claudemem map [query]       # Repo structure, symbols ranked by PageRank
-  claudemem symbol <name>     # Find symbol definition (file:line, signature)
-  claudemem callers <name>    # What depends on this symbol
-  claudemem callees <name>    # What this symbol depends on
-  claudemem context <name>    # Full context: symbol + callers + callees
+  mnemex map [query]       # Repo structure, symbols ranked by PageRank
+  mnemex symbol <name>     # Find symbol definition (file:line, signature)
+  mnemex callers <name>    # What depends on this symbol
+  mnemex callees <name>    # What this symbol depends on
+  mnemex context <name>    # Full context: symbol + callers + callees
 
 CODE ANALYSIS COMMANDS:
-  claudemem dead-code         # Find unused: zero callers + low PageRank
-  claudemem test-gaps         # Find untested: high PageRank + no test callers
-  claudemem impact <name>     # Transitive callers across all files
+  mnemex dead-code         # Find unused: zero callers + low PageRank
+  mnemex test-gaps         # Find untested: high PageRank + no test callers
+  mnemex impact <name>     # Transitive callers across all files
 
 SEARCH (secondary - after structure understood):
-  claudemem search "query"    # Semantic search, returns file:line + code
-  claudemem search "q" --map  # Search + include repo map context
+  mnemex search "query"    # Semantic search, returns file:line + code
+  mnemex search "q" --map  # Search + include repo map context
 
 PACK (export codebase for AI):
-  claudemem pack [path]       # Pack to XML file (repomix-compatible)
-  claudemem pack --stdout     # Write to stdout
-  claudemem pack --format md  # Markdown format
-  claudemem pack --include "src/**" --exclude "*.test.ts"
+  mnemex pack [path]       # Pack to XML file (repomix-compatible)
+  mnemex pack --stdout     # Write to stdout
+  mnemex pack --format md  # Markdown format
+  mnemex pack --include "src/**" --exclude "*.test.ts"
 
 INDEX/STATUS:
-  claudemem index [path] [-f] # Index codebase (force with -f)
-  claudemem status            # Show index info
-  claudemem clear             # Remove index
-  claudemem watch             # Auto-reindex on file changes (daemon)
-  claudemem hooks install     # Git post-commit hook for auto-indexing
+  mnemex index [path] [-f] # Index codebase (force with -f)
+  mnemex status            # Show index info
+  mnemex clear             # Remove index
+  mnemex watch             # Auto-reindex on file changes (daemon)
+  mnemex hooks install     # Git post-commit hook for auto-indexing
 
 AI INSTRUCTIONS:
-  claudemem ai <role>         # Role instructions (architect|developer|tester|debugger)
+  mnemex ai <role>         # Role instructions (architect|developer|tester|debugger)
 </tools>
 
 <output-format>
@@ -119,31 +119,31 @@ Records separated by "---". Each field: "key: value" on own line.
 
 <workflow>
 1. MAP STRUCTURE (always start here)
-   claudemem --agent map "task keywords"   → See relevant symbols ranked by PageRank
+   mnemex --agent map "task keywords"   → See relevant symbols ranked by PageRank
    → High PageRank (>0.05) = heavily used, understand first
    → Low PageRank (<0.01) = utilities, defer
 
 2. LOCATE SYMBOL
-   claudemem --agent symbol TargetClass   → Get exact file:line, signature, export status
+   mnemex --agent symbol TargetClass   → Get exact file:line, signature, export status
    → Only read what you found, not entire files
 
 3. CHECK IMPACT (before modifying!)
-   claudemem --agent callers TargetClass   → Direct callers that will break if you change interface
-   claudemem impact TargetClass   → ALL transitive callers (full blast radius)
+   mnemex --agent callers TargetClass   → Direct callers that will break if you change interface
+   mnemex impact TargetClass   → ALL transitive callers (full blast radius)
 
 4. UNDERSTAND DEPENDENCIES
-   claudemem --agent callees TargetClass   → What this code can use
+   mnemex --agent callees TargetClass   → What this code can use
    → Available utilities and interfaces
 
 5. GET FULL CONTEXT (complex changes)
-   claudemem --agent context TargetClass   → Symbol + all callers + all callees at once
+   mnemex --agent context TargetClass   → Symbol + all callers + all callees at once
 
 6. CODE ANALYSIS (when relevant)
-   claudemem dead-code        → Find unused code
-   claudemem test-gaps        → Find untested code
+   mnemex dead-code        → Find unused code
+   mnemex test-gaps        → Find untested code
 
 7. SEARCH (when needed)
-   claudemem --agent search "specific query"   → Use for natural language discovery
+   mnemex --agent search "specific query"   → Use for natural language discovery
    → After structure is understood
 </workflow>
 
@@ -178,14 +178,14 @@ LOW (<0.01):
 <avoid>
 × grep for code discovery
   grep "auth" → 500 matches, no ranking, no relationships
-  INSTEAD: claudemem map "authentication"
+  INSTEAD: mnemex map "authentication"
 × Reading entire files
   cat src/auth.ts → 80% irrelevant, token waste
-  INSTEAD: claudemem symbol → read exact line range
+  INSTEAD: mnemex symbol → read exact line range
 
 × Modifying without checking callers
   Change signature → break unknown callers
-  INSTEAD: claudemem callers <symbol> BEFORE changes
+  INSTEAD: mnemex callers <symbol> BEFORE changes
 
 × Ignoring PageRank
   Low PageRank = probably utility, not core
@@ -202,35 +202,35 @@ LOW (<0.01):
 
 <scenarios>
 BUG FIX:
-  1. claudemem map "error keywords"  2. claudemem symbol FunctionFromStackTrace  3. claudemem callers FunctionFromStackTrace  4. claudemem impact BuggyFunction  (assess scope)
+  1. mnemex map "error keywords"  2. mnemex symbol FunctionFromStackTrace  3. mnemex callers FunctionFromStackTrace  4. mnemex impact BuggyFunction  (assess scope)
   5. Read identified file:line ranges
   6. Fix bug, verify callers still work
 
 NEW FEATURE:
-  1. claudemem map "feature area"  2. claudemem callees ExistingFeature  (see patterns)
-  3. claudemem context ModificationPoint  4. Implement following existing patterns
-  5. claudemem test-gaps  (check coverage)
+  1. mnemex map "feature area"  2. mnemex callees ExistingFeature  (see patterns)
+  3. mnemex context ModificationPoint  4. Implement following existing patterns
+  5. mnemex test-gaps  (check coverage)
 
 REFACTORING:
-  1. claudemem symbol SymbolToRename  2. claudemem impact SymbolToRename  (full scope)
+  1. mnemex symbol SymbolToRename  2. mnemex impact SymbolToRename  (full scope)
   3. Update all caller locations from output
   4. Verify each file:line updated
 
 UNDERSTANDING CODEBASE:
-  1. claudemem map  (overall structure)
+  1. mnemex map  (overall structure)
   2. Identify top 5 by PageRank
-  3. claudemem context <top-symbol>  for each
+  3. mnemex context <top-symbol>  for each
   4. Trace flow via callees
 
 CLEANUP (new!):
-  1. claudemem dead-code  (find unused)
+  1. mnemex dead-code  (find unused)
   2. Review each symbol for dynamic usage
   3. Remove confirmed dead code
 
 TEST PLANNING (new!):
-  1. claudemem test-gaps  (prioritized list)
+  1. mnemex test-gaps  (prioritized list)
   2. Focus on high PageRank symbols
-  3. claudemem impact <symbol>  for test scope
+  3. mnemex impact <symbol>  for test scope
 </scenarios>
 
 <supported-languages>
@@ -245,7 +245,7 @@ C (.c, .h), C++ (.cpp, .hpp), Java (.java)
  */
 export function getFullSkillWithRole(role: AgentRole): string {
 	const roleInstructions = getInstructions(role);
-	return `${CLAUDEMEM_SKILL}
+	return `${MNEMEX_SKILL}
 
 <role-extension>
 ${roleInstructions}
@@ -255,28 +255,28 @@ ${roleInstructions}
 /**
  * Compact skill for tight context budgets
  */
-export const CLAUDEMEM_SKILL_COMPACT = `<skill name="claudemem">
+export const MNEMEX_SKILL_COMPACT = `<skill name="mnemex">
 CODE INTELLIGENCE via symbol graph + semantic search + code analysis.
 STRUCTURE FIRST: map → symbol → callers → then read code.
 
 SYMBOL GRAPH (primary - use --agent):
-  claudemem map [query]       # Repo structure, PageRank ranking
-  claudemem symbol <name>     # Find definition (file:line)
-  claudemem callers <name>    # What depends on this (BEFORE modifying!)
-  claudemem callees <name>    # What this depends on
-  claudemem context <name>    # Full context at once
+  mnemex map [query]       # Repo structure, PageRank ranking
+  mnemex symbol <name>     # Find definition (file:line)
+  mnemex callers <name>    # What depends on this (BEFORE modifying!)
+  mnemex callees <name>    # What this depends on
+  mnemex context <name>    # Full context at once
 
 CODE ANALYSIS:
-  claudemem dead-code         # Find unused (zero callers + low PageRank)
-  claudemem test-gaps         # Find untested (high PageRank + no test callers)
-  claudemem impact <name>     # ALL transitive callers (blast radius)
+  mnemex dead-code         # Find unused (zero callers + low PageRank)
+  mnemex test-gaps         # Find untested (high PageRank + no test callers)
+  mnemex impact <name>     # ALL transitive callers (blast radius)
 
 PACK:
-  claudemem pack [path]       # Export codebase to single AI file (XML/MD/plain)
-  claudemem pack --stdout     # Write to stdout
+  mnemex pack [path]       # Export codebase to single AI file (XML/MD/plain)
+  mnemex pack --stdout     # Write to stdout
 
 SEARCH (after structure understood):
-  claudemem search "query"    # Semantic search → file:line results
+  mnemex search "query"    # Semantic search → file:line results
 
 PAGERANK = importance:
   High (>0.05) = core abstractions, read first
@@ -291,7 +291,7 @@ AVOID: grep (no ranking), reading whole files, modifying without impact check
  */
 export function getCompactSkillWithRole(role: AgentRole): string {
 	const roleCompact = getCompactInstructions(role);
-	return `${CLAUDEMEM_SKILL_COMPACT}
+	return `${MNEMEX_SKILL_COMPACT}
 
 ${roleCompact}`;
 }
@@ -300,7 +300,7 @@ ${roleCompact}`;
  * MCP-specific instruction for Claude Code integration
  * Note: CLI commands preferred for agent workflows
  */
-export const CLAUDEMEM_MCP_SKILL = `<mcp-skill name="claudemem">
+export const MNEMEX_MCP_SKILL = `<mcp-skill name="mnemex">
 NOTE: For AI agents, CLI commands with --agent are preferred.
 MCP tools available for Claude Code integration:
 
@@ -311,15 +311,15 @@ TOOLS:
   clear_index(path?)                     # Reset index
 
 PREFERRED CLI WORKFLOW:
-  claudemem map "task"              # Structure first
-  claudemem symbol <name>           # Find definition
-  claudemem callers <name>          # Check direct impact
-  claudemem impact <name>           # Full transitive impact (blast radius)
-  claudemem callees <name>          # Dependencies
-  claudemem dead-code               # Find unused code
-  claudemem test-gaps               # Find untested code
-  claudemem pack --stdout            # Export codebase to single AI file
-  claudemem search "query"          # When needed
+  mnemex map "task"              # Structure first
+  mnemex symbol <name>           # Find definition
+  mnemex callers <name>          # Check direct impact
+  mnemex impact <name>           # Full transitive impact (blast radius)
+  mnemex callees <name>          # Dependencies
+  mnemex dead-code               # Find unused code
+  mnemex test-gaps               # Find untested code
+  mnemex pack --stdout            # Export codebase to single AI file
+  mnemex search "query"          # When needed
 
 WHEN TO USE MCP:
   ✓ Quick semantic searches
@@ -335,7 +335,7 @@ WHEN TO USE CLI:
 /**
  * Quick reference card (minimal tokens)
  */
-export const CLAUDEMEM_QUICK_REF = `claudemem: symbol graph + semantic search + code analysis (--agent)
+export const MNEMEX_QUICK_REF = `mnemex: symbol graph + semantic search + code analysis (--agent)
   map [query]      # Structure overview, PageRank ranked
   symbol <name>    # Find definition (file:line)
   callers <name>   # What depends on this (BEFORE modifying!)

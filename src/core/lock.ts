@@ -155,7 +155,7 @@ export class IndexLock implements IIndexLock {
 	private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 	private acquired = false;
 
-	constructor(projectPath: string, indexDir = ".claudemem") {
+	constructor(projectPath: string, indexDir = ".mnemex") {
 		this.lockPath = join(projectPath, indexDir, LOCK_FILENAME);
 	}
 

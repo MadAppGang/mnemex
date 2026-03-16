@@ -52,10 +52,7 @@ interface BuildConfigResult {
 /**
  * Resolve the next wizard step based on current step and state.
  */
-function resolveNextStep(
-	current: WizardStep,
-	state: WizardState,
-): WizardStep {
+function resolveNextStep(current: WizardStep, state: WizardState): WizardStep {
 	switch (current) {
 		case "mode-select":
 			if (state.mode === "local") return "hardware-detect";

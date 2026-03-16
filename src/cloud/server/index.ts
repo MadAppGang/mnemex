@@ -1,11 +1,15 @@
 /**
- * Entry point for the claudemem cloud test server.
+ * Entry point for the mnemex cloud test server.
  * Uses Bun.serve() for HTTP handling. No authentication.
  */
 
 import { type ServerConfig, loadConfig } from "./config.js";
 import { type Sql, createDatabase } from "./db.js";
-import { authMiddleware, runMiddleware, versionMiddleware } from "./middleware.js";
+import {
+	authMiddleware,
+	runMiddleware,
+	versionMiddleware,
+} from "./middleware.js";
 import { type RequestContext, router } from "./router.js";
 
 let server: ReturnType<typeof Bun.serve> | null = null;

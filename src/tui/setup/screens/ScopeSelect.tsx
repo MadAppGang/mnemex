@@ -42,19 +42,19 @@ const SCOPES: ScopeOption[] = [
 		scope: "global",
 		label: "Global only",
 		description: "Apply settings to all projects on this machine.",
-		files: ["~/.claudemem/config.json"],
+		files: ["~/.mnemex/config.json"],
 	},
 	{
 		scope: "project",
 		label: "Project only",
 		description: "Apply settings to the current project only.",
-		files: [".claudemem/config.json"],
+		files: [".mnemex/config.json"],
 	},
 	{
 		scope: "both",
 		label: "Both (global + project)",
 		description: "Write global defaults and per-project overrides.",
-		files: ["~/.claudemem/config.json", ".claudemem/config.json"],
+		files: ["~/.mnemex/config.json", ".mnemex/config.json"],
 	},
 ];
 
@@ -122,7 +122,7 @@ export function ScopeSelectScreen({
 			{/* Header */}
 			<box flexDirection="row" paddingLeft={1} paddingTop={1}>
 				<text fg={theme.borderDim}>{"┌─"}</text>
-				<text fg={theme.primary}>{" claudemem "}</text>
+				<text fg={theme.primary}>{" mnemex "}</text>
 				<text fg={theme.borderDim}>{"─"}</text>
 				<text fg={theme.muted}>{" Setup "}</text>
 				<text fg={theme.borderDim}>{"─"}</text>
@@ -131,7 +131,9 @@ export function ScopeSelectScreen({
 			</box>
 
 			<box paddingLeft={3} paddingTop={1}>
-				<text fg={theme.dimmed}>{"Where should the configuration be saved?"}</text>
+				<text fg={theme.dimmed}>
+					{"Where should the configuration be saved?"}
+				</text>
 			</box>
 
 			{/* Scope list */}
@@ -170,28 +172,32 @@ export function ScopeSelectScreen({
 			</box>
 
 			{/* Merge notice */}
-			{wizardState.projectConfigExists && selected && (
-				selected.scope === "project" || selected.scope === "both"
-			) && (
-				<box
-					flexDirection="column"
-					paddingLeft={3}
-					paddingTop={1}
-					marginLeft={2}
-					borderStyle="single"
-					borderColor={theme.warning}
-					paddingRight={2}
-					paddingBottom={1}
-				>
-					<box flexDirection="row">
-						<text fg={theme.warning}>{"! "}</text>
-						<text fg={theme.dangerText}>{"Existing project config found"}</text>
+			{wizardState.projectConfigExists &&
+				selected &&
+				(selected.scope === "project" || selected.scope === "both") && (
+					<box
+						flexDirection="column"
+						paddingLeft={3}
+						paddingTop={1}
+						marginLeft={2}
+						borderStyle="single"
+						borderColor={theme.warning}
+						paddingRight={2}
+						paddingBottom={1}
+					>
+						<box flexDirection="row">
+							<text fg={theme.warning}>{"! "}</text>
+							<text fg={theme.dangerText}>
+								{"Existing project config found"}
+							</text>
+						</box>
+						<box>
+							<text fg={theme.muted}>
+								{"Settings will be merged with existing values."}
+							</text>
+						</box>
 					</box>
-					<box>
-						<text fg={theme.muted}>{"Settings will be merged with existing values."}</text>
-					</box>
-				</box>
-			)}
+				)}
 
 			{/* Spacer */}
 			<box flexGrow={1} />

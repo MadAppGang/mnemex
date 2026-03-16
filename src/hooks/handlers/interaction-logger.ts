@@ -40,7 +40,7 @@ function getInteractionSystem(projectPath: string): InteractionSystem | null {
 	}
 
 	// Check if project is indexed
-	const indexDir = join(projectPath, ".claudemem");
+	const indexDir = join(projectPath, ".mnemex");
 	if (!existsSync(indexDir)) {
 		return null;
 	}

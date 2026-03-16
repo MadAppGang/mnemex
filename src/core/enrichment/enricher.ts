@@ -914,12 +914,15 @@ async function runWithPool<T>(
 	fn: (item: T) => Promise<void>,
 ): Promise<void> {
 	let idx = 0;
-	const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-		while (idx < items.length) {
-			const i = idx++;
-			await fn(items[i]);
-		}
-	});
+	const workers = Array.from(
+		{ length: Math.min(concurrency, items.length) },
+		async () => {
+			while (idx < items.length) {
+				const i = idx++;
+				await fn(items[i]);
+			}
+		},
+	);
 	await Promise.all(workers);
 }
 

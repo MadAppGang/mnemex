@@ -16,7 +16,7 @@ export function registerStatusTools(server: McpServer, deps: ToolDeps): void {
 
 	server.tool(
 		"index_status",
-		"Get the health and status of the claudemem index: file counts, last indexed time, watcher state, and freshness.",
+		"Get the health and status of the mnemex index: file counts, last indexed time, watcher state, and freshness.",
 		{},
 		async () => {
 			const startTime = Date.now();

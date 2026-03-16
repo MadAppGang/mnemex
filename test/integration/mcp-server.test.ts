@@ -7,13 +7,7 @@
  * These tests exercise real component wiring rather than mocking internals.
  */
 
-import {
-	describe,
-	test,
-	expect,
-	beforeEach,
-	afterEach,
-} from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import {
 	mkdtempSync,
 	mkdirSync,
@@ -38,11 +32,11 @@ import type { Logger } from "../../src/mcp/logger.js";
 /**
  * Create a temp workspace with a nested indexDir:
  *   <tmpRoot>/   ← project root (for IndexLock)
- *   <tmpRoot>/.claudemem/  ← indexDir
+ *   <tmpRoot>/.mnemex/  ← indexDir
  */
 function makeTempWorkspace(): { root: string; indexDir: string } {
 	const root = mkdtempSync(join(tmpdir(), "mcp-integ-"));
-	const indexDir = join(root, ".claudemem");
+	const indexDir = join(root, ".mnemex");
 	mkdirSync(indexDir, { recursive: true });
 	return { root, indexDir };
 }
@@ -57,7 +51,11 @@ function cleanup(root: string): void {
 
 /** Write a .reindex-timestamp with the given date (or now) */
 function writeTimestamp(indexDir: string, date: Date = new Date()): void {
-	writeFileSync(join(indexDir, ".reindex-timestamp"), date.toISOString(), "utf-8");
+	writeFileSync(
+		join(indexDir, ".reindex-timestamp"),
+		date.toISOString(),
+		"utf-8",
+	);
 }
 
 /** Minimal no-op logger for test use */
@@ -71,7 +69,9 @@ const noopLogger: Logger = {
 /** Minimal stub for IndexCache — only invalidate() is called by DebounceReindexer */
 function makeStubCache(): IndexCache {
 	return {
-		get: async () => { throw new Error("stub: not implemented"); },
+		get: async () => {
+			throw new Error("stub: not implemented");
+		},
 		invalidate: () => {},
 		close: () => {},
 	} as unknown as IndexCache;
@@ -260,7 +260,7 @@ describe("DebounceReindexer schedules reindex after file changes", () => {
 		await new Promise<void>((resolve) => setTimeout(resolve, 150));
 
 		// The reindexer should have called onReindexStart() on the state manager.
-		// The actual `claudemem index` spawn will fail (no real binary in test),
+		// The actual `mnemex index` spawn will fail (no real binary in test),
 		// but the state transition should still happen.
 		// Either reindexing = true (spawn started but not finished) or the spawn
 		// error path called onReindexComplete(), leaving isReindexing = false.
@@ -272,7 +272,7 @@ describe("DebounceReindexer schedules reindex after file changes", () => {
 		// state was touched by looking at lastIndexed being set (since
 		// onReindexComplete sets it).
 		//
-		// In test environments the claudemem binary may not be available,
+		// In test environments the mnemex binary may not be available,
 		// so the spawn throws and onReindexComplete is called synchronously,
 		// leaving isReindexing = false and lastIndexed set.
 		// In environments where the binary exists it will run and complete asynchronously.
@@ -282,8 +282,8 @@ describe("DebounceReindexer schedules reindex after file changes", () => {
 		// we are NOT stuck with reindexingInProgress = true AND no lastIndexed.
 		// Either fresh (complete) or stale-with-reindexing.
 		const isConsistent =
-			(freshness.reindexingInProgress === true) ||
-			(freshness.reindexingInProgress === false);
+			freshness.reindexingInProgress === true ||
+			freshness.reindexingInProgress === false;
 		expect(isConsistent).toBe(true);
 	}, 5000);
 
@@ -378,7 +378,7 @@ describe("FileWatcher detects changes and updates state manager", () => {
 		watcher = new FileWatcher(
 			root,
 			["**/*.ts"], // watch TypeScript files
-			[".claudemem/**", ".git/**"], // ignore index dir
+			[".mnemex/**", ".git/**"], // ignore index dir
 			(filePath: string) => {
 				manager.recordChange(filePath);
 			},
@@ -405,7 +405,9 @@ describe("FileWatcher detects changes and updates state manager", () => {
 		if (freshness.filesChanged.length > 0) {
 			expect(freshness.freshness).toBe("stale");
 			// The path may be relative to root
-			const hasFile = freshness.filesChanged.some((f) => f.includes("example.ts"));
+			const hasFile = freshness.filesChanged.some((f) =>
+				f.includes("example.ts"),
+			);
 			expect(hasFile).toBe(true);
 		}
 		// If filesChanged is empty: watcher on this platform may not support recursive watching.
@@ -413,13 +415,13 @@ describe("FileWatcher detects changes and updates state manager", () => {
 	}, 10000);
 
 	test("FileWatcher ignores files matching ignorePatterns", async () => {
-		const ignoredFile = join(root, ".claudemem", "some.ts");
+		const ignoredFile = join(root, ".mnemex", "some.ts");
 		writeFileSync(ignoredFile, "// ignored\n", "utf-8");
 
 		watcher = new FileWatcher(
 			root,
 			["**/*.ts"],
-			[".claudemem/**"],
+			[".mnemex/**"],
 			(filePath: string) => {
 				manager.recordChange(filePath);
 			},
@@ -436,7 +438,7 @@ describe("FileWatcher detects changes and updates state manager", () => {
 		// The ignored file should not be in changed files
 		const freshness = manager.getFreshness();
 		const hasIgnoredFile = freshness.filesChanged.some((f) =>
-			f.includes(".claudemem"),
+			f.includes(".mnemex"),
 		);
 		expect(hasIgnoredFile).toBe(false);
 	}, 10000);
@@ -447,7 +449,7 @@ describe("FileWatcher detects changes and updates state manager", () => {
 		watcher = new FileWatcher(
 			root,
 			["**/*.ts"],
-			[".claudemem/**"],
+			[".mnemex/**"],
 			() => {
 				callCount++;
 			},
@@ -918,7 +920,7 @@ describe("Race condition: reindex not triggered twice concurrently", () => {
 			noopLogger,
 		);
 
-		// Simulate an external process holding the lock (like `claudemem index` from CLI)
+		// Simulate an external process holding the lock (like `mnemex index` from CLI)
 		const lockPath = join(indexDir, ".indexing.lock");
 		writeFileSync(
 			lockPath,

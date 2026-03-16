@@ -120,7 +120,11 @@ export interface IFileTracker {
 		contentHash: string,
 		chunkIds: string[],
 	): void;
-	needsDocsRefresh(library: string, version?: string, maxAgeMs?: number): boolean;
+	needsDocsRefresh(
+		library: string,
+		version?: string,
+		maxAgeMs?: number,
+	): boolean;
 	getDocsState(library: string, version?: string): IndexedDocState | null;
 	getAllIndexedDocs(): IndexedDocState[];
 	getDocsChunkIds(library: string, version?: string): string[];

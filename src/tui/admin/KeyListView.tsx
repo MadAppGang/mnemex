@@ -106,12 +106,30 @@ export function KeyListView({
 
 	// Logo lines: CLAUDE part (orange) + MEM part (green)
 	const logoLines = [
-		["   ██████╗██╗      █████╗ ██╗   ██╗██████╗ ███████╗", "███╗   ███╗███████╗███╗   ███╗"],
-		["  ██╔════╝██║     ██╔══██╗██║   ██║██╔══██╗██╔════╝", "████╗ ████║██╔════╝████╗ ████║"],
-		["  ██║     ██║     ███████║██║   ██║██║  ██║█████╗  ", "██╔████╔██║█████╗  ██╔████╔██║"],
-		["  ██║     ██║     ██╔══██║██║   ██║██║  ██║██╔══╝  ", "██║╚██╔╝██║██╔══╝  ██║╚██╔╝██║"],
-		["  ╚██████╗███████╗██║  ██║╚██████╔╝██████╔╝███████╗", "██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║"],
-		["   ╚═════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝", "╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝"],
+		[
+			"   ██████╗██╗      █████╗ ██╗   ██╗██████╗ ███████╗",
+			"███╗   ███╗███████╗███╗   ███╗",
+		],
+		[
+			"  ██╔════╝██║     ██╔══██╗██║   ██║██╔══██╗██╔════╝",
+			"████╗ ████║██╔════╝████╗ ████║",
+		],
+		[
+			"  ██║     ██║     ███████║██║   ██║██║  ██║█████╗  ",
+			"██╔████╔██║█████╗  ██╔████╔██║",
+		],
+		[
+			"  ██║     ██║     ██╔══██║██║   ██║██║  ██║██╔══╝  ",
+			"██║╚██╔╝██║██╔══╝  ██║╚██╔╝██║",
+		],
+		[
+			"  ╚██████╗███████╗██║  ██║╚██████╔╝██████╔╝███████╗",
+			"██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║",
+		],
+		[
+			"   ╚═════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝",
+			"╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝",
+		],
 	];
 
 	const keyCount = keys.length;
@@ -205,9 +223,14 @@ export function KeyListView({
 
 				if (isSelected) {
 					return (
-						<box key={k.id} paddingLeft={3} paddingRight={2} flexDirection="row">
+						<box
+							key={k.id}
+							paddingLeft={3}
+							paddingRight={2}
+							flexDirection="row"
+						>
 							<text fg={theme.primary}>{">"}</text>
-							<text fg={theme.valueBright}>{" "}</text>
+							<text fg={theme.valueBright}> </text>
 							<text fg={theme.primary}>{name}</text>
 							<text fg={theme.accentCyan}>{prefix}</text>
 							<text fg={theme.text}>{created}</text>
@@ -219,8 +242,8 @@ export function KeyListView({
 
 				return (
 					<box key={k.id} paddingLeft={3} paddingRight={2} flexDirection="row">
-						<text fg={theme.dimmed}>{" "}</text>
-						<text fg={theme.text}>{" "}</text>
+						<text fg={theme.dimmed}> </text>
+						<text fg={theme.text}> </text>
 						<text fg={theme.text}>{name}</text>
 						<text fg={theme.muted}>{prefix}</text>
 						<text fg={theme.dimmed}>{created}</text>

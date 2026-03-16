@@ -25,7 +25,7 @@ export interface LanguageServerConfig {
 export const LANGUAGE_SERVER_CONFIGS: Record<string, LanguageServerConfig> = {
 	typescript: {
 		language: "typescript",
-		command: process.env.CLAUDEMEM_LSP_TS_CMD ?? "typescript-language-server",
+		command: process.env.MNEMEX_LSP_TS_CMD ?? "typescript-language-server",
 		args: ["--stdio"],
 		initializationOptions: {
 			preferences: {
@@ -38,21 +38,21 @@ export const LANGUAGE_SERVER_CONFIGS: Record<string, LanguageServerConfig> = {
 
 	python: {
 		language: "python",
-		command: process.env.CLAUDEMEM_LSP_PY_CMD ?? "pylsp",
+		command: process.env.MNEMEX_LSP_PY_CMD ?? "pylsp",
 		args: [],
 		rootDetector: "pyproject.toml",
 	},
 
 	go: {
 		language: "go",
-		command: process.env.CLAUDEMEM_LSP_GO_CMD ?? "gopls",
+		command: process.env.MNEMEX_LSP_GO_CMD ?? "gopls",
 		args: ["serve"],
 		rootDetector: "go.mod",
 	},
 
 	rust: {
 		language: "rust",
-		command: process.env.CLAUDEMEM_LSP_RS_CMD ?? "rust-analyzer",
+		command: process.env.MNEMEX_LSP_RS_CMD ?? "rust-analyzer",
 		args: [],
 		rootDetector: "Cargo.toml",
 	},

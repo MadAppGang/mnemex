@@ -17,7 +17,11 @@
  */
 
 import { describe, test, expect, beforeEach, mock } from "bun:test";
-import type { IChangeDetector, ChangedFile, DirtyFile } from "../../../src/cloud/types.js";
+import type {
+	IChangeDetector,
+	ChangedFile,
+	DirtyFile,
+} from "../../../src/cloud/types.js";
 import type { IEmbeddingsClient, EmbedResult } from "../../../src/types.js";
 import { LocalCloudStub } from "../../../src/cloud/stub.js";
 import type { TeamConfig } from "../../../src/cloud/types.js";
@@ -43,23 +47,25 @@ mock.module("node:fs", () => ({
 
 // Mock the chunker to avoid needing real tree-sitter parsers in unit tests
 mock.module("../../../src/core/chunker.js", () => ({
-	chunkFileByPath: mock(async (source: string, filePath: string, fileHash: string) => {
-		// Return a single fake chunk for any file
-		return [
-			{
-				id: `id-${fileHash.slice(0, 8)}`,
-				contentHash: `contenthash-${fileHash.slice(0, 8)}`,
-				content: source,
-				filePath,
-				startLine: 1,
-				endLine: 3,
-				language: "typescript",
-				chunkType: "function",
-				name: "hello",
-				fileHash,
-			},
-		];
-	}),
+	chunkFileByPath: mock(
+		async (source: string, filePath: string, fileHash: string) => {
+			// Return a single fake chunk for any file
+			return [
+				{
+					id: `id-${fileHash.slice(0, 8)}`,
+					contentHash: `contenthash-${fileHash.slice(0, 8)}`,
+					content: source,
+					filePath,
+					startLine: 1,
+					endLine: 3,
+					language: "typescript",
+					chunkType: "function",
+					name: "hello",
+					fileHash,
+				},
+			];
+		},
+	),
 	canChunkFile: mock(() => true),
 }));
 
@@ -169,15 +175,17 @@ beforeEach(() => {
 	embeddingsClient = new MockEmbeddingsClient();
 });
 
-function makeIndexer(overrides: {
-	teamConfig?: TeamConfig;
-	embeddingsClient?: IEmbeddingsClient | null;
-	changeDetector?: IChangeDetector;
-} = {}): InstanceType<typeof CloudAwareIndexer> {
+function makeIndexer(
+	overrides: {
+		teamConfig?: TeamConfig;
+		embeddingsClient?: IEmbeddingsClient | null;
+		changeDetector?: IChangeDetector;
+	} = {},
+): InstanceType<typeof CloudAwareIndexer> {
 	// Use null as sentinel to explicitly pass no embeddingsClient
 	const resolvedClient =
 		"embeddingsClient" in overrides
-			? overrides.embeddingsClient ?? undefined
+			? (overrides.embeddingsClient ?? undefined)
 			: embeddingsClient;
 	return new CloudAwareIndexer({
 		projectPath: PROJECT_PATH,

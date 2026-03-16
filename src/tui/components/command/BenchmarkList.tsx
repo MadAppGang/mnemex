@@ -206,7 +206,10 @@ function ErrorDetailPanel({
 			marginX={1}
 			height={Math.min(maxHeight, errors.length * 3 + 4)}
 		>
-			<scrollbox height={Math.min(maxHeight - 2, errors.length * 3 + 2)} focused>
+			<scrollbox
+				height={Math.min(maxHeight - 2, errors.length * 3 + 2)}
+				focused
+			>
 				<box flexDirection="column" paddingX={1}>
 					{Array.from(byPhase.entries()).map(([phase, phaseErrors]) => {
 						const phaseTotal = phaseErrors.reduce((s, e) => s + e.count, 0);
@@ -215,20 +218,32 @@ function ErrorDetailPanel({
 							<box key={phase} flexDirection="column" marginBottom={1}>
 								<box height={1}>
 									<text fg={theme.warning}>
-										<strong>{phaseName + " \u2014 " + phaseTotal + " failure" + (phaseTotal !== 1 ? "s" : "")}</strong>
+										<strong>
+											{phaseName +
+												" \u2014 " +
+												phaseTotal +
+												" failure" +
+												(phaseTotal !== 1 ? "s" : "")}
+										</strong>
 									</text>
 								</box>
 								{phaseErrors.map((err, i) => (
-									<box key={`${phase}-${i}`} flexDirection="column" paddingLeft={2}>
+									<box
+										key={`${phase}-${i}`}
+										flexDirection="column"
+										paddingLeft={2}
+									>
 										<box height={1}>
 											<text fg={theme.error}>
-												{(err.model !== "unknown" ? truncate(err.model, 30) + ": " : "") + err.count + " failed"}
+												{(err.model !== "unknown"
+													? truncate(err.model, 30) + ": "
+													: "") +
+													err.count +
+													" failed"}
 											</text>
 										</box>
 										<box paddingLeft={2} height={1}>
-											<text fg={theme.muted}>
-												{truncate(err.error, 120)}
-											</text>
+											<text fg={theme.muted}>{truncate(err.error, 120)}</text>
 										</box>
 									</box>
 								))}
@@ -245,7 +260,11 @@ function ErrorDetailPanel({
 // BenchmarkListApp
 // ============================================================================
 
-export function BenchmarkListApp({ runs, onSelect, quit }: BenchmarkListAppProps) {
+export function BenchmarkListApp({
+	runs,
+	onSelect,
+	quit,
+}: BenchmarkListAppProps) {
 	const { width, height } = useTerminalDimensions();
 	const [selectedIndex, setSelectedIndex] = useState(0);
 	const [expandedErrors, setExpandedErrors] = useState(false);
@@ -254,9 +273,10 @@ export function BenchmarkListApp({ runs, onSelect, quit }: BenchmarkListAppProps
 	const selectedHasErrors = selectedRun && selectedRun.errors.length > 0;
 
 	// Error panel height when expanded
-	const errorPanelHeight = expandedErrors && selectedHasErrors
-		? Math.min(Math.floor(height * 0.4), selectedRun.errors.length * 3 + 4)
-		: 0;
+	const errorPanelHeight =
+		expandedErrors && selectedHasErrors
+			? Math.min(Math.floor(height * 0.4), selectedRun.errors.length * 3 + 4)
+			: 0;
 
 	// Layout constants
 	const labelWidth = 11; // "   Models  ".length
@@ -292,7 +312,10 @@ export function BenchmarkListApp({ runs, onSelect, quit }: BenchmarkListAppProps
 		usedH += cardHeights[i];
 		visibleCount++;
 	}
-	const visibleRuns = runs.slice(scrollOffset, scrollOffset + Math.max(1, visibleCount));
+	const visibleRuns = runs.slice(
+		scrollOffset,
+		scrollOffset + Math.max(1, visibleCount),
+	);
 
 	useKeyboard((key) => {
 		if (key.name === "q" && !key.ctrl && !key.meta) {
@@ -348,7 +371,9 @@ export function BenchmarkListApp({ runs, onSelect, quit }: BenchmarkListAppProps
 						<text fg={theme.warning}>{"No benchmark runs found."}</text>
 					</box>
 					<box height={1}>
-						<text fg={theme.muted}>{"Run a benchmark first: claudemem benchmark ..."}</text>
+						<text fg={theme.muted}>
+							{"Run a benchmark first: mnemex benchmark ..."}
+						</text>
 					</box>
 				</box>
 				<box flexDirection="row" width="100%" height={1}>
@@ -368,7 +393,12 @@ export function BenchmarkListApp({ runs, onSelect, quit }: BenchmarkListAppProps
 			{/* Title */}
 			<box paddingX={2} paddingTop={1} height={2}>
 				<text fg={theme.primary}>
-					<strong>{"\u2630 Benchmark Runs  " + runs.length + " run" + (runs.length !== 1 ? "s" : "")}</strong>
+					<strong>
+						{"\u2630 Benchmark Runs  " +
+							runs.length +
+							" run" +
+							(runs.length !== 1 ? "s" : "")}
+					</strong>
 				</text>
 			</box>
 
@@ -385,12 +415,16 @@ export function BenchmarkListApp({ runs, onSelect, quit }: BenchmarkListAppProps
 
 					// Line 1: pointer + dot + project ... time · duration · units
 					const metaParts = [time];
-					if (run.durationMs != null) metaParts.push(formatDuration(run.durationMs));
+					if (run.durationMs != null)
+						metaParts.push(formatDuration(run.durationMs));
 					metaParts.push(run.codeUnitCount + " units");
 					const metaStr = metaParts.join("  \u00b7  ");
 					const pointer = isSelected ? " \u25b8 " : "   ";
 					const line1Left = pointer + dot + " " + run.projectName;
-					const line1Pad = Math.max(2, contentWidth - line1Left.length - metaStr.length);
+					const line1Pad = Math.max(
+						2,
+						contentWidth - line1Left.length - metaStr.length,
+					);
 					const line1 = line1Left + " ".repeat(line1Pad) + metaStr;
 
 					// Wrapped model lines
@@ -401,9 +435,14 @@ export function BenchmarkListApp({ runs, onSelect, quit }: BenchmarkListAppProps
 
 					// Stats line parts
 					const errColor = errCount > 0 ? theme.error : theme.success;
-					const errStr = errCount > 0 ? errCount + " errors" : "\u2713 no errors";
+					const errStr =
+						errCount > 0 ? errCount + " errors" : "\u2713 no errors";
 					const bestColor = run.topModel
-						? (run.topModel.score >= 0.7 ? theme.success : run.topModel.score >= 0.4 ? theme.warning : theme.error)
+						? run.topModel.score >= 0.7
+							? theme.success
+							: run.topModel.score >= 0.4
+								? theme.warning
+								: theme.error
 						: theme.muted;
 
 					const bgColor = isSelected ? theme.selected : undefined;
@@ -419,9 +458,17 @@ export function BenchmarkListApp({ runs, onSelect, quit }: BenchmarkListAppProps
 
 							{/* Model lines (wrapped) — label muted, names in text color */}
 							{modelLines.map((ml, i) => (
-								<box key={`m${i}`} height={1} width="100%" backgroundColor={bgColor} flexDirection="row">
+								<box
+									key={`m${i}`}
+									height={1}
+									width="100%"
+									backgroundColor={bgColor}
+									flexDirection="row"
+								>
 									<box>
-										<text fg={theme.muted}>{i === 0 ? "   Models  " : indent}</text>
+										<text fg={theme.muted}>
+											{i === 0 ? "   Models  " : indent}
+										</text>
 									</box>
 									<box>
 										<text fg={theme.text}>{ml}</text>
@@ -431,9 +478,17 @@ export function BenchmarkListApp({ runs, onSelect, quit }: BenchmarkListAppProps
 
 							{/* Judge lines (wrapped) — label muted, names in text color */}
 							{judgeLines.map((jl, i) => (
-								<box key={`j${i}`} height={1} width="100%" backgroundColor={bgColor} flexDirection="row">
+								<box
+									key={`j${i}`}
+									height={1}
+									width="100%"
+									backgroundColor={bgColor}
+									flexDirection="row"
+								>
 									<box>
-										<text fg={theme.muted}>{i === 0 ? "   Judges  " : indent}</text>
+										<text fg={theme.muted}>
+											{i === 0 ? "   Judges  " : indent}
+										</text>
 									</box>
 									<box>
 										<text fg={theme.text}>{jl}</text>
@@ -442,7 +497,12 @@ export function BenchmarkListApp({ runs, onSelect, quit }: BenchmarkListAppProps
 							))}
 
 							{/* Stats line: Best + errors — flexDirection row for colors */}
-							<box height={1} width="100%" backgroundColor={bgColor} flexDirection="row">
+							<box
+								height={1}
+								width="100%"
+								backgroundColor={bgColor}
+								flexDirection="row"
+							>
 								<box>
 									<text fg={theme.muted}>{"   "}</text>
 								</box>
@@ -453,7 +513,9 @@ export function BenchmarkListApp({ runs, onSelect, quit }: BenchmarkListAppProps
 										</box>
 										<box>
 											<text fg={bestColor}>
-												{run.topModel.name + " " + run.topModel.score.toFixed(2)}
+												{run.topModel.name +
+													" " +
+													run.topModel.score.toFixed(2)}
 											</text>
 										</box>
 										<box>
@@ -487,7 +549,9 @@ export function BenchmarkListApp({ runs, onSelect, quit }: BenchmarkListAppProps
 			<box flexDirection="row" width="100%" height={1}>
 				<box paddingLeft={2} backgroundColor={theme.primary}>
 					<text fg="#000000">
-						<strong>{" " + (selectedIndex + 1) + "/" + runs.length + " "}</strong>
+						<strong>
+							{" " + (selectedIndex + 1) + "/" + runs.length + " "}
+						</strong>
 					</text>
 				</box>
 				<box paddingLeft={1}>

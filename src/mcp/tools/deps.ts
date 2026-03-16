@@ -12,7 +12,11 @@ import type { Logger } from "../logger.js";
 import type { DebounceReindexer } from "../reindexer.js";
 import type { CompletionDetector } from "../completion-detector.js";
 import type { FreshnessMetadata } from "../types.js";
-import type { ICloudIndexClient, IOverlayIndex, TeamConfig } from "../../cloud/types.js";
+import type {
+	ICloudIndexClient,
+	IOverlayIndex,
+	TeamConfig,
+} from "../../cloud/types.js";
 import type { LspManager } from "../../lsp/manager.js";
 import type { SymbolEditor } from "../../editor/editor.js";
 import type { MemoryStore } from "../../memory/store.js";
@@ -34,7 +38,7 @@ export interface ToolDeps {
 	currentCommitSha?: string;
 	/** Team configuration (present when cloud mode is enabled) */
 	teamConfig?: TeamConfig;
-	/** LSP manager (null when CLAUDEMEM_LSP=false) */
+	/** LSP manager (null when MNEMEX_LSP=false) */
 	lspManager?: LspManager | null;
 	/** Symbol editor (always available) */
 	editor?: SymbolEditor;

@@ -73,8 +73,8 @@ async function testModel(model: string): Promise<void> {
 				headers: {
 					"Content-Type": "application/json",
 					Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-					"HTTP-Referer": "https://github.com/claudemem",
-					"X-Title": "claudemem-test",
+					"HTTP-Referer": "https://github.com/mnemex",
+					"X-Title": "mnemex-test",
 				},
 				body: JSON.stringify(body),
 			},
@@ -238,8 +238,8 @@ Which summary is better? Respond with JSON:
 				headers: {
 					"Content-Type": "application/json",
 					Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-					"HTTP-Referer": "https://github.com/claudemem",
-					"X-Title": "claudemem-test",
+					"HTTP-Referer": "https://github.com/mnemex",
+					"X-Title": "mnemex-test",
 				},
 				body: JSON.stringify(body),
 			},

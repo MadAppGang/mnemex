@@ -357,6 +357,8 @@ export class RepoMapGenerator {
 /**
  * Create a repo map generator
  */
-export function createRepoMapGenerator(tracker: IFileTracker): RepoMapGenerator {
+export function createRepoMapGenerator(
+	tracker: IFileTracker,
+): RepoMapGenerator {
 	return new RepoMapGenerator(tracker);
 }

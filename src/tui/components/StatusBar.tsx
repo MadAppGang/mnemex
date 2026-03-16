@@ -76,7 +76,7 @@ export function StatusBar() {
 				<text fg={theme.dimmed}> v{indexVersion}</text>
 				{isOutdated && !monitorMode && (
 					<text fg={theme.warning}>
-						{" [outdated - run: claudemem index --force]"}
+						{" [outdated - run: mnemex index --force]"}
 					</text>
 				)}
 				{mcpIndicator && <text fg={theme.info}>{`  ${mcpIndicator}`}</text>}

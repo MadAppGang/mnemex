@@ -20,9 +20,7 @@ export function registerReindexTools(server: McpServer, deps: ToolDeps): void {
 			force: z
 				.boolean()
 				.default(false)
-				.describe(
-					"Skip debounce and reindex immediately (default: false)",
-				),
+				.describe("Skip debounce and reindex immediately (default: false)"),
 			blocking: z
 				.boolean()
 				.default(false)
@@ -41,7 +39,8 @@ export function registerReindexTools(server: McpServer, deps: ToolDeps): void {
 								type: "text" as const,
 								text: JSON.stringify({
 									status: "failed",
-									message: "Reindexer not configured. The MCP server may not have been started with --watch mode.",
+									message:
+										"Reindexer not configured. The MCP server may not have been started with --watch mode.",
 								}),
 							},
 						],

@@ -41,7 +41,7 @@ import type { FileEntry, PackMeta, PackOptions, PackResult } from "./types.js";
 /** Default maximum file size to include (1 MB) */
 const DEFAULT_MAX_FILE_SIZE = 1024 * 1024;
 
-/** claudemem version - read from package.json at call time */
+/** mnemex version - read from package.json at call time */
 let _version: string | undefined;
 
 function getVersion(): string {

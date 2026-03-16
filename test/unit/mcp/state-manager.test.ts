@@ -24,7 +24,7 @@ function makeTempIndexDir(): string {
 	// We create a nested temp structure: <tmpRoot>/<indexDir> so that the
 	// parent is the temp root (a valid directory for the lock).
 	const root = mkdtempSync(join(tmpdir(), "mcp-state-test-"));
-	const indexDir = join(root, ".claudemem");
+	const indexDir = join(root, ".mnemex");
 	// mkdirSync not needed - IndexStateManager creates it on writeTimestamp
 	return indexDir;
 }

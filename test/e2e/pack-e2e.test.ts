@@ -1,5 +1,5 @@
 /**
- * End-to-End Tests: claudemem pack command
+ * End-to-End Tests: mnemex pack command
  *
  * These tests exercise the actual CLI binary (dist/index.js) via child_process.spawnSync.
  * They validate argument parsing, format correctness, filtering, edge cases,
@@ -25,7 +25,7 @@ import { spawnSync } from "child_process";
 // Constants
 // ============================================================================
 
-const WORKTREE = "/Users/jack/mag/claudemem/.worktrees/repomix";
+const WORKTREE = "/Users/jack/mag/mnemex/.worktrees/repomix";
 const CLI = join(WORKTREE, "dist/index.js");
 const SPAWN_TIMEOUT = 30000;
 
@@ -109,7 +109,7 @@ function createStandardFixture(): string {
 }
 
 /**
- * Extract file paths from claudemem XML output.
+ * Extract file paths from mnemex XML output.
  * Looks for: path="src/index.ts"
  */
 function extractXmlFilePaths(output: string): string[] {
@@ -131,7 +131,7 @@ function extractRepomixFilePaths(output: string): string[] {
 
 describe("CLI argument parsing", () => {
 	test("E2E-1a: pack --help shows pack-related usage info", () => {
-		// --help triggers the compact help in claudemem which lists all commands
+		// --help triggers the compact help in mnemex which lists all commands
 		const { stdout, stderr, status } = runCli(["pack", "--help"]);
 		const combined = stdout + stderr;
 		// The compact help shows command list or the general help
@@ -191,13 +191,7 @@ describe("CLI argument parsing", () => {
 		const dir = makeTempDir("fmt-plain");
 		writeFile(join(dir, "main.ts"), "const x = 1;");
 		try {
-			const { stdout } = runCli([
-				"pack",
-				"--format",
-				"plain",
-				"--stdout",
-				dir,
-			]);
+			const { stdout } = runCli(["pack", "--format", "plain", "--stdout", dir]);
 			expect(stdout).toContain("File:");
 			expect(stdout).toContain("End of Codebase");
 		} finally {
@@ -220,7 +214,10 @@ describe("CLI argument parsing", () => {
 			expect(stdout.length).toBeGreaterThan(100);
 			// No output file should be created in the working directory with --stdout
 			// (files are written relative to cwd when no -o given, but --stdout overrides)
-			const outputFile = join(WORKTREE, `${require("path").basename(dir)}-pack.xml`);
+			const outputFile = join(
+				WORKTREE,
+				`${require("path").basename(dir)}-pack.xml`,
+			);
 			expect(existsSync(outputFile)).toBe(false);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
@@ -952,7 +949,7 @@ describe("Output file behavior: -o flag", () => {
 
 describe("Repomix comparison: XML structural equivalence", () => {
 	let fixtureDir: string;
-	let claudememOutput: string;
+	let mnemexOutput: string;
 	let repomixOutputPath: string;
 	let repomixOutput: string;
 	let repomixAvailable: boolean;
@@ -971,8 +968,8 @@ describe("Repomix comparison: XML structural equivalence", () => {
 			writeFile(join(fixtureDir, "README.md"), "# Compare Project");
 			// Note: No .gitignore, no binary files — clean fixture for comparison
 
-			// Get claudemem output
-			const claudememResult = runCli([
+			// Get mnemex output
+			const mnemexResult = runCli([
 				"pack",
 				"--format",
 				"xml",
@@ -980,7 +977,7 @@ describe("Repomix comparison: XML structural equivalence", () => {
 				"--stdout",
 				fixtureDir,
 			]);
-			claudememOutput = claudememResult.stdout;
+			mnemexOutput = mnemexResult.stdout;
 
 			// Get repomix output
 			repomixOutputPath = join(tmpdir(), `repomix-cmp-${Date.now()}.xml`);
@@ -1024,10 +1021,10 @@ describe("Repomix comparison: XML structural equivalence", () => {
 		}
 	});
 
-	test("E2E-14a: claudemem XML output has core structure sections", () => {
-		expect(claudememOutput).toContain("<file_summary>");
-		expect(claudememOutput).toContain("<directory_structure>");
-		expect(claudememOutput).toContain("<files>");
+	test("E2E-14a: mnemex XML output has core structure sections", () => {
+		expect(mnemexOutput).toContain("<file_summary>");
+		expect(mnemexOutput).toContain("<directory_structure>");
+		expect(mnemexOutput).toContain("<files>");
 	});
 
 	test("E2E-14b: repomix XML output has core structure sections (skip if unavailable)", () => {
@@ -1046,23 +1043,23 @@ describe("Repomix comparison: XML structural equivalence", () => {
 			return;
 		}
 
-		const claudememPaths = extractXmlFilePaths(claudememOutput);
+		const mnemexPaths = extractXmlFilePaths(mnemexOutput);
 		const repomixPaths = extractRepomixFilePaths(repomixOutput);
 
 		// Both should include our known files
-		expect(claudememPaths).toContain("src/index.ts");
-		expect(claudememPaths).toContain("src/utils.ts");
-		expect(claudememPaths).toContain("README.md");
+		expect(mnemexPaths).toContain("src/index.ts");
+		expect(mnemexPaths).toContain("src/utils.ts");
+		expect(mnemexPaths).toContain("README.md");
 
 		expect(repomixPaths).toContain("src/index.ts");
 		expect(repomixPaths).toContain("src/utils.ts");
 		expect(repomixPaths).toContain("README.md");
 	});
 
-	test("E2E-14d: claudemem output contains file content for known files", () => {
-		expect(claudememOutput).toContain("export const x = 1");
-		expect(claudememOutput).toContain("double");
-		expect(claudememOutput).toContain("Compare Project");
+	test("E2E-14d: mnemex output contains file content for known files", () => {
+		expect(mnemexOutput).toContain("export const x = 1");
+		expect(mnemexOutput).toContain("double");
+		expect(mnemexOutput).toContain("Compare Project");
 	});
 
 	test("E2E-14e: repomix output contains same file content (skip if unavailable)", () => {
@@ -1075,8 +1072,8 @@ describe("Repomix comparison: XML structural equivalence", () => {
 		expect(repomixOutput).toContain("Compare Project");
 	});
 
-	test("E2E-14f: claudemem <file> elements use path attribute", () => {
-		expect(claudememOutput).toMatch(/<file path="[^"]+"/);
+	test("E2E-14f: mnemex <file> elements use path attribute", () => {
+		expect(mnemexOutput).toMatch(/<file path="[^"]+"/);
 	});
 
 	test("E2E-14g: repomix <file> elements also use path attribute (format compatible)", () => {

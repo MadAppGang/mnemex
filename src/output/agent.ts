@@ -1,7 +1,7 @@
 /**
  * Agent Output Module
  *
- * Provides clean, machine-readable key=value output for all claudemem commands.
+ * Provides clean, machine-readable key=value output for all mnemex commands.
  * No ANSI codes, no animations, no colors. Structured for line-by-line parsing by AI agents.
  *
  * Format: `key=value` lines, one per field. Multi-item collections use repeated prefixed lines.
@@ -60,7 +60,9 @@ function searchResults(query: string, results: SearchResult[]): void {
 		if (r.documentType === "session_observation") {
 			const meta = r.observationMetadata || {};
 			const files = (meta.affectedFiles as string[]) || [];
-			console.log(`observation score=${r.score.toFixed(3)} type=${meta.observationType ?? "pattern"} confidence=${meta.confidence ?? 0.7} files=${files.join(",")} content=${r.chunk.content}`);
+			console.log(
+				`observation score=${r.score.toFixed(3)} type=${meta.observationType ?? "pattern"} confidence=${meta.confidence ?? 0.7} files=${files.join(",")} content=${r.chunk.content}`,
+			);
 		} else {
 			let line = `result file=${r.chunk.filePath} line=${r.chunk.startLine} end_line=${r.chunk.endLine} score=${r.score.toFixed(3)} type=${r.chunk.chunkType} name=${r.chunk.name ?? ""}`;
 			if (r.summary) {
@@ -189,10 +191,7 @@ function testGapsOutput(
 /**
  * Output for the `impact` command: transitive callers of a symbol.
  */
-function impactOutput(
-	symbolName: string,
-	affected: SymbolDefinition[],
-): void {
+function impactOutput(symbolName: string, affected: SymbolDefinition[]): void {
 	console.log(`symbol=${symbolName}`);
 	console.log(`affected_count=${affected.length}`);
 	for (const sym of affected) {
@@ -241,7 +240,7 @@ function benchmarkResults(
 			console.log(`benchmark model=${r.model} error=${r.error}`);
 		} else {
 			console.log(
-				`benchmark model=${r.model} speed_ms=${r.speedMs} cost=${r.model.startsWith("ollama/") || r.model.startsWith("lmstudio/") ? "FREE" : r.cost?.toFixed(6) ?? "N/A"} dim=${r.dimension} ctx=${r.contextLength} ndcg=${r.ndcg.toFixed(1)} mrr=${r.mrr.toFixed(1)} hit_k5=${r.hitRate.k5.toFixed(1)}`,
+				`benchmark model=${r.model} speed_ms=${r.speedMs} cost=${r.model.startsWith("ollama/") || r.model.startsWith("lmstudio/") ? "FREE" : (r.cost?.toFixed(6) ?? "N/A")} dim=${r.dimension} ctx=${r.contextLength} ndcg=${r.ndcg.toFixed(1)} mrr=${r.mrr.toFixed(1)} hit_k5=${r.hitRate.k5.toFixed(1)}`,
 			);
 		}
 	}

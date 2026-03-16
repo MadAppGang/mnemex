@@ -4,8 +4,8 @@
  * Merges results from multiple backends using Reciprocal Rank Fusion.
  */
 
-import type { BackendName, BackendResult, MergedResult } from "./types.js";
 import type { PipelineConfig } from "./config.js";
+import type { BackendName, BackendResult, MergedResult } from "./types.js";
 
 // ============================================================================
 // RRF Merge Function
@@ -81,12 +81,14 @@ export function rrfMerge(
 	// Apply isDefinitive override: force rrfScore = Infinity
 	for (const result of merged.values()) {
 		if (result.isDefinitive) {
-			result.rrfScore = Infinity;
+			result.rrfScore = Number.POSITIVE_INFINITY;
 		}
 	}
 
 	// Sort descending by rrfScore
-	const sorted = Array.from(merged.values()).sort((a, b) => b.rrfScore - a.rrfScore);
+	const sorted = Array.from(merged.values()).sort(
+		(a, b) => b.rrfScore - a.rrfScore,
+	);
 
 	return sorted.slice(0, limit);
 }

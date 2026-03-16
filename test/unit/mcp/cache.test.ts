@@ -1,7 +1,7 @@
 /**
  * Unit tests for IndexCache
  *
- * IndexCache requires an actual .claudemem/index.db to load the full resource
+ * IndexCache requires an actual .mnemex/index.db to load the full resource
  * graph.  In a unit test environment we do not have a real indexed project,
  * so tests focus on the observable structural behaviour:
  *
@@ -35,7 +35,7 @@ function makeLogger(): Logger {
 }
 
 /**
- * Create a temp project directory without any .claudemem/index.db.
+ * Create a temp project directory without any .mnemex/index.db.
  * IndexCache will throw when get() is called on this path.
  */
 function makeTempProject(): string {
@@ -51,9 +51,12 @@ function makeTempProject(): string {
  * We use this only to verify that get() DOES attempt a load when the file
  * exists, rather than short-circuiting before that point.
  */
-function makeTempProjectWithStubIndex(): { projectPath: string; indexDir: string } {
+function makeTempProjectWithStubIndex(): {
+	projectPath: string;
+	indexDir: string;
+} {
 	const projectPath = mkdtempSync(join(tmpdir(), "mcp-cache-stub-test-"));
-	const indexDir = join(projectPath, ".claudemem");
+	const indexDir = join(projectPath, ".mnemex");
 	mkdirSync(indexDir, { recursive: true });
 	// Write a stub db file - not a real LanceDB database, but existsSync passes
 	writeFileSync(join(indexDir, "index.db"), "stub", "utf-8");
@@ -89,14 +92,14 @@ describe("IndexCache", () => {
 		});
 
 		test("throws an error describing where to find the missing index", async () => {
-			const indexDir = join(projectPath, ".claudemem");
+			const indexDir = join(projectPath, ".mnemex");
 			const cache = new IndexCache(projectPath, indexDir, 500, makeLogger());
 
 			await expect(cache.get()).rejects.toThrow();
 		});
 
 		test("thrown error mentions the project path or instructs user to index", async () => {
-			const indexDir = join(projectPath, ".claudemem");
+			const indexDir = join(projectPath, ".mnemex");
 			const cache = new IndexCache(projectPath, indexDir, 500, makeLogger());
 
 			let errorMessage = "";
@@ -109,7 +112,7 @@ describe("IndexCache", () => {
 			// Requirements: error should mention indexing or the project path
 			const mentionsIndex =
 				errorMessage.toLowerCase().includes("index") ||
-				errorMessage.toLowerCase().includes("claudemem") ||
+				errorMessage.toLowerCase().includes("mnemex") ||
 				errorMessage.includes(projectPath);
 			expect(mentionsIndex).toBe(true);
 		});
@@ -125,7 +128,7 @@ describe("IndexCache", () => {
 		});
 
 		test("after invalidate(), get() re-attempts loading (throws again)", async () => {
-			const indexDir = join(projectPath, ".claudemem");
+			const indexDir = join(projectPath, ".mnemex");
 			const cache = new IndexCache(projectPath, indexDir, 500, makeLogger());
 
 			// First call throws (no index)
@@ -140,7 +143,7 @@ describe("IndexCache", () => {
 		});
 
 		test("close() does not throw when cache was never loaded", () => {
-			const indexDir = join(projectPath, ".claudemem");
+			const indexDir = join(projectPath, ".mnemex");
 			const cache = new IndexCache(projectPath, indexDir, 500, makeLogger());
 			expect(() => cache.close()).not.toThrow();
 		});
@@ -156,7 +159,7 @@ describe("IndexCache", () => {
 		});
 
 		test("multiple simultaneous get() calls all reject with the same error type", async () => {
-			const indexDir = join(projectPath, ".claudemem");
+			const indexDir = join(projectPath, ".mnemex");
 			const cache = new IndexCache(projectPath, indexDir, 500, makeLogger());
 
 			// Fire multiple concurrent gets
@@ -175,7 +178,7 @@ describe("IndexCache", () => {
 			// race conditions between them would make them behave differently.
 			// Since they all fail with the same error (from one shared load),
 			// the error messages should be identical.
-			const indexDir = join(projectPath, ".claudemem");
+			const indexDir = join(projectPath, ".mnemex");
 			const cache = new IndexCache(projectPath, indexDir, 500, makeLogger());
 
 			const results = await Promise.allSettled([

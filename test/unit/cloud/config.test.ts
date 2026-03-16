@@ -33,15 +33,13 @@ describe("parseRepoNameFromUrl", () => {
 	});
 
 	test("parses SSH URL without .git suffix", () => {
-		expect(parseRepoNameFromUrl("git@github.com:acme/my-repo")).toBe(
-			"my-repo",
-		);
+		expect(parseRepoNameFromUrl("git@github.com:acme/my-repo")).toBe("my-repo");
 	});
 
 	test("handles trailing slash", () => {
-		expect(
-			parseRepoNameFromUrl("https://github.com/acme/my-repo/"),
-		).toBe("my-repo");
+		expect(parseRepoNameFromUrl("https://github.com/acme/my-repo/")).toBe(
+			"my-repo",
+		);
 	});
 
 	test("handles GitLab-style URL", () => {

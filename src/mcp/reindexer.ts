@@ -3,7 +3,7 @@
  *
  * Schedules background reindex operations with debouncing so that rapid file
  * changes result in a single reindex. Spawns a detached child process running
- * `claudemem index --quiet` to avoid blocking the MCP stdio transport.
+ * `mnemex index --quiet` to avoid blocking the MCP stdio transport.
  */
 
 import { spawn } from "node:child_process";
@@ -44,7 +44,9 @@ export class DebounceReindexer {
 			this.timer = null;
 			void this.triggerReindex();
 		}, this.debounceMs);
-		this.logger.debug(`DebounceReindexer: reindex scheduled in ${this.debounceMs}ms`);
+		this.logger.debug(
+			`DebounceReindexer: reindex scheduled in ${this.debounceMs}ms`,
+		);
 	}
 
 	/**
@@ -84,12 +86,16 @@ export class DebounceReindexer {
 
 	private async triggerReindex(): Promise<void> {
 		if (this.running) {
-			this.logger.debug("DebounceReindexer: reindex already in progress, skipping");
+			this.logger.debug(
+				"DebounceReindexer: reindex already in progress, skipping",
+			);
 			return;
 		}
 
 		if (this.isLocked()) {
-			this.logger.info("DebounceReindexer: index lock held by another process, skipping");
+			this.logger.info(
+				"DebounceReindexer: index lock held by another process, skipping",
+			);
 			return;
 		}
 
@@ -100,7 +106,7 @@ export class DebounceReindexer {
 		this.logger.info("DebounceReindexer: starting background reindex");
 
 		try {
-			const child = spawn("claudemem", ["index", "--quiet"], {
+			const child = spawn("mnemex", ["index", "--quiet"], {
 				cwd: this.workspaceRoot,
 				detached: true,
 				stdio: "ignore",
@@ -108,7 +114,9 @@ export class DebounceReindexer {
 
 			child.unref();
 
-			this.logger.debug(`DebounceReindexer: spawned claudemem index (pid ${child.pid})`);
+			this.logger.debug(
+				`DebounceReindexer: spawned mnemex index (pid ${child.pid})`,
+			);
 
 			// Start polling for completion - when done, update state and invalidate cache
 			this.completionDetector.watch(() => {
@@ -118,7 +126,10 @@ export class DebounceReindexer {
 				this.running = false;
 			});
 		} catch (err) {
-			this.logger.error("DebounceReindexer: failed to spawn reindex process", err);
+			this.logger.error(
+				"DebounceReindexer: failed to spawn reindex process",
+				err,
+			);
 			this.running = false;
 			this.stateManager.onReindexComplete();
 		}

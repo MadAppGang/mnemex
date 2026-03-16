@@ -43,14 +43,20 @@ export function analyzeTokenCount(file: ContextFile): CriterionResult {
 	const recommendations: string[] = [];
 
 	if (tokenCount > 200 * 4) {
-		issues.push(`Context file is ${file.lineCount} lines (${tokenCount} tokens)`);
+		issues.push(
+			`Context file is ${file.lineCount} lines (${tokenCount} tokens)`,
+		);
 		recommendations.push("Consider splitting into multiple focused files");
 		recommendations.push("Remove redundant or outdated sections");
-		recommendations.push("Use external documentation links instead of inline content");
+		recommendations.push(
+			"Use external documentation links instead of inline content",
+		);
 	}
 
 	if (tokenCount > 500 * 4) {
-		recommendations.push("This file consumes significant query budget (likely 10-20% per query)");
+		recommendations.push(
+			"This file consumes significant query budget (likely 10-20% per query)",
+		);
 	}
 
 	return {
@@ -119,8 +125,7 @@ export function analyzeSpecificity(file: ContextFile): CriterionResult {
 		(prescriptiveCount / Math.max(1, vagueCount + prescriptiveCount)) * 100,
 	);
 
-	const severity =
-		score >= 60 ? "good" : score >= 40 ? "warning" : "critical";
+	const severity = score >= 60 ? "good" : score >= 40 ? "warning" : "critical";
 
 	const issues: string[] = [];
 	const recommendations: string[] = [];
@@ -200,14 +205,15 @@ export function analyzeInstructionDensity(file: ContextFile): CriterionResult {
 		(instructionLines / Math.max(1, lines.length)) * 100,
 	);
 
-	const severity =
-		score >= 40 ? "good" : score >= 20 ? "warning" : "critical";
+	const severity = score >= 40 ? "good" : score >= 20 ? "warning" : "critical";
 
 	const issues: string[] = [];
 	const recommendations: string[] = [];
 
 	if (score < 20) {
-		issues.push(`Low instruction density: only ${score}% of lines are actionable`);
+		issues.push(
+			`Low instruction density: only ${score}% of lines are actionable`,
+		);
 		recommendations.push("Add more concrete action items");
 		recommendations.push("Use bullet points for instructions");
 		recommendations.push("Convert descriptions into prescriptive steps");
@@ -283,12 +289,13 @@ export function analyzeDuplication(
 		}
 	}
 
-	const severity =
-		score >= 80 ? "good" : score >= 60 ? "warning" : "critical";
+	const severity = score >= 80 ? "good" : score >= 60 ? "warning" : "critical";
 
 	if (score < 80) {
 		recommendations.push("Reduce duplication with other configuration files");
-		recommendations.push("Use references and links to avoid maintenance burden");
+		recommendations.push(
+			"Use references and links to avoid maintenance burden",
+		);
 	}
 
 	return {
@@ -321,9 +328,7 @@ export function analyzeStaleness(
 			weight: 2.5,
 			severity: "warning",
 			issues: ["Cannot check staleness without index"],
-			recommendations: [
-				"Run 'claudemem index' to enable staleness checking",
-			],
+			recommendations: ["Run 'mnemex index' to enable staleness checking"],
 		};
 	}
 
@@ -348,13 +353,9 @@ export function analyzeStaleness(
 		}
 	}
 
-	const score = Math.max(
-		0,
-		100 - staleCount * 15,
-	);
+	const score = Math.max(0, 100 - staleCount * 15);
 
-	const severity =
-		score >= 80 ? "good" : score >= 60 ? "warning" : "critical";
+	const severity = score >= 80 ? "good" : score >= 60 ? "warning" : "critical";
 
 	if (uniquePaths.length > 0 && staleCount === 0) {
 		recommendations.push("File references appear to be current");
@@ -379,7 +380,9 @@ export function analyzeStaleness(
  * Analyzes if skill files meet best practices
  * Only applies to skill-type files
  */
-export function analyzeSkillsBenchCompliance(file: ContextFile): CriterionResult {
+export function analyzeSkillsBenchCompliance(
+	file: ContextFile,
+): CriterionResult {
 	const issues: string[] = [];
 	const recommendations: string[] = [];
 
@@ -414,9 +417,7 @@ export function analyzeSkillsBenchCompliance(file: ContextFile): CriterionResult
 	// Check if content is procedural (instructions) vs descriptive
 	const imperativeLines = content.split("\n").filter((l) => {
 		const t = l.trim().toLowerCase();
-		return (
-			/^[-*•]/.test(t) || /^\d+[\.)]\s/.test(t) || t.startsWith("use ")
-		);
+		return /^[-*•]/.test(t) || /^\d+[\.)]\s/.test(t) || t.startsWith("use ");
 	}).length;
 
 	const procedureRatio = imperativeLines / (file.lineCount || 1);
@@ -429,10 +430,10 @@ export function analyzeSkillsBenchCompliance(file: ContextFile): CriterionResult
 	}
 
 	// Check module count (rough: count "module", "import", "function" declarations)
-	const moduleCount = (
-		(content.match(/\bmodule\b/gi) || []).length +
-		(content.match(/\bimport\b/gi) || []).length
-	) / 2;
+	const moduleCount =
+		((content.match(/\bmodule\b/gi) || []).length +
+			(content.match(/\bimport\b/gi) || []).length) /
+		2;
 
 	if (moduleCount < 3) {
 		recommendations.push("Consider expanding to cover more modules/components");
@@ -444,8 +445,7 @@ export function analyzeSkillsBenchCompliance(file: ContextFile): CriterionResult
 		score -= 10;
 	}
 
-	const severity =
-		score >= 80 ? "good" : score >= 60 ? "warning" : "critical";
+	const severity = score >= 80 ? "good" : score >= 60 ? "warning" : "critical";
 
 	return {
 		name: "SkillsBench Compliance",

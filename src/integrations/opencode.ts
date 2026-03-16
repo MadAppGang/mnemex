@@ -1,7 +1,7 @@
 /**
  * OpenCode Integration Manager
  *
- * Manages installation of claudemem plugins for OpenCode.
+ * Manages installation of mnemex plugins for OpenCode.
  * Similar pattern to git hook manager.
  *
  * @see https://opencode.ai/docs/plugins/
@@ -39,28 +39,28 @@ export type PluginType = "suggestion" | "tools" | "both";
 // Get version from package.json at runtime
 const VERSION = "0.7.1"; // Updated during build or read from package.json
 
-const PLUGIN_MARKER = "// claudemem-integration";
-const PLUGIN_VERSION_MARKER = `// claudemem-version: ${VERSION}`;
+const PLUGIN_MARKER = "// mnemex-integration";
+const PLUGIN_VERSION_MARKER = `// mnemex-version: ${VERSION}`;
 
 const SUGGESTION_PLUGIN = `${PLUGIN_MARKER}
 ${PLUGIN_VERSION_MARKER}
 /**
- * claudemem Suggestion Plugin for OpenCode
+ * mnemex Suggestion Plugin for OpenCode
  *
- * Silently tracks when claudemem could help.
+ * Silently tracks when mnemex could help.
  * No console output - avoids breaking OpenCode UI.
  *
- * Installed by: claudemem install opencode
- * @see https://github.com/MadAppGang/claudemem
+ * Installed by: mnemex install opencode
+ * @see https://github.com/MadAppGang/mnemex
  */
 
 export const ClaudemumPlugin = async (ctx) => {
   const { $ } = ctx;
 
-  // Check if claudemem is available (cross-platform)
+  // Check if mnemex is available (cross-platform)
   let ready = false;
   try {
-    const result = await $\`claudemem status\`.quiet();
+    const result = await $\`mnemex status\`.quiet();
     ready = result.exitCode === 0;
   } catch {
     ready = false;
@@ -80,12 +80,12 @@ export default ClaudemumPlugin;
 const TOOLS_PLUGIN = `${PLUGIN_MARKER}
 ${PLUGIN_VERSION_MARKER}
 /**
- * claudemem Custom Tools Plugin for OpenCode
+ * mnemex Custom Tools Plugin for OpenCode
  *
- * Adds claudemem as first-class tools the LLM can use.
+ * Adds mnemex as first-class tools the LLM can use.
  *
- * Installed by: claudemem install opencode
- * @see https://github.com/MadAppGang/claudemem
+ * Installed by: mnemex install opencode
+ * @see https://github.com/MadAppGang/mnemex
  */
 
 import { tool } from "@opencode-ai/plugin";
@@ -93,11 +93,11 @@ import { tool } from "@opencode-ai/plugin";
 export const ClaudemumToolsPlugin = async (ctx) => {
   const { $ } = ctx;
 
-  // Check claudemem on load (cross-platform)
+  // Check mnemex on load (cross-platform)
   // No console output - it breaks OpenCode UI
   let ready = false;
   try {
-    const result = await $\`claudemem status\`.quiet();
+    const result = await $\`mnemex status\`.quiet();
     ready = result.exitCode === 0;
   } catch {
     ready = false;
@@ -105,72 +105,72 @@ export const ClaudemumToolsPlugin = async (ctx) => {
 
   return {
     tool: {
-      claudemem_search: tool({
+      mnemex_search: tool({
         description: "Semantic code search. Better than grep for natural language queries.",
         args: {
           query: tool.schema.string().describe("Natural language search query"),
           limit: tool.schema.number().optional().describe("Max results (default: 10)"),
         },
         async execute({ query, limit = 10 }) {
-          const result = await $\`claudemem --agent search \${query} -n \${limit}\`;
+          const result = await $\`mnemex --agent search \${query} -n \${limit}\`;
           return result.stdout || "No results found";
         },
       }),
 
-      claudemem_map: tool({
+      mnemex_map: tool({
         description: "Structural overview with PageRank-ranked symbols. Use first to understand codebase.",
         args: {
           query: tool.schema.string().optional().describe("Focus area (optional)"),
         },
         async execute({ query }) {
           const cmd = query
-            ? $\`claudemem --agent map \${query}\`
-            : $\`claudemem --agent map\`;
+            ? $\`mnemex --agent map \${query}\`
+            : $\`mnemex --agent map\`;
           const result = await cmd;
           return result.stdout || "No symbols found";
         },
       }),
 
-      claudemem_symbol: tool({
+      mnemex_symbol: tool({
         description: "Find exact location of a symbol by name.",
         args: {
           name: tool.schema.string().describe("Symbol name to find"),
         },
         async execute({ name }) {
-          const result = await $\`claudemem --agent symbol \${name}\`;
+          const result = await $\`mnemex --agent symbol \${name}\`;
           return result.stdout || \`Symbol '\${name}' not found\`;
         },
       }),
 
-      claudemem_callers: tool({
+      mnemex_callers: tool({
         description: "Find all code that calls a symbol. Essential before modifying code.",
         args: {
           name: tool.schema.string().describe("Symbol name"),
         },
         async execute({ name }) {
-          const result = await $\`claudemem --agent callers \${name}\`;
+          const result = await $\`mnemex --agent callers \${name}\`;
           return result.stdout || \`No callers found for '\${name}'\`;
         },
       }),
 
-      claudemem_callees: tool({
+      mnemex_callees: tool({
         description: "Find all symbols that a function calls. Traces dependencies.",
         args: {
           name: tool.schema.string().describe("Symbol name"),
         },
         async execute({ name }) {
-          const result = await $\`claudemem --agent callees \${name}\`;
+          const result = await $\`mnemex --agent callees \${name}\`;
           return result.stdout || \`No callees found for '\${name}'\`;
         },
       }),
 
-      claudemem_context: tool({
+      mnemex_context: tool({
         description: "Full context: symbol + callers + callees. For complex modifications.",
         args: {
           name: tool.schema.string().describe("Symbol name"),
         },
         async execute({ name }) {
-          const result = await $\`claudemem --agent context \${name}\`;
+          const result = await $\`mnemex --agent context \${name}\`;
           return result.stdout || \`Context not found for '\${name}'\`;
         },
       }),
@@ -197,7 +197,7 @@ export class OpenCodeIntegrationManager {
 	}
 
 	/**
-	 * Install claudemem plugin for OpenCode
+	 * Install mnemex plugin for OpenCode
 	 */
 	async install(type: PluginType = "tools"): Promise<void> {
 		// Create plugin directory if needed
@@ -207,12 +207,12 @@ export class OpenCodeIntegrationManager {
 
 		// Write plugin files based on type
 		if (type === "suggestion" || type === "both") {
-			const suggestionPath = join(this.pluginDir, "claudemem.ts");
+			const suggestionPath = join(this.pluginDir, "mnemex.ts");
 			writeFileSync(suggestionPath, SUGGESTION_PLUGIN, "utf-8");
 		}
 
 		if (type === "tools" || type === "both") {
-			const toolsPath = join(this.pluginDir, "claudemem-tools.ts");
+			const toolsPath = join(this.pluginDir, "mnemex-tools.ts");
 			writeFileSync(toolsPath, TOOLS_PLUGIN, "utf-8");
 		}
 
@@ -221,12 +221,12 @@ export class OpenCodeIntegrationManager {
 	}
 
 	/**
-	 * Uninstall claudemem plugin
+	 * Uninstall mnemex plugin
 	 */
 	async uninstall(): Promise<void> {
 		// Remove plugin files
-		const suggestionPath = join(this.pluginDir, "claudemem.ts");
-		const toolsPath = join(this.pluginDir, "claudemem-tools.ts");
+		const suggestionPath = join(this.pluginDir, "mnemex.ts");
+		const toolsPath = join(this.pluginDir, "mnemex-tools.ts");
 
 		if (existsSync(suggestionPath)) {
 			const content = readFileSync(suggestionPath, "utf-8");
@@ -250,8 +250,8 @@ export class OpenCodeIntegrationManager {
 	 * Check installation status
 	 */
 	async status(): Promise<OpenCodeStatus> {
-		const suggestionPath = join(this.pluginDir, "claudemem.ts");
-		const toolsPath = join(this.pluginDir, "claudemem-tools.ts");
+		const suggestionPath = join(this.pluginDir, "mnemex.ts");
+		const toolsPath = join(this.pluginDir, "mnemex-tools.ts");
 
 		let suggestionContent = "";
 		let toolsContent = "";
@@ -285,7 +285,7 @@ export class OpenCodeIntegrationManager {
 		// Extract version from installed plugin
 		let version: string | undefined;
 		const contentToCheck = toolsContent || suggestionContent;
-		const versionMatch = contentToCheck.match(/claudemem-version: ([^\n]+)/);
+		const versionMatch = contentToCheck.match(/mnemex-version: ([^\n]+)/);
 		if (versionMatch) {
 			version = versionMatch[1].trim();
 		}
@@ -296,7 +296,7 @@ export class OpenCodeIntegrationManager {
 			try {
 				const config = JSON.parse(readFileSync(this.configPath, "utf-8"));
 				const plugins = config.plugin || [];
-				configUpdated = plugins.some((p: string) => p.includes("claudemem"));
+				configUpdated = plugins.some((p: string) => p.includes("mnemex"));
 			} catch {
 				configUpdated = false;
 			}
@@ -344,17 +344,17 @@ export class OpenCodeIntegrationManager {
 
 		const plugins = config.plugin as string[];
 
-		// Remove any existing claudemem plugins
-		const filtered = plugins.filter((p) => !p.includes("claudemem"));
+		// Remove any existing mnemex plugins
+		const filtered = plugins.filter((p) => !p.includes("mnemex"));
 
 		// Add our plugins with absolute file:// paths (required by OpenCode)
 		// Use pathToFileURL for cross-platform compatibility (handles Windows backslashes)
 		if (type === "suggestion" || type === "both") {
-			filtered.push(pathToFileURL(join(this.pluginDir, "claudemem.ts")).href);
+			filtered.push(pathToFileURL(join(this.pluginDir, "mnemex.ts")).href);
 		}
 		if (type === "tools" || type === "both") {
 			filtered.push(
-				pathToFileURL(join(this.pluginDir, "claudemem-tools.ts")).href,
+				pathToFileURL(join(this.pluginDir, "mnemex-tools.ts")).href,
 			);
 		}
 
@@ -381,7 +381,7 @@ export class OpenCodeIntegrationManager {
 
 			if (Array.isArray(config.plugin)) {
 				config.plugin = config.plugin.filter(
-					(p: string) => !p.includes("claudemem"),
+					(p: string) => !p.includes("mnemex"),
 				);
 			}
 

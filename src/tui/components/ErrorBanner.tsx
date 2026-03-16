@@ -44,9 +44,7 @@ export function ErrorBanner({ message, onDismiss }: ErrorBannerProps) {
 			paddingLeft={1}
 			paddingRight={1}
 		>
-			<text fg={theme.error}>
-				{"Error: "}
-			</text>
+			<text fg={theme.error}>{"Error: "}</text>
 			<text fg={theme.text}>{message}</text>
 			<text fg={theme.dimmed}>{" (press any key to dismiss)"}</text>
 		</box>

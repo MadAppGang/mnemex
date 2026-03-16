@@ -394,7 +394,7 @@ console.log("\n" + "═".repeat(60));
 console.log("💾 VALIDATION STORE DEMO");
 console.log("═".repeat(60));
 
-const dbPath = "/tmp/claudemem-validation-demo.db";
+const dbPath = "/tmp/mnemex-validation-demo.db";
 const store = new ValidationStore(dbPath);
 
 console.log(`\nDatabase: ${dbPath}`);

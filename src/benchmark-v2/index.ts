@@ -283,7 +283,7 @@ export interface BenchmarkOptions {
 	projectPath: string;
 	/** Run name for identification */
 	runName?: string;
-	/** Database path (defaults to .claudemem/benchmark.db) */
+	/** Database path (defaults to .mnemex/benchmark.db) */
 	dbPath?: string;
 	/** Output directory for reports */
 	outputDir?: string;
@@ -457,8 +457,8 @@ export async function runBenchmarkV2(
 ): Promise<BenchmarkResult> {
 	const {
 		projectPath,
-		dbPath = join(projectPath, ".claudemem", "benchmark.db"),
-		outputDir = join(projectPath, ".claudemem", "benchmark-reports"),
+		dbPath = join(projectPath, ".mnemex", "benchmark.db"),
+		outputDir = join(projectPath, ".mnemex", "benchmark-reports"),
 		clients = {},
 		onProgress,
 		onPhaseComplete,
@@ -468,7 +468,7 @@ export async function runBenchmarkV2(
 	} = options;
 
 	// Ensure directories exist
-	const dbDir = join(projectPath, ".claudemem");
+	const dbDir = join(projectPath, ".mnemex");
 	if (!existsSync(dbDir)) {
 		mkdirSync(dbDir, { recursive: true });
 	}
@@ -508,7 +508,7 @@ export async function runBenchmarkV2(
 		// Always show run ID so users can resume if needed
 		console.log(`\x1b[36mRun ID: ${run.id}\x1b[0m`);
 		console.log(
-			`\x1b[2m  To resume: claudemem benchmark-llm --resume=${run.id} ...\x1b[0m`,
+			`\x1b[2m  To resume: mnemex benchmark-llm --resume=${run.id} ...\x1b[0m`,
 		);
 		console.log();
 	}
@@ -574,7 +574,11 @@ export async function runBenchmarkV2(
 		? createContrastivePhaseExecutor(firstJudgeClient, embeddingsClient)
 		: undefined;
 	const retrievalExecutor = embeddingsClient
-		? createRetrievalPhaseExecutor(embeddingsClient, firstJudgeClient, embeddingClients)
+		? createRetrievalPhaseExecutor(
+				embeddingsClient,
+				firstJudgeClient,
+				embeddingClients,
+			)
 		: undefined;
 	const downstreamExecutor = firstJudgeClient
 		? createDownstreamPhaseExecutor(firstJudgeClient)
@@ -710,14 +714,14 @@ import {
  */
 async function handleListRuns(): Promise<void> {
 	const projectPath = process.cwd();
-	const dbPath = join(projectPath, ".claudemem", "benchmark.db");
+	const dbPath = join(projectPath, ".mnemex", "benchmark.db");
 
 	printLogo();
 	printBenchmarkHeader("📋", "BENCHMARK RUNS");
 
 	if (!existsSync(dbPath)) {
 		console.log(`${c.yellow}No benchmark database found.${c.reset}`);
-		console.log(`Run a benchmark first: claudemem benchmark-llm`);
+		console.log(`Run a benchmark first: mnemex benchmark-llm`);
 		return;
 	}
 
@@ -756,7 +760,7 @@ async function handleListRuns(): Promise<void> {
 		}
 
 		console.log(
-			`${c.dim}To upload a run: claudemem benchmark-llm upload <runId>${c.reset}`,
+			`${c.dim}To upload a run: mnemex benchmark-llm upload <runId>${c.reset}`,
 		);
 	} finally {
 		db.close();
@@ -772,9 +776,9 @@ async function handleUploadSubcommand(args: string[]): Promise<void> {
 
 	if (!runId) {
 		console.log(`${c.red}Error:${c.reset} Missing run ID`);
-		console.log(`\nUsage: claudemem benchmark-llm upload <runId>`);
+		console.log(`\nUsage: mnemex benchmark-llm upload <runId>`);
 		console.log(`\nTo list available runs:`);
-		console.log(`  claudemem benchmark-llm --list`);
+		console.log(`  mnemex benchmark-llm --list`);
 		return;
 	}
 
@@ -782,12 +786,12 @@ async function handleUploadSubcommand(args: string[]): Promise<void> {
 	printBenchmarkHeader("📤", "UPLOAD TO FIREBASE");
 
 	// Open database
-	const dbPath = join(projectPath, ".claudemem", "benchmark.db");
+	const dbPath = join(projectPath, ".mnemex", "benchmark.db");
 	if (!existsSync(dbPath)) {
 		console.log(
 			`${c.red}Error:${c.reset} No benchmark database found at ${dbPath}`,
 		);
-		console.log(`Run a benchmark first: claudemem benchmark-llm`);
+		console.log(`Run a benchmark first: mnemex benchmark-llm`);
 		return;
 	}
 
@@ -833,7 +837,12 @@ async function handleUploadSubcommand(args: string[]): Promise<void> {
 			}
 			// If no cost was reported but we have token counts, estimate from pricing
 			if (totalCost === 0 && (totalInputTokens > 0 || totalOutputTokens > 0)) {
-				totalCost = estimateCost(pricingData, modelId, totalInputTokens, totalOutputTokens);
+				totalCost = estimateCost(
+					pricingData,
+					modelId,
+					totalInputTokens,
+					totalOutputTokens,
+				);
 			}
 			latencyByModel.set(
 				modelId,
@@ -949,7 +958,10 @@ export async function runBenchmarkCLI(args: string[]): Promise<void> {
 		args.includes("--no-iterative") || args.includes("--no-refine");
 	const embeddingModelsStr = getFlag("embedding-models");
 	const embeddingModelList = embeddingModelsStr
-		? embeddingModelsStr.split(",").map((s) => s.trim()).filter(Boolean)
+		? embeddingModelsStr
+				.split(",")
+				.map((s) => s.trim())
+				.filter(Boolean)
 		: undefined;
 	const localParallelismStr = getFlag("local-parallelism") || getFlag("lp");
 	const localModelParallelism = localParallelismStr
@@ -1020,7 +1032,7 @@ export async function runBenchmarkCLI(args: string[]): Promise<void> {
 	if (resumeRunId) {
 		const { BenchmarkDatabase } = await import("./storage/benchmark-db.js");
 		const { join } = await import("node:path");
-		const dbPath = join(projectPath, ".claudemem", "benchmark.db");
+		const dbPath = join(projectPath, ".mnemex", "benchmark.db");
 		const db = new BenchmarkDatabase(dbPath);
 		const existingRun = db.getRun(resumeRunId);
 		if (existingRun) {
@@ -1049,7 +1061,11 @@ export async function runBenchmarkCLI(args: string[]): Promise<void> {
 		`${c.dim}│${c.reset} ${pad(content)} ${c.dim}│${c.reset}`;
 
 	console.log(topBorder);
-	console.log(row(`${c.orange}${c.bold}Generators${c.reset}${c.dim} (${generatorSpecs.length} models)${c.reset}`));
+	console.log(
+		row(
+			`${c.orange}${c.bold}Generators${c.reset}${c.dim} (${generatorSpecs.length} models)${c.reset}`,
+		),
+	);
 	console.log(midBorder);
 	for (const gen of generatorSpecs) {
 		const provider = gen.includes("/") ? gen.split("/")[0] : gen;
@@ -1059,28 +1075,46 @@ export async function runBenchmarkCLI(args: string[]): Promise<void> {
 		console.log(row(`  ${providerLabel} ${modelLabel}`));
 	}
 	console.log(midBorder);
-	console.log(row(`${c.yellow}${c.bold}Judges${c.reset}${c.dim} (${judgeModels.length} model${judgeModels.length !== 1 ? "s" : ""})${c.reset}`));
+	console.log(
+		row(
+			`${c.yellow}${c.bold}Judges${c.reset}${c.dim} (${judgeModels.length} model${judgeModels.length !== 1 ? "s" : ""})${c.reset}`,
+		),
+	);
 	console.log(midBorder);
 	for (const judge of judgeModels) {
 		const provider = judge.includes("/") ? judge.split("/")[0] : "anthropic";
-		const model = judge.includes("/") ? judge.split("/").slice(1).join("/") : judge;
+		const model = judge.includes("/")
+			? judge.split("/").slice(1).join("/")
+			: judge;
 		const providerLabel = `${c.cyan}${provider.padEnd(12)}${c.reset}`;
 		console.log(row(`  ${providerLabel} ${model}`));
 	}
 	console.log(midBorder);
-	console.log(row(`${c.dim}Code units${c.reset}  ${c.bold}${targetCount}${c.reset}`));
+	console.log(
+		row(`${c.dim}Code units${c.reset}  ${c.bold}${targetCount}${c.reset}`),
+	);
 
 	const hasLocalModels = generatorSpecs.some(
 		(s) => s.startsWith("lmstudio/") || s.startsWith("ollama/"),
 	);
 	if (hasLocalModels) {
-		console.log(row(`${c.dim}Local ∥${c.reset}     ${c.bold}${localModelParallelism === 0 ? "all" : localModelParallelism}${c.reset}`));
+		console.log(
+			row(
+				`${c.dim}Local ∥${c.reset}     ${c.bold}${localModelParallelism === 0 ? "all" : localModelParallelism}${c.reset}`,
+			),
+		);
 	}
 	if (embeddingModelList && embeddingModelList.length > 1) {
-		console.log(row(`${c.dim}Embed models${c.reset} ${c.bold}${embeddingModelList.join(", ")}${c.reset}`));
+		console.log(
+			row(
+				`${c.dim}Embed models${c.reset} ${c.bold}${embeddingModelList.join(", ")}${c.reset}`,
+			),
+		);
 	}
 	if (resumeRunId) {
-		console.log(row(`${c.dim}Resuming${c.reset}    ${c.green}${resumeRunId}${c.reset}`));
+		console.log(
+			row(`${c.dim}Resuming${c.reset}    ${c.green}${resumeRunId}${c.reset}`),
+		);
 	}
 	console.log(botBorder);
 	console.log();
@@ -1185,9 +1219,10 @@ export async function runBenchmarkCLI(args: string[]): Promise<void> {
 						if (jsonMatch?.[1]) {
 							errText = errText.replace(/\{.*$/, jsonMatch[1]);
 						}
-						const truncated = errText.length > maxErrWidth
-							? errText.slice(0, maxErrWidth - 1) + "…"
-							: errText;
+						const truncated =
+							errText.length > maxErrWidth
+								? errText.slice(0, maxErrWidth - 1) + "…"
+								: errText;
 						console.log(`${c.dim}      ${truncated}${c.reset}`);
 					}
 				}
@@ -1339,7 +1374,9 @@ export async function runBenchmarkCLI(args: string[]): Promise<void> {
 					if (failuresNum > 0 && failuresNum === totalNum && errorMsg) {
 						// All failed - extract readable message from JSON errors
 						let cleanErr = errorMsg;
-						const jsonErrMatch = errorMsg.match(/\{.*"message"\s*:\s*"([^"]+)"/);
+						const jsonErrMatch = errorMsg.match(
+							/\{.*"message"\s*:\s*"([^"]+)"/,
+						);
 						if (jsonErrMatch?.[1]) {
 							cleanErr = errorMsg.replace(/\{.*$/, jsonErrMatch[1]);
 						}
@@ -1458,7 +1495,9 @@ export async function runBenchmarkCLI(args: string[]): Promise<void> {
 				createEmbeddingsClient: () => {
 					// Create embeddings client using first model in list (or default)
 					const primaryModel = embeddingModelList?.[0];
-					return createEmbeddingsClient(primaryModel ? { model: primaryModel } : undefined);
+					return createEmbeddingsClient(
+						primaryModel ? { model: primaryModel } : undefined,
+					);
 				},
 				createEmbeddingClients:
 					embeddingModelList && embeddingModelList.length > 1
@@ -1475,7 +1514,7 @@ export async function runBenchmarkCLI(args: string[]): Promise<void> {
 
 		if (result.success) {
 			// Get scores and evaluation results from database for TUI display
-			const dbPath = join(projectPath, ".claudemem", "benchmark.db");
+			const dbPath = join(projectPath, ".mnemex", "benchmark.db");
 			const { BenchmarkDatabase } = await import("./storage/benchmark-db.js");
 			const db = new BenchmarkDatabase(dbPath);
 			const scores = db.getAggregatedScores(result.run.id);

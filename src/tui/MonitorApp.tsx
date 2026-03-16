@@ -1,11 +1,11 @@
 /**
  * Monitor Mode App
  *
- * Passive display that auto-updates when Claude Code uses claudemem MCP tools.
+ * Passive display that auto-updates when Claude Code uses mnemex MCP tools.
  * Unlike the interactive UI mode, monitor mode has no manual input — everything
  * is driven by activity recorded by the MCP server.
  *
- * Usage: claudemem monitor [path]
+ * Usage: mnemex monitor [path]
  */
 
 import { useState, useCallback } from "react";
@@ -90,8 +90,14 @@ function MonitorInner() {
 // Waiting View (shown when no search result to display)
 // ============================================================================
 
-function WaitingView({ activityInfo }: {
-	activityInfo: { type: string; metadata: Record<string, unknown>; timestamp: string } | null;
+function WaitingView({
+	activityInfo,
+}: {
+	activityInfo: {
+		type: string;
+		metadata: Record<string, unknown>;
+		timestamp: string;
+	} | null;
 }) {
 	const { width, height } = useTerminalDimensions();
 
@@ -100,7 +106,7 @@ function WaitingView({ activityInfo }: {
 		return (
 			<box flexDirection="column" width="100%" height="100%" padding={2}>
 				<box height={1}>
-					<text fg={theme.primary}>{"  claudemem monitor"}</text>
+					<text fg={theme.primary}>{"  mnemex monitor"}</text>
 				</box>
 				<box height={1} />
 				<box height={1}>
@@ -128,12 +134,12 @@ function WaitingView({ activityInfo }: {
 	return (
 		<box flexDirection="column" width="100%" height="100%" padding={2}>
 			<box height={1}>
-				<text fg={theme.primary}>{"  claudemem monitor"}</text>
+				<text fg={theme.primary}>{"  mnemex monitor"}</text>
 			</box>
 			<box height={1} />
 			<box height={1}>
 				<text fg={theme.muted}>
-					{"  Waiting for Claude Code to use claudemem..."}
+					{"  Waiting for Claude Code to use mnemex..."}
 				</text>
 			</box>
 			<box height={1} />
@@ -155,7 +161,10 @@ function WaitingView({ activityInfo }: {
 	);
 }
 
-function formatActivitySummary(type: string, metadata: Record<string, unknown>): string {
+function formatActivitySummary(
+	type: string,
+	metadata: Record<string, unknown>,
+): string {
 	switch (type) {
 		case "analyze_impact":
 			return `Impact analysis for "${metadata.symbol}" — ${metadata.affectedCount} callers affected`;

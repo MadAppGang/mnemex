@@ -59,11 +59,7 @@ export interface WalkOptions {
  */
 export function walkFiles(root: string, opts: WalkOptions): WalkEntry[] {
 	const entries: WalkEntry[] = [];
-	const {
-		excludePatterns,
-		includePatterns = [],
-		onlyExtensions,
-	} = opts;
+	const { excludePatterns, includePatterns = [], onlyExtensions } = opts;
 
 	const walk = (dir: string): void => {
 		let dirEntries: Dirent[];

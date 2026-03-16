@@ -7,11 +7,14 @@
 
 import { extname } from "node:path";
 import { LspClient, type LspClientConfig } from "./client.js";
-import { LANGUAGE_SERVER_CONFIGS, type LanguageServerConfig } from "./registry.js";
+import {
+	LANGUAGE_SERVER_CONFIGS,
+	type LanguageServerConfig,
+} from "./registry.js";
 import { pathToUri } from "./protocol.js";
 
 export interface LspManagerConfig {
-	/** Whether LSP is enabled (CLAUDEMEM_LSP, default false) */
+	/** Whether LSP is enabled (MNEMEX_LSP, default false) */
 	enabled: boolean;
 	/** Request timeout in ms */
 	timeoutMs: number;
@@ -155,7 +158,10 @@ export class LspManager {
 		this.lruOrder = [];
 	}
 
-	private createClient(language: string, serverConfig: LanguageServerConfig): LspClient {
+	private createClient(
+		language: string,
+		serverConfig: LanguageServerConfig,
+	): LspClient {
 		const override = this.config.commandOverrides[language];
 		const command = override ?? serverConfig.command;
 

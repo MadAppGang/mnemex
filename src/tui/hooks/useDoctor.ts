@@ -9,7 +9,10 @@ import {
 	scanForContextFiles,
 	analyzeContextFile,
 } from "../../core/doctor/index.js";
-import type { ContextFileDiagnosis, ContextFile } from "../../core/doctor/types.js";
+import type {
+	ContextFileDiagnosis,
+	ContextFile,
+} from "../../core/doctor/types.js";
 
 // ============================================================================
 // Types
@@ -57,7 +60,7 @@ export function useDoctor(projectPath: string): UseDoctorReturn {
 			const overallHealth =
 				diagnoses.length > 0
 					? diagnoses.reduce((sum, d) => sum + d.overallScore, 0) /
-					  diagnoses.length
+						diagnoses.length
 					: 0;
 
 			setDiagnostics({
@@ -75,7 +78,7 @@ export function useDoctor(projectPath: string): UseDoctorReturn {
 		} finally {
 			setLoading(false);
 		}
-	// eslint-disable-next-line react-hooks/exhaustive-deps
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [projectPath, refreshTick]);
 
 	useEffect(() => {

@@ -14,7 +14,13 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import {
+	mkdtempSync,
+	rmSync,
+	writeFileSync,
+	mkdirSync,
+	existsSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DirtyFile } from "../../../src/cloud/types.js";
@@ -35,20 +41,22 @@ mock.module("../../../src/parsers/parser-manager.js", () => ({
 
 // Mock chunker to return deterministic chunks without needing tree-sitter
 mock.module("../../../src/core/chunker.js", () => ({
-	chunkFileByPath: mock(async (source: string, filePath: string, fileHash: string) => [
-		{
-			id: `id-${fileHash.slice(0, 8)}`,
-			contentHash: `ch-${fileHash.slice(0, 8)}`,
-			content: source,
-			filePath,
-			startLine: 1,
-			endLine: 3,
-			language: "typescript",
-			chunkType: "function",
-			name: "myFn",
-			fileHash,
-		},
-	]),
+	chunkFileByPath: mock(
+		async (source: string, filePath: string, fileHash: string) => [
+			{
+				id: `id-${fileHash.slice(0, 8)}`,
+				contentHash: `ch-${fileHash.slice(0, 8)}`,
+				content: source,
+				filePath,
+				startLine: 1,
+				endLine: 3,
+				language: "typescript",
+				chunkType: "function",
+				name: "myFn",
+				fileHash,
+			},
+		],
+	),
 	canChunkFile: mock(() => true),
 }));
 
@@ -123,7 +131,7 @@ let overlayDir: string;
 let embeddingsClient: MockEmbeddingsClient;
 
 beforeEach(() => {
-	tmpDir = mkdtempSync(join(tmpdir(), "claudemem-overlay-test-"));
+	tmpDir = mkdtempSync(join(tmpdir(), "mnemex-overlay-test-"));
 	projectDir = join(tmpDir, "project");
 	overlayDir = join(tmpDir, "overlay");
 
@@ -132,8 +140,16 @@ beforeEach(() => {
 	mkdirSync(overlayDir, { recursive: true });
 
 	// Write real files so statSync works
-	writeFileSync(join(projectDir, "src/dirty.ts"), 'function myFn() { return 1; }', "utf8");
-	writeFileSync(join(projectDir, "src/new.ts"), 'function newFn() { return 2; }', "utf8");
+	writeFileSync(
+		join(projectDir, "src/dirty.ts"),
+		"function myFn() { return 1; }",
+		"utf8",
+	);
+	writeFileSync(
+		join(projectDir, "src/new.ts"),
+		"function newFn() { return 2; }",
+		"utf8",
+	);
 
 	embeddingsClient = new MockEmbeddingsClient();
 });

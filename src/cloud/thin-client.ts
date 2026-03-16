@@ -2,7 +2,7 @@
  * ThinCloudClient — real HTTP ICloudIndexClient
  *
  * Implements ICloudIndexClient by making real HTTP requests to the
- * claudemem cloud REST API. Uses native fetch() (no external dependencies).
+ * mnemex cloud REST API. Uses native fetch() (no external dependencies).
  *
  * Authentication: Bearer token sent in Authorization header.
  * All requests include X-ClaudeMem-Version header for server-side negotiation.
@@ -57,7 +57,7 @@ export class CloudApiError extends Error {
 
 /** Options for constructing a ThinCloudClient */
 export interface ThinCloudClientOptions {
-	/** Cloud API base URL (e.g. "https://api.claudemem.dev") */
+	/** Cloud API base URL (e.g. "https://api.mnemex.dev") */
 	endpoint: string;
 	/** Bearer token for authentication */
 	token: string;
@@ -71,7 +71,7 @@ const WAIT_MAX_DELAY_MS = 30_000;
 const WAIT_DEFAULT_TIMEOUT_MS = 120_000;
 
 /**
- * Real HTTP client for the claudemem cloud API.
+ * Real HTTP client for the mnemex cloud API.
  * Use LocalCloudStub in unit tests instead of this class.
  */
 export class ThinCloudClient implements ICloudIndexClient {

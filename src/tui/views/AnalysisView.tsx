@@ -14,7 +14,11 @@ import { useAnalysis } from "../hooks/useAnalysis.js";
 import { ScoreBar } from "../components/ScoreBar.js";
 import { theme } from "../theme.js";
 import type { AnalysisTab } from "../hooks/useAnalysis.js";
-import type { DeadCodeResult, TestGapResult, ImpactAnalysis } from "../../core/analysis/analyzer.js";
+import type {
+	DeadCodeResult,
+	TestGapResult,
+	ImpactAnalysis,
+} from "../../core/analysis/analyzer.js";
 
 // ============================================================================
 // Dead Code Sub-view
@@ -31,7 +35,7 @@ function DeadCodePane({ results, selectedIndex }: DeadCodePaneProps) {
 			<box padding={2} flexDirection="column">
 				<text fg={theme.success}>{"No dead code found."}</text>
 				<text fg={theme.dimmed}>
-					{"Run 'claudemem index' first if results seem empty."}
+					{"Run 'mnemex index' first if results seem empty."}
 				</text>
 			</box>
 		);
@@ -62,16 +66,8 @@ function DeadCodePane({ results, selectedIndex }: DeadCodePaneProps) {
 							? "..." + symbol.filePath.slice(-27)
 							: symbol.filePath;
 					return (
-						<box
-							key={symbol.id}
-							flexDirection="row"
-							paddingLeft={1}
-							height={1}
-						>
-							<text
-								fg={isSelected ? theme.primary : theme.text}
-								width={30}
-							>
+						<box key={symbol.id} flexDirection="row" paddingLeft={1} height={1}>
+							<text fg={isSelected ? theme.primary : theme.text} width={30}>
 								{symbol.name}
 							</text>
 							<text fg={theme.info} width={14}>
@@ -80,9 +76,7 @@ function DeadCodePane({ results, selectedIndex }: DeadCodePaneProps) {
 							<text fg={isSelected ? theme.text : theme.muted} width={32}>
 								{filePart}
 							</text>
-							<text fg={theme.dimmed}>
-								{symbol.pagerankScore.toFixed(4)}
-							</text>
+							<text fg={theme.dimmed}>{symbol.pagerankScore.toFixed(4)}</text>
 						</box>
 					);
 				})}
@@ -142,19 +136,10 @@ function TestGapsPane({ results, selectedIndex }: TestGapsPaneProps) {
 				{results.map((item, i) => {
 					const isSelected = i === selectedIndex;
 					const { symbol, callerCount, testCallerCount } = item;
-					const filePart =
-						symbol.filePath.split("/").pop() ?? symbol.filePath;
+					const filePart = symbol.filePath.split("/").pop() ?? symbol.filePath;
 					return (
-						<box
-							key={symbol.id}
-							flexDirection="row"
-							paddingLeft={1}
-							height={1}
-						>
-							<text
-								fg={isSelected ? theme.primary : theme.text}
-								width={28}
-							>
+						<box key={symbol.id} flexDirection="row" paddingLeft={1} height={1}>
+							<text fg={isSelected ? theme.primary : theme.text} width={28}>
 								{symbol.name}
 							</text>
 							<text fg={theme.warning} width={10}>
@@ -164,18 +149,12 @@ function TestGapsPane({ results, selectedIndex }: TestGapsPaneProps) {
 								{String(callerCount)}
 							</text>
 							<text
-								fg={
-									testCallerCount === 0
-										? theme.error
-										: theme.success
-								}
+								fg={testCallerCount === 0 ? theme.error : theme.success}
 								width={14}
 							>
 								{String(testCallerCount)}
 							</text>
-							<text fg={isSelected ? theme.text : theme.muted}>
-								{filePart}
-							</text>
+							<text fg={isSelected ? theme.text : theme.muted}>{filePart}</text>
 						</box>
 					);
 				})}
@@ -247,22 +226,16 @@ function ImpactPane({
 							{String(impact.directCallers.length)}
 						</text>
 						<text fg={theme.muted}>{"  Total affected: "}</text>
-						<text fg={theme.warning}>
-							{String(impact.totalAffected)}
-						</text>
+						<text fg={theme.warning}>{String(impact.totalAffected)}</text>
 						<text fg={theme.muted}>{"  Files: "}</text>
-						<text fg={theme.info}>
-							{String(impact.byFile.size)}
-						</text>
+						<text fg={theme.info}>{String(impact.byFile.size)}</text>
 					</box>
 
 					{/* Tree */}
 					<scrollbox width="100%" height="100%">
 						{/* Root */}
 						<box paddingLeft={1} height={1}>
-							<text fg={theme.primary}>
-								{impact.target.name}
-							</text>
+							<text fg={theme.primary}>{impact.target.name}</text>
 							<text fg={theme.dimmed}>{"  (root)  "}</text>
 							<text fg={theme.muted}>
 								{impact.target.filePath.split("/").pop()}
@@ -277,9 +250,7 @@ function ImpactPane({
 									{sym.name}
 								</text>
 								<text fg={theme.dimmed}>{"  depth:1  "}</text>
-								<text fg={theme.muted}>
-									{sym.filePath.split("/").pop()}
-								</text>
+								<text fg={theme.muted}>{sym.filePath.split("/").pop()}</text>
 							</box>
 						))}
 
@@ -292,15 +263,11 @@ function ImpactPane({
 									paddingLeft={1}
 									height={1}
 								>
-									<text fg={theme.dimmed}>
-										{"  ".repeat(r.depth) + "--> "}
-									</text>
+									<text fg={theme.dimmed}>{"  ".repeat(r.depth) + "--> "}</text>
 									<text fg={theme.text} width={28}>
 										{r.symbol.name}
 									</text>
-									<text fg={theme.dimmed}>
-										{`  depth:${r.depth}  `}
-									</text>
+									<text fg={theme.dimmed}>{`  depth:${r.depth}  `}</text>
 									<text fg={theme.muted}>
 										{r.symbol.filePath.split("/").pop()}
 									</text>
@@ -318,7 +285,12 @@ function ImpactPane({
 // ============================================================================
 
 export function AnalysisView() {
-	const { tracker, inputFocused, setInputFocused, activeTab: currentTab } = useAppContext();
+	const {
+		tracker,
+		inputFocused,
+		setInputFocused,
+		activeTab: currentTab,
+	} = useAppContext();
 	const {
 		deadCode,
 		testGaps,
@@ -341,7 +313,9 @@ export function AnalysisView() {
 		if (currentTab === "analysis") {
 			setInputFocused(impactInputFocused);
 		}
-		return () => { if (currentTab === "analysis") setInputFocused(false); };
+		return () => {
+			if (currentTab === "analysis") setInputFocused(false);
+		};
 	}, [impactInputFocused, currentTab, setInputFocused]);
 
 	const tabLabels: Record<AnalysisTab, string> = {
@@ -365,7 +339,9 @@ export function AnalysisView() {
 
 	useKeyboard((key) => {
 		if (key.name === "escape") {
-			if (impactInputFocused) { setImpactInputFocused(false); }
+			if (impactInputFocused) {
+				setImpactInputFocused(false);
+			}
 			return;
 		}
 		if (!impactInputFocused && activeTab === "impact" && key.name === "/") {
@@ -373,7 +349,10 @@ export function AnalysisView() {
 			return;
 		}
 		if (impactInputFocused) {
-			if (key.name === "return") { runImpact(); setImpactInputFocused(false); }
+			if (key.name === "return") {
+				runImpact();
+				setImpactInputFocused(false);
+			}
 			return;
 		}
 
@@ -403,9 +382,7 @@ export function AnalysisView() {
 
 		// j/k navigation in list views
 		if (key.name === "j" || key.name === "down") {
-			setSelectedIndex((prev) =>
-				Math.min(prev + 1, currentListLength - 1),
-			);
+			setSelectedIndex((prev) => Math.min(prev + 1, currentListLength - 1));
 			return;
 		}
 		if (key.name === "k" || key.name === "up") {
@@ -431,9 +408,7 @@ export function AnalysisView() {
 				{(["dead-code", "test-gaps", "impact"] as AnalysisTab[]).map(
 					(tab, i) => (
 						<box key={tab} paddingRight={2}>
-							<text
-								fg={activeTab === tab ? theme.primary : theme.muted}
-							>
+							<text fg={activeTab === tab ? theme.primary : theme.muted}>
 								{activeTab === tab
 									? `[${i + 1}:${tabLabels[tab]}]`
 									: ` ${i + 1}:${tabLabels[tab]} `}
@@ -454,16 +429,10 @@ export function AnalysisView() {
 			{/* Content */}
 			<box flexDirection="column" flexGrow={1} overflow="hidden">
 				{activeTab === "dead-code" && (
-					<DeadCodePane
-						results={deadCode}
-						selectedIndex={selectedIndex}
-					/>
+					<DeadCodePane results={deadCode} selectedIndex={selectedIndex} />
 				)}
 				{activeTab === "test-gaps" && (
-					<TestGapsPane
-						results={testGaps}
-						selectedIndex={selectedIndex}
-					/>
+					<TestGapsPane results={testGaps} selectedIndex={selectedIndex} />
 				)}
 				{activeTab === "impact" && (
 					<ImpactPane

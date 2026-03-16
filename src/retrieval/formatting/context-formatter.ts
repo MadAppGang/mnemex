@@ -235,12 +235,12 @@ export class ContextFormatter {
 
 		// Wrap in code fence for markdown
 		if (this.options.style === "markdown") {
-			return "```" + (unit.language || "") + "\n" + content + "\n```";
+			return `\`\`\`${unit.language || ""}\n${content}\n\`\`\``;
 		}
 
 		// Close XML tag
 		if (this.options.style === "xml") {
-			return content + "\n</code>";
+			return `${content}\n</code>`;
 		}
 
 		return content;

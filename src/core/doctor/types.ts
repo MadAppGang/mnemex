@@ -48,16 +48,16 @@ export interface DoctorResult {
 }
 
 export interface GeneratorAnswers {
-	nonDiscoverable: string[];     // Things agents can't find in code
-	gotchas: string[];             // Framework/tool pitfalls
-	buildCommands: string[];       // Non-obvious commands
-	neverDo: string[];             // Critical constraints
+	nonDiscoverable: string[]; // Things agents can't find in code
+	gotchas: string[]; // Framework/tool pitfalls
+	buildCommands: string[]; // Non-obvious commands
+	neverDo: string[]; // Critical constraints
 }
 
 export interface GeneratedContext {
-	claudeMd: string;              // Optimized CLAUDE.md content (<50 lines)
-	compactSkill: string;          // Token-budgeted variant
-	originalScore: number;         // Score before
-	newScore: number;              // Score after
-	linesSaved: number;            // Lines reduced
+	claudeMd: string; // Optimized CLAUDE.md content (<50 lines)
+	compactSkill: string; // Token-budgeted variant
+	originalScore: number; // Score before
+	newScore: number; // Score after
+	linesSaved: number; // Lines reduced
 }

@@ -161,9 +161,7 @@ describe("JSON Extraction", () => {
 	});
 
 	it("should handle suffix text after JSON", () => {
-		const result = extractJSON(
-			'{"summary": "hello"}\n\nI hope this helps!',
-		);
+		const result = extractJSON('{"summary": "hello"}\n\nI hope this helps!');
 		expect(result).toEqual({ summary: "hello" });
 	});
 

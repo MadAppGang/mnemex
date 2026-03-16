@@ -1,5 +1,5 @@
 /**
- * E2E test infrastructure for the claudemem cloud server.
+ * E2E test infrastructure for the mnemex cloud server.
  *
  * Uses Neon PostgreSQL — no Docker required.
  * No authentication — simplified for testing.

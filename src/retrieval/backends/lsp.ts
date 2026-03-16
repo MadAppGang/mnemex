@@ -8,12 +8,21 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { QueryClassification } from "../../types.js";
-import type { LspManager } from "../../lsp/manager.js";
 import type { ReferenceGraphManager } from "../../core/reference-graph.js";
-import { LSP_METHODS, pathToUri, uriToPath, type Location } from "../../lsp/protocol.js";
+import type { LspManager } from "../../lsp/manager.js";
+import {
+	LSP_METHODS,
+	type Location,
+	pathToUri,
+	uriToPath,
+} from "../../lsp/protocol.js";
+import type { QueryClassification } from "../../types.js";
+import type {
+	BackendResult,
+	ISearchBackend,
+	SearchOptions,
+} from "../pipeline/types.js";
 import { readSymbolBody } from "./utils/read-body.js";
-import type { ISearchBackend, BackendResult, SearchOptions } from "../pipeline/types.js";
 
 export class LspBackend implements ISearchBackend {
 	readonly name = "lsp" as const;
@@ -33,13 +42,16 @@ export class LspBackend implements ISearchBackend {
 		if (signal.aborted) return [];
 
 		// Get candidate symbol names from extracted entities or query
-		const names = intent.extractedEntities.length > 0 ? intent.extractedEntities : [query];
+		const names =
+			intent.extractedEntities.length > 0 ? intent.extractedEntities : [query];
 
 		for (const name of names) {
 			if (signal.aborted) return [];
 
 			// Find a starting position using graph manager
-			const found = this.graphManager.findSymbol(name, { preferExported: true });
+			const found = this.graphManager.findSymbol(name, {
+				preferExported: true,
+			});
 			if (!found) continue;
 
 			const absPath = resolve(this.workspaceRoot, found.filePath);
@@ -93,7 +105,7 @@ export class LspBackend implements ISearchBackend {
 				if (!loc?.uri) continue;
 
 				const defPath = uriToPath(loc.uri);
-				const relPath = defPath.startsWith(this.workspaceRoot + "/")
+				const relPath = defPath.startsWith(`${this.workspaceRoot}/`)
 					? defPath.slice(this.workspaceRoot.length + 1)
 					: defPath;
 
@@ -125,10 +137,7 @@ export class LspBackend implements ISearchBackend {
 				};
 
 				return [result];
-			} catch {
-				// LSP failed for this symbol — continue to next
-				continue;
-			}
+			} catch {}
 		}
 
 		return [];

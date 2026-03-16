@@ -118,7 +118,9 @@ export function createBenchmarkProgress(itemIds: string[]) {
 				// Truncate error to fit terminal width (full error shown in results table)
 				const maxErrLen = maxStatusWidth - 2; // "✗ " prefix
 				const truncatedError =
-					error.length > maxErrLen ? error.slice(0, maxErrLen - 1) + "…" : error;
+					error.length > maxErrLen
+						? error.slice(0, maxErrLen - 1) + "…"
+						: error;
 				status = `${c.red}✗ ${truncatedError}${c.reset}`;
 			} else if (done) {
 				bar = `${c.green}${"█".repeat(width)}${c.reset}`;
@@ -290,9 +292,10 @@ export function createSimpleProgress(label: string, total: number) {
 		const filled = Math.round((current / total) * width);
 		const empty = width - filled;
 		const bar = `${c.green}${"█".repeat(filled)}${c.reset}${"░".repeat(empty)}`;
-		const status = current >= total
-			? `${c.green}✓ ${label}${c.reset}`
-			: `${label}: ${current}/${total}`;
+		const status =
+			current >= total
+				? `${c.green}✓ ${label}${c.reset}`
+				: `${label}: ${current}/${total}`;
 		process.stdout.write(
 			`\r\x1b[2K⏱ ${elapsed} │ ${bar} ${percent.toString().padStart(3)}% │ ${label.padEnd(25)} │ ${status}`,
 		);

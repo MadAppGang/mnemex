@@ -1,5 +1,5 @@
 /**
- * Adaptive Learning Module for claudemem
+ * Adaptive Learning Module for mnemex
  *
  * This module provides adaptive ranking that learns from user feedback.
  *

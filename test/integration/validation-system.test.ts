@@ -292,7 +292,7 @@ describe("ValidationStore", () => {
 
 	beforeEach(() => {
 		// Use unique path per test to avoid conflicts
-		testDbPath = `/tmp/claudemem-test-validation-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
+		testDbPath = `/tmp/mnemex-test-validation-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
 		store = new ValidationStore(testDbPath);
 	});
 

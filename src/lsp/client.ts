@@ -17,7 +17,12 @@ import {
 	type TextDocumentContentChangeEvent,
 } from "./protocol.js";
 
-export type LspState = "unstarted" | "initializing" | "ready" | "crashed" | "dead";
+export type LspState =
+	| "unstarted"
+	| "initializing"
+	| "ready"
+	| "crashed"
+	| "dead";
 
 export interface LspClientConfig {
 	/** Command to run (e.g., "typescript-language-server") */
@@ -80,7 +85,9 @@ export class LspClient {
 			this.process.on("exit", (code) => {
 				if (this.state === "ready") {
 					this.state = "crashed";
-					this.transport.cancelAll(new Error(`LSP server exited with code ${code}`));
+					this.transport.cancelAll(
+						new Error(`LSP server exited with code ${code}`),
+					);
 					this.tryRestart();
 				}
 			});
@@ -119,7 +126,11 @@ export class LspClient {
 			this.capabilities = result.capabilities;
 
 			// Send initialized notification
-			this.transport.sendNotification(this.process, LSP_METHODS.INITIALIZED, {});
+			this.transport.sendNotification(
+				this.process,
+				LSP_METHODS.INITIALIZED,
+				{},
+			);
 
 			this.state = "ready";
 		} catch (err) {
@@ -218,7 +229,11 @@ export class LspClient {
 					5000, // 5s timeout for shutdown
 				);
 
-				this.transport.sendNotification(this.process, LSP_METHODS.EXIT, undefined);
+				this.transport.sendNotification(
+					this.process,
+					LSP_METHODS.EXIT,
+					undefined,
+				);
 			} catch {
 				// If shutdown fails, kill it
 			}

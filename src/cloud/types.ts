@@ -1,5 +1,5 @@
 /**
- * Cloud/Team types for claudemem
+ * Cloud/Team types for mnemex
  *
  * Defines interfaces for the cloud-based shared index feature,
  * including team configuration, change detection, and the cloud API client.
@@ -13,7 +13,7 @@ import type { SearchResult } from "../types.js";
 
 /**
  * Team/org configuration added to ProjectConfig.
- * When present, claudemem uploads to and queries the cloud index.
+ * When present, mnemex uploads to and queries the cloud index.
  */
 export interface TeamConfig {
 	/** Organization slug, e.g. "acme-corp" */
@@ -24,7 +24,7 @@ export interface TeamConfig {
 	 *   "https://github.com/acme/my-repo.git" → "acme-corp/my-repo"
 	 */
 	repoSlug?: string;
-	/** Cloud API endpoint (default: "https://api.claudemem.dev") */
+	/** Cloud API endpoint (default: "https://api.mnemex.dev") */
 	cloudEndpoint?: string;
 	/**
 	 * Cloud upload mode (default: "thin").
@@ -357,7 +357,7 @@ export interface CloudCalleeResult {
 // ============================================================================
 
 /**
- * HTTP client for the claudemem cloud API.
+ * HTTP client for the mnemex cloud API.
  * Implementations: ThinCloudClient (real HTTP), LocalCloudStub (in-memory testing).
  */
 export interface ICloudIndexClient {
@@ -365,7 +365,11 @@ export interface ICloudIndexClient {
 	 * Check which content hashes already exist in the cloud.
 	 * Use this before uploading to skip already-stored chunks.
 	 */
-	checkChunks(repoSlug: string, hashes: string[], commitSha?: string): Promise<ChunkCheckResult>;
+	checkChunks(
+		repoSlug: string,
+		hashes: string[],
+		commitSha?: string,
+	): Promise<ChunkCheckResult>;
 
 	/**
 	 * Upload an index for a specific commit.

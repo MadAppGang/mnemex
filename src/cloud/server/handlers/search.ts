@@ -49,7 +49,14 @@ export async function search(ctx: RequestContext): Promise<Response> {
 		repoSlug = rawRepoSlug.slice(slashIdx + 1);
 	} else {
 		ctx.metrics.errorCode = "invalid_field";
-		return json({ error: "invalid_field", field: "repoSlug", expected: "orgSlug/repoSlug" }, 400);
+		return json(
+			{
+				error: "invalid_field",
+				field: "repoSlug",
+				expected: "orgSlug/repoSlug",
+			},
+			400,
+		);
 	}
 
 	// Step 1 — resolve repo and commit

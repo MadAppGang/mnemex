@@ -85,7 +85,12 @@ export interface AppProviderProps {
 	children: ReactNode;
 }
 
-export function AppProvider({ projectPath, quit, monitorMode = false, children }: AppProviderProps) {
+export function AppProvider({
+	projectPath,
+	quit,
+	monitorMode = false,
+	children,
+}: AppProviderProps) {
 	const [activeTab, setActiveTab] = useState<TabId>("search");
 	const [navHistory, setNavHistory] = useState<string[]>([]);
 	const [error, setError] = useState<string | null>(null);
@@ -99,7 +104,7 @@ export function AppProvider({ projectPath, quit, monitorMode = false, children }
 	// which cascades through useCallback/useEffect dependencies and causes
 	// useActivityMonitor to re-run (truncating JSONL + resetting byte offsets).
 	const [tracker] = useState(() => {
-		const dbDir = join(projectPath, ".claudemem");
+		const dbDir = join(projectPath, ".mnemex");
 		if (!existsSync(dbDir)) {
 			mkdirSync(dbDir, { recursive: true });
 		}

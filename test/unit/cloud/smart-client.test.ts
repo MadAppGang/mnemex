@@ -21,7 +21,7 @@ import type { UploadIndexRequest } from "../../../src/cloud/types.js";
 // Shared test constants
 // ============================================================================
 
-const ENDPOINT = "https://api.claudemem.dev";
+const ENDPOINT = "https://api.mnemex.dev";
 const TOKEN = "test-token-smart";
 const REPO = "acme-corp/my-repo";
 const COMMIT_SHA = "abc123def456abc123def456abc123def456abc1";
@@ -40,8 +40,7 @@ function mockResponse(
 			typeof body === "string" ? "text/plain" : "application/json",
 		...headers,
 	});
-	const bodyText =
-		typeof body === "string" ? body : JSON.stringify(body);
+	const bodyText = typeof body === "string" ? body : JSON.stringify(body);
 	return new Response(bodyText, { status, headers: responseHeaders });
 }
 
@@ -317,9 +316,7 @@ describe("SmartCloudClient — inherited methods", () => {
 	});
 
 	test("includes Authorization header on all requests", async () => {
-		const fetchMock = mockFetch(
-			mockResponse({ existing: [], missing: [] }),
-		);
+		const fetchMock = mockFetch(mockResponse({ existing: [], missing: [] }));
 		await client.checkChunks(REPO, ["h"]);
 		const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
 		const headers = options.headers as Record<string, string>;

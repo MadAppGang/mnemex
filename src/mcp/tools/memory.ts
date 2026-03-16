@@ -17,11 +17,13 @@ export function registerMemoryTools(server: McpServer, deps: ToolDeps): void {
 	server.tool(
 		"memory_write",
 		"Store a project memory (architectural decisions, patterns, preferences). " +
-		"Memories persist across sessions in .claudemem/memories/.",
+			"Memories persist across sessions in .mnemex/memories/.",
 		{
 			key: z
 				.string()
-				.describe("Memory key (alphanumeric, hyphens, underscores, max 128 chars)"),
+				.describe(
+					"Memory key (alphanumeric, hyphens, underscores, max 128 chars)",
+				),
 			content: z.string().describe("Memory content (markdown)"),
 		},
 		async ({ key, content }) => {

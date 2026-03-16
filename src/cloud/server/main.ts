@@ -1,5 +1,5 @@
 /**
- * Standalone entry point for the claudemem cloud server.
+ * Standalone entry point for the mnemex cloud server.
  * Runs schema migration on boot, then starts the HTTP server.
  */
 
@@ -14,7 +14,10 @@ async function main() {
 
 	// Run schema migration (retry up to 3 times for Neon cold-start)
 	console.log("[boot] Running schema migration...");
-	const schemaPath = resolve(dirname(new URL(import.meta.url).pathname), "schema.sql");
+	const schemaPath = resolve(
+		dirname(new URL(import.meta.url).pathname),
+		"schema.sql",
+	);
 	const schema = readFileSync(schemaPath, "utf-8");
 	for (let attempt = 1; attempt <= 3; attempt++) {
 		const migrationSql = createDatabase(config.databaseUrl);
@@ -25,9 +28,11 @@ async function main() {
 		} catch (err) {
 			console.error(`[boot] Migration attempt ${attempt}/3 failed:`, err);
 			if (attempt === 3) {
-				console.error("[boot] All migration attempts failed, starting server anyway (tables may already exist).");
+				console.error(
+					"[boot] All migration attempts failed, starting server anyway (tables may already exist).",
+				);
 			} else {
-				await new Promise(r => setTimeout(r, 3000));
+				await new Promise((r) => setTimeout(r, 3000));
 			}
 		} finally {
 			await migrationSql.end();
@@ -70,7 +75,10 @@ async function main() {
 						totalCommits: Number.parseInt(snap.total_commits, 10),
 						totalRepos: Number.parseInt(snap.total_repos, 10),
 						totalOrgs: Number.parseInt(snap.total_orgs, 10),
-						totalEnrichmentDocs: Number.parseInt(snap.total_enrichment_docs, 10),
+						totalEnrichmentDocs: Number.parseInt(
+							snap.total_enrichment_docs,
+							10,
+						),
 					}),
 				);
 			}

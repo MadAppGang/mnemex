@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 /**
- * claudemem - Local code indexing tool for Claude Code
+ * mnemex - Local code indexing tool for Claude Code
  *
  * Entry point that supports two modes:
  * - CLI mode (default): Interactive command-line interface
@@ -9,9 +9,13 @@
  */
 
 import { config } from "dotenv";
+import { runMigrations } from "./migration.js";
 
 // Load environment variables from .env file
 config();
+
+// Migrate .claudemem/ → .mnemex/ for existing users (silent, non-blocking)
+runMigrations();
 
 const args = process.argv.slice(2);
 

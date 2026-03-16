@@ -16,16 +16,18 @@ import { loadMcpConfig } from "../../../src/mcp/config.js";
 // ---------------------------------------------------------------------------
 
 const ENV_KEYS = [
-	"CLAUDEMEM_INDEX_DIR",
-	"CLAUDEMEM_DEBOUNCE_MS",
-	"CLAUDEMEM_WATCH_PATTERNS",
-	"CLAUDEMEM_IGNORE_PATTERNS",
-	"CLAUDEMEM_MAX_MEMORY_MB",
-	"CLAUDEMEM_COMPLETION_POLL_MS",
-	"CLAUDEMEM_LOG_LEVEL",
+	"MNEMEX_INDEX_DIR",
+	"MNEMEX_DEBOUNCE_MS",
+	"MNEMEX_WATCH_PATTERNS",
+	"MNEMEX_IGNORE_PATTERNS",
+	"MNEMEX_MAX_MEMORY_MB",
+	"MNEMEX_COMPLETION_POLL_MS",
+	"MNEMEX_LOG_LEVEL",
 ] as const;
 
-type EnvSnapshot = Partial<Record<(typeof ENV_KEYS)[number], string | undefined>>;
+type EnvSnapshot = Partial<
+	Record<(typeof ENV_KEYS)[number], string | undefined>
+>;
 
 function saveEnv(): EnvSnapshot {
 	const snap: EnvSnapshot = {};
@@ -104,10 +106,10 @@ describe("loadMcpConfig()", () => {
 			expect(config.ignorePatterns.length).toBeGreaterThan(0);
 		});
 
-		test("indexDir defaults to .claudemem under workspaceRoot", () => {
+		test("indexDir defaults to .mnemex under workspaceRoot", () => {
 			const config = loadMcpConfig();
 			// workspaceRoot is process.cwd()
-			expect(config.indexDir).toContain(".claudemem");
+			expect(config.indexDir).toContain(".mnemex");
 			expect(config.indexDir.startsWith(config.workspaceRoot)).toBe(true);
 		});
 
@@ -121,49 +123,49 @@ describe("loadMcpConfig()", () => {
 	// Numeric parsing
 	// -------------------------------------------------------------------------
 
-	describe("CLAUDEMEM_DEBOUNCE_MS", () => {
+	describe("MNEMEX_DEBOUNCE_MS", () => {
 		test("parses a valid integer", () => {
-			process.env.CLAUDEMEM_DEBOUNCE_MS = "5000";
+			process.env.MNEMEX_DEBOUNCE_MS = "5000";
 			const config = loadMcpConfig();
 			expect(config.debounceMs).toBe(5000);
 		});
 
 		test("falls back to default for non-numeric value 'abc'", () => {
-			process.env.CLAUDEMEM_DEBOUNCE_MS = "abc";
+			process.env.MNEMEX_DEBOUNCE_MS = "abc";
 			const config = loadMcpConfig();
 			expect(config.debounceMs).toBe(120_000);
 		});
 
 		test("falls back to default for empty string", () => {
-			process.env.CLAUDEMEM_DEBOUNCE_MS = "";
+			process.env.MNEMEX_DEBOUNCE_MS = "";
 			const config = loadMcpConfig();
 			expect(config.debounceMs).toBe(120_000);
 		});
 	});
 
-	describe("CLAUDEMEM_MAX_MEMORY_MB", () => {
+	describe("MNEMEX_MAX_MEMORY_MB", () => {
 		test("parses a valid integer", () => {
-			process.env.CLAUDEMEM_MAX_MEMORY_MB = "1024";
+			process.env.MNEMEX_MAX_MEMORY_MB = "1024";
 			const config = loadMcpConfig();
 			expect(config.maxMemoryMB).toBe(1024);
 		});
 
 		test("falls back to default for non-numeric value", () => {
-			process.env.CLAUDEMEM_MAX_MEMORY_MB = "not-a-number";
+			process.env.MNEMEX_MAX_MEMORY_MB = "not-a-number";
 			const config = loadMcpConfig();
 			expect(config.maxMemoryMB).toBe(500);
 		});
 	});
 
-	describe("CLAUDEMEM_COMPLETION_POLL_MS", () => {
+	describe("MNEMEX_COMPLETION_POLL_MS", () => {
 		test("parses a valid integer", () => {
-			process.env.CLAUDEMEM_COMPLETION_POLL_MS = "500";
+			process.env.MNEMEX_COMPLETION_POLL_MS = "500";
 			const config = loadMcpConfig();
 			expect(config.completionPollMs).toBe(500);
 		});
 
 		test("falls back to default for non-numeric value", () => {
-			process.env.CLAUDEMEM_COMPLETION_POLL_MS = "bad";
+			process.env.MNEMEX_COMPLETION_POLL_MS = "bad";
 			const config = loadMcpConfig();
 			expect(config.completionPollMs).toBe(2000);
 		});
@@ -173,42 +175,42 @@ describe("loadMcpConfig()", () => {
 	// Comma-separated patterns
 	// -------------------------------------------------------------------------
 
-	describe("CLAUDEMEM_WATCH_PATTERNS", () => {
+	describe("MNEMEX_WATCH_PATTERNS", () => {
 		test("parses a single pattern", () => {
-			process.env.CLAUDEMEM_WATCH_PATTERNS = "**/*.ts";
+			process.env.MNEMEX_WATCH_PATTERNS = "**/*.ts";
 			const config = loadMcpConfig();
 			expect(config.watchPatterns).toEqual(["**/*.ts"]);
 		});
 
 		test("parses comma-separated patterns", () => {
-			process.env.CLAUDEMEM_WATCH_PATTERNS = "**/*.ts,**/*.go,**/*.py";
+			process.env.MNEMEX_WATCH_PATTERNS = "**/*.ts,**/*.go,**/*.py";
 			const config = loadMcpConfig();
 			expect(config.watchPatterns).toEqual(["**/*.ts", "**/*.go", "**/*.py"]);
 		});
 
 		test("trims whitespace from each pattern", () => {
-			process.env.CLAUDEMEM_WATCH_PATTERNS = " **/*.ts , **/*.go ";
+			process.env.MNEMEX_WATCH_PATTERNS = " **/*.ts , **/*.go ";
 			const config = loadMcpConfig();
 			expect(config.watchPatterns).toEqual(["**/*.ts", "**/*.go"]);
 		});
 
 		test("falls back to default for empty string", () => {
-			process.env.CLAUDEMEM_WATCH_PATTERNS = "";
+			process.env.MNEMEX_WATCH_PATTERNS = "";
 			const config = loadMcpConfig();
 			// Should be the default array, not empty
 			expect(config.watchPatterns.length).toBeGreaterThan(0);
 		});
 	});
 
-	describe("CLAUDEMEM_IGNORE_PATTERNS", () => {
+	describe("MNEMEX_IGNORE_PATTERNS", () => {
 		test("parses comma-separated ignore patterns", () => {
-			process.env.CLAUDEMEM_IGNORE_PATTERNS = "node_modules/**,dist/**";
+			process.env.MNEMEX_IGNORE_PATTERNS = "node_modules/**,dist/**";
 			const config = loadMcpConfig();
 			expect(config.ignorePatterns).toEqual(["node_modules/**", "dist/**"]);
 		});
 
 		test("falls back to default for empty string", () => {
-			process.env.CLAUDEMEM_IGNORE_PATTERNS = "";
+			process.env.MNEMEX_IGNORE_PATTERNS = "";
 			const config = loadMcpConfig();
 			expect(config.ignorePatterns.length).toBeGreaterThan(0);
 		});
@@ -218,45 +220,45 @@ describe("loadMcpConfig()", () => {
 	// Log level
 	// -------------------------------------------------------------------------
 
-	describe("CLAUDEMEM_LOG_LEVEL", () => {
+	describe("MNEMEX_LOG_LEVEL", () => {
 		test("accepts 'debug'", () => {
-			process.env.CLAUDEMEM_LOG_LEVEL = "debug";
+			process.env.MNEMEX_LOG_LEVEL = "debug";
 			const config = loadMcpConfig();
 			expect(config.logLevel).toBe("debug");
 		});
 
 		test("accepts 'info'", () => {
-			process.env.CLAUDEMEM_LOG_LEVEL = "info";
+			process.env.MNEMEX_LOG_LEVEL = "info";
 			const config = loadMcpConfig();
 			expect(config.logLevel).toBe("info");
 		});
 
 		test("accepts 'warn'", () => {
-			process.env.CLAUDEMEM_LOG_LEVEL = "warn";
+			process.env.MNEMEX_LOG_LEVEL = "warn";
 			const config = loadMcpConfig();
 			expect(config.logLevel).toBe("warn");
 		});
 
 		test("accepts 'error'", () => {
-			process.env.CLAUDEMEM_LOG_LEVEL = "error";
+			process.env.MNEMEX_LOG_LEVEL = "error";
 			const config = loadMcpConfig();
 			expect(config.logLevel).toBe("error");
 		});
 
 		test("falls back to 'warn' for an unrecognised value", () => {
-			process.env.CLAUDEMEM_LOG_LEVEL = "verbose";
+			process.env.MNEMEX_LOG_LEVEL = "verbose";
 			const config = loadMcpConfig();
 			expect(config.logLevel).toBe("warn");
 		});
 	});
 
 	// -------------------------------------------------------------------------
-	// CLAUDEMEM_INDEX_DIR
+	// MNEMEX_INDEX_DIR
 	// -------------------------------------------------------------------------
 
-	describe("CLAUDEMEM_INDEX_DIR", () => {
+	describe("MNEMEX_INDEX_DIR", () => {
 		test("resolves relative path under workspaceRoot", () => {
-			process.env.CLAUDEMEM_INDEX_DIR = "custom-index";
+			process.env.MNEMEX_INDEX_DIR = "custom-index";
 			const config = loadMcpConfig();
 			expect(config.indexDir).toBe(`${config.workspaceRoot}/custom-index`);
 		});

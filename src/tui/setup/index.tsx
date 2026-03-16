@@ -16,7 +16,7 @@ import { selectMode } from "./mode-diagrams.js";
 
 export async function startSetupWizard(): Promise<void> {
 	if (!process.stdout.isTTY) {
-		throw new Error("claudemem setup requires an interactive terminal (TTY)");
+		throw new Error("mnemex setup requires an interactive terminal (TTY)");
 	}
 
 	// Phase 1: Show mode diagrams and collect selection (plain terminal)

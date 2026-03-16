@@ -32,17 +32,21 @@ import type {
 	CloudCallerResult,
 	CloudCalleeResult,
 } from "../../../src/cloud/types.js";
-import type { SearchResult, IEmbeddingsClient, EmbedResult } from "../../../src/types.js";
-import { CloudAwareSearch, createCloudAwareSearch } from "../../../src/cloud/search.js";
+import type {
+	SearchResult,
+	IEmbeddingsClient,
+	EmbedResult,
+} from "../../../src/types.js";
+import {
+	CloudAwareSearch,
+	createCloudAwareSearch,
+} from "../../../src/cloud/search.js";
 
 // ============================================================================
 // Stub helpers
 // ============================================================================
 
-function makeCloudResult(
-	filePath: string,
-	score = 0.8,
-): CloudSearchResult {
+function makeCloudResult(filePath: string, score = 0.8): CloudSearchResult {
 	return {
 		contentHash: `hash-${filePath}`,
 		filePath,
@@ -98,7 +102,10 @@ class MockChangeDetector implements IChangeDetector {
 		return [];
 	}
 
-	async getChangedFiles(_from: string | null, _to: string): Promise<ChangedFile[]> {
+	async getChangedFiles(
+		_from: string | null,
+		_to: string,
+	): Promise<ChangedFile[]> {
 		return [];
 	}
 }
@@ -116,7 +123,10 @@ class MockOverlayIndex implements IOverlayIndex {
 		return this.stale;
 	}
 
-	async rebuild(_dirtyFiles: DirtyFile[], _onProgress?: (msg: string) => void): Promise<void> {
+	async rebuild(
+		_dirtyFiles: DirtyFile[],
+		_onProgress?: (msg: string) => void,
+	): Promise<void> {
 		if (this.shouldThrowOnRebuild) throw new Error("rebuild failed");
 		this.rebuildCalled = true;
 		this.stale = false;
@@ -153,7 +163,10 @@ class MockCloudClient implements ICloudIndexClient {
 		return this.results;
 	}
 
-	async checkChunks(_repoSlug: string, _hashes: string[]): Promise<ChunkCheckResult> {
+	async checkChunks(
+		_repoSlug: string,
+		_hashes: string[],
+	): Promise<ChunkCheckResult> {
 		return { existing: [], missing: _hashes };
 	}
 
@@ -161,11 +174,17 @@ class MockCloudClient implements ICloudIndexClient {
 		return { ok: true, chunksAdded: 0, chunksDeduplicated: 0, status: "ready" };
 	}
 
-	async getCommitStatus(_repoSlug: string, _commitSha: string): Promise<CommitStatus> {
+	async getCommitStatus(
+		_repoSlug: string,
+		_commitSha: string,
+	): Promise<CommitStatus> {
 		return { commitSha: _commitSha, status: "not_found" };
 	}
 
-	async waitForCommit(_repoSlug: string, _commitSha: string): Promise<CommitStatus> {
+	async waitForCommit(
+		_repoSlug: string,
+		_commitSha: string,
+	): Promise<CommitStatus> {
 		return { commitSha: _commitSha, status: "ready" };
 	}
 
@@ -173,15 +192,27 @@ class MockCloudClient implements ICloudIndexClient {
 		return { ok: true, created: true, repoSlug: _req.repoSlug };
 	}
 
-	async getSymbol(_repoSlug: string, _sha: string, _name: string): Promise<CloudSymbol[]> {
+	async getSymbol(
+		_repoSlug: string,
+		_sha: string,
+		_name: string,
+	): Promise<CloudSymbol[]> {
 		return [];
 	}
 
-	async getCallers(_repoSlug: string, _sha: string, name: string): Promise<CloudCallerResult> {
+	async getCallers(
+		_repoSlug: string,
+		_sha: string,
+		name: string,
+	): Promise<CloudCallerResult> {
 		return { symbolName: name, callers: [] };
 	}
 
-	async getCallees(_repoSlug: string, _sha: string, name: string): Promise<CloudCalleeResult> {
+	async getCallees(
+		_repoSlug: string,
+		_sha: string,
+		name: string,
+	): Promise<CloudCalleeResult> {
 		return { symbolName: name, callees: [] };
 	}
 
@@ -328,7 +359,9 @@ describe("CloudAwareSearch.search — basic flow", () => {
 		const search = makeSearch();
 		const results = await search.search("foo");
 
-		const cloudResult = results.find((r) => r.chunk.filePath === "src/committed.ts");
+		const cloudResult = results.find(
+			(r) => r.chunk.filePath === "src/committed.ts",
+		);
 		expect(cloudResult?.source).toBe("cloud");
 	});
 });
@@ -340,7 +373,9 @@ describe("CloudAwareSearch.search — basic flow", () => {
 describe("CloudAwareSearch.search — overlay rebuild", () => {
 	test("rebuilds stale overlay before searching", async () => {
 		overlayIndex.stale = true;
-		changeDetector.dirtyFiles = [{ filePath: "src/dirty.ts", status: "modified" }];
+		changeDetector.dirtyFiles = [
+			{ filePath: "src/dirty.ts", status: "modified" },
+		];
 
 		const search = makeSearch();
 		await search.search("foo");
@@ -463,7 +498,9 @@ describe("CloudAwareSearch.search — embedding failure", () => {
 
 describe("CloudAwareSearch.search — dirty file suppression", () => {
 	test("does not include cloud results for dirty files", async () => {
-		changeDetector.dirtyFiles = [{ filePath: "src/dirty.ts", status: "modified" }];
+		changeDetector.dirtyFiles = [
+			{ filePath: "src/dirty.ts", status: "modified" },
+		];
 		cloudClient.results = [
 			makeCloudResult("src/dirty.ts", 0.95),
 			makeCloudResult("src/clean.ts", 0.7),

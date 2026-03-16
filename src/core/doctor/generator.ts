@@ -73,9 +73,7 @@ async function askQuestions(
 	};
 
 	console.log("");
-	console.log(
-		`${c.orange}${c.bold}  GENERATING OPTIMIZED CONTEXT${c.reset}`,
-	);
+	console.log(`${c.orange}${c.bold}  GENERATING OPTIMIZED CONTEXT${c.reset}`);
 	console.log("");
 
 	// Show detected project context
@@ -89,9 +87,7 @@ async function askQuestions(
 			.slice(0, 3)
 			.map((s) => `${s.name} (${s.kind})`)
 			.join(", ");
-		console.log(
-			`  ${c.cyan}Core symbols:${c.reset}  ${top3}`,
-		);
+		console.log(`  ${c.cyan}Core symbols:${c.reset}  ${top3}`);
 	}
 	if (ctx.projectScale.symbols > 0) {
 		console.log(
@@ -242,10 +238,7 @@ export function generateOptimizedContext(
 	// Under 50 lines = token count criterion perfect (100)
 	// All procedural = instruction density high
 	// No duplication = duplication criterion perfect
-	const estimatedNewScore = Math.min(
-		95,
-		Math.max(originalScore + 20, 80),
-	);
+	const estimatedNewScore = Math.min(95, Math.max(originalScore + 20, 80));
 
 	return {
 		claudeMd,
@@ -263,16 +256,12 @@ export function saveGeneratedFiles(
 	projectPath: string,
 	generated: GeneratedContext,
 ): void {
-	const outDir = join(projectPath, ".claudemem", "generated");
+	const outDir = join(projectPath, ".mnemex", "generated");
 	if (!existsSync(outDir)) {
 		mkdirSync(outDir, { recursive: true });
 	}
 
-	writeFileSync(
-		join(outDir, "CLAUDE.md"),
-		generated.claudeMd,
-		"utf-8",
-	);
+	writeFileSync(join(outDir, "CLAUDE.md"), generated.claudeMd, "utf-8");
 	writeFileSync(
 		join(outDir, "CLAUDE-compact.md"),
 		generated.compactSkill,

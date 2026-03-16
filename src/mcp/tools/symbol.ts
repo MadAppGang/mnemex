@@ -6,11 +6,12 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { readSymbolBody } from "../../retrieval/backends/utils/read-body.js";
 import type { ToolDeps } from "./deps.js";
 import { buildFreshness, errorResponse } from "./deps.js";
 
 export function registerSymbolTools(server: McpServer, deps: ToolDeps): void {
-	const { cache, stateManager } = deps;
+	const { cache, stateManager, config } = deps;
 
 	server.tool(
 		"symbol",
@@ -25,8 +26,12 @@ export function registerSymbolTools(server: McpServer, deps: ToolDeps): void {
 				.boolean()
 				.default(true)
 				.describe("Include caller/usage locations (default: true)"),
+			includeBody: z
+				.boolean()
+				.default(true)
+				.describe("Include function/class body source code (default: true)"),
 		},
-		async ({ symbol: symbolName, kind, includeUsages }) => {
+		async ({ symbol: symbolName, kind, includeUsages, includeBody }) => {
 			const startTime = Date.now();
 
 			try {
@@ -57,15 +62,31 @@ export function registerSymbolTools(server: McpServer, deps: ToolDeps): void {
 					}));
 				}
 
+				// Read body from disk if requested
+				let body: string | null = null;
+				let bodyStale = false;
+				if (includeBody && definition) {
+					const bodyResult = readSymbolBody(
+						config.workspaceRoot,
+						definition.filePath,
+						definition.startLine,
+						definition.endLine,
+					);
+					body = bodyResult.body;
+					bodyStale = bodyResult.stale;
+				}
+
 				const definitionPayload = definition
 					? {
 							file: definition.filePath,
 							line: definition.startLine,
+							endLine: definition.endLine,
 							kind: definition.kind,
 							name: definition.name,
 							signature: definition.signature ?? null,
 							isExported: definition.isExported,
 							pageRank: definition.pagerankScore,
+							...(includeBody ? { body, bodyStale } : {}),
 						}
 					: null;
 

@@ -6,12 +6,7 @@
  * and whether a reindex is currently in progress.
  */
 
-import {
-	existsSync,
-	readFileSync,
-	writeFileSync,
-	mkdirSync,
-} from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { IndexLock } from "../core/lock.js";
 import type { FreshnessMetadata } from "./types.js";

@@ -8,10 +8,14 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Query } from "web-tree-sitter";
-import type { QueryClassification } from "../../types.js";
-import type { ParserManager } from "../../parsers/parser-manager.js";
 import type { IFileTracker } from "../../core/tracker.js";
-import type { ISearchBackend, BackendResult, SearchOptions } from "../pipeline/types.js";
+import type { ParserManager } from "../../parsers/parser-manager.js";
+import type { QueryClassification } from "../../types.js";
+import type {
+	BackendResult,
+	ISearchBackend,
+	SearchOptions,
+} from "../pipeline/types.js";
 import {
 	buildStructuralQuery,
 	detectLanguageFromPath,
@@ -109,7 +113,8 @@ export class TreeSitterBackend implements ISearchBackend {
 				);
 
 				// If no outer captures, use all captures as fallback
-				const matchCaptures = outerCaptures.length > 0 ? outerCaptures : captures;
+				const matchCaptures =
+					outerCaptures.length > 0 ? outerCaptures : captures;
 
 				for (const capture of matchCaptures) {
 					if (results.length >= limit) break;
@@ -129,10 +134,7 @@ export class TreeSitterBackend implements ISearchBackend {
 						backend: this.name,
 					});
 				}
-			} catch {
-				// Parse or query error — skip this file
-				continue;
-			}
+			} catch {}
 		}
 
 		// Normalize scores

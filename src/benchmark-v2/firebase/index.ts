@@ -17,12 +17,12 @@ import type { NormalizedScores } from "../types.js";
 
 // Cloud Function base URL (deployed to us-central1 by default)
 const CLOUD_FUNCTION_BASE_URL =
-	process.env.CLAUDEMEM_FIREBASE_URL ||
+	process.env.MNEMEX_FIREBASE_URL ||
 	"https://us-central1-claudish-6da10.cloudfunctions.net";
 
 // API key for authenticated uploads (provides basic abuse protection)
 const API_KEY =
-	process.env.CLAUDEMEM_API_KEY || "6QgFCtDx9l9alTpb813ZbgHoy2yZBfHc";
+	process.env.MNEMEX_API_KEY || "6QgFCtDx9l9alTpb813ZbgHoy2yZBfHc";
 
 // ============================================================================
 // Types
@@ -57,7 +57,7 @@ export interface BenchmarkRunDocument {
 	modelScores: ModelScoreEntry[];
 
 	// Metadata
-	claudememVersion: string;
+	mnemexVersion: string;
 	machineId?: string;
 }
 
@@ -211,7 +211,7 @@ export async function uploadBenchmarkResults(
 			durationMs,
 			totalCost,
 			modelScores,
-			claudememVersion: "0.7.0",
+			mnemexVersion: "0.7.0",
 		};
 
 		// POST to Cloud Function with timeout
@@ -387,12 +387,9 @@ export async function uploadEmbeddingBenchmark(
 			sampleSize: meta.chunks,
 			status: "completed",
 			durationMs: meta.durationMs,
-			totalCost: results.reduce(
-				(sum, r) => sum + (r.cost ?? 0),
-				0,
-			),
+			totalCost: results.reduce((sum, r) => sum + (r.cost ?? 0), 0),
 			modelScores,
-			claudememVersion: "0.7.0",
+			mnemexVersion: "0.7.0",
 		};
 
 		const controller = new AbortController();

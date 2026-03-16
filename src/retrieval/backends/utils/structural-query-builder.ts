@@ -16,7 +16,12 @@ export function buildStructuralQuery(
 	entityName: string,
 	language: SupportedLanguage,
 ): string | null {
-	if (language !== "typescript" && language !== "javascript" && language !== "tsx" && language !== "jsx") {
+	if (
+		language !== "typescript" &&
+		language !== "javascript" &&
+		language !== "tsx" &&
+		language !== "jsx"
+	) {
 		return null;
 	}
 
@@ -56,7 +61,9 @@ export function buildStructuralQuery(
   name: (property_identifier) @name
   (#eq? @name "${safeName}")) @decl`;
 
-			return [classDecl, fnDecl, interfaceDecl, typeDecl, methodDecl].join("\n");
+			return [classDecl, fnDecl, interfaceDecl, typeDecl, methodDecl].join(
+				"\n",
+			);
 		}
 
 		default:
@@ -67,7 +74,9 @@ export function buildStructuralQuery(
 /**
  * Detect language from file extension.
  */
-export function detectLanguageFromPath(filePath: string): SupportedLanguage | null {
+export function detectLanguageFromPath(
+	filePath: string,
+): SupportedLanguage | null {
 	const ext = filePath.split(".").pop()?.toLowerCase();
 	switch (ext) {
 		case "ts":

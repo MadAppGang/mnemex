@@ -11,10 +11,16 @@
 
 import { describe, test, expect, beforeEach } from "bun:test";
 import { LocalCloudStub } from "../../../src/cloud/stub.js";
-import { GraphSyncer, createGraphSyncer } from "../../../src/cloud/graph-sync.js";
+import {
+	GraphSyncer,
+	createGraphSyncer,
+} from "../../../src/cloud/graph-sync.js";
 import type { GraphSyncOptions } from "../../../src/cloud/graph-sync.js";
 import type { IFileTracker } from "../../../src/core/tracker.js";
-import type { UploadIndexRequest, UploadChunk } from "../../../src/cloud/types.js";
+import type {
+	UploadIndexRequest,
+	UploadChunk,
+} from "../../../src/cloud/types.js";
 
 // ============================================================================
 // Fixtures
@@ -65,22 +71,42 @@ class InMemoryFileTracker implements IFileTracker {
 		return { added: [], modified: [], deleted: [], unchanged: [] };
 	}
 	markIndexed(_filePath: string, _contentHash: string, _chunkIds: string[]) {}
-	getChunkIds(_filePath: string): string[] { return []; }
+	getChunkIds(_filePath: string): string[] {
+		return [];
+	}
 	removeFile(_filePath: string) {}
-	getFileState(_filePath: string) { return null; }
-	getAllFiles() { return []; }
+	getFileState(_filePath: string) {
+		return null;
+	}
+	getAllFiles() {
+		return [];
+	}
 	getMetadata(key: string): string | null {
 		return this.metadata.get(key) ?? null;
 	}
 	setMetadata(key: string, value: string): void {
 		this.metadata.set(key, value);
 	}
-	getStats() { return { totalFiles: 0, lastIndexed: null }; }
-	clear() { this.metadata.clear(); }
-	recordActivity(_type: string, _metadata: Record<string, unknown>): number { return 0; }
-	needsEnrichment(_filePath: string, _documentType: string): boolean { return false; }
-	setEnrichmentState(_filePath: string, _documentType: string, _state: string): void {}
-	getFilesNeedingEnrichment(_documentType: string): string[] { return []; }
+	getStats() {
+		return { totalFiles: 0, lastIndexed: null };
+	}
+	clear() {
+		this.metadata.clear();
+	}
+	recordActivity(_type: string, _metadata: Record<string, unknown>): number {
+		return 0;
+	}
+	needsEnrichment(_filePath: string, _documentType: string): boolean {
+		return false;
+	}
+	setEnrichmentState(
+		_filePath: string,
+		_documentType: string,
+		_state: string,
+	): void {}
+	getFilesNeedingEnrichment(_documentType: string): string[] {
+		return [];
+	}
 	trackDocuments(_docs: unknown[]): void {}
 }
 
@@ -157,8 +183,16 @@ describe("GraphSyncer — indexed commit", () => {
 		// Pre-populate the stub with some chunks
 		await stub.uploadIndex(
 			makeUploadRequest([
-				makeChunk({ contentHash: "hash-a", name: "funcA", filePath: "src/a.ts" }),
-				makeChunk({ contentHash: "hash-b", name: "funcB", filePath: "src/b.ts" }),
+				makeChunk({
+					contentHash: "hash-a",
+					name: "funcA",
+					filePath: "src/a.ts",
+				}),
+				makeChunk({
+					contentHash: "hash-b",
+					name: "funcB",
+					filePath: "src/b.ts",
+				}),
 			]),
 		);
 	});
@@ -220,7 +254,11 @@ describe("LocalCloudStub.getGraph", () => {
 	test("returns symbols for indexed commit", async () => {
 		await stub.uploadIndex(
 			makeUploadRequest([
-				makeChunk({ contentHash: "hash-x", name: "Widget", filePath: "src/widget.ts" }),
+				makeChunk({
+					contentHash: "hash-x",
+					name: "Widget",
+					filePath: "src/widget.ts",
+				}),
 			]),
 		);
 
@@ -232,7 +270,11 @@ describe("LocalCloudStub.getGraph", () => {
 	test("repoMap contains expected structure", async () => {
 		await stub.uploadIndex(
 			makeUploadRequest([
-				makeChunk({ contentHash: "hash-y", name: "doThing", filePath: "src/thing.ts" }),
+				makeChunk({
+					contentHash: "hash-y",
+					name: "doThing",
+					filePath: "src/thing.ts",
+				}),
 			]),
 		);
 

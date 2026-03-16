@@ -41,7 +41,8 @@ export function getHealthSymbol(score: number): string {
 export function formatHealthBar(score: number, width = 20): string {
 	const filled = Math.round((score / 100) * width);
 	const empty = width - filled;
-	const color = score >= 80 ? "\x1b[32m" : score >= 60 ? "\x1b[33m" : "\x1b[31m";
+	const color =
+		score >= 80 ? "\x1b[32m" : score >= 60 ? "\x1b[33m" : "\x1b[31m";
 	const reset = "\x1b[0m";
 	return `${color}[${"█".repeat(filled)}${" ".repeat(empty)}]${reset} ${score}%`;
 }

@@ -14,7 +14,11 @@
  * method still returns overlay-only results (best-effort degradation).
  */
 
-import type { IEmbeddingsClient, SearchOptions, SearchResult } from "../types.js";
+import type {
+	IEmbeddingsClient,
+	SearchOptions,
+	SearchResult,
+} from "../types.js";
 import type {
 	IChangeDetector,
 	ICloudIndexClient,
@@ -131,14 +135,20 @@ export class CloudAwareSearch {
 						chunkType: options.chunkType,
 					});
 				} catch (err) {
-					report(`CloudAwareSearch: cloud search failed (offline?): ${String(err)}`);
+					report(
+						`CloudAwareSearch: cloud search failed (offline?): ${String(err)}`,
+					);
 					return [];
 				}
 			})(),
 			// Overlay search (with graceful degradation)
 			(async (): Promise<SearchResult[]> => {
 				try {
-					return await this.overlayIndex.search(queryVector, queryText, fetchLimit);
+					return await this.overlayIndex.search(
+						queryVector,
+						queryText,
+						fetchLimit,
+					);
 				} catch (err) {
 					report(`CloudAwareSearch: overlay search failed: ${String(err)}`);
 					return [];
@@ -147,7 +157,12 @@ export class CloudAwareSearch {
 		]);
 
 		// ── Step 5: Merge results ─────────────────────────────────────────────
-		return OverlayMerger.merge(cloudResults, overlayResults, dirtyFilePaths, limit);
+		return OverlayMerger.merge(
+			cloudResults,
+			overlayResults,
+			dirtyFilePaths,
+			limit,
+		);
 	}
 }
 
@@ -158,6 +173,8 @@ export class CloudAwareSearch {
 /**
  * Create a CloudAwareSearch instance.
  */
-export function createCloudAwareSearch(options: CloudSearchOptions): CloudAwareSearch {
+export function createCloudAwareSearch(
+	options: CloudSearchOptions,
+): CloudAwareSearch {
 	return new CloudAwareSearch(options);
 }

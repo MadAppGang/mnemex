@@ -32,11 +32,10 @@ function ShortcutItem({ letter, label }: { letter: string; label: string }) {
 
 function detectRepoSlug(): string {
 	try {
-		const result = spawnSync(
-			"git",
-			["remote", "get-url", "origin"],
-			{ encoding: "utf8", timeout: 3000 },
-		);
+		const result = spawnSync("git", ["remote", "get-url", "origin"], {
+			encoding: "utf8",
+			timeout: 3000,
+		});
 
 		if (result.status !== 0 || !result.stdout.trim()) {
 			return "";
@@ -157,7 +156,7 @@ export function CloudSetupScreen({
 				} else {
 					// Start editing first empty field
 					const firstEmpty = FIELDS.find(
-						(f) => f.name === "cloudEndpoint" || f.name === "orgSlug"
+						(f) => f.name === "cloudEndpoint" || f.name === "orgSlug",
 					);
 					if (firstEmpty && !values[firstEmpty.name]) {
 						setFocusedField(firstEmpty.name);
@@ -211,12 +210,11 @@ export function CloudSetupScreen({
 						{display}
 					</text>
 					{isEditing && <text fg={theme.primary}>{"_"}</text>}
-					{!val && !isEditing && (
-						<text fg={theme.dimmed}>{"(empty)"}</text>
-					)}
-					{val && !isEditing && field.name === "cloudApiKey" && val.length > 10 && (
-						<text fg={theme.accentGreen}>{" [ok]"}</text>
-					)}
+					{!val && !isEditing && <text fg={theme.dimmed}>{"(empty)"}</text>}
+					{val &&
+						!isEditing &&
+						field.name === "cloudApiKey" &&
+						val.length > 10 && <text fg={theme.accentGreen}>{" [ok]"}</text>}
 				</box>
 				{isFocused && !editMode && (
 					<box marginTop={1}>
@@ -227,14 +225,15 @@ export function CloudSetupScreen({
 		);
 	};
 
-	const canProceed = values.cloudEndpoint.length > 0 && values.orgSlug.length > 0;
+	const canProceed =
+		values.cloudEndpoint.length > 0 && values.orgSlug.length > 0;
 
 	return (
 		<box flexDirection="column" width="100%" height="100%">
 			{/* Header */}
 			<box flexDirection="row" paddingLeft={1} paddingTop={1}>
 				<text fg={theme.borderDim}>{"┌─"}</text>
-				<text fg={theme.primary}>{" claudemem "}</text>
+				<text fg={theme.primary}>{" mnemex "}</text>
 				<text fg={theme.borderDim}>{"─"}</text>
 				<text fg={theme.muted}>{" Setup "}</text>
 				<text fg={theme.borderDim}>{"─"}</text>
@@ -243,7 +242,9 @@ export function CloudSetupScreen({
 			</box>
 
 			<box paddingLeft={3} paddingTop={1}>
-				<text fg={theme.dimmed}>{"Configure cloud endpoint and credentials:"}</text>
+				<text fg={theme.dimmed}>
+					{"Configure cloud endpoint and credentials:"}
+				</text>
 			</box>
 
 			{/* Fields */}
@@ -255,7 +256,9 @@ export function CloudSetupScreen({
 			{!canProceed && (
 				<box paddingLeft={3} paddingTop={1}>
 					<text fg={theme.warning}>{"! "}</text>
-					<text fg={theme.dimmed}>{"cloudEndpoint and orgSlug are required"}</text>
+					<text fg={theme.dimmed}>
+						{"cloudEndpoint and orgSlug are required"}
+					</text>
 				</box>
 			)}
 

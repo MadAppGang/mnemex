@@ -44,7 +44,8 @@ export const CURRENT_INDEX_VERSION = 2;
 
 /** Human-readable labels for feature identifiers */
 const FEATURE_DESCRIPTIONS: Record<string, string> = {
-	ast_metadata: "AST metadata (function params, return types, async/exported flags)",
+	ast_metadata:
+		"AST metadata (function params, return types, async/exported flags)",
 	hierarchical_units: "Hierarchical code units (file > class > method)",
 	code_unit_search: "AST-aware search results",
 };
@@ -54,7 +55,7 @@ const FEATURE_DESCRIPTIONS: Record<string, string> = {
 // ============================================================================
 
 /**
- * Read the index version from .claudemem/config.json.
+ * Read the index version from .mnemex/config.json.
  * Returns 1 (implicit) when no version is stored (old index).
  */
 export function getIndexVersion(projectPath: string): number {
@@ -67,7 +68,7 @@ export function getIndexVersion(projectPath: string): number {
 }
 
 /**
- * Write the index version to .claudemem/config.json.
+ * Write the index version to .mnemex/config.json.
  * Merges with existing config (non-destructive).
  */
 export function setIndexVersion(projectPath: string, version: number): void {
@@ -107,7 +108,7 @@ export function getMissingFeatures(currentVersion: number): string[] {
  *   Index outdated (v1 -> v2). Missing features:
  *     - AST metadata (function params, return types, async/exported flags)
  *     - Hierarchical code units (file > class > method)
- *   Run 'claudemem index --force' to upgrade.
+ *   Run 'mnemex index --force' to upgrade.
  */
 export function getUpgradeMessage(projectPath: string): string | null {
 	const currentVersion = getIndexVersion(projectPath);
@@ -125,7 +126,7 @@ export function getUpgradeMessage(projectPath: string): string | null {
 		lines.push(`  - ${description}`);
 	}
 
-	lines.push("Run 'claudemem index --force' to upgrade.");
+	lines.push("Run 'mnemex index --force' to upgrade.");
 
 	return lines.join("\n");
 }

@@ -1,5 +1,5 @@
 /**
- * Server configuration for the claudemem cloud test server.
+ * Server configuration for the mnemex cloud test server.
  */
 
 export interface ServerConfig {

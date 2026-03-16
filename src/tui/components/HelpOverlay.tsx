@@ -42,7 +42,10 @@ const viewBindings: Record<TabId, Keybinding[]> = {
 		{ key: "g / G", description: "Jump to top / bottom" },
 	],
 	graph: [
-		{ key: "Tab", description: "Cycle active pane (Callers -> Def -> Callees)" },
+		{
+			key: "Tab",
+			description: "Cycle active pane (Callers -> Def -> Callees)",
+		},
 		{ key: "Enter", description: "Drill into symbol" },
 		{ key: "Backspace / Alt+Left", description: "Go back" },
 		{ key: "Alt+Right", description: "Go forward" },
@@ -100,8 +103,7 @@ function BindingRow({ keyText, description }: BindingRowProps) {
 // ============================================================================
 
 export function HelpOverlay({ view, onClose }: HelpOverlayProps) {
-	const viewLabel =
-		view.charAt(0).toUpperCase() + view.slice(1);
+	const viewLabel = view.charAt(0).toUpperCase() + view.slice(1);
 
 	return (
 		<box
@@ -114,9 +116,7 @@ export function HelpOverlay({ view, onClose }: HelpOverlayProps) {
 			padding={1}
 		>
 			<box paddingBottom={1}>
-				<text fg={theme.primary}>
-					{"Keybindings - " + viewLabel + " View"}
-				</text>
+				<text fg={theme.primary}>{"Keybindings - " + viewLabel + " View"}</text>
 			</box>
 
 			<box paddingBottom={1}>

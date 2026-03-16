@@ -12,8 +12,8 @@ export function registerThinkTools(server: McpServer): void {
 	server.tool(
 		"think",
 		"A reflection scratchpad for organizing thoughts. " +
-		"This tool does nothing — it simply returns the thought. " +
-		"Use it to plan multi-step operations before executing them.",
+			"This tool does nothing — it simply returns the thought. " +
+			"Use it to plan multi-step operations before executing them.",
 		{
 			thought: z.string().describe("Your thought or reasoning"),
 		},

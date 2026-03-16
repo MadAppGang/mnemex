@@ -21,7 +21,14 @@ import { theme } from "../theme.js";
 // ============================================================================
 
 export function MapView() {
-	const { tracker, setActiveTab, pushNav, inputFocused, setInputFocused, activeTab } = useAppContext();
+	const {
+		tracker,
+		setActiveTab,
+		pushNav,
+		inputFocused,
+		setInputFocused,
+		activeTab,
+	} = useAppContext();
 	const {
 		entries,
 		filter,
@@ -41,7 +48,9 @@ export function MapView() {
 		if (activeTab === "map") {
 			setInputFocused(filterFocused);
 		}
-		return () => { if (activeTab === "map") setInputFocused(false); };
+		return () => {
+			if (activeTab === "map") setInputFocused(false);
+		};
 	}, [filterFocused, activeTab, setInputFocused]);
 
 	// Build flat list of navigable items for keyboard nav
@@ -58,11 +67,15 @@ export function MapView() {
 		}
 	}
 
-	const currentNavIdx = navItems.findIndex((item) => item.path === selectedPath);
+	const currentNavIdx = navItems.findIndex(
+		(item) => item.path === selectedPath,
+	);
 
 	useKeyboard((key) => {
 		if (key.name === "escape") {
-			if (filterFocused) { setFilterFocused(false); }
+			if (filterFocused) {
+				setFilterFocused(false);
+			}
 			return;
 		}
 		if (!filterFocused && key.name === "/") {
@@ -139,13 +152,10 @@ export function MapView() {
 	return (
 		<box flexDirection="column" width="100%" height="100%">
 			{/* Filter row */}
-			<box
-				flexDirection="row"
-				height={1}
-				paddingLeft={1}
-				paddingRight={1}
-			>
-				<text fg={filterFocused ? theme.primary : theme.muted}>{"Filter: "}</text>
+			<box flexDirection="row" height={1} paddingLeft={1} paddingRight={1}>
+				<text fg={filterFocused ? theme.primary : theme.muted}>
+					{"Filter: "}
+				</text>
 				<input
 					value={filter}
 					placeholder="path pattern..."
@@ -154,7 +164,9 @@ export function MapView() {
 					width={30}
 					textColor={theme.text}
 				/>
-				{!filterFocused && <text fg={theme.dimmed}>{"  / filter  r refresh"}</text>}
+				{!filterFocused && (
+					<text fg={theme.dimmed}>{"  / filter  r refresh"}</text>
+				)}
 				{filterFocused && <text fg={theme.dimmed}>{"  Esc to navigate"}</text>}
 				{loading && <text fg={theme.info}>{"  Loading..."}</text>}
 			</box>

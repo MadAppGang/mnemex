@@ -163,7 +163,7 @@ export function ModeSelectScreen({
 			{/* Header */}
 			<box flexDirection="row" paddingLeft={1} paddingTop={1}>
 				<text fg={theme.borderDim}>{"┌─"}</text>
-				<text fg={theme.primary}>{" claudemem "}</text>
+				<text fg={theme.primary}>{" mnemex "}</text>
 				<text fg={theme.borderDim}>{"─"}</text>
 				<text fg={theme.muted}>{" Setup "}</text>
 				<text fg={theme.borderDim}>{"─"}</text>

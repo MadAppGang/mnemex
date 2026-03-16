@@ -16,7 +16,7 @@ const LOG_LEVEL_ORDER: Record<LogLevel, number> = {
 
 /**
  * Stderr logger with configurable minimum log level.
- * Format: [claudemem] [LEVEL] message
+ * Format: [mnemex] [LEVEL] message
  */
 export class Logger {
 	private minLevel: number;
@@ -50,7 +50,7 @@ export class Logger {
 
 	private write(label: string, msg: string, args: unknown[]): void {
 		const extra = args.length > 0 ? " " + args.map(formatArg).join(" ") : "";
-		process.stderr.write(`[claudemem] [${label}] ${msg}${extra}\n`);
+		process.stderr.write(`[mnemex] [${label}] ${msg}${extra}\n`);
 	}
 }
 

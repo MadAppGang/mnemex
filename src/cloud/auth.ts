@@ -1,7 +1,7 @@
 /**
  * CloudAuthManager — file-based credential storage
  *
- * Stores OAuth/API tokens at ~/.claudemem/credentials.json with
+ * Stores OAuth/API tokens at ~/.mnemex/credentials.json with
  * mode 0600 (owner read/write only). Tokens are keyed by orgSlug
  * and checked for expiry before being returned.
  *
@@ -38,11 +38,11 @@ type CredentialStore = Record<string, StoredCredential>;
 // ============================================================================
 
 /** Path to the credentials file */
-const CREDENTIALS_PATH = join(homedir(), ".claudemem", "credentials.json");
-const CREDENTIALS_DIR = join(homedir(), ".claudemem");
+const CREDENTIALS_PATH = join(homedir(), ".mnemex", "credentials.json");
+const CREDENTIALS_DIR = join(homedir(), ".mnemex");
 
 /**
- * File-based credential manager for the claudemem cloud API.
+ * File-based credential manager for the mnemex cloud API.
  *
  * Tokens are stored per-org and checked for expiry before use.
  * The credentials file is created with 0600 permissions to prevent
@@ -134,7 +134,10 @@ export class CloudAuthManager {
 		}
 
 		const content = JSON.stringify(store, null, 2);
-		writeFileSync(this.credentialsPath, content, { encoding: "utf8", mode: 0o600 });
+		writeFileSync(this.credentialsPath, content, {
+			encoding: "utf8",
+			mode: 0o600,
+		});
 
 		// Ensure permissions are 0600 even if the file already existed with
 		// broader permissions (writeFileSync mode only sets on creation)
@@ -157,7 +160,7 @@ export class CloudAuthManager {
 
 /**
  * Create a CloudAuthManager using the default credentials path
- * (~/.claudemem/credentials.json).
+ * (~/.mnemex/credentials.json).
  */
 export function createCloudAuthManager(
 	credentialsPath?: string,
@@ -180,7 +183,7 @@ export function getDefaultAuthManager(): CloudAuthManager {
 	return _defaultManager;
 }
 
-// Ensure the .claudemem directory exists with correct permissions on first use
+// Ensure the .mnemex directory exists with correct permissions on first use
 if (!existsSync(CREDENTIALS_DIR)) {
 	try {
 		mkdirSync(CREDENTIALS_DIR, { recursive: true, mode: 0o700 });

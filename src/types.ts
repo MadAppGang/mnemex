@@ -1,5 +1,5 @@
 /**
- * Core types for claudemem
+ * Core types for mnemex
  */
 
 import type { TeamConfig } from "./cloud/types.js";
@@ -460,7 +460,7 @@ export interface GlobalConfig {
 	// ─── Self-Learning Settings ───
 	/**
 	 * Enable self-learning system (default: true).
-	 * When enabled, claudemem tracks interactions and learns from user corrections
+	 * When enabled, mnemex tracks interactions and learns from user corrections
 	 * to improve search quality over time.
 	 */
 	learning?: boolean;
@@ -487,7 +487,7 @@ export interface ProjectConfig {
 	useGitignore?: boolean;
 	/** Enable auto-indexing on search (default: true) */
 	autoIndex?: boolean;
-	/** Custom index directory path (default: .claudemem) */
+	/** Custom index directory path (default: .mnemex) */
 	indexDir?: string;
 
 	// ─── Enrichment Settings ───
@@ -512,7 +512,7 @@ export interface ProjectConfig {
 	// ─── Self-Learning Settings ───
 	/**
 	 * Enable/disable self-learning for this project (overrides global).
-	 * When enabled, claudemem learns from interactions to improve search quality.
+	 * When enabled, mnemex learns from interactions to improve search quality.
 	 */
 	learning?: boolean;
 
@@ -528,7 +528,7 @@ export interface ProjectConfig {
 	// ─── Cloud / Team Settings ───
 	/**
 	 * Team/org configuration for the cloud shared index.
-	 * When present, claudemem uploads to and queries the cloud index.
+	 * When present, mnemex uploads to and queries the cloud index.
 	 */
 	team?: TeamConfig;
 }

@@ -11,7 +11,11 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { ToolDeps } from "./deps.js";
 import { buildFreshness, errorResponse } from "./deps.js";
-import { LSP_METHODS, pathToUri, type WorkspaceEdit } from "../../lsp/protocol.js";
+import {
+	LSP_METHODS,
+	pathToUri,
+	type WorkspaceEdit,
+} from "../../lsp/protocol.js";
 import { WorkspaceEditApplier } from "../../editor/workspace-edit.js";
 
 export function registerRenameTools(server: McpServer, deps: ToolDeps): void {
@@ -22,7 +26,7 @@ export function registerRenameTools(server: McpServer, deps: ToolDeps): void {
 	server.tool(
 		"rename_symbol",
 		"Rename a symbol across the codebase. Uses LSP textDocument/rename when available " +
-		"for type-aware renaming. Falls back to text replacement with a warning.",
+			"for type-aware renaming. Falls back to text replacement with a warning.",
 		{
 			symbol: z.string().describe("Current symbol name"),
 			newName: z.string().describe("New name for the symbol"),
@@ -122,7 +126,8 @@ export function registerRenameTools(server: McpServer, deps: ToolDeps): void {
 									renamed: symbolName,
 									newName,
 									method: "text-search",
-									warning: "Text-based rename — may miss type-resolved references. Review changes carefully.",
+									warning:
+										"Text-based rename — may miss type-resolved references. Review changes carefully.",
 									filesAffected: Array.from(filesToEdit),
 									dryRun: true,
 									...buildFreshness(stateManager, startTime),

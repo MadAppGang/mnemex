@@ -93,11 +93,7 @@ function FileRow({
 	const normalizedAgg = Math.min(1, aggregatePageRank / 0.3);
 
 	return (
-		<box
-			flexDirection="row"
-			paddingLeft={2}
-			height={1}
-		>
+		<box flexDirection="row" paddingLeft={2} height={1}>
 			<text fg={isSelected ? theme.primary : theme.warning}>{icon}</text>
 			<text fg={isSelected ? theme.text : theme.primary} width={40}>
 				{filePath}
@@ -106,7 +102,9 @@ function FileRow({
 				{symbolCount + " sym"}
 			</text>
 			<ScoreBar score={normalizedAgg} width={8} showPercent={false} />
-			<text fg={theme.dimmed}>{" agg:" + formatPageRank(aggregatePageRank)}</text>
+			<text fg={theme.dimmed}>
+				{" agg:" + formatPageRank(aggregatePageRank)}
+			</text>
 		</box>
 	);
 }
@@ -125,7 +123,7 @@ export function SymbolTree({
 	if (entries.length === 0) {
 		return (
 			<box padding={2}>
-				<text fg={theme.muted}>No symbols indexed. Run: claudemem index</text>
+				<text fg={theme.muted}>No symbols indexed. Run: mnemex index</text>
 			</box>
 		);
 	}
@@ -158,7 +156,9 @@ export function SymbolTree({
 										kind={sym.kind}
 										pagerankScore={sym.pagerankScore}
 										line={sym.line}
-										isExported={sym.kind !== "variable" && !sym.name.startsWith("_")}
+										isExported={
+											sym.kind !== "variable" && !sym.name.startsWith("_")
+										}
 									/>
 								</box>
 							))}

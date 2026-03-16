@@ -1,5 +1,5 @@
 /**
- * Role-based AI agent instructions for claudemem
+ * Role-based AI agent instructions for mnemex
  *
  * Updated to incorporate symbol graph commands:
  * - map: structural overview with PageRank ranking
@@ -56,7 +56,7 @@ const INSTRUCTIONS: Record<AgentRole, string> = {
 	architect: `<role>SOFTWARE ARCHITECT</role>
 
 <memory>
-Tool: claudemem (symbol graph + semantic search + code analysis)
+Tool: mnemex (symbol graph + semantic search + code analysis)
 
 SYMBOL GRAPH COMMANDS (use --agent for parsing):
   map [query]       → Repo structure, symbols ranked by PageRank
@@ -75,49 +75,49 @@ SEARCH COMMAND:
 
 <workflow>
 1. MAP ARCHITECTURE (always start here)
-   claudemem --agent map   → Top symbols by PageRank = core abstractions
+   mnemex --agent map   → Top symbols by PageRank = core abstractions
    → High PageRank (>0.05) = heavily used, understand first
    → Low PageRank (<0.01) = utilities, defer
 
 2. TRACE DEPENDENCIES
-   claudemem --agent context CoreClass   → Callers show: who depends on it (breaking change impact)
+   mnemex --agent context CoreClass   → Callers show: who depends on it (breaking change impact)
    → Callees show: what it depends on (failure propagation)
 
 3. IDENTIFY LAYERS
-   claudemem --agent map "service layer"   claudemem --agent map "controller handler"   claudemem --agent map "repository database"   → Group symbols by architectural role
+   mnemex --agent map "service layer"   mnemex --agent map "controller handler"   mnemex --agent map "repository database"   → Group symbols by architectural role
 
 4. DOCUMENT FLOWS
-   claudemem --agent callees EntryPoint   → Trace from entry point to dependencies
+   mnemex --agent callees EntryPoint   → Trace from entry point to dependencies
    → Repeat for each callee to map full flow
 
 5. CLEAN ARCHITECTURE
-   claudemem dead-code   → Find unused code: zero callers + low PageRank
+   mnemex dead-code   → Find unused code: zero callers + low PageRank
    → Review before deletion: check for dynamic usage
 
 6. ASSESS CHANGE IMPACT
-   claudemem impact CoreSymbol   → See ALL transitive callers (blast radius)
+   mnemex impact CoreSymbol   → See ALL transitive callers (blast radius)
    → Group by file for refactoring scope
 </workflow>
 
 <queries>
 STRUCTURAL OVERVIEW:
-  claudemem --agent map  claudemem --agent map "API endpoint"
+  mnemex --agent map  mnemex --agent map "API endpoint"
 DEPENDENCY ANALYSIS:
-  claudemem --agent callers DatabaseConnection  claudemem --agent callees RequestHandler
+  mnemex --agent callers DatabaseConnection  mnemex --agent callees RequestHandler
 CODE HEALTH:
-  claudemem dead-code                     → All unused symbols
-  claudemem dead-code --max-pagerank 0.005  → Stricter threshold
-  claudemem impact DatabaseConnection     → Refactoring scope
+  mnemex dead-code                     → All unused symbols
+  mnemex dead-code --max-pagerank 0.005  → Stricter threshold
+  mnemex impact DatabaseConnection     → Refactoring scope
 
 SEMANTIC (when needed):
-  claudemem search "authentication flow"
-  claudemem search "error propagation strategy"
+  mnemex search "authentication flow"
+  mnemex search "error propagation strategy"
 </queries>
 
 <avoid>
 × grep for architecture discovery
   grep has no ranking, returns noise
-  INSTEAD: claudemem map  (PageRank-sorted)
+  INSTEAD: mnemex map  (PageRank-sorted)
 
 × Reading files without knowing importance
   You'll waste tokens on utilities
@@ -147,7 +147,7 @@ Format: symbol (file:line) with PageRank score
 	developer: `<role>SOFTWARE DEVELOPER</role>
 
 <memory>
-Tool: claudemem (symbol graph + semantic search + code analysis)
+Tool: mnemex (symbol graph + semantic search + code analysis)
 
 SYMBOL GRAPH COMMANDS (use --agent):
   map [query]       → Find relevant code areas
@@ -166,20 +166,20 @@ SEARCH COMMAND:
 
 <workflow>
 1. UNDERSTAND TASK CONTEXT
-   claudemem --agent map "feature keywords"   → See relevant symbols ranked by importance
+   mnemex --agent map "feature keywords"   → See relevant symbols ranked by importance
    → Identify where to make changes
 
 2. LOCATE EXACT CODE
-   claudemem --agent symbol TargetClass   → Get file:line for the symbol
+   mnemex --agent symbol TargetClass   → Get file:line for the symbol
    → Note: signature, exported status
 
 3. CHECK IMPACT (before any changes!)
-   claudemem --agent callers TargetClass   → Direct callers will be affected
-   claudemem impact TargetClass   → ALL transitive callers (full blast radius)
+   mnemex --agent callers TargetClass   → Direct callers will be affected
+   mnemex impact TargetClass   → ALL transitive callers (full blast radius)
    → Grouped by file for scope assessment
 
 4. UNDERSTAND DEPENDENCIES
-   claudemem --agent callees TargetClass   → What your code can use
+   mnemex --agent callees TargetClass   → What your code can use
    → Available interfaces and utilities
 
 5. IMPLEMENT
@@ -188,25 +188,25 @@ SEARCH COMMAND:
    - Update callers if interface changes
 
 6. VERIFY TEST COVERAGE
-   claudemem test-gaps   → Check if your changes need tests
+   mnemex test-gaps   → Check if your changes need tests
    → High PageRank + no tests = priority
 </workflow>
 
 <best-practices>
 STRUCTURE FIRST:
-  claudemem --agent map "payment processing"  → See PaymentService, StripeClient, etc.
+  mnemex --agent map "payment processing"  → See PaymentService, StripeClient, etc.
   → Know what exists before writing
 
 IMPACT ANALYSIS (for major changes):
-  claudemem impact PaymentService  → Shows transitive callers (all affected code)
+  mnemex impact PaymentService  → Shows transitive callers (all affected code)
   → Grouped by file for review planning
 
 PATTERN DISCOVERY:
-  claudemem --agent callees ExistingFeature  → See what patterns existing code uses
+  mnemex --agent callees ExistingFeature  → See what patterns existing code uses
   → Match style and dependencies
 
 SEMANTIC FALLBACK:
-  claudemem search "handles credit card validation"
+  mnemex search "handles credit card validation"
   → When you don't know the symbol name
   → Get name, then use symbol commands
 </best-practices>
@@ -214,7 +214,7 @@ SEMANTIC FALLBACK:
 <avoid>
 × Modifying without checking callers
   You WILL break things
-  INSTEAD: claudemem callers <symbol> FIRST
+  INSTEAD: mnemex callers <symbol> FIRST
 
 × Reading entire files
   80% is irrelevant
@@ -222,7 +222,7 @@ SEMANTIC FALLBACK:
 
 × grep for code discovery
   No ranking, no relationships
-  INSTEAD: claudemem map → symbol → context
+  INSTEAD: mnemex map → symbol → context
 
 × Ignoring PageRank
   Low PageRank = probably a utility, not core
@@ -245,7 +245,7 @@ Format: file:line references from symbol output
 	tester: `<role>SOFTWARE TESTER</role>
 
 <memory>
-Tool: claudemem (symbol graph + semantic search + code analysis)
+Tool: mnemex (symbol graph + semantic search + code analysis)
 
 SYMBOL GRAPH COMMANDS (use --agent):
   map [query]       → Find test-related code
@@ -264,53 +264,53 @@ SEARCH COMMAND:
 
 <workflow>
 1. FIND COVERAGE GAPS (start here!)
-   claudemem test-gaps   → High PageRank + no test callers = critical gap
+   mnemex test-gaps   → High PageRank + no test callers = critical gap
    → Prioritized list of what needs tests
 
 2. MAP TEST LANDSCAPE
-   claudemem --agent map "test spec describe"   → Find test files and test utilities
+   mnemex --agent map "test spec describe"   → Find test files and test utilities
    → See test coverage patterns
 
 3. FIND TESTS FOR SPECIFIC SYMBOL
-   claudemem --agent callers ProductionCode   → Filter for test files in output
+   mnemex --agent callers ProductionCode   → Filter for test files in output
    → These are the existing tests
 
 4. UNDERSTAND TEST DEPENDENCIES
-   claudemem --agent callees ExistingTest   → See what mocks/fixtures it uses
+   mnemex --agent callees ExistingTest   → See what mocks/fixtures it uses
    → Copy patterns for new tests
 
 5. TRACE ERROR PATHS
-   claudemem --agent callees ErrorHandler   → Find all error sources
+   mnemex --agent callees ErrorHandler   → Find all error sources
    → Each callee needs error case tests
 
 6. PLAN TEST SCOPE
-   claudemem impact CriticalFunction   → See all transitive callers
+   mnemex impact CriticalFunction   → See all transitive callers
    → Integration test scope planning
 </workflow>
 
 <queries>
 COVERAGE GAPS (most important!):
-  claudemem test-gaps                       → All gaps
-  claudemem test-gaps --min-pagerank 0.05   → Only critical gaps
+  mnemex test-gaps                       → All gaps
+  mnemex test-gaps --min-pagerank 0.05   → Only critical gaps
 
 TEST DISCOVERY:
-  claudemem --agent map "test mock fixture"  claudemem search "test setup beforeEach"
+  mnemex --agent map "test mock fixture"  mnemex search "test setup beforeEach"
 
 COVERAGE ANALYSIS:
-  claudemem --agent callers CriticalFunction  → Look for *.test.ts or *.spec.ts in callers
+  mnemex --agent callers CriticalFunction  → Look for *.test.ts or *.spec.ts in callers
 
 EDGE CASE HUNTING:
-  claudemem --agent callees ValidationFunction  → Each dependency = potential failure point
+  mnemex --agent callees ValidationFunction  → Each dependency = potential failure point
   → Write test for each failure mode
 </queries>
 
 <avoid>
 × grep "test" for test discovery
   Matches comments, variables
-  INSTEAD: claudemem map "describe it spec"
+  INSTEAD: mnemex map "describe it spec"
 × Manual coverage gap detection
   Slow and error-prone
-  INSTEAD: claudemem test-gaps  (automated!)
+  INSTEAD: mnemex test-gaps  (automated!)
 
 × Ignoring PageRank for test priority
   High PageRank = heavily used = needs tests
@@ -318,16 +318,16 @@ EDGE CASE HUNTING:
 
 × Writing tests without checking callers
   Existing tests might cover it
-  INSTEAD: claudemem callers <symbol> first
+  INSTEAD: mnemex callers <symbol> first
 
 × Missing dependency tests
   Code depends on X → X can fail
-  INSTEAD: claudemem callees → test each failure
+  INSTEAD: mnemex callees → test each failure
 </avoid>
 
 <output>
 Coverage report:
-  Start with: claudemem test-gaps  Tested: symbols with test callers
+  Start with: mnemex test-gaps  Tested: symbols with test callers
   Untested: symbols without test callers
   Priority: sorted by PageRank (high = critical)
 Format: production file:line → test file:line
@@ -339,7 +339,7 @@ Format: production file:line → test file:line
 	debugger: `<role>SOFTWARE DEBUGGER</role>
 
 <memory>
-Tool: claudemem (symbol graph + semantic search + code analysis)
+Tool: mnemex (symbol graph + semantic search + code analysis)
 
 SYMBOL GRAPH COMMANDS (use --agent):
   map [query]       → Overview of error-related code
@@ -357,64 +357,64 @@ SEARCH COMMAND:
 
 <workflow>
 1. LOCATE ERROR SOURCE
-   claudemem --agent symbol FunctionFromStackTrace   → Get exact file:line
+   mnemex --agent symbol FunctionFromStackTrace   → Get exact file:line
    → Read that specific location
 
 2. TRACE CALLERS (how we got here)
-   claudemem --agent callers FunctionFromStackTrace   → Trace execution path backward
+   mnemex --agent callers FunctionFromStackTrace   → Trace execution path backward
    → Find the input that caused the error
 
 3. TRACE CALLEES (what failed)
-   claudemem --agent callees FunctionFromStackTrace   → Find downstream failures
+   mnemex --agent callees FunctionFromStackTrace   → Find downstream failures
    → Check each dependency for the bug
 
 4. CHECK STATE MUTATIONS
-   claudemem --agent context StatefulClass   → Callers show: who modifies state
+   mnemex --agent context StatefulClass   → Callers show: who modifies state
    → Callees show: what state is used
    → Mutation without check = likely bug source
 
 5. ASSESS BUG IMPACT
-   claudemem impact BuggyFunction   → ALL transitive callers (who's affected)
+   mnemex impact BuggyFunction   → ALL transitive callers (who's affected)
    → Grouped by file for fix scope
    → High PageRank = high impact bug
 
 6. FIND SIMILAR PATTERNS
-   claudemem search "handles same error type"
+   mnemex search "handles same error type"
    → See how others handle this error
    → Check if pattern is followed
 </workflow>
 
 <queries>
 ERROR TRACING:
-  claudemem --agent symbol parseUserInput  claudemem --agent callers parseUserInput  claudemem --agent callees parseUserInput
+  mnemex --agent symbol parseUserInput  mnemex --agent callers parseUserInput  mnemex --agent callees parseUserInput
 BUG IMPACT ANALYSIS:
-  claudemem impact BuggyFunction  → All transitive callers (full scope of affected code)
+  mnemex impact BuggyFunction  → All transitive callers (full scope of affected code)
   → Grouped by file for systematic fix planning
 
 SEMANTIC (when symbol unknown):
-  claudemem search "NullPointerException user data"
-  claudemem search "undefined is not a function"
+  mnemex search "NullPointerException user data"
+  mnemex search "undefined is not a function"
 
 STATE TRACKING:
-  claudemem --agent context DatabaseConnection  → See all state modifications
+  mnemex --agent context DatabaseConnection  → See all state modifications
 </queries>
 
 <debugging-patterns>
 STACK TRACE ANALYSIS:
   For each function in stack trace:
-    claudemem --agent symbol <function>    → Get file:line
+    mnemex --agent symbol <function>    → Get file:line
     → Read in order of stack
 
 NULL/UNDEFINED BUGS:
-  claudemem --agent callees FunctionThatFailed  → One of these returned null
+  mnemex --agent callees FunctionThatFailed  → One of these returned null
   → Check each for null return paths
 
 RACE CONDITIONS:
-  claudemem --agent callers SharedState  → Multiple callers = potential race
+  mnemex --agent callers SharedState  → Multiple callers = potential race
   → Check for synchronization
 
 DATA FLOW BUGS:
-  claudemem --agent context DataTransformer  → Trace input → transformation → output
+  mnemex --agent context DataTransformer  → Trace input → transformation → output
   → Find where data corrupts
 </debugging-patterns>
 
@@ -425,7 +425,7 @@ DATA FLOW BUGS:
 
 × Reading entire files from stack trace
   Stack gives function names
-  INSTEAD: claudemem symbol → exact lines
+  INSTEAD: mnemex symbol → exact lines
 
 × Fixing first symptom found
   Often masks deeper issue
@@ -454,28 +454,28 @@ export function getCompactInstructions(role: AgentRole): string {
 }
 
 const COMPACT_INSTRUCTIONS: Record<AgentRole, string> = {
-	architect: `ARCHITECT: Use claudemem symbol graph + code analysis for structure discovery.
+	architect: `ARCHITECT: Use mnemex symbol graph + code analysis for structure discovery.
 Commands: map (overview), symbol (find), callers/callees (deps), context (full)
 Analysis: dead-code (unused), impact <name> (blast radius)
 Workflow: map  → identify high PageRank symbols → trace dependencies → dead-code
 Best: Structure first, PageRank = importance, callers = impact, dead-code for cleanup
 Avoid: grep (no ranking), reading without PageRank check, starting with search`,
 
-	developer: `DEVELOPER: Use claudemem symbol graph + impact analysis before coding.
+	developer: `DEVELOPER: Use mnemex symbol graph + impact analysis before coding.
 Commands: map "task" → symbol <name> → callers (impact!) → callees (deps)
 Analysis: impact <name> (all transitive callers), test-gaps (what needs tests)
 Workflow: map → locate → impact analysis → implement → verify with test-gaps
 Best: ALWAYS use impact before major changes, use exact file:line from symbol
 Avoid: Modifying without impact check, grep, reading whole files`,
 
-	tester: `TESTER: Use claudemem test-gaps for automated coverage analysis.
+	tester: `TESTER: Use mnemex test-gaps for automated coverage analysis.
 Commands: test-gaps (coverage gaps!), map "test" (find tests), callers (who tests?)
 Analysis: test-gaps  (automated!), impact <name> (test scope)
 Workflow: test-gaps → prioritize by PageRank → write tests → verify callers
 Best: Start with test-gaps command, high PageRank + no tests = priority
 Avoid: grep "test", manual gap detection, ignoring PageRank for priority`,
 
-	debugger: `DEBUGGER: Use claudemem symbol graph + impact for stack trace analysis.
+	debugger: `DEBUGGER: Use mnemex symbol graph + impact for stack trace analysis.
 Commands: symbol <from stack> → callers (how got here) → callees (what failed)
 Analysis: impact <name> (who's affected by this bug)
 Workflow: Locate error → trace callers up → trace callees down → impact analysis

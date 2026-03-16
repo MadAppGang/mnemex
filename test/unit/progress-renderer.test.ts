@@ -34,9 +34,7 @@ function createTestProgressRenderer() {
 		for (const phaseName of phaseOrder) {
 			const phase = phases.get(phaseName)!;
 			const pct =
-				phase.total > 0
-					? Math.round((phase.completed / phase.total) * 100)
-					: 0;
+				phase.total > 0 ? Math.round((phase.completed / phase.total) * 100) : 0;
 			const detail = phase.isComplete ? "done" : phase.detail;
 			// Phase lines end with \n
 			output.push(`\r${phaseName} ${pct}% ${detail}\x1b[K\n`);
@@ -83,7 +81,13 @@ function createTestProgressRenderer() {
 		}
 	}
 
-	return { render, update, output, phaseOrder, maxLinesWritten: () => maxLinesWritten };
+	return {
+		render,
+		update,
+		output,
+		phaseOrder,
+		maxLinesWritten: () => maxLinesWritten,
+	};
 }
 
 describe("Progress Renderer", () => {

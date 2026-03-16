@@ -42,9 +42,7 @@ export class MockEmbeddingsClient implements IEmbeddingsClient {
 		return this.textToVector(text);
 	}
 
-	async embed(
-		texts: string[],
-	): Promise<EmbedResult> {
+	async embed(texts: string[]): Promise<EmbedResult> {
 		const embeddings = texts.map((t) => this.textToVector(t));
 		return { embeddings };
 	}
@@ -75,9 +73,8 @@ export class MockEmbeddingsClient implements IEmbeddingsClient {
  * Exported so it can be used in multi-user-factory.ts with a consistent algorithm.
  */
 export function syntheticVector(seed: number, dimension = 8): number[] {
-	const v = Array.from(
-		{ length: dimension },
-		(_, i) => Math.sin(seed * 1.7 + i * 0.5),
+	const v = Array.from({ length: dimension }, (_, i) =>
+		Math.sin(seed * 1.7 + i * 0.5),
 	);
 	const norm = Math.sqrt(v.reduce((s, x) => s + x * x, 0));
 	return v.map((x) => x / norm);

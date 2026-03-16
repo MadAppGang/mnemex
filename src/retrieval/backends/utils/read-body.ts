@@ -23,7 +23,7 @@ export function readSymbolBody(
 	endLine: number,
 ): { body: string; stale: false } | { body: null; stale: true } {
 	const absPath = resolve(workspaceRoot, filePath);
-	if (!absPath.startsWith(workspaceRoot + "/")) {
+	if (!absPath.startsWith(`${workspaceRoot}/`)) {
 		throw new Error(`Path traversal attempt: ${filePath}`);
 	}
 

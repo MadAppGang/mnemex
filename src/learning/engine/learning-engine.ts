@@ -332,7 +332,7 @@ export class LearningEngine {
 	 * Returns null if not extractable.
 	 */
 	private extractFilePathFromId(id: string): string | null {
-		// Chunk IDs in claudemem are SHA256 hashes, not file paths
+		// Chunk IDs in mnemex are SHA256 hashes, not file paths
 		// We'd need to look up the chunk in LanceDB to get the file path
 		// For now, return null and handle metadata lookup separately
 		return null;

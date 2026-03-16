@@ -1,5 +1,5 @@
 /**
- * AdminApp — root component for the claudemem admin TUI.
+ * AdminApp — root component for the mnemex admin TUI.
  *
  * State machine:
  *   "list"           — shows KeyListView
@@ -132,7 +132,9 @@ export function AdminApp({ endpoint, masterKey, quit }: AdminAppProps) {
 					paddingBottom={1}
 				>
 					<box>
-						<text fg={theme.text}>{"Are you sure you want to delete this key?"}</text>
+						<text fg={theme.text}>
+							{"Are you sure you want to delete this key?"}
+						</text>
 					</box>
 
 					<box marginTop={1} flexDirection="row">
@@ -146,7 +148,9 @@ export function AdminApp({ endpoint, masterKey, quit }: AdminAppProps) {
 
 					<box marginTop={1} flexDirection="row">
 						<text fg={theme.error}>{"  ! "}</text>
-						<text fg={theme.dimmed}>{"This action cannot be undone. All usage data will be lost."}</text>
+						<text fg={theme.dimmed}>
+							{"This action cannot be undone. All usage data will be lost."}
+						</text>
 					</box>
 				</box>
 

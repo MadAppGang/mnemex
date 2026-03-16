@@ -48,7 +48,10 @@ export class EditValidator {
 			throw new Error(`Path resolution failed: ${filePath}`);
 		}
 
-		if (!resolvedPath.startsWith(resolvedRoot + "/") && resolvedPath !== resolvedRoot) {
+		if (
+			!resolvedPath.startsWith(resolvedRoot + "/") &&
+			resolvedPath !== resolvedRoot
+		) {
 			throw new Error(
 				`Path traversal blocked: ${filePath} resolves outside workspace`,
 			);
@@ -74,7 +77,7 @@ export class EditValidator {
 		if (currentHash !== state.contentHash) {
 			throw new Error(
 				`File ${filePath} has been modified since last index. ` +
-				`Run 'claudemem index' or wait for auto-reindex.`,
+					`Run 'mnemex index' or wait for auto-reindex.`,
 			);
 		}
 
@@ -112,7 +115,7 @@ export class EditValidator {
 		if (hasError) {
 			throw new Error(
 				`Syntax error in edited content for ${filePath}. ` +
-				`The edit would produce invalid ${lang} code.`,
+					`The edit would produce invalid ${lang} code.`,
 			);
 		}
 

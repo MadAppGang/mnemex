@@ -2,7 +2,7 @@
  * Git Hook Manager
  *
  * Manages installation and removal of git hooks for auto-indexing.
- * Supports post-commit hook that runs claudemem index after each commit.
+ * Supports post-commit hook that runs mnemex index after each commit.
  */
 
 import {
@@ -30,17 +30,17 @@ export interface HookStatus {
 // Hook Template
 // ============================================================================
 
-const HOOK_MARKER = "# claudemem-auto-index";
+const HOOK_MARKER = "# mnemex-auto-index";
 
 const POST_COMMIT_HOOK = `#!/bin/sh
 ${HOOK_MARKER}
 # Auto-index changed files after each commit
-# Installed by: claudemem hooks install
+# Installed by: mnemex hooks install
 
 # Run in background to not block git
 (
-  if command -v claudemem >/dev/null 2>&1; then
-    claudemem index --quiet 2>&1 | logger -t claudemem-hook || true
+  if command -v mnemex >/dev/null 2>&1; then
+    mnemex index --quiet 2>&1 | logger -t mnemex-hook || true
   fi
 ) &
 `;
@@ -134,11 +134,11 @@ export class GitHookManager {
 				}
 
 				if (inOurSection) {
-					// Skip until we hit a blank line followed by non-claudemem content
+					// Skip until we hit a blank line followed by non-mnemex content
 					if (
 						line.trim() === "" ||
 						line.startsWith("# ") ||
-						line.includes("claudemem")
+						line.includes("mnemex")
 					) {
 						continue;
 					}

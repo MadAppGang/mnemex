@@ -5,7 +5,11 @@
  */
 
 import type { DoctorResult, ContextFileDiagnosis } from "./types.js";
-import { classifySeverity, formatHealthBar, getHealthSymbol } from "./scorer.js";
+import {
+	classifySeverity,
+	formatHealthBar,
+	getHealthSymbol,
+} from "./scorer.js";
 
 /**
  * Color constants for terminal output
@@ -29,14 +33,10 @@ export function formatDoctorReport(result: DoctorResult): string {
 
 	// Header
 	lines.push("");
-	lines.push(
-		`${c.orange}${c.bold}  CLAUDEMEM CONTEXT FILE DOCTOR${c.reset}`,
-	);
+	lines.push(`${c.orange}${c.bold}  MNEMEX CONTEXT FILE DOCTOR${c.reset}`);
 	lines.push("");
 	lines.push(`  Project: ${result.projectPath}`);
-	lines.push(
-		`  Timestamp: ${new Date(result.timestamp).toLocaleString()}`,
-	);
+	lines.push(`  Timestamp: ${new Date(result.timestamp).toLocaleString()}`);
 	lines.push("");
 
 	// Overall health
@@ -46,7 +46,9 @@ export function formatDoctorReport(result: DoctorResult): string {
 	const severityColor =
 		severity === "good" ? c.green : severity === "warning" ? c.yellow : c.red;
 
-	lines.push(`  ${c.bold}Overall Health${c.reset} ${severityColor}${healthSymbol}${c.reset}`);
+	lines.push(
+		`  ${c.bold}Overall Health${c.reset} ${severityColor}${healthSymbol}${c.reset}`,
+	);
 	lines.push(`  ${healthBar}`);
 	lines.push("");
 
@@ -59,7 +61,9 @@ export function formatDoctorReport(result: DoctorResult): string {
 		lines.push("    - AGENTS.md (for Claude Code integration)");
 		lines.push("    - .cursorrules (for Cursor IDE)");
 	} else {
-		lines.push(`  ${c.bold}Files Analyzed${c.reset} (${result.filesFound.length})`);
+		lines.push(
+			`  ${c.bold}Files Analyzed${c.reset} (${result.filesFound.length})`,
+		);
 		lines.push("");
 
 		// Per-file analysis
@@ -121,7 +125,9 @@ export function formatDoctorReport(result: DoctorResult): string {
 	}
 
 	// Footer
-	lines.push(`  ${c.dim}Run 'claudemem doctor --help' for more information${c.reset}`);
+	lines.push(
+		`  ${c.dim}Run 'mnemex doctor --help' for more information${c.reset}`,
+	);
 	lines.push("");
 
 	return lines.join("\n");

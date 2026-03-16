@@ -13,10 +13,7 @@ import {
 	ReferenceGraphManager,
 	createReferenceGraphManager,
 } from "../core/reference-graph.js";
-import {
-	RepoMapGenerator,
-	createRepoMapGenerator,
-} from "../core/repo-map.js";
+import { RepoMapGenerator, createRepoMapGenerator } from "../core/repo-map.js";
 import { getIndexDbPath } from "../config.js";
 import type { Logger } from "./logger.js";
 
@@ -89,7 +86,7 @@ export class IndexCache {
 		const dbPath = getIndexDbPath(this.projectPath);
 		if (!existsSync(dbPath)) {
 			throw new Error(
-				`No index found at ${this.projectPath}. Run 'claudemem index' first.`,
+				`No index found at ${this.projectPath}. Run 'mnemex index' first.`,
 			);
 		}
 

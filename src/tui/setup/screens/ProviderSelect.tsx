@@ -179,7 +179,7 @@ export function ProviderSelectScreen({
 			{/* Header */}
 			<box flexDirection="row" paddingLeft={1} paddingTop={1}>
 				<text fg={theme.borderDim}>{"┌─"}</text>
-				<text fg={theme.primary}>{" claudemem "}</text>
+				<text fg={theme.primary}>{" mnemex "}</text>
 				<text fg={theme.borderDim}>{"─"}</text>
 				<text fg={theme.muted}>{" Setup "}</text>
 				<text fg={theme.borderDim}>{"─"}</text>
@@ -188,7 +188,9 @@ export function ProviderSelectScreen({
 			</box>
 
 			<box paddingLeft={3} paddingTop={1}>
-				<text fg={theme.dimmed}>{"Select the embedding provider for local indexing:"}</text>
+				<text fg={theme.dimmed}>
+					{"Select the embedding provider for local indexing:"}
+				</text>
 			</box>
 
 			{/* Provider list */}
@@ -217,7 +219,9 @@ export function ProviderSelectScreen({
 									marginTop={1}
 									marginLeft={4}
 									borderStyle="single"
-									borderColor={customUrl.length > 0 ? theme.primary : theme.border}
+									borderColor={
+										customUrl.length > 0 ? theme.primary : theme.border
+									}
 									paddingLeft={2}
 									paddingRight={2}
 									paddingTop={1}

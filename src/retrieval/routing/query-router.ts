@@ -342,8 +342,6 @@ export class QueryRouter {
 					useHybrid: true,
 					weights: { vector: 0.8, keyword: 0.2 },
 				};
-
-			case "semantic":
 			default:
 				return {
 					primary: "vector",

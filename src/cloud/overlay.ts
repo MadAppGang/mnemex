@@ -3,7 +3,7 @@
  *
  * Layered on top of the cloud index to provide up-to-date search results
  * for files that have not yet been committed and uploaded. The overlay is
- * stored at `{projectPath}/.claudemem/overlay/` and uses the same
+ * stored at `{projectPath}/.mnemex/overlay/` and uses the same
  * VectorStore + chunkFileByPath infrastructure as the main index.
  *
  * Staleness detection uses a SHA-256 fingerprint computed from each dirty
@@ -12,7 +12,13 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	readFileSync,
+	statSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { chunkFileByPath } from "../core/chunker.js";
 import { VectorStore } from "../core/store.js";
@@ -29,7 +35,7 @@ export interface OverlayIndexOptions {
 	projectPath: string;
 	/**
 	 * Directory where the overlay LanceDB database is stored.
-	 * Typically `{projectPath}/.claudemem/overlay`.
+	 * Typically `{projectPath}/.mnemex/overlay`.
 	 */
 	overlayDir: string;
 	/** Embeddings client used to generate vectors for dirty file chunks */
@@ -105,7 +111,9 @@ export class OverlayIndex implements IOverlayIndex {
 		await this.ensureInitialized();
 
 		const filesToProcess = dirtyFiles.filter((f) => f.status !== "deleted");
-		report(`Overlay: rebuilding from ${filesToProcess.length} dirty file(s)...`);
+		report(
+			`Overlay: rebuilding from ${filesToProcess.length} dirty file(s)...`,
+		);
 
 		// Collect chunks from all dirty files
 		const allChunksWithContent: Array<{
@@ -130,7 +138,9 @@ export class OverlayIndex implements IOverlayIndex {
 			}
 		}
 
-		report(`Overlay: collected ${allChunksWithContent.length} chunk(s), embedding...`);
+		report(
+			`Overlay: collected ${allChunksWithContent.length} chunk(s), embedding...`,
+		);
 
 		// Clear existing overlay
 		await this.vectorStore.clear();
@@ -159,7 +169,9 @@ export class OverlayIndex implements IOverlayIndex {
 		// Persist fingerprint
 		this.writeFingerprint(dirtyFiles);
 
-		report(`Overlay: indexed ${chunksWithEmbedding.length} chunk(s) from ${filesToProcess.length} file(s).`);
+		report(
+			`Overlay: indexed ${chunksWithEmbedding.length} chunk(s) from ${filesToProcess.length} file(s).`,
+		);
 	}
 
 	/** Search the overlay index */
@@ -267,7 +279,7 @@ export class OverlayIndex implements IOverlayIndex {
 /**
  * Create and return a new OverlayIndex.
  *
- * The overlay directory is typically `{projectPath}/.claudemem/overlay`.
+ * The overlay directory is typically `{projectPath}/.mnemex/overlay`.
  * The VectorStore inside is lazily initialized on first use.
  */
 export async function createOverlayIndex(

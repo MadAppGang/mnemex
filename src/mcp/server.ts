@@ -2,7 +2,7 @@
  * MCP Server Entry Point
  *
  * Wires together all MCP infrastructure components and registers all tools.
- * Launched when claudemem is started with --mcp flag.
+ * Launched when mnemex is started with --mcp flag.
  *
  * Startup sequence:
  * 1. Parse env vars → loadMcpConfig()
@@ -75,16 +75,18 @@ const SERVER_VERSION: string = readVersion();
 
 /**
  * Run a blocking initial index when no index.db exists yet.
- * Spawns `claudemem index --quiet` and waits for it to complete.
+ * Spawns `mnemex index --quiet` and waits for it to complete.
  */
 async function runBlockingIndex(
 	workspaceRoot: string,
 	logger: ReturnType<typeof createLogger>,
 ): Promise<void> {
 	return new Promise((resolve, reject) => {
-		logger.info("No index found — running initial index before starting server");
+		logger.info(
+			"No index found — running initial index before starting server",
+		);
 
-		const child = spawn("claudemem", ["index", "--quiet"], {
+		const child = spawn("mnemex", ["index", "--quiet"], {
 			cwd: workspaceRoot,
 			stdio: "ignore",
 		});
@@ -95,13 +97,15 @@ async function runBlockingIndex(
 				resolve();
 			} else {
 				// Non-zero exit: warn but don't hard-fail — tools will report "no index" gracefully
-				logger.warn(`Initial index exited with code ${code ?? "null"}, continuing`);
+				logger.warn(
+					`Initial index exited with code ${code ?? "null"}, continuing`,
+				);
 				resolve();
 			}
 		});
 
 		child.on("error", (err) => {
-			// If claudemem binary is not found, warn and continue rather than crashing
+			// If mnemex binary is not found, warn and continue rather than crashing
 			logger.warn(`Could not run initial index: ${err.message}`);
 			resolve();
 		});
@@ -240,7 +244,7 @@ export async function startMcpServer(): Promise<void> {
 	};
 
 	const server = new McpServer({
-		name: "claudemem",
+		name: "mnemex",
 		version: SERVER_VERSION,
 	});
 

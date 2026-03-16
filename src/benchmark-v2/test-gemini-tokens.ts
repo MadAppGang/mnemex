@@ -44,7 +44,7 @@ async function testWithTokenLimit(
 			headers: {
 				"Content-Type": "application/json",
 				Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-				"HTTP-Referer": "https://github.com/claudemem",
+				"HTTP-Referer": "https://github.com/mnemex",
 			},
 			body: JSON.stringify({
 				model,

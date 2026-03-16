@@ -52,9 +52,7 @@ function CriterionRow({ criterion }: CriterionRowProps) {
 					{"  " + severityLabel}
 				</text>
 				{criterion.issues.length > 0 && (
-					<text fg={theme.dimmed}>
-						{"  " + criterion.issues[0]}
-					</text>
+					<text fg={theme.dimmed}>{"  " + criterion.issues[0]}</text>
 				)}
 			</box>
 		</box>
@@ -86,10 +84,7 @@ function FileRow({
 
 	return (
 		<box flexDirection="row" paddingLeft={1} height={1}>
-			<text
-				fg={isSelected ? theme.primary : theme.text}
-				width={36}
-			>
+			<text fg={isSelected ? theme.primary : theme.text} width={36}>
 				{(isSelected ? "> " : "  ") + shortPath}
 			</text>
 			<text fg={theme.dimmed} width={14}>
@@ -99,9 +94,7 @@ function FileRow({
 				{tokenEstimate + " tok"}
 			</text>
 			<ScoreBar score={normalizedScore} width={8} showPercent={false} />
-			<text fg={getScoreColor(normalizedScore)}>
-				{" " + score + "/100"}
-			</text>
+			<text fg={getScoreColor(normalizedScore)}>{" " + score + "/100"}</text>
 		</box>
 	);
 }
@@ -235,7 +228,7 @@ export function DoctorView() {
 						>
 							<box paddingLeft={1} height={1}>
 								<text fg={theme.primary}>
-									{"Selected: " + (selectedDiagnosis.file.relativePath)}
+									{"Selected: " + selectedDiagnosis.file.relativePath}
 								</text>
 							</box>
 

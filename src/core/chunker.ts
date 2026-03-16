@@ -148,10 +148,10 @@ function processChildren(
 
 		if (chunkType && tokens <= MAX_CHUNK_TOKENS && tokens >= MIN_CHUNK_TOKENS) {
 			// Fits in one chunk AND big enough — emit with any buffered JSDoc/comments
-			const fullContent = gapLines.length > 0
-				? gapLines.join("\n") + "\n" + content
-				: content;
-			const startLine = gapStartLine >= 0 ? gapStartLine : child.startPosition.row;
+			const fullContent =
+				gapLines.length > 0 ? gapLines.join("\n") + "\n" + content : content;
+			const startLine =
+				gapStartLine >= 0 ? gapStartLine : child.startPosition.row;
 
 			chunks.push({
 				content: fullContent,
@@ -164,15 +164,18 @@ function processChildren(
 			});
 			gapLines = [];
 			gapStartLine = -1;
-
-		} else if (chunkType && tokens <= MAX_CHUNK_TOKENS && tokens < MIN_CHUNK_TOKENS) {
+		} else if (
+			chunkType &&
+			tokens <= MAX_CHUNK_TOKENS &&
+			tokens < MIN_CHUNK_TOKENS
+		) {
 			// Recognized but too small to stand alone — check if gap + content is big enough
-			const combinedContent = gapLines.length > 0
-				? gapLines.join("\n") + "\n" + content
-				: content;
+			const combinedContent =
+				gapLines.length > 0 ? gapLines.join("\n") + "\n" + content : content;
 			if (estimateTokens(combinedContent) >= MIN_CHUNK_TOKENS) {
 				// Combined with gap, it's big enough — emit
-				const startLine = gapStartLine >= 0 ? gapStartLine : child.startPosition.row;
+				const startLine =
+					gapStartLine >= 0 ? gapStartLine : child.startPosition.row;
 				chunks.push({
 					content: combinedContent,
 					startLine,
@@ -189,7 +192,6 @@ function processChildren(
 				if (gapStartLine < 0) gapStartLine = child.startPosition.row;
 				gapLines.push(content);
 			}
-
 		} else if (chunkType && tokens > MAX_CHUNK_TOKENS) {
 			// Too large — need to descend or split
 			const name = extractName(child, language);
@@ -202,7 +204,9 @@ function processChildren(
 				// Include class header (everything before body) in the preamble
 				// so "class Indexer {" isn't orphaned
 				if (body !== child) {
-					const headerContent = source.slice(child.startIndex, body.startIndex).trimEnd();
+					const headerContent = source
+						.slice(child.startIndex, body.startIndex)
+						.trimEnd();
 					if (headerContent.trim().length > 0) {
 						if (gapStartLine < 0) gapStartLine = child.startPosition.row;
 						gapLines.push(headerContent);
@@ -216,7 +220,15 @@ function processChildren(
 				gapLines = [];
 				gapStartLine = -1;
 
-				processChildren(body, source, language, chunks, name ?? containerName, preamble, preambleStart);
+				processChildren(
+					body,
+					source,
+					language,
+					chunks,
+					name ?? containerName,
+					preamble,
+					preambleStart,
+				);
 			} else {
 				// For oversized functions/methods: include buffered JSDoc in the first part
 				const preamble = gapLines.length > 0 ? gapLines.join("\n") : undefined;
@@ -224,14 +236,27 @@ function processChildren(
 				gapLines = [];
 				gapStartLine = -1;
 
-				splitIntoConnectedParts(child, source, language, containerName, chunks, preamble, preambleStartLine);
+				splitIntoConnectedParts(
+					child,
+					source,
+					language,
+					containerName,
+					chunks,
+					preamble,
+					preambleStartLine,
+				);
 			}
-
 		} else {
 			// Non-chunk node (import, field, export_statement, etc.)
 			// Check if it wraps recognized children (e.g., export_statement wrapping class_declaration)
 			if (hasRecognizedChild(child, language)) {
-				flushGap(gapLines, gapStartLine, child.startPosition.row - 1, containerName, chunks);
+				flushGap(
+					gapLines,
+					gapStartLine,
+					child.startPosition.row - 1,
+					containerName,
+					chunks,
+				);
 				gapLines = [];
 				gapStartLine = -1;
 				processChildren(child, source, language, chunks, containerName);
@@ -245,7 +270,13 @@ function processChildren(
 
 	// Flush remaining gap (trailing fields, etc.)
 	if (gapLines.length > 0) {
-		flushGap(gapLines, gapStartLine, parent.endPosition.row, containerName, chunks);
+		flushGap(
+			gapLines,
+			gapStartLine,
+			parent.endPosition.row,
+			containerName,
+			chunks,
+		);
 	}
 }
 
@@ -619,7 +650,6 @@ function createCodeChunk(
 function estimateTokens(text: string): number {
 	return Math.ceil(text.length / CHARS_PER_TOKEN);
 }
-
 
 /**
  * Fallback line-based chunking for unsupported languages

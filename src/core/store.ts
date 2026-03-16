@@ -153,7 +153,10 @@ export interface IVectorStore {
 		newVector: number[],
 	): Promise<boolean>;
 	getAllSummaries(): Promise<Array<BaseDocument & { vector: number[] }>>;
-	getCodeUnitsByFile(filePath: string, unitTypes?: UnitType[]): Promise<CodeUnit[]>;
+	getCodeUnitsByFile(
+		filePath: string,
+		unitTypes?: UnitType[],
+	): Promise<CodeUnit[]>;
 	getCodeUnitsByDepth(depth: number, filePath?: string): Promise<CodeUnit[]>;
 	getChildUnits(parentId: string): Promise<CodeUnit[]>;
 	getCodeUnit(unitId: string): Promise<CodeUnit | null>;
@@ -189,7 +192,7 @@ export class VectorStore implements IVectorStore {
 	constructor(dbPath: string, projectPath?: string) {
 		this.dbPath = dbPath;
 		// Extract project path from dbPath if not provided
-		// dbPath is like: /path/to/project/.claudemem/vectors
+		// dbPath is like: /path/to/project/.mnemex/vectors
 		this.projectPath = projectPath ?? dirname(dirname(dbPath));
 		this.testFileDetector = createTestFileDetector();
 	}
@@ -364,7 +367,14 @@ export class VectorStore implements IVectorStore {
 		queryVector: number[] | undefined,
 		options: SearchOptions = {},
 	): Promise<SearchResult[]> {
-		const { limit = DEFAULT_LIMIT, language, filePath, pathPattern, keywordOnly, useCase } = options;
+		const {
+			limit = DEFAULT_LIMIT,
+			language,
+			filePath,
+			pathPattern,
+			keywordOnly,
+			useCase,
+		} = options;
 
 		const table = await this.ensureTableOpen();
 		if (!table) {
@@ -401,7 +411,8 @@ export class VectorStore implements IVectorStore {
 		await this.ensureFtsIndex();
 		let bm25Results: any[] = [];
 		try {
-			let ftsQuery = table.query()
+			let ftsQuery = table
+				.query()
 				.fullTextSearch(queryText, { columns: ["content"] })
 				.limit(fetchLimit);
 			if (filterStr) {
@@ -428,7 +439,7 @@ export class VectorStore implements IVectorStore {
 		// Separate code results from summary results
 		const codeResults: FusedResult[] = [];
 		const symbolSummaryById = new Map<string, string>(); // sourceChunkId -> symbol summary
-		const fileSummaryById = new Map<string, string>();    // sourceChunkId -> file summary
+		const fileSummaryById = new Map<string, string>(); // sourceChunkId -> file summary
 
 		for (const r of fused) {
 			// Skip corrupt/empty rows (LanceDB binary data corruption)
@@ -438,10 +449,13 @@ export class VectorStore implements IVectorStore {
 			if (docType === "symbol_summary" || docType === "file_summary") {
 				// Extract summary text and map to source code chunks
 				const sourceIds: string[] = r.sourceIds
-					? (typeof r.sourceIds === "string" ? JSON.parse(r.sourceIds) : r.sourceIds)
+					? typeof r.sourceIds === "string"
+						? JSON.parse(r.sourceIds)
+						: r.sourceIds
 					: [];
 				const summaryText = r.content || "";
-				const targetMap = docType === "symbol_summary" ? symbolSummaryById : fileSummaryById;
+				const targetMap =
+					docType === "symbol_summary" ? symbolSummaryById : fileSummaryById;
 				for (const srcId of sourceIds) {
 					if (!targetMap.has(srcId)) {
 						targetMap.set(srcId, summaryText);
@@ -459,7 +473,11 @@ export class VectorStore implements IVectorStore {
 		const maxFused = topResults.length > 0 ? topResults[0].fusedScore : 1;
 		return topResults.map((r) => {
 			const docType = (r.documentType || "code_chunk") as string;
-			const meta = r.metadata ? (typeof r.metadata === "string" ? JSON.parse(r.metadata) : r.metadata) : undefined;
+			const meta = r.metadata
+				? typeof r.metadata === "string"
+					? JSON.parse(r.metadata)
+					: r.metadata
+				: undefined;
 			return {
 				chunk: {
 					id: r.id,
@@ -478,13 +496,19 @@ export class VectorStore implements IVectorStore {
 				score: maxFused > 0 ? r.fusedScore / maxFused : 0,
 				vectorScore: r.vectorScore || 0,
 				keywordScore: r.keywordScore || 0,
-				summary: r.summary || symbolSummaryById.get(r.id) || fileSummaryById.get(r.id) || undefined,
+				summary:
+					r.summary ||
+					symbolSummaryById.get(r.id) ||
+					fileSummaryById.get(r.id) ||
+					undefined,
 				fileSummary: fileSummaryById.get(r.id) || undefined,
 				unitType: r.unitType || undefined,
-				...(docType === "session_observation" ? {
-					documentType: "session_observation" as const,
-					observationMetadata: meta,
-				} : {}),
+				...(docType === "session_observation"
+					? {
+							documentType: "session_observation" as const,
+							observationMetadata: meta,
+						}
+					: {}),
 			};
 		});
 	}
@@ -845,7 +869,8 @@ export class VectorStore implements IVectorStore {
 		await this.ensureFtsIndex();
 		let bm25Results: any[] = [];
 		try {
-			let ftsQuery = table.query()
+			let ftsQuery = table
+				.query()
 				.fullTextSearch(queryText, { columns: ["content"] })
 				.limit(limit * 3);
 			if (filterStr) {
@@ -1244,7 +1269,8 @@ export class VectorStore implements IVectorStore {
 		await this.ensureFtsIndex();
 		let bm25Results: any[] = [];
 		try {
-			let ftsQuery = table.query()
+			let ftsQuery = table
+				.query()
 				.fullTextSearch(queryText, { columns: ["content"] })
 				.limit(limit * 2);
 			ftsQuery = ftsQuery.where(filterStr);
@@ -1446,7 +1472,7 @@ const USE_CASE_WEIGHTS: Record<
 		framework_doc: 0.1, // Official framework docs
 		best_practice: 0.05, // Best practices
 		api_reference: 0.05, // API reference
-		session_observation: 0.20, // High — observations most useful for search
+		session_observation: 0.2, // High — observations most useful for search
 	},
 	// Agent navigation: prioritize understanding structure and patterns
 	navigation: {
@@ -1588,7 +1614,7 @@ function typeAwareRRFFusion(
 
 /**
  * Create a vector store for a project
- * @param dbPath - Path to the vector database (e.g., /project/.claudemem/vectors)
+ * @param dbPath - Path to the vector database (e.g., /project/.mnemex/vectors)
  * @param projectPath - Optional explicit project path (derived from dbPath if not provided)
  */
 export function createVectorStore(

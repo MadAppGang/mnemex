@@ -12,7 +12,10 @@ import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { rmSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { VectorStore } from "../../src/core/store.js";
-import type { ChunkWithEmbedding, DocumentWithEmbedding } from "../../src/types.js";
+import type {
+	ChunkWithEmbedding,
+	DocumentWithEmbedding,
+} from "../../src/types.js";
 
 const TEST_DIR = join(import.meta.dir, "../.test-unified-search");
 const VECTORS_DIR = join(TEST_DIR, "vectors");
@@ -94,7 +97,8 @@ describe("Unified Search", () => {
 		const chunks: ChunkWithEmbedding[] = [
 			makeChunk({
 				id: "chunk-auth-1",
-				content: "async function authenticate(user, password) { return validateCredentials(user, password); }",
+				content:
+					"async function authenticate(user, password) { return validateCredentials(user, password); }",
 				filePath: "src/auth/service.ts",
 				startLine: 10,
 				endLine: 25,
@@ -103,7 +107,8 @@ describe("Unified Search", () => {
 			}),
 			makeChunk({
 				id: "chunk-auth-2",
-				content: "function validateCredentials(user, password) { return bcrypt.compare(password, user.hash); }",
+				content:
+					"function validateCredentials(user, password) { return bcrypt.compare(password, user.hash); }",
 				filePath: "src/auth/service.ts",
 				startLine: 30,
 				endLine: 45,
@@ -112,7 +117,8 @@ describe("Unified Search", () => {
 			}),
 			makeChunk({
 				id: "chunk-db-1",
-				content: "class Database { async connect(url) { this.connection = await pg.connect(url); } }",
+				content:
+					"class Database { async connect(url) { this.connection = await pg.connect(url); } }",
 				filePath: "src/core/database.ts",
 				startLine: 1,
 				endLine: 20,
@@ -121,7 +127,8 @@ describe("Unified Search", () => {
 			}),
 			makeChunk({
 				id: "chunk-search-1",
-				content: "async function searchIndex(query, options) { const results = await vectorStore.search(query); return results; }",
+				content:
+					"async function searchIndex(query, options) { const results = await vectorStore.search(query); return results; }",
 				filePath: "src/search/engine.ts",
 				startLine: 50,
 				endLine: 70,
@@ -130,7 +137,8 @@ describe("Unified Search", () => {
 			}),
 			makeChunk({
 				id: "chunk-utils-1",
-				content: "function formatDate(date) { return date.toISOString().split('T')[0]; }",
+				content:
+					"function formatDate(date) { return date.toISOString().split('T')[0]; }",
 				filePath: "src/utils/format.ts",
 				startLine: 1,
 				endLine: 5,
@@ -144,7 +152,8 @@ describe("Unified Search", () => {
 		const docs: DocumentWithEmbedding[] = [
 			makeDocument({
 				id: "summary-auth-1",
-				content: "Authenticates a user by validating their credentials against stored bcrypt hashes. Returns a boolean indicating success.",
+				content:
+					"Authenticates a user by validating their credentials against stored bcrypt hashes. Returns a boolean indicating success.",
 				documentType: "symbol_summary",
 				filePath: "src/auth/service.ts",
 				sourceIds: ["chunk-auth-1"],
@@ -152,7 +161,8 @@ describe("Unified Search", () => {
 			}),
 			makeDocument({
 				id: "summary-auth-2",
-				content: "Validates user credentials by comparing the provided password against the stored bcrypt hash.",
+				content:
+					"Validates user credentials by comparing the provided password against the stored bcrypt hash.",
 				documentType: "symbol_summary",
 				filePath: "src/auth/service.ts",
 				sourceIds: ["chunk-auth-2"],
@@ -160,7 +170,8 @@ describe("Unified Search", () => {
 			}),
 			makeDocument({
 				id: "summary-file-auth",
-				content: "Authentication service module. Handles user authentication and credential validation using bcrypt hashing.",
+				content:
+					"Authentication service module. Handles user authentication and credential validation using bcrypt hashing.",
 				documentType: "file_summary",
 				filePath: "src/auth/service.ts",
 				sourceIds: ["chunk-auth-1", "chunk-auth-2"],
@@ -168,7 +179,8 @@ describe("Unified Search", () => {
 			}),
 			makeDocument({
 				id: "summary-db",
-				content: "Database connection manager. Provides PostgreSQL connection pooling and lifecycle management.",
+				content:
+					"Database connection manager. Provides PostgreSQL connection pooling and lifecycle management.",
 				documentType: "symbol_summary",
 				filePath: "src/core/database.ts",
 				sourceIds: ["chunk-db-1"],
@@ -176,7 +188,8 @@ describe("Unified Search", () => {
 			}),
 			makeDocument({
 				id: "summary-search",
-				content: "Search engine that queries the vector store index and returns ranked results.",
+				content:
+					"Search engine that queries the vector store index and returns ranked results.",
 				documentType: "symbol_summary",
 				filePath: "src/search/engine.ts",
 				sourceIds: ["chunk-search-1"],
@@ -229,8 +242,8 @@ describe("Unified Search", () => {
 		});
 
 		// At least one auth chunk should have a summary (from either symbol or file summary)
-		const authChunks = results.filter((r) =>
-			r.chunk.filePath === "src/auth/service.ts",
+		const authChunks = results.filter(
+			(r) => r.chunk.filePath === "src/auth/service.ts",
 		);
 
 		// The auth chunks should benefit from the file_summary and symbol_summary
@@ -312,7 +325,9 @@ describe("Unified Search", () => {
 		} catch {
 			// LanceDB may not support camelCase column filters in all versions
 			// The filter works in production but may fail in test with fresh DB
-			console.log("Skipping: LanceDB camelCase filter not supported in this version");
+			console.log(
+				"Skipping: LanceDB camelCase filter not supported in this version",
+			);
 		}
 	});
 

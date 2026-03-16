@@ -43,10 +43,10 @@ export function registerCallersTools(server: McpServer, deps: ToolDeps): void {
 						const orgSlug = deps.teamConfig.orgSlug;
 						const repoSlug =
 							deps.teamConfig.repoSlug ??
-							`${orgSlug}/${deps.config.workspaceRoot
-								.split("/")
-								.filter(Boolean)
-								.pop() ?? "repo"}`;
+							`${orgSlug}/${
+								deps.config.workspaceRoot.split("/").filter(Boolean).pop() ??
+								"repo"
+							}`;
 
 						const callersResult = await deps.cloudClient.getCallers(
 							repoSlug,
@@ -122,7 +122,12 @@ export function registerCallersTools(server: McpServer, deps: ToolDeps): void {
 					const nextFrontier: string[] = [];
 
 					for (const id of frontier) {
-						const callers = d === 1 ? (id === target.id ? directCallers : graphManager.getCallers(id)) : graphManager.getCallers(id);
+						const callers =
+							d === 1
+								? id === target.id
+									? directCallers
+									: graphManager.getCallers(id)
+								: graphManager.getCallers(id);
 						for (const caller of callers) {
 							if (!visited.has(caller.id)) {
 								visited.add(caller.id);

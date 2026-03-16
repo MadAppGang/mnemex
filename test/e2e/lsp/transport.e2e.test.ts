@@ -35,7 +35,11 @@ describe("LspTransport E2E", () => {
 			received = { method, params };
 		};
 
-		const msg = frame({ jsonrpc: "2.0", method: "test/notification", params: { value: 42 } });
+		const msg = frame({
+			jsonrpc: "2.0",
+			method: "test/notification",
+			params: { value: 42 },
+		});
 		transport.onData(msg);
 
 		expect(received).not.toBeNull();
@@ -79,10 +83,17 @@ describe("LspTransport E2E", () => {
 		const proc = mockProcess();
 
 		// Start request
-		const promise = transport.sendRequest<{ result: string }>(proc, "test/method", { x: 1 }, 5000);
+		const promise = transport.sendRequest<{ result: string }>(
+			proc,
+			"test/method",
+			{ x: 1 },
+			5000,
+		);
 
 		// Simulate response (id: 1 because nextId starts at 1)
-		transport.onData(frame({ jsonrpc: "2.0", id: 1, result: { result: "ok" } }));
+		transport.onData(
+			frame({ jsonrpc: "2.0", id: 1, result: { result: "ok" } }),
+		);
 
 		const result = await promise;
 		expect(result).toEqual({ result: "ok" });

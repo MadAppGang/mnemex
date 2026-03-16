@@ -210,13 +210,8 @@ export function generateSmartQuestions(ctx: ProjectContext): SmartQuestion[] {
 	if (ctx.topSymbols.length > 0) {
 		const symbolNames = ctx.topSymbols
 			.slice(0, 5)
-			.map(
-				(s) =>
-					`${s.name} (${s.kind}, PageRank ${s.pagerank.toFixed(3)})`,
-			);
-		q1.context = [
-			`Core abstractions detected: ${symbolNames.join(", ")}`,
-		];
+			.map((s) => `${s.name} (${s.kind}, PageRank ${s.pagerank.toFixed(3)})`);
+		q1.context = [`Core abstractions detected: ${symbolNames.join(", ")}`];
 		q1.prompt = `Your core abstractions are: ${ctx.topSymbols
 			.slice(0, 3)
 			.map((s) => s.name)
@@ -244,13 +239,12 @@ export function generateSmartQuestions(ctx: ProjectContext): SmartQuestion[] {
 		const fwHints: Record<string, string> = {
 			"Next.js":
 				"e.g., 'Server components can't use useState', 'API routes are in app/api/'",
-			React: "e.g., 'Use React.memo for list items', 'No direct DOM manipulation'",
+			React:
+				"e.g., 'Use React.memo for list items', 'No direct DOM manipulation'",
 			Prisma: "e.g., 'Always use transactions for multi-table writes'",
-			"Drizzle ORM":
-				"e.g., 'Use .where() with eq(), never raw SQL strings'",
+			"Drizzle ORM": "e.g., 'Use .where() with eq(), never raw SQL strings'",
 			tRPC: "e.g., 'Never import tRPC router types on the client'",
-			Convex:
-				"e.g., 'Queries must use .withIndex(), never .filter()'",
+			Convex: "e.g., 'Queries must use .withIndex(), never .filter()'",
 			Vitest: "e.g., 'Use vi.mock() not jest.mock()'",
 			Jest: "e.g., 'Reset mocks in afterEach, not beforeEach'",
 			Bun: "e.g., 'Use Bun.serve() not http.createServer()'",
@@ -262,10 +256,8 @@ export function generateSmartQuestions(ctx: ProjectContext): SmartQuestion[] {
 			matchedHints[0] ||
 			"e.g., 'Queries must use .withIndex(), never .filter()'";
 	} else {
-		q2.prompt =
-			"Any tool/framework gotchas that agents keep getting wrong?";
-		q2.hint =
-			"e.g., 'Convex queries must use .withIndex(), never .filter()'";
+		q2.prompt = "Any tool/framework gotchas that agents keep getting wrong?";
+		q2.hint = "e.g., 'Convex queries must use .withIndex(), never .filter()'";
 	}
 	questions.push(q2);
 
@@ -299,8 +291,7 @@ export function generateSmartQuestions(ctx: ProjectContext): SmartQuestion[] {
 		q4.context = [
 			`Current issues detected: ${ctx.criticalCriteria.slice(0, 3).join("; ")}`,
 		];
-		q4.hint =
-			"Any architectural boundaries agents must respect?";
+		q4.hint = "Any architectural boundaries agents must respect?";
 	} else {
 		q4.hint =
 			"e.g., 'Never modify the shared/ package directly, always go through the API layer'";

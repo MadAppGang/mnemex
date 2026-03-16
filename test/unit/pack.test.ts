@@ -1,5 +1,5 @@
 /**
- * Black Box Unit Tests: claudemem pack command
+ * Black Box Unit Tests: mnemex pack command
  *
  * Tests validate behavior described in requirements only.
  * No implementation details are assumed or tested.
@@ -51,12 +51,19 @@ function writeFile(filePath: string, content: string): void {
 
 /** Run packCommand and capture output string from a temp output file */
 async function packToString(options: PackOptions): Promise<string> {
-	const outFile = join(tmpdir(), `pack-test-out-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
+	const outFile = join(
+		tmpdir(),
+		`pack-test-out-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`,
+	);
 	try {
 		await packCommand({ ...options, outputPath: outFile, stdout: false });
 		return readFileSync(outFile, "utf-8");
 	} finally {
-		try { rmSync(outFile); } catch { /* ignore */ }
+		try {
+			rmSync(outFile);
+		} catch {
+			/* ignore */
+		}
 	}
 }
 
@@ -69,8 +76,14 @@ describe("Format: XML", () => {
 
 	beforeAll(() => {
 		tempDir = mkdtempSync(join(tmpdir(), "pack-xml-"));
-		writeFile(join(tempDir, "src", "hello.ts"), "export const hello = 'world';");
-		writeFile(join(tempDir, "src", "util.ts"), "export function add(a: number, b: number) { return a + b; }");
+		writeFile(
+			join(tempDir, "src", "hello.ts"),
+			"export const hello = 'world';",
+		);
+		writeFile(
+			join(tempDir, "src", "util.ts"),
+			"export function add(a: number, b: number) { return a + b; }",
+		);
 	});
 
 	afterAll(() => {
@@ -78,28 +91,38 @@ describe("Format: XML", () => {
 	});
 
 	test("TEST-1a: output contains <file_summary> section", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "xml" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		expect(output).toContain("<file_summary>");
 	});
 
 	test("TEST-1b: output contains <directory_structure> section", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "xml" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		expect(output).toContain("<directory_structure>");
 	});
 
 	test("TEST-1c: output contains <files> section", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "xml" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		expect(output).toContain("<files>");
 	});
 
 	test("TEST-1d: each file is wrapped in <file path='...'> tags", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "xml" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		// Should have at least one file element with a path attribute
 		expect(output).toMatch(/<file path=["'][^"']+["']/);
 	});
 
 	test("TEST-1e: file content appears inside <file> tags", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "xml" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		expect(output).toContain("hello");
 	});
 });
@@ -118,17 +141,23 @@ describe("Format: Markdown", () => {
 	});
 
 	test("TEST-2a: output contains '# Codebase:' header", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "markdown" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "markdown" }),
+		);
 		expect(output).toContain("# Codebase:");
 	});
 
 	test("TEST-2b: output contains '## Directory Structure' section", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "markdown" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "markdown" }),
+		);
 		expect(output).toContain("## Directory Structure");
 	});
 
 	test("TEST-2c: directory structure section uses fenced code block", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "markdown" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "markdown" }),
+		);
 		// The directory tree should be in a fenced block after '## Directory Structure'
 		const dirSection = output.split("## Directory Structure")[1];
 		expect(dirSection).toBeDefined();
@@ -136,12 +165,16 @@ describe("Format: Markdown", () => {
 	});
 
 	test("TEST-2d: output contains '### File:' sections", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "markdown" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "markdown" }),
+		);
 		expect(output).toContain("### File:");
 	});
 
 	test("TEST-2e: file sections use fenced code blocks", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "markdown" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "markdown" }),
+		);
 		// File content should appear inside a fenced code block
 		const fileSection = output.split("### File:")[1];
 		expect(fileSection).toBeDefined();
@@ -163,18 +196,24 @@ describe("Format: Plain", () => {
 	});
 
 	test("TEST-3a: output contains 64-char '=' separator lines", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "plain" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "plain" }),
+		);
 		const separator = "=".repeat(64);
 		expect(output).toContain(separator);
 	});
 
 	test("TEST-3b: output contains 'File:' headers", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "plain" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "plain" }),
+		);
 		expect(output).toContain("File:");
 	});
 
 	test("TEST-3c: output contains 'End of Codebase' sentinel", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "plain" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "plain" }),
+		);
 		expect(output).toContain("End of Codebase");
 	});
 });
@@ -200,22 +239,30 @@ describe("XML: special character escaping", () => {
 	});
 
 	test("TEST-4a: ampersand is escaped as &amp; in XML content", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "xml" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		expect(output).toContain("&amp;");
 	});
 
 	test("TEST-4b: less-than is escaped as &lt; in XML content", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "xml" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		expect(output).toContain("&lt;");
 	});
 
 	test("TEST-4c: greater-than is escaped as &gt; in XML content", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "xml" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		expect(output).toContain("&gt;");
 	});
 
 	test("TEST-4d: raw unescaped < does not appear inside XML file element", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "xml" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		// Extract content between first <file and </file> tags
 		const match = output.match(/<file[^>]*>([\s\S]*?)<\/file>/);
 		if (match) {
@@ -244,7 +291,9 @@ describe("Markdown: triple backtick fence escaping", () => {
 			join(tempDir, "example.md"),
 			"Here is code:\n```js\nconsole.log('hello');\n```\nEnd.",
 		);
-		output = await packToString(defaultOptions(tempDir, { format: "markdown" }));
+		output = await packToString(
+			defaultOptions(tempDir, { format: "markdown" }),
+		);
 	});
 
 	afterAll(() => {
@@ -285,8 +334,14 @@ describe("Filtering: default exclude patterns", () => {
 		// Source file - should be included
 		writeFile(join(tempDir, "src", "index.ts"), "export default {};");
 		// Files in commonly excluded directories
-		writeFile(join(tempDir, "node_modules", "lib", "index.js"), "module.exports = {};");
-		writeFile(join(tempDir, ".git", "config"), "[core]\n\trepositoryformatversion = 0");
+		writeFile(
+			join(tempDir, "node_modules", "lib", "index.js"),
+			"module.exports = {};",
+		);
+		writeFile(
+			join(tempDir, ".git", "config"),
+			"[core]\n\trepositoryformatversion = 0",
+		);
 		writeFile(join(tempDir, "dist", "bundle.js"), "!function(){}()");
 	});
 
@@ -295,26 +350,34 @@ describe("Filtering: default exclude patterns", () => {
 	});
 
 	test("TEST-6: node_modules files are excluded by default", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "xml" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		expect(output).not.toContain("node_modules/lib/index.js");
 		expect(output).not.toContain("node_modules\\lib\\index.js");
 	});
 
 	test("TEST-7: .git files are excluded by default", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "xml" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		// .git/config content should not appear
 		expect(output).not.toContain("repositoryformatversion");
 	});
 
 	test("TEST-8: dist files are excluded by default", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "xml" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		expect(output).not.toContain("dist/bundle.js");
 		expect(output).not.toContain("dist\\bundle.js");
 		expect(output).not.toContain("!function(){}()");
 	});
 
 	test("non-excluded source file IS included", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "xml" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		expect(output).toContain("export default {}");
 	});
 });
@@ -441,8 +504,22 @@ describe("Filtering: binary files", () => {
 		writeFile(join(tempDir, "hello.ts"), "const x = 1;");
 		// A PNG binary file: write actual PNG magic bytes (89 50 4E 47 ...)
 		const pngMagic = Buffer.from([
-			0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // PNG signature
-			0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, // IHDR chunk length + type
+			0x89,
+			0x50,
+			0x4e,
+			0x47,
+			0x0d,
+			0x0a,
+			0x1a,
+			0x0a, // PNG signature
+			0x00,
+			0x00,
+			0x00,
+			0x0d,
+			0x49,
+			0x48,
+			0x44,
+			0x52, // IHDR chunk length + type
 		]);
 		mkdirSync(join(tempDir, "assets"), { recursive: true });
 		require("fs").writeFileSync(join(tempDir, "assets", "logo.png"), pngMagic);
@@ -460,7 +537,9 @@ describe("Filtering: binary files", () => {
 	});
 
 	test("TEST-12b: binary file content does not appear in file sections", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "xml" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		// Binary content should not appear as readable text in file elements
 		// Check that the PNG file path doesn't appear with actual content in a file section
 		// The binary file may appear in directory tree but not in file content sections
@@ -480,7 +559,7 @@ describe("Filtering: maxFileSize skips large files", () => {
 		tempDir = mkdtempSync(join(tmpdir(), "pack-maxsize-"));
 		writeFile(join(tempDir, "small.ts"), "const x = 1;"); // ~12 bytes
 		// Create a file that exceeds 100 bytes
-		writeFile(join(tempDir, "large.ts"), "x".repeat(200));  // 200 bytes
+		writeFile(join(tempDir, "large.ts"), "x".repeat(200)); // 200 bytes
 	});
 
 	afterAll(() => {
@@ -529,7 +608,9 @@ describe("Token estimation", () => {
 	});
 
 	test("TEST-14: estimatedTokens is approximately chars/4 (within 2x margin)", async () => {
-		const result = await packCommand(defaultOptions(tempDir, { format: "xml" }));
+		const result = await packCommand(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		// 400 chars / 4 = 100 tokens expected
 		// Allow a generous range: 25-400 (accounting for structure overhead and rounding)
 		expect(result.estimatedTokens).toBeGreaterThanOrEqual(25);
@@ -577,17 +658,23 @@ describe("Edge cases: deeply nested directories", () => {
 	});
 
 	test("TEST-17a: deeply nested file appears somewhere in output", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "xml" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		expect(output).toContain("deep.txt");
 	});
 
 	test("TEST-17b: deep file content appears in output", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "xml" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		expect(output).toContain("deep content");
 	});
 
 	test("TEST-17c: shallow file is also present alongside deep files", async () => {
-		const output = await packToString(defaultOptions(tempDir, { format: "xml" }));
+		const output = await packToString(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		expect(output).toContain("top content");
 	});
 });
@@ -613,7 +700,9 @@ describe("Edge cases: PackResult fileCount accuracy", () => {
 	});
 
 	test("TEST-18: fileCount equals number of text files (binary excluded)", async () => {
-		const result = await packCommand(defaultOptions(tempDir, { format: "xml" }));
+		const result = await packCommand(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		// 3 text files, 1 binary - binary should not count in fileCount
 		expect(result.fileCount).toBe(3);
 	});
@@ -666,7 +755,9 @@ describe("Edge cases: durationMs is non-negative", () => {
 	});
 
 	test("durationMs is a non-negative number", async () => {
-		const result = await packCommand(defaultOptions(tempDir, { format: "xml" }));
+		const result = await packCommand(
+			defaultOptions(tempDir, { format: "xml" }),
+		);
 		expect(result.durationMs).toBeGreaterThanOrEqual(0);
 	});
 });

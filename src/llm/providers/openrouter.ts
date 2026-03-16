@@ -452,8 +452,8 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 					headers: {
 						"Content-Type": "application/json",
 						Authorization: `Bearer ${this.apiKey}`,
-						"HTTP-Referer": "https://github.com/claudemem",
-						"X-Title": "claudemem",
+						"HTTP-Referer": "https://github.com/mnemex",
+						"X-Title": "mnemex",
 					},
 					body: JSON.stringify(body),
 					signal,
@@ -480,18 +480,18 @@ export class OpenRouterLLMClient extends BaseLLMClient {
 					}
 
 					// Extract message from JSON error body if possible
-				let errorMsg = errorBody;
-				try {
-					const parsed = JSON.parse(errorBody);
-					if (parsed?.error?.message) {
-						errorMsg = parsed.error.message;
+					let errorMsg = errorBody;
+					try {
+						const parsed = JSON.parse(errorBody);
+						if (parsed?.error?.message) {
+							errorMsg = parsed.error.message;
+						}
+					} catch {
+						// Keep raw body if not JSON
 					}
-				} catch {
-					// Keep raw body if not JSON
-				}
-				throw new Error(
-					`OpenRouter API error (${response.status}): ${errorMsg}`,
-				);
+					throw new Error(
+						`OpenRouter API error (${response.status}): ${errorMsg}`,
+					);
 				}
 
 				const data = (await response.json()) as OpenRouterResponse;

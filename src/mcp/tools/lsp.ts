@@ -74,13 +74,12 @@ export function registerLspTools(server: McpServer, deps: ToolDeps): void {
 							client.openFile(absPath, langId, content);
 
 							try {
-								const lspResult = await client.request<Location | Location[] | null>(
-									LSP_METHODS.DEFINITION,
-									{
-										textDocument: { uri: pathToUri(absPath) },
-										position: { line: line - 1, character: column - 1 },
-									},
-								);
+								const lspResult = await client.request<
+									Location | Location[] | null
+								>(LSP_METHODS.DEFINITION, {
+									textDocument: { uri: pathToUri(absPath) },
+									position: { line: line - 1, character: column - 1 },
+								});
 
 								const loc = Array.isArray(lspResult) ? lspResult[0] : lspResult;
 								if (loc?.uri) {
@@ -105,7 +104,9 @@ export function registerLspTools(server: McpServer, deps: ToolDeps): void {
 				// Fall back to tree-sitter AST index
 				if (!result && symbol) {
 					const { graphManager } = await cache.get();
-					const found = graphManager.findSymbol(symbol, { preferExported: true });
+					const found = graphManager.findSymbol(symbol, {
+						preferExported: true,
+					});
 					if (found) {
 						result = {
 							file: found.filePath,
@@ -205,7 +206,9 @@ export function registerLspTools(server: McpServer, deps: ToolDeps): void {
 				// Fall back to AST callers
 				if (refs.length === 0 && symbol) {
 					const { graphManager } = await cache.get();
-					const found = graphManager.findSymbol(symbol, { preferExported: true });
+					const found = graphManager.findSymbol(symbol, {
+						preferExported: true,
+					});
 					if (found) {
 						const callers = graphManager.getCallers(found.id);
 						refs = callers.map((c) => ({
@@ -238,7 +241,7 @@ export function registerLspTools(server: McpServer, deps: ToolDeps): void {
 	server.tool(
 		"hover",
 		"Get type signature and documentation for a symbol at a position. " +
-		"LSP-only — no fallback when LSP is unavailable.",
+			"LSP-only — no fallback when LSP is unavailable.",
 		{
 			file: z.string().describe("File path"),
 			line: z.number().int().min(1).describe("Line number (1-indexed)"),
@@ -256,7 +259,8 @@ export function registerLspTools(server: McpServer, deps: ToolDeps): void {
 								text: JSON.stringify({
 									hover: null,
 									lspAvailable: false,
-									message: "LSP is not enabled. Set CLAUDEMEM_LSP=true to enable.",
+									message:
+										"LSP is not enabled. Set MNEMEX_LSP=true to enable.",
 									...buildFreshness(stateManager, startTime),
 								}),
 							},

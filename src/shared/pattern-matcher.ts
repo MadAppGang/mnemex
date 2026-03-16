@@ -34,7 +34,7 @@ export const ALWAYS_EXCLUDE_DIRS = new Set([
 	".idea",
 	".vscode",
 	".cache",
-	".claudemem",
+	".mnemex",
 	".turbo",
 	".expo",
 ]);

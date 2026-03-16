@@ -76,7 +76,9 @@ export class TuiOutput implements OutputRouter {
 
 	renderProgress(): ProgressHandle {
 		if (!this.renderer) {
-			throw new Error("TuiOutput.start() must be called before renderProgress()");
+			throw new Error(
+				"TuiOutput.start() must be called before renderProgress()",
+			);
 		}
 
 		const renderer = this.renderer;

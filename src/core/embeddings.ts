@@ -199,7 +199,7 @@ export class OpenRouterEmbeddingsClient extends BaseEmbeddingsClient {
 		const apiKey = options.apiKey || getApiKey();
 		if (!apiKey) {
 			throw new Error(
-				"OpenRouter API key required. Set OPENROUTER_API_KEY environment variable or run 'claudemem init'",
+				"OpenRouter API key required. Set OPENROUTER_API_KEY environment variable or run 'mnemex init'",
 			);
 		}
 		this.apiKey = apiKey;
@@ -441,7 +441,10 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 		}
 
 		// Ollama doesn't report cost (local model)
-		return { embeddings: results, warnings: warnings.length > 0 ? warnings : undefined };
+		return {
+			embeddings: results,
+			warnings: warnings.length > 0 ? warnings : undefined,
+		};
 	}
 
 	private useNewApi = true;
@@ -464,7 +467,11 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 					const response = await fetch(`${this.endpoint}/api/embed`, {
 						method: "POST",
 						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({ model: this.model, input: "test", truncate: true }),
+						body: JSON.stringify({
+							model: this.model,
+							input: "test",
+							truncate: true,
+						}),
 						signal: controller.signal,
 					});
 
@@ -476,8 +483,12 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 					}
 
 					if (response.ok) {
-						const data = await response.json() as OllamaEmbedResponse;
-						if (data.embeddings && Array.isArray(data.embeddings) && data.embeddings[0]?.length > 0) {
+						const data = (await response.json()) as OllamaEmbedResponse;
+						if (
+							data.embeddings &&
+							Array.isArray(data.embeddings) &&
+							data.embeddings[0]?.length > 0
+						) {
 							// Model loaded — let it stabilize in GPU memory before real requests
 							await this.sleep(500);
 							this.warmedUp = true;
@@ -535,9 +546,15 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 
 						const responseText = await response.text();
 						const data = JSON.parse(responseText) as OllamaEmbedResponse;
-						if (!data.embeddings || !Array.isArray(data.embeddings) || data.embeddings[0]?.length === 0) {
+						if (
+							!data.embeddings ||
+							!Array.isArray(data.embeddings) ||
+							data.embeddings[0]?.length === 0
+						) {
 							// Transient bad response (model still loading) — retry, don't permanently fall back
-							throw new Error("Ollama returned empty/invalid embeddings (model may still be loading)");
+							throw new Error(
+								"Ollama returned empty/invalid embeddings (model may still be loading)",
+							);
 						}
 						return data.embeddings[0];
 					} else {
@@ -587,9 +604,7 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 
 			if (!response.ok) {
 				const errorText = await response.text();
-				throw new Error(
-					`Ollama API error: ${response.status} - ${errorText}`,
-				);
+				throw new Error(`Ollama API error: ${response.status} - ${errorText}`);
 			}
 
 			const responseText = await response.text();
@@ -1072,7 +1087,9 @@ export function createEmbeddingsClient(
  * Wrap an embeddings client to add latency tracking to EmbedResult.
  * Non-invasive: wraps the public embed() method without modifying concrete classes.
  */
-export function withLatencyTracking(client: IEmbeddingsClient): IEmbeddingsClient {
+export function withLatencyTracking(
+	client: IEmbeddingsClient,
+): IEmbeddingsClient {
 	const originalEmbed = client.embed.bind(client);
 	client.embed = async (
 		texts: string[],
@@ -1137,7 +1154,9 @@ export function getModelContextLength(modelId: string): number {
 		return MODEL_CONTEXT_LENGTHS[modelName];
 	}
 	// Strip Ollama size/tag suffix (e.g., "bge-large:335m" -> "bge-large", "all-minilm:22m" -> "all-minilm")
-	const baseName = modelName.includes(":") ? modelName.split(":")[0] : modelName;
+	const baseName = modelName.includes(":")
+		? modelName.split(":")[0]
+		: modelName;
 	if (baseName !== modelName && MODEL_CONTEXT_LENGTHS[baseName]) {
 		return MODEL_CONTEXT_LENGTHS[baseName];
 	}

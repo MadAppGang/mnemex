@@ -8,7 +8,7 @@
  *
  * Component map:
  *   CommandOutputApp  — root wrapper, hosts child component + onDone lifecycle
- *   IndexProgress     — animated multi-phase progress for `claudemem index`
+ *   IndexProgress     — animated multi-phase progress for `mnemex index`
  *   StatusMessage     — success / error / info / warning footer lines
  */
 
@@ -27,7 +27,6 @@ export type {
 	BenchmarkResultsData,
 	BenchmarkResultsAppProps,
 } from "./BenchmarkResults.js";
-
 
 export { BenchmarkListApp } from "./BenchmarkList.js";
 export type {

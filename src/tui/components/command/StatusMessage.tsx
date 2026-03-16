@@ -8,8 +8,8 @@
  * Examples:
  *   ✓ Indexed 42 files in 3.2s
  *   ✗ Failed to connect to embedding API
- *   ℹ No index found — run: claudemem index
- *   ⚠ Index is outdated, re-run: claudemem index --force
+ *   ℹ No index found — run: mnemex index
+ *   ⚠ Index is outdated, re-run: mnemex index --force
  */
 
 import { theme } from "../../theme.js";

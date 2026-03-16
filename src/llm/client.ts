@@ -200,8 +200,7 @@ export abstract class BaseLLMClient implements ILLMClient {
 				return JSON.parse(candidate);
 			} catch {
 				// Try fixing trailing commas before giving up on this candidate
-				const fixed = candidate
-					.replace(/,\s*([}\]])/g, "$1");
+				const fixed = candidate.replace(/,\s*([}\]])/g, "$1");
 				try {
 					return JSON.parse(fixed);
 				} catch {
@@ -383,7 +382,7 @@ export interface LLMClientOptions {
 /**
  * Create an LLM client based on provider
  *
- * Auto-detects provider from unified LLM spec (CLAUDEMEM_LLM env or config).
+ * Auto-detects provider from unified LLM spec (MNEMEX_LLM env or config).
  * Supports specs like "a/sonnet", "or/openai/gpt-4o", "cc/sonnet".
  */
 export async function createLLMClient(

@@ -2,7 +2,7 @@
  * Memory Store
  *
  * CRUD operations for project memories stored as markdown files
- * in .claudemem/memories/. Maintains a memories.json index for fast listing.
+ * in .mnemex/memories/. Maintains a memories.json index for fast listing.
  */
 
 import {

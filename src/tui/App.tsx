@@ -31,8 +31,16 @@ export interface AppProps {
 // ============================================================================
 
 function AppInner() {
-	const { activeTab, setActiveTab, showHelp, toggleHelp, error, setError, inputFocused, quit } =
-		useAppContext();
+	const {
+		activeTab,
+		setActiveTab,
+		showHelp,
+		toggleHelp,
+		error,
+		setError,
+		inputFocused,
+		quit,
+	} = useAppContext();
 	const { height } = useTerminalDimensions();
 
 	// Global keyboard handling - suppressed when an input field is focused
@@ -76,11 +84,26 @@ function AppInner() {
 		}
 
 		// Number shortcuts 1-5 to jump to tabs
-		if (key.name === "1") { setActiveTab("search"); return; }
-		if (key.name === "2") { setActiveTab("map"); return; }
-		if (key.name === "3") { setActiveTab("graph"); return; }
-		if (key.name === "4") { setActiveTab("analysis"); return; }
-		if (key.name === "5") { setActiveTab("doctor"); return; }
+		if (key.name === "1") {
+			setActiveTab("search");
+			return;
+		}
+		if (key.name === "2") {
+			setActiveTab("map");
+			return;
+		}
+		if (key.name === "3") {
+			setActiveTab("graph");
+			return;
+		}
+		if (key.name === "4") {
+			setActiveTab("analysis");
+			return;
+		}
+		if (key.name === "5") {
+			setActiveTab("doctor");
+			return;
+		}
 
 		// ? to toggle help
 		if (key.name === "?") {
@@ -106,9 +129,7 @@ function AppInner() {
 
 			<StatusBar />
 
-			{showHelp && (
-				<HelpOverlay view={activeTab} onClose={toggleHelp} />
-			)}
+			{showHelp && <HelpOverlay view={activeTab} onClose={toggleHelp} />}
 
 			{error && (
 				<ErrorBanner message={error} onDismiss={() => setError(null)} />

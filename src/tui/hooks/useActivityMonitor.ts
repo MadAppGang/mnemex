@@ -72,7 +72,7 @@ export function useActivityMonitor(
 
 	// Check activity.jsonl for new bytes — use file size as a signal
 	const readNotifications = useCallback(() => {
-		const jsonlPath = join(projectPath, ".claudemem", "activity.jsonl");
+		const jsonlPath = join(projectPath, ".mnemex", "activity.jsonl");
 		try {
 			const stat = statSync(jsonlPath);
 			if (stat.size < byteOffsetRef.current) {
@@ -93,7 +93,7 @@ export function useActivityMonitor(
 
 	// Main effect: set up file watch + polling fallback + startup replay
 	useEffect(() => {
-		const jsonlPath = join(projectPath, ".claudemem", "activity.jsonl");
+		const jsonlPath = join(projectPath, ".mnemex", "activity.jsonl");
 
 		// Truncate activity.jsonl on startup (TUI owns truncation, MCP is append-only)
 		try {
@@ -109,10 +109,10 @@ export function useActivityMonitor(
 		// Defer by one tick so child view effects have registered before replay.
 		const replayTimer = setTimeout(() => pollActivities(), 0);
 
-		// Watch the .claudemem directory for changes to activity.jsonl
+		// Watch the .mnemex directory for changes to activity.jsonl
 		let watcher: ReturnType<typeof watch> | null = null;
 		try {
-			const dir = join(projectPath, ".claudemem");
+			const dir = join(projectPath, ".mnemex");
 			if (existsSync(dir)) {
 				watcher = watch(dir, (_eventType, filename) => {
 					if (filename === "activity.jsonl") {

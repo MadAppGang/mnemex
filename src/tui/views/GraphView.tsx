@@ -67,16 +67,10 @@ function SymbolListPane({
 				<scrollbox width="100%" height="100%">
 					{symbols.map((sym, i) => (
 						<box key={sym.id} flexDirection="column" width="100%">
-							<box
-								flexDirection="row"
-								paddingLeft={1}
-								height={1}
-							>
+							<box flexDirection="row" paddingLeft={1} height={1}>
 								<text
 									fg={
-										i === selectedIndex && isActive
-											? theme.primary
-											: theme.text
+										i === selectedIndex && isActive ? theme.primary : theme.text
 									}
 									width={22}
 								>
@@ -85,9 +79,7 @@ function SymbolListPane({
 								<text fg={theme.muted} width={10}>
 									{sym.kind}
 								</text>
-								<text fg={theme.dimmed}>
-									{`:${sym.startLine}`}
-								</text>
+								<text fg={theme.dimmed}>{`:${sym.startLine}`}</text>
 							</box>
 							<box paddingLeft={2} height={1}>
 								<text fg={theme.dimmed}>
@@ -130,9 +122,7 @@ function DefinitionPane({
 	showCode,
 }: DefinitionPaneProps) {
 	const borderColor = isActive ? theme.primary : theme.border;
-	const normalizedScore = symbol
-		? Math.min(1, symbol.pagerankScore / 0.1)
-		: 0;
+	const normalizedScore = symbol ? Math.min(1, symbol.pagerankScore / 0.1) : 0;
 
 	return (
 		<box
@@ -143,9 +133,7 @@ function DefinitionPane({
 			height="100%"
 		>
 			<box paddingLeft={1} height={1}>
-				<text fg={isActive ? theme.primary : theme.muted}>
-					{"Definition"}
-				</text>
+				<text fg={isActive ? theme.primary : theme.muted}>{"Definition"}</text>
 			</box>
 
 			{loading && (
@@ -167,9 +155,7 @@ function DefinitionPane({
 						<text fg={theme.primary} width={30}>
 							{symbol.name}
 						</text>
-						<text fg={isActive ? theme.info : theme.dimmed}>
-							{symbol.kind}
-						</text>
+						<text fg={isActive ? theme.info : theme.dimmed}>{symbol.kind}</text>
 					</box>
 					<box height={1}>
 						<text fg={theme.muted}>
@@ -178,19 +164,13 @@ function DefinitionPane({
 					</box>
 					<box height={1}>
 						<text fg={theme.dimmed}>{"exported: "}</text>
-						<text
-							fg={symbol.isExported ? theme.success : theme.muted}
-						>
+						<text fg={symbol.isExported ? theme.success : theme.muted}>
 							{symbol.isExported ? "yes" : "no"}
 						</text>
 					</box>
 					<box flexDirection="row" height={1}>
 						<text fg={theme.dimmed}>{"pagerank: "}</text>
-						<ScoreBar
-							score={normalizedScore}
-							width={10}
-							showPercent={false}
-						/>
+						<ScoreBar score={normalizedScore} width={10} showPercent={false} />
 						<text fg={theme.muted}>
 							{` ${symbol.pagerankScore.toFixed(4)}`}
 						</text>
@@ -222,7 +202,15 @@ function DefinitionPane({
 // ============================================================================
 
 export function GraphView() {
-	const { tracker, navHistory, pushNav, setActiveTab, inputFocused, setInputFocused, activeTab } = useAppContext();
+	const {
+		tracker,
+		navHistory,
+		pushNav,
+		setActiveTab,
+		inputFocused,
+		setInputFocused,
+		activeTab,
+	} = useAppContext();
 	const {
 		focusedSymbol,
 		callers,
@@ -253,7 +241,9 @@ export function GraphView() {
 		if (activeTab === "graph") {
 			setInputFocused(symInputFocused);
 		}
-		return () => { if (activeTab === "graph") setInputFocused(false); };
+		return () => {
+			if (activeTab === "graph") setInputFocused(false);
+		};
 	}, [symInputFocused, activeTab, setInputFocused]);
 
 	const drillInto = (sym: SymbolDefinition) => {
@@ -263,7 +253,9 @@ export function GraphView() {
 
 	useKeyboard((key) => {
 		if (key.name === "escape") {
-			if (symInputFocused) { setSymInputFocused(false); }
+			if (symInputFocused) {
+				setSymInputFocused(false);
+			}
 			return;
 		}
 		if (!symInputFocused && key.name === "/") {
@@ -438,12 +430,8 @@ export function GraphView() {
 					textColor={theme.text}
 				/>
 				<text fg={theme.dimmed}>{"  [ ] pane  v code"}</text>
-				{canGoBack && (
-					<text fg={theme.dimmed}>{"  Alt+Left:back"}</text>
-				)}
-				{canGoForward && (
-					<text fg={theme.dimmed}>{"  Alt+Right:fwd"}</text>
-				)}
+				{canGoBack && <text fg={theme.dimmed}>{"  Alt+Left:back"}</text>}
+				{canGoForward && <text fg={theme.dimmed}>{"  Alt+Right:fwd"}</text>}
 			</box>
 
 			{/* Error */}

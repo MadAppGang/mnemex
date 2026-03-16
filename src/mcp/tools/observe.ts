@@ -20,13 +20,9 @@ export function registerObserveTools(server: McpServer, deps: ToolDeps): void {
 	server.tool(
 		"observe",
 		"Record a session observation (gotcha, pattern, architecture note). " +
-		"Observations are embedded and surface in future searches when relevant.",
+			"Observations are embedded and surface in future searches when relevant.",
 		{
-			content: z
-				.string()
-				.min(5)
-				.max(2000)
-				.describe("The observation text"),
+			content: z.string().min(5).max(2000).describe("The observation text"),
 			affectedFiles: z
 				.array(z.string())
 				.default([])

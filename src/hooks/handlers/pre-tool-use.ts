@@ -2,7 +2,7 @@
  * PreToolUse Hook Handler
  *
  * Intercepts tool calls before execution:
- * - Grep: Replace with claudemem AST analysis
+ * - Grep: Replace with mnemex AST analysis
  * - Bash: Detect grep/find commands and intercept
  * - Glob: Provide tips about semantic search
  * - Read: Track for potential feedback (future)
@@ -23,7 +23,7 @@ import { logToolStart } from "./interaction-logger.js";
  * Check if project is indexed
  */
 function isIndexed(cwd: string): IndexStatus {
-	const indexDir = join(cwd, ".claudemem");
+	const indexDir = join(cwd, ".mnemex");
 	const dbPath = join(indexDir, "index.db");
 
 	if (!existsSync(dbPath)) {
@@ -34,7 +34,7 @@ function isIndexed(cwd: string): IndexStatus {
 }
 
 /**
- * Run claudemem command and return output
+ * Run mnemex command and return output
  */
 function runClaudemem(args: string[], cwd?: string): string | null {
 	try {
@@ -69,11 +69,11 @@ async function handleGrepIntercept(
 	const status = isIndexed(input.cwd);
 	if (!status.indexed) {
 		return {
-			additionalContext: `**claudemem not indexed** - Grep allowed as fallback.
+			additionalContext: `**mnemex not indexed** - Grep allowed as fallback.
 
 For AST structural analysis, run:
 \`\`\`bash
-claudemem index
+mnemex index
 \`\`\``,
 		};
 	}
@@ -101,10 +101,10 @@ claudemem index
 	}
 
 	return {
-		additionalContext: `**CLAUDEMEM AST ANALYSIS** (Grep intercepted)
+		additionalContext: `**MNEMEX AST ANALYSIS** (Grep intercepted)
 
 **Query:** "${pattern}"
-**Command:** claudemem --nologo ${commandUsed} "${pattern}" --raw
+**Command:** mnemex --nologo ${commandUsed} "${pattern}" --raw
 
 ${results}
 
@@ -112,15 +112,15 @@ ${results}
 AST structural analysis complete.
 
 **Commands:**
-- \`claudemem --nologo symbol <name> --raw\` - Exact location
-- \`claudemem --nologo callers <name> --raw\` - What calls this?
-- \`claudemem --nologo callees <name> --raw\` - What does this call?
-- \`claudemem --nologo context <name> --raw\` - Full call chain`,
+- \`mnemex --nologo symbol <name> --raw\` - Exact location
+- \`mnemex --nologo callers <name> --raw\` - What calls this?
+- \`mnemex --nologo callees <name> --raw\` - What does this call?
+- \`mnemex --nologo context <name> --raw\` - Full call chain`,
 		hookSpecificOutput: {
 			hookEventName: "PreToolUse",
 			permissionDecision: "deny",
 			permissionDecisionReason:
-				"Grep replaced with claudemem AST analysis. Results provided in context.",
+				"Grep replaced with mnemex AST analysis. Results provided in context.",
 		},
 	};
 }
@@ -158,35 +158,35 @@ async function handleBashIntercept(
 	const status = isIndexed(input.cwd);
 	if (!status.indexed) {
 		return {
-			additionalContext: `**Search command detected but claudemem not indexed**
+			additionalContext: `**Search command detected but mnemex not indexed**
 
 Command: \`${command}\`
 
-For AST structural analysis, run \`claudemem index\` first.
+For AST structural analysis, run \`mnemex index\` first.
 Allowing command as fallback.`,
 		};
 	}
 
-	// Run claudemem instead
+	// Run mnemex instead
 	const results =
 		runClaudemem(["--nologo", "map", extractedPattern, "--raw"], input.cwd) ||
 		"No results found";
 
 	return {
-		additionalContext: `**CLAUDEMEM AST ANALYSIS** (Bash search intercepted)
+		additionalContext: `**MNEMEX AST ANALYSIS** (Bash search intercepted)
 
 **Original command:** \`${command}\`
 **Pattern extracted:** "${extractedPattern}"
-**Replaced with:** claudemem --nologo map "${extractedPattern}" --raw
+**Replaced with:** mnemex --nologo map "${extractedPattern}" --raw
 
 ${results}
 
 ---
-Use claudemem for structural analysis instead of grep/find.`,
+Use mnemex for structural analysis instead of grep/find.`,
 		hookSpecificOutput: {
 			hookEventName: "PreToolUse",
 			permissionDecision: "deny",
-			permissionDecisionReason: `Bash search replaced with claudemem. Pattern "${extractedPattern}" analyzed with AST.`,
+			permissionDecisionReason: `Bash search replaced with mnemex. Pattern "${extractedPattern}" analyzed with AST.`,
 		},
 	};
 }
@@ -201,20 +201,20 @@ async function handleGlobIntercept(
 
 	if (!status.indexed) {
 		return {
-			additionalContext: `**Tip:** Consider claudemem for semantic search:
+			additionalContext: `**Tip:** Consider mnemex for semantic search:
 \`\`\`bash
-claudemem index  # First time only
-claudemem --nologo map "your query" --raw
+mnemex index  # First time only
+mnemex --nologo map "your query" --raw
 \`\`\``,
 		};
 	}
 
 	// Don't block Glob, just add tips
 	return {
-		additionalContext: `**Tip:** For semantic code search, use claudemem:
+		additionalContext: `**Tip:** For semantic code search, use mnemex:
 \`\`\`bash
-claudemem --nologo map "component" --raw   # Find by concept
-claudemem --nologo symbol "Button" --raw   # Find by name
+mnemex --nologo map "component" --raw   # Find by concept
+mnemex --nologo symbol "Button" --raw   # Find by name
 \`\`\``,
 	};
 }

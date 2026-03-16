@@ -6,8 +6,14 @@
  */
 
 import { describe, test, expect, beforeEach } from "bun:test";
-import { LocalCloudStub, createLocalCloudStub } from "../../../src/cloud/stub.js";
-import type { UploadIndexRequest, UploadChunk } from "../../../src/cloud/types.js";
+import {
+	LocalCloudStub,
+	createLocalCloudStub,
+} from "../../../src/cloud/stub.js";
+import type {
+	UploadIndexRequest,
+	UploadChunk,
+} from "../../../src/cloud/types.js";
 
 // ============================================================================
 // Fixtures
@@ -352,9 +358,17 @@ describe("LocalCloudStub.search", () => {
 describe("LocalCloudStub.getSymbol", () => {
 	beforeEach(async () => {
 		const chunks = [
-			makeChunk({ contentHash: "h1", name: "getUserById", chunkType: "function" }),
+			makeChunk({
+				contentHash: "h1",
+				name: "getUserById",
+				chunkType: "function",
+			}),
 			makeChunk({ contentHash: "h2", name: "getUsers", chunkType: "function" }),
-			makeChunk({ contentHash: "h3", name: "UserRepository", chunkType: "class" }),
+			makeChunk({
+				contentHash: "h3",
+				name: "UserRepository",
+				chunkType: "class",
+			}),
 		];
 		await stub.uploadIndex(makeUploadRequest(chunks));
 	});
@@ -429,7 +443,11 @@ describe("LocalCloudStub.getMap", () => {
 	test("lists symbols for uploaded chunks", async () => {
 		await stub.uploadIndex(
 			makeUploadRequest([
-				makeChunk({ contentHash: "h1", name: "myFunction", filePath: "src/a.ts" }),
+				makeChunk({
+					contentHash: "h1",
+					name: "myFunction",
+					filePath: "src/a.ts",
+				}),
 			]),
 		);
 		const map = await stub.getMap(REPO, COMMIT_SHA);

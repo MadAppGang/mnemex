@@ -59,7 +59,7 @@ const DEFAULT_IGNORE_DIRS = new Set([
 	".git",
 	"dist",
 	"build",
-	".claudemem",
+	".mnemex",
 	"__pycache__",
 	".next",
 	".nuxt",

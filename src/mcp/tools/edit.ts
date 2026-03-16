@@ -18,8 +18,8 @@ export function registerEditTools(server: McpServer, deps: ToolDeps): void {
 	server.tool(
 		"edit_symbol",
 		"Replace, insert before, or insert after a symbol's body in source code. " +
-		"Locates the symbol by name using the AST index, validates syntax, " +
-		"backs up the original, and triggers reindex.",
+			"Locates the symbol by name using the AST index, validates syntax, " +
+			"backs up the original, and triggers reindex.",
 		{
 			symbol: z.string().describe("Symbol name to edit"),
 			file: z
@@ -30,11 +30,15 @@ export function registerEditTools(server: McpServer, deps: ToolDeps): void {
 			insertMode: z
 				.enum(["replace", "before", "after"])
 				.default("replace")
-				.describe("How to apply the edit: replace the symbol body, insert before, or insert after"),
+				.describe(
+					"How to apply the edit: replace the symbol body, insert before, or insert after",
+				),
 			dryRun: z
 				.boolean()
 				.default(false)
-				.describe("If true, validate and report what would change without writing"),
+				.describe(
+					"If true, validate and report what would change without writing",
+				),
 		},
 		async ({ symbol, file, newContent, insertMode, dryRun }) => {
 			const startTime = Date.now();
@@ -64,24 +68,42 @@ export function registerEditTools(server: McpServer, deps: ToolDeps): void {
 	server.tool(
 		"edit_lines",
 		"Replace a range of lines in a file. Validates syntax, backs up the original, " +
-		"and triggers reindex.",
+			"and triggers reindex.",
 		{
 			file: z.string().describe("File path (relative to workspace root)"),
-			startLine: z.number().int().min(1).describe("First line to replace (1-indexed)"),
-			endLine: z.number().int().min(1).describe("Last line to replace (1-indexed, inclusive)"),
-			newContent: z.string().describe("New source code content for the line range"),
+			startLine: z
+				.number()
+				.int()
+				.min(1)
+				.describe("First line to replace (1-indexed)"),
+			endLine: z
+				.number()
+				.int()
+				.min(1)
+				.describe("Last line to replace (1-indexed, inclusive)"),
+			newContent: z
+				.string()
+				.describe("New source code content for the line range"),
 			dryRun: z
 				.boolean()
 				.default(false)
-				.describe("If true, validate and report what would change without writing"),
+				.describe(
+					"If true, validate and report what would change without writing",
+				),
 		},
 		async ({ file, startLine, endLine, newContent, dryRun }) => {
 			const startTime = Date.now();
 
 			try {
-				const result = await editor.editLines(file, startLine, endLine, newContent, {
-					dryRun,
-				});
+				const result = await editor.editLines(
+					file,
+					startLine,
+					endLine,
+					newContent,
+					{
+						dryRun,
+					},
+				);
 
 				return {
 					content: [
@@ -103,7 +125,7 @@ export function registerEditTools(server: McpServer, deps: ToolDeps): void {
 	server.tool(
 		"restore_edit",
 		"Restore files from a previous edit session backup. If no sessionId is provided, " +
-		"restores the most recent session.",
+			"restores the most recent session.",
 		{
 			sessionId: z
 				.string()

@@ -2,7 +2,7 @@
  * Pipeline Configuration
  *
  * Configuration for the parallel search pipeline backends.
- * Reads CLAUDEMEM_PIPELINE_* environment variables.
+ * Reads MNEMEX_PIPELINE_* environment variables.
  */
 
 // ============================================================================
@@ -94,21 +94,33 @@ export const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
 // ============================================================================
 
 /**
- * Load pipeline config from CLAUDEMEM_PIPELINE_* env vars, falling back to defaults.
+ * Load pipeline config from MNEMEX_PIPELINE_* env vars, falling back to defaults.
  */
 export function loadPipelineConfig(): PipelineConfig {
 	const d = DEFAULT_PIPELINE_CONFIG;
 
 	return {
 		backends: {
-			symbolGraph: parseBool(process.env.CLAUDEMEM_PIPELINE_SYMBOL_GRAPH, d.backends.symbolGraph),
-			lsp: parseBool(process.env.CLAUDEMEM_PIPELINE_LSP, d.backends.lsp),
-			treeSitter: parseBool(process.env.CLAUDEMEM_PIPELINE_TREE_SITTER, d.backends.treeSitter),
-			semantic: parseBool(process.env.CLAUDEMEM_PIPELINE_SEMANTIC, d.backends.semantic),
-			location: parseBool(process.env.CLAUDEMEM_PIPELINE_LOCATION, d.backends.location),
+			symbolGraph: parseBool(
+				process.env.MNEMEX_PIPELINE_SYMBOL_GRAPH,
+				d.backends.symbolGraph,
+			),
+			lsp: parseBool(process.env.MNEMEX_PIPELINE_LSP, d.backends.lsp),
+			treeSitter: parseBool(
+				process.env.MNEMEX_PIPELINE_TREE_SITTER,
+				d.backends.treeSitter,
+			),
+			semantic: parseBool(
+				process.env.MNEMEX_PIPELINE_SEMANTIC,
+				d.backends.semantic,
+			),
+			location: parseBool(
+				process.env.MNEMEX_PIPELINE_LOCATION,
+				d.backends.location,
+			),
 		},
-		routerMinConfidence: parseFloat(
-			process.env.CLAUDEMEM_PIPELINE_ROUTER_CONFIDENCE,
+		routerMinConfidence: parseFloatEnv(
+			process.env.MNEMEX_PIPELINE_ROUTER_CONFIDENCE,
 			d.routerMinConfidence,
 		),
 		backendWeights: {
@@ -119,24 +131,24 @@ export function loadPipelineConfig(): PipelineConfig {
 			location: d.backendWeights.location,
 		},
 		lspShortCircuit: parseBool(
-			process.env.CLAUDEMEM_PIPELINE_LSP_SHORT_CIRCUIT,
+			process.env.MNEMEX_PIPELINE_LSP_SHORT_CIRCUIT,
 			d.lspShortCircuit,
 		),
 		semanticReranking: parseBool(
-			process.env.CLAUDEMEM_PIPELINE_SEMANTIC_RERANKING,
+			process.env.MNEMEX_PIPELINE_SEMANTIC_RERANKING,
 			d.semanticReranking,
 		),
 		mergedReranking: parseBool(
-			process.env.CLAUDEMEM_PIPELINE_MERGED_RERANKING,
+			process.env.MNEMEX_PIPELINE_MERGED_RERANKING,
 			d.mergedReranking,
 		),
 		treeSitterConfig: {
-			maxFilesToScan: parseInt(
-				process.env.CLAUDEMEM_PIPELINE_TS_MAX_FILES,
+			maxFilesToScan: parseIntEnv(
+				process.env.MNEMEX_PIPELINE_TS_MAX_FILES,
 				d.treeSitterConfig.maxFilesToScan,
 			),
 		},
-		rrfK: parseInt(process.env.CLAUDEMEM_PIPELINE_RRF_K, d.rrfK),
+		rrfK: parseIntEnv(process.env.MNEMEX_PIPELINE_RRF_K, d.rrfK),
 	};
 }
 
@@ -149,13 +161,16 @@ function parseBool(value: string | undefined, defaultValue: boolean): boolean {
 	return value === "true" || value === "1";
 }
 
-function parseFloat(value: string | undefined, defaultValue: number): number {
+function parseFloatEnv(
+	value: string | undefined,
+	defaultValue: number,
+): number {
 	if (value === undefined || value === "") return defaultValue;
 	const parsed = Number.parseFloat(value);
 	return Number.isNaN(parsed) ? defaultValue : parsed;
 }
 
-function parseInt(value: string | undefined, defaultValue: number): number {
+function parseIntEnv(value: string | undefined, defaultValue: number): number {
 	if (value === undefined || value === "") return defaultValue;
 	const parsed = Number.parseInt(value, 10);
 	return Number.isNaN(parsed) ? defaultValue : parsed;

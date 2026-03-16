@@ -119,7 +119,9 @@ export function EnrichmentSetupScreen({
 	});
 	const [apiKey, setApiKey] = useState(wizardState.llmApiKey ?? "");
 	const [endpoint, setEndpoint] = useState(wizardState.llmEndpoint ?? "");
-	const [editField, setEditField] = useState<"none" | "apikey" | "endpoint">("none");
+	const [editField, setEditField] = useState<"none" | "apikey" | "endpoint">(
+		"none",
+	);
 	const [keyError, setKeyError] = useState<string | null>(null);
 
 	const selectedOpt = ENRICHMENT_OPTIONS[selectedIndex];
@@ -134,7 +136,10 @@ export function EnrichmentSetupScreen({
 			if (key.name === "return" || key.name === "enter") {
 				// Validate API key prefix
 				if (editField === "apikey" && selectedOpt?.apiKeyPrefix) {
-					if (apiKey.length > 0 && !apiKey.startsWith(selectedOpt.apiKeyPrefix)) {
+					if (
+						apiKey.length > 0 &&
+						!apiKey.startsWith(selectedOpt.apiKeyPrefix)
+					) {
 						setKeyError(`Key should start with ${selectedOpt.apiKeyPrefix}`);
 					} else {
 						setKeyError(null);
@@ -224,18 +229,19 @@ export function EnrichmentSetupScreen({
 	});
 
 	// Masked API key display
-	const maskedKey = apiKey.length > 0
-		? (apiKey.length > 8
-			? `${apiKey.slice(0, 6)}${"*".repeat(Math.min(apiKey.length - 6, 12))}`
-			: "*".repeat(apiKey.length))
-		: "";
+	const maskedKey =
+		apiKey.length > 0
+			? apiKey.length > 8
+				? `${apiKey.slice(0, 6)}${"*".repeat(Math.min(apiKey.length - 6, 12))}`
+				: "*".repeat(apiKey.length)
+			: "";
 
 	return (
 		<box flexDirection="column" width="100%" height="100%">
 			{/* Header */}
 			<box flexDirection="row" paddingLeft={1} paddingTop={1}>
 				<text fg={theme.borderDim}>{"┌─"}</text>
-				<text fg={theme.primary}>{" claudemem "}</text>
+				<text fg={theme.primary}>{" mnemex "}</text>
 				<text fg={theme.borderDim}>{"─"}</text>
 				<text fg={theme.muted}>{" Setup "}</text>
 				<text fg={theme.borderDim}>{"─"}</text>
@@ -244,7 +250,9 @@ export function EnrichmentSetupScreen({
 			</box>
 
 			<box paddingLeft={3} paddingTop={1}>
-				<text fg={theme.dimmed}>{"Choose an LLM provider for code summaries:"}</text>
+				<text fg={theme.dimmed}>
+					{"Choose an LLM provider for code summaries:"}
+				</text>
 			</box>
 
 			{/* Options list */}
@@ -273,14 +281,18 @@ export function EnrichmentSetupScreen({
 											flexDirection="column"
 											marginTop={1}
 											borderStyle="single"
-											borderColor={apiKey.length > 0 ? theme.primary : theme.border}
+											borderColor={
+												apiKey.length > 0 ? theme.primary : theme.border
+											}
 											paddingLeft={2}
 											paddingRight={2}
 											paddingTop={1}
 											paddingBottom={1}
 										>
 											<box flexDirection="row">
-												<text fg={theme.labelDim}>{`${opt.apiKeyLabel ?? "API key"}  `}</text>
+												<text
+													fg={theme.labelDim}
+												>{`${opt.apiKeyLabel ?? "API key"}  `}</text>
 												<text fg={theme.secretBright}>{maskedKey}</text>
 												{editField === "apikey" && (
 													<text fg={theme.primary}>{"_"}</text>
@@ -288,7 +300,9 @@ export function EnrichmentSetupScreen({
 											</box>
 											{!editField && (
 												<box marginTop={1}>
-													<text fg={theme.dimmed}>{"Press [a] to enter API key"}</text>
+													<text fg={theme.dimmed}>
+														{"Press [a] to enter API key"}
+													</text>
 												</box>
 											)}
 											{keyError && (
@@ -306,7 +320,9 @@ export function EnrichmentSetupScreen({
 											flexDirection="column"
 											marginTop={1}
 											borderStyle="single"
-											borderColor={endpoint.length > 0 ? theme.primary : theme.border}
+											borderColor={
+												endpoint.length > 0 ? theme.primary : theme.border
+											}
 											paddingLeft={2}
 											paddingRight={2}
 											paddingTop={1}
@@ -321,7 +337,9 @@ export function EnrichmentSetupScreen({
 											</box>
 											{!editField && (
 												<box marginTop={1}>
-													<text fg={theme.dimmed}>{"Press [e] to edit endpoint"}</text>
+													<text fg={theme.dimmed}>
+														{"Press [e] to edit endpoint"}
+													</text>
 												</box>
 											)}
 										</box>

@@ -67,7 +67,9 @@ export class LspTransport {
 
 			if (this.buffer.length < this.contentLength) break;
 
-			const body = this.buffer.subarray(0, this.contentLength).toString("utf-8");
+			const body = this.buffer
+				.subarray(0, this.contentLength)
+				.toString("utf-8");
 			this.buffer = this.buffer.subarray(this.contentLength);
 			this.contentLength = -1;
 
@@ -94,7 +96,9 @@ export class LspTransport {
 		return new Promise<T>((resolve, reject) => {
 			const timer = setTimeout(() => {
 				this.pending.delete(id);
-				reject(new Error(`LSP request '${method}' timed out after ${timeoutMs}ms`));
+				reject(
+					new Error(`LSP request '${method}' timed out after ${timeoutMs}ms`),
+				);
 			}, timeoutMs);
 
 			this.pending.set(id, {
@@ -110,7 +114,11 @@ export class LspTransport {
 	/**
 	 * Send a notification (no response expected).
 	 */
-	sendNotification(process: ChildProcess, method: string, params: unknown): void {
+	sendNotification(
+		process: ChildProcess,
+		method: string,
+		params: unknown,
+	): void {
 		this.writeMessage(process, { jsonrpc: "2.0", method, params });
 	}
 
@@ -134,7 +142,10 @@ export class LspTransport {
 
 	private handleMessage(message: JsonRpcMessage): void {
 		// Response to a request
-		if (message.id !== undefined && (message.result !== undefined || message.error)) {
+		if (
+			message.id !== undefined &&
+			(message.result !== undefined || message.error)
+		) {
 			const pending = this.pending.get(message.id);
 			if (pending) {
 				this.pending.delete(message.id);
@@ -142,7 +153,9 @@ export class LspTransport {
 
 				if (message.error) {
 					pending.reject(
-						new Error(`LSP error ${message.error.code}: ${message.error.message}`),
+						new Error(
+							`LSP error ${message.error.code}: ${message.error.message}`,
+						),
 					);
 				} else {
 					pending.resolve(message.result);

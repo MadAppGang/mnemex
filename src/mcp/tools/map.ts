@@ -30,7 +30,9 @@ export function registerMapTools(server: McpServer, deps: ToolDeps): void {
 				.min(1)
 				.max(8)
 				.default(3)
-				.describe("Approximate token budget in thousands (default: 3 = 3000 tokens)"),
+				.describe(
+					"Approximate token budget in thousands (default: 3 = 3000 tokens)",
+				),
 			includeSymbols: z
 				.boolean()
 				.default(true)
@@ -49,10 +51,9 @@ export function registerMapTools(server: McpServer, deps: ToolDeps): void {
 						const orgSlug = deps.teamConfig.orgSlug;
 						const repoSlug =
 							deps.teamConfig.repoSlug ??
-							`${orgSlug}/${config.workspaceRoot
-								.split("/")
-								.filter(Boolean)
-								.pop() ?? "repo"}`;
+							`${orgSlug}/${
+								config.workspaceRoot.split("/").filter(Boolean).pop() ?? "repo"
+							}`;
 
 						const mapText = await deps.cloudClient.getMap(
 							repoSlug,
@@ -80,8 +81,7 @@ export function registerMapTools(server: McpServer, deps: ToolDeps): void {
 				// ── Local map (default path) ─────────────────────────────────────
 				const { repoMapGen } = await cache.get();
 
-				const pathPattern =
-					root && root !== "." ? root : undefined;
+				const pathPattern = root && root !== "." ? root : undefined;
 
 				const mapText = repoMapGen.generate({
 					maxTokens,
@@ -106,4 +106,3 @@ export function registerMapTools(server: McpServer, deps: ToolDeps): void {
 		},
 	);
 }
-

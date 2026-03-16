@@ -89,7 +89,9 @@ describe("GitDiffChangeDetector.getParentShas", () => {
 	test("returns a single parent SHA for a normal commit", async () => {
 		mockExec("aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111\n");
 		const detector = makeDetector();
-		const parents = await detector.getParentShas("bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222");
+		const parents = await detector.getParentShas(
+			"bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222",
+		);
 		expect(parents).toHaveLength(1);
 		expect(parents[0]).toBe("aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111");
 	});
@@ -97,10 +99,12 @@ describe("GitDiffChangeDetector.getParentShas", () => {
 	test("returns two parent SHAs for a merge commit", async () => {
 		mockExec(
 			"aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111\n" +
-			"bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222\n",
+				"bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222\n",
 		);
 		const detector = makeDetector();
-		const parents = await detector.getParentShas("cccc3333cccc3333cccc3333cccc3333cccc3333");
+		const parents = await detector.getParentShas(
+			"cccc3333cccc3333cccc3333cccc3333cccc3333",
+		);
 		expect(parents).toHaveLength(2);
 		expect(parents[0]).toBe("aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111");
 		expect(parents[1]).toBe("bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222");
@@ -109,14 +113,18 @@ describe("GitDiffChangeDetector.getParentShas", () => {
 	test("returns empty array for initial commit (git exits non-zero)", async () => {
 		mockExecError("unknown revision or path not in the working tree");
 		const detector = makeDetector();
-		const parents = await detector.getParentShas("init0000init0000init0000init0000init0000");
+		const parents = await detector.getParentShas(
+			"init0000init0000init0000init0000init0000",
+		);
 		expect(parents).toEqual([]);
 	});
 
 	test("filters out non-40-char lines (e.g. blank lines)", async () => {
 		mockExec("aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111\n\n");
 		const detector = makeDetector();
-		const parents = await detector.getParentShas("bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222");
+		const parents = await detector.getParentShas(
+			"bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222",
+		);
 		expect(parents).toHaveLength(1);
 	});
 });
@@ -139,7 +147,10 @@ describe("GitDiffChangeDetector.getChangedFiles — two commits", () => {
 		const detector = makeDetector();
 		const files = await detector.getChangedFiles("fromSha", "toSha");
 		expect(files).toHaveLength(1);
-		expect(files[0]).toEqual({ filePath: "src/existing.ts", status: "modified" });
+		expect(files[0]).toEqual({
+			filePath: "src/existing.ts",
+			status: "modified",
+		});
 	});
 
 	test("parses deleted files", async () => {
@@ -147,7 +158,10 @@ describe("GitDiffChangeDetector.getChangedFiles — two commits", () => {
 		const detector = makeDetector();
 		const files = await detector.getChangedFiles("fromSha", "toSha");
 		expect(files).toHaveLength(1);
-		expect(files[0]).toEqual({ filePath: "src/old-file.ts", status: "deleted" });
+		expect(files[0]).toEqual({
+			filePath: "src/old-file.ts",
+			status: "deleted",
+		});
 	});
 
 	test("parses renamed files", async () => {
@@ -163,11 +177,7 @@ describe("GitDiffChangeDetector.getChangedFiles — two commits", () => {
 	});
 
 	test("parses multiple changes", async () => {
-		mockExec(
-			"A\tsrc/a.ts\n" +
-			"M\tsrc/b.ts\n" +
-			"D\tsrc/c.ts\n",
-		);
+		mockExec("A\tsrc/a.ts\n" + "M\tsrc/b.ts\n" + "D\tsrc/c.ts\n");
 		const detector = makeDetector();
 		const files = await detector.getChangedFiles("sha1", "sha2");
 		expect(files).toHaveLength(3);
@@ -225,7 +235,10 @@ describe("GitDiffChangeDetector.getDirtyFiles", () => {
 		const detector = makeDetector();
 		const files = await detector.getDirtyFiles();
 		expect(files).toHaveLength(1);
-		expect(files[0]).toEqual({ filePath: "src/unstaged.ts", status: "modified" });
+		expect(files[0]).toEqual({
+			filePath: "src/unstaged.ts",
+			status: "modified",
+		});
 	});
 
 	test("parses staged addition", async () => {
@@ -241,7 +254,10 @@ describe("GitDiffChangeDetector.getDirtyFiles", () => {
 		const detector = makeDetector();
 		const files = await detector.getDirtyFiles();
 		expect(files).toHaveLength(1);
-		expect(files[0]).toEqual({ filePath: "src/untracked.ts", status: "untracked" });
+		expect(files[0]).toEqual({
+			filePath: "src/untracked.ts",
+			status: "untracked",
+		});
 	});
 
 	test("parses working-tree deletion", async () => {
@@ -257,7 +273,10 @@ describe("GitDiffChangeDetector.getDirtyFiles", () => {
 		const detector = makeDetector();
 		const files = await detector.getDirtyFiles();
 		expect(files).toHaveLength(1);
-		expect(files[0]).toEqual({ filePath: "src/staged-delete.ts", status: "deleted" });
+		expect(files[0]).toEqual({
+			filePath: "src/staged-delete.ts",
+			status: "deleted",
+		});
 	});
 
 	test("parses rename in index (R  old -> new)", async () => {
@@ -272,10 +291,10 @@ describe("GitDiffChangeDetector.getDirtyFiles", () => {
 	test("handles mixed dirty state", async () => {
 		mockExec(
 			"M  src/a.ts\n" +
-			" M src/b.ts\n" +
-			"A  src/c.ts\n" +
-			"?? src/d.ts\n" +
-			" D src/e.ts\n",
+				" M src/b.ts\n" +
+				"A  src/c.ts\n" +
+				"?? src/d.ts\n" +
+				" D src/e.ts\n",
 		);
 		const detector = makeDetector();
 		const files = await detector.getDirtyFiles();

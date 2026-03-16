@@ -83,7 +83,11 @@ export function SearchView() {
 		}
 
 		// Arrow keys: auto-unfocus input and navigate results
-		if (inputFocused && results.length > 0 && (key.name === "down" || key.name === "up")) {
+		if (
+			inputFocused &&
+			results.length > 0 &&
+			(key.name === "down" || key.name === "up")
+		) {
 			setInputFocused(false);
 			if (key.name === "down") {
 				setSelectedIndex(Math.min(selectedIndex + 1, results.length - 1));
@@ -152,12 +156,7 @@ export function SearchView() {
 	return (
 		<box flexDirection="column" width="100%" height="100%">
 			{/* Search input row */}
-			<box
-				flexDirection="row"
-				height={1}
-				paddingLeft={1}
-				paddingRight={1}
-			>
+			<box flexDirection="row" height={1} paddingLeft={1} paddingRight={1}>
 				<text fg={inputFocused ? theme.primary : theme.muted}>
 					{inputFocused ? "/ " : "> "}
 				</text>
@@ -169,33 +168,20 @@ export function SearchView() {
 					width="100%"
 					textColor={theme.text}
 				/>
-				{!inputFocused && (
-					<text fg={theme.dimmed}>{"  (/ to type)"}</text>
-				)}
+				{!inputFocused && <text fg={theme.dimmed}>{"  (/ to type)"}</text>}
 			</box>
 
 			{/* Options row */}
-			<box
-				flexDirection="row"
-				height={1}
-				paddingLeft={1}
-				paddingRight={1}
-			>
+			<box flexDirection="row" height={1} paddingLeft={1} paddingRight={1}>
 				<text fg={theme.muted}>{"Sort: "}</text>
 				<text fg={theme.info}>{sortOrder}</text>
-				{!inputFocused && (
-					<text fg={theme.dimmed}>{"  (o)  "}</text>
-				)}
-				{inputFocused && (
-					<text fg={theme.dimmed}>{"       "}</text>
-				)}
+				{!inputFocused && <text fg={theme.dimmed}>{"  (o)  "}</text>}
+				{inputFocused && <text fg={theme.dimmed}>{"       "}</text>}
 				<text fg={theme.muted}>{"  Lang: "}</text>
 				<text fg={language ? theme.warning : theme.dimmed}>
 					{language ?? "any"}
 				</text>
-				{!inputFocused && (
-					<text fg={theme.dimmed}>{"  (l)  "}</text>
-				)}
+				{!inputFocused && <text fg={theme.dimmed}>{"  (l)  "}</text>}
 				{loading && <text fg={theme.info}>{"  Searching..."}</text>}
 				{!loading && results.length > 0 && (
 					<text fg={theme.muted}>{`  Results: ${results.length}`}</text>

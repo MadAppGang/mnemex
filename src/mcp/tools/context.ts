@@ -19,9 +19,7 @@ export function registerContextTools(server: McpServer, deps: ToolDeps): void {
 		{
 			file: z
 				.string()
-				.describe(
-					"File path (relative to workspace root) to get context for",
-				),
+				.describe("File path (relative to workspace root) to get context for"),
 			line: z
 				.number()
 				.default(1)
@@ -78,8 +76,7 @@ export function registerContextTools(server: McpServer, deps: ToolDeps): void {
 
 				// Gather file-level imports by collecting callees from file symbols
 				const fileSymbols = allSymbols.filter(
-					(s) =>
-						s.filePath === file || s.filePath.endsWith("/" + file),
+					(s) => s.filePath === file || s.filePath.endsWith("/" + file),
 				);
 				const importSet = new Set<string>();
 				for (const sym of fileSymbols) {

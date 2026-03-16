@@ -64,8 +64,9 @@ export class AdminApiClient {
 				error?: string;
 				field?: string;
 			};
-			const msg =
-				body.field ? `${body.error}: ${body.field}` : (body.error ?? `HTTP ${res.status}`);
+			const msg = body.field
+				? `${body.error}: ${body.field}`
+				: (body.error ?? `HTTP ${res.status}`);
 			throw new Error(msg);
 		}
 		const body = (await res.json()) as {

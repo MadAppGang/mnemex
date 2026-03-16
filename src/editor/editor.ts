@@ -260,14 +260,18 @@ export class SymbolEditor {
 	 */
 	private triggerReindex(filePath: string): void {
 		try {
-			const child = spawn("claudemem", ["index", "--quiet", "--files", filePath], {
-				cwd: this.config.workspaceRoot,
-				stdio: "ignore",
-				detached: true,
-			});
+			const child = spawn(
+				"mnemex",
+				["index", "--quiet", "--files", filePath],
+				{
+					cwd: this.config.workspaceRoot,
+					stdio: "ignore",
+					detached: true,
+				},
+			);
 			child.unref();
 		} catch {
-			// Best-effort: if claudemem binary isn't available, skip
+			// Best-effort: if mnemex binary isn't available, skip
 		}
 	}
 }
@@ -278,7 +282,7 @@ export class SymbolEditor {
  */
 export function atomicWrite(filePath: string, content: string): void {
 	const dir = dirname(filePath);
-	const tmpName = `.claudemem-tmp-${randomBytes(8).toString("hex")}`;
+	const tmpName = `.mnemex-tmp-${randomBytes(8).toString("hex")}`;
 	const tmpPath = join(dir, tmpName);
 
 	try {

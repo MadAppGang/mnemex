@@ -27,7 +27,7 @@ const SEPARATOR = "=".repeat(64);
  * Structure:
  * ```
  * ================================================================
- * claudemem pack - Codebase: {name}
+ * mnemex pack - Codebase: {name}
  * Generated: {date} | Files: {N} | Tokens (est.): {N}
  * ================================================================
  *
@@ -60,7 +60,7 @@ export function formatPlain(
 
 	// Header
 	parts.push(SEPARATOR);
-	parts.push(`claudemem pack - Codebase: ${meta.projectName}`);
+	parts.push(`mnemex pack - Codebase: ${meta.projectName}`);
 	parts.push(
 		`Generated: ${meta.generatedAt} | Files: ${meta.fileCount} | Tokens (est.): ${meta.estimatedTokens}`,
 	);

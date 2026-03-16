@@ -7,7 +7,11 @@
  */
 
 import { describe, test, expect, beforeEach, mock } from "bun:test";
-import { ThinCloudClient, CloudApiError, createThinCloudClient } from "../../../src/cloud/thin-client.js";
+import {
+	ThinCloudClient,
+	CloudApiError,
+	createThinCloudClient,
+} from "../../../src/cloud/thin-client.js";
 import type {
 	UploadIndexRequest,
 	CloudSearchRequest,
@@ -18,7 +22,7 @@ import type {
 // Fetch mock helpers
 // ============================================================================
 
-const ENDPOINT = "https://api.claudemem.dev";
+const ENDPOINT = "https://api.mnemex.dev";
 const TOKEN = "test-token-abc123";
 const REPO = "acme-corp/my-repo";
 const COMMIT_SHA = "abc123def456abc123def456abc123def456abc1";
@@ -36,8 +40,7 @@ function mockResponse(
 			typeof body === "string" ? "text/plain" : "application/json",
 		...headers,
 	});
-	const bodyText =
-		typeof body === "string" ? body : JSON.stringify(body);
+	const bodyText = typeof body === "string" ? body : JSON.stringify(body);
 	return new Response(bodyText, { status, headers: responseHeaders });
 }
 
@@ -122,7 +125,11 @@ describe("ThinCloudClient — request headers", () => {
 	});
 
 	test("uses custom version when specified", async () => {
-		const c = new ThinCloudClient({ endpoint: ENDPOINT, token: TOKEN, version: 2 });
+		const c = new ThinCloudClient({
+			endpoint: ENDPOINT,
+			token: TOKEN,
+			version: 2,
+		});
 		const fetchMock = mockFetch(mockResponse({ existing: [], missing: [] }));
 		await c.checkChunks(REPO, ["hash1"]);
 		const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -374,7 +381,9 @@ describe("ThinCloudClient.getCallees", () => {
 
 describe("ThinCloudClient.getMap", () => {
 	test("GETs /v1/map with repo and commit params", async () => {
-		const fetchMock = mockFetch(mockResponse("# Repo Map\n", 200, { "Content-Type": "text/plain" }));
+		const fetchMock = mockFetch(
+			mockResponse("# Repo Map\n", 200, { "Content-Type": "text/plain" }),
+		);
 		await client.getMap(REPO, COMMIT_SHA);
 		const [url] = fetchMock.mock.calls[0] as [string];
 		expect(url).toContain("/v1/map");
@@ -383,21 +392,29 @@ describe("ThinCloudClient.getMap", () => {
 	});
 
 	test("includes query param when provided", async () => {
-		const fetchMock = mockFetch(mockResponse("# Map\n", 200, { "Content-Type": "text/plain" }));
+		const fetchMock = mockFetch(
+			mockResponse("# Map\n", 200, { "Content-Type": "text/plain" }),
+		);
 		await client.getMap(REPO, COMMIT_SHA, "auth functions");
 		const [url] = fetchMock.mock.calls[0] as [string];
 		expect(url).toContain("query=auth+functions");
 	});
 
 	test("includes maxTokens param when provided", async () => {
-		const fetchMock = mockFetch(mockResponse("# Map\n", 200, { "Content-Type": "text/plain" }));
+		const fetchMock = mockFetch(
+			mockResponse("# Map\n", 200, { "Content-Type": "text/plain" }),
+		);
 		await client.getMap(REPO, COMMIT_SHA, undefined, 1000);
 		const [url] = fetchMock.mock.calls[0] as [string];
 		expect(url).toContain("maxTokens=1000");
 	});
 
 	test("returns raw text string", async () => {
-		mockFetch(mockResponse("# Repo Map\nfile=src/index.ts\n", 200, { "Content-Type": "text/plain" }));
+		mockFetch(
+			mockResponse("# Repo Map\nfile=src/index.ts\n", 200, {
+				"Content-Type": "text/plain",
+			}),
+		);
 		const result = await client.getMap(REPO, COMMIT_SHA);
 		expect(result).toContain("Repo Map");
 	});

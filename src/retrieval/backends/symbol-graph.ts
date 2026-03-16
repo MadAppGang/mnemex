@@ -5,9 +5,13 @@
  * Activated for: symbol_lookup, structural
  */
 
-import type { QueryClassification } from "../../types.js";
 import type { ReferenceGraphManager } from "../../core/reference-graph.js";
-import type { ISearchBackend, BackendResult, SearchOptions } from "../pipeline/types.js";
+import type { QueryClassification } from "../../types.js";
+import type {
+	BackendResult,
+	ISearchBackend,
+	SearchOptions,
+} from "../pipeline/types.js";
 import { readSymbolBody } from "./utils/read-body.js";
 
 export class SymbolGraphBackend implements ISearchBackend {
@@ -30,12 +34,15 @@ export class SymbolGraphBackend implements ISearchBackend {
 		const results: BackendResult[] = [];
 
 		// Try to find the symbol by name (use extracted entities or query itself)
-		const names = intent.extractedEntities.length > 0 ? intent.extractedEntities : [query];
+		const names =
+			intent.extractedEntities.length > 0 ? intent.extractedEntities : [query];
 
 		for (const name of names) {
 			if (signal.aborted) break;
 
-			const found = this.graphManager.findSymbol(name, { preferExported: true });
+			const found = this.graphManager.findSymbol(name, {
+				preferExported: true,
+			});
 			if (!found) continue;
 
 			// Read body from disk
@@ -55,7 +62,10 @@ export class SymbolGraphBackend implements ISearchBackend {
 				symbol: found.name,
 				body: bodyResult.body ?? undefined,
 				snippet,
-				score: found.pagerankScore > 0 ? Math.min(found.pagerankScore * 100, 1) : 0.5,
+				score:
+					found.pagerankScore > 0
+						? Math.min(found.pagerankScore * 100, 1)
+						: 0.5,
 				backend: this.name,
 			});
 

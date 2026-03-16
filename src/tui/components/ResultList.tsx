@@ -53,8 +53,15 @@ function displayName(result: SearchResult): string {
 	const lines = chunk.content.split("\n");
 	for (const line of lines) {
 		const trimmed = line.trim();
-		if (trimmed && trimmed.length > 2 && !trimmed.startsWith("//") && !trimmed.startsWith("/*")) {
-			const match = trimmed.match(/(?:function|class|const|let|var|export|type|interface)\s+(\w+)/);
+		if (
+			trimmed &&
+			trimmed.length > 2 &&
+			!trimmed.startsWith("//") &&
+			!trimmed.startsWith("/*")
+		) {
+			const match = trimmed.match(
+				/(?:function|class|const|let|var|export|type|interface)\s+(\w+)/,
+			);
 			if (match) return match[1];
 			return trimmed.length > 40 ? `${trimmed.substring(0, 37)}...` : trimmed;
 		}
@@ -62,7 +69,10 @@ function displayName(result: SearchResult): string {
 	return "unnamed";
 }
 
-function buildAstBadge(metadata?: ASTMetadata): { text: string; hasAST: boolean } {
+function buildAstBadge(metadata?: ASTMetadata): {
+	text: string;
+	hasAST: boolean;
+} {
 	if (!metadata || Object.keys(metadata).length === 0) {
 		return { text: "", hasAST: false };
 	}
@@ -71,7 +81,8 @@ function buildAstBadge(metadata?: ASTMetadata): { text: string; hasAST: boolean 
 	if (metadata.isAsync) parts.push("async");
 	if (metadata.isGenerator) parts.push("gen");
 	if (metadata.isStatic) parts.push("static");
-	if (metadata.visibility && metadata.visibility !== "exported") parts.push(metadata.visibility);
+	if (metadata.visibility && metadata.visibility !== "exported")
+		parts.push(metadata.visibility);
 	if (metadata.parameters) parts.push(`${metadata.parameters.length} params`);
 	if (metadata.returnType) parts.push(`-> ${metadata.returnType}`);
 	return { text: parts.length > 0 ? parts.join(", ") : "AST", hasAST: true };
@@ -170,7 +181,11 @@ function getMatchLines(
 // Card height estimation for scroll windowing
 // ============================================================================
 
-function estimateCardHeight(content: string, startLine: number, terms: string[]): number {
+function estimateCardHeight(
+	content: string,
+	startLine: number,
+	terms: string[],
+): number {
 	const displayLines = getMatchLines(content, startLine, terms);
 	// header(1) + description(1) + code lines + blank(1)
 	return 1 + 1 + displayLines.length + 1;
@@ -229,7 +244,10 @@ function ResultRow({ result, isSelected, isExpanded, terms }: ResultRowProps) {
 		() => getMatchLines(chunk.content, chunk.startLine, terms),
 		[chunk.content, chunk.startLine, terms],
 	);
-	const maxLineNo = displayLines.reduce((m, l) => (l.isGap ? m : Math.max(m, l.lineNo)), 0);
+	const maxLineNo = displayLines.reduce(
+		(m, l) => (l.isGap ? m : Math.max(m, l.lineNo)),
+		0,
+	);
 	const gutterWidth = Math.max(String(maxLineNo).length, 3);
 
 	const headerBg = isSelected ? SELECTED_BG : undefined;
@@ -244,32 +262,55 @@ function ResultRow({ result, isSelected, isExpanded, terms }: ResultRowProps) {
 	return (
 		<box flexDirection="column" width="100%">
 			{/* Header: pointer + path + name + score badges */}
-			<box height={1} width="100%" backgroundColor={headerBg} flexDirection="row">
-				<box><text fg={headerDimFg}>{`${pointer} `}</text></box>
-				<box><text fg={headerFg}>{pathRange}</text></box>
-				<box><text fg={headerDimFg}>{`  ${nameLabel}  `}</text></box>
+			<box
+				height={1}
+				width="100%"
+				backgroundColor={headerBg}
+				flexDirection="row"
+			>
+				<box>
+					<text fg={headerDimFg}>{`${pointer} `}</text>
+				</box>
+				<box>
+					<text fg={headerFg}>{pathRange}</text>
+				</box>
+				<box>
+					<text fg={headerDimFg}>{`  ${nameLabel}  `}</text>
+				</box>
 				{/* Score badges with colored backgrounds */}
 				<box backgroundColor={scoreBadgeBg(score)}>
 					<text fg="#FFFFFF">{` ${pct}% `}</text>
 				</box>
-				<box><text fg={theme.dimmed}>{" "}</text></box>
+				<box>
+					<text fg={theme.dimmed}> </text>
+				</box>
 				<box backgroundColor="#1A237E">
 					<text fg="#90CAF9">{` v:${vecPct}% `}</text>
 				</box>
-				<box><text fg={theme.dimmed}>{" "}</text></box>
+				<box>
+					<text fg={theme.dimmed}> </text>
+				</box>
 				<box backgroundColor="#4A148C">
 					<text fg="#CE93D8">{` k:${kwPct}% `}</text>
 				</box>
-				<box><text fg={theme.dimmed}>{" "}</text></box>
-				<box><text fg={theme.info}>{chunk.language || lang}</text></box>
+				<box>
+					<text fg={theme.dimmed}> </text>
+				</box>
+				<box>
+					<text fg={theme.info}>{chunk.language || lang}</text>
+				</box>
 				{lineCount > 0 && (
-					<box><text fg={theme.dimmed}>{` ${lineCount}L`}</text></box>
+					<box>
+						<text fg={theme.dimmed}>{` ${lineCount}L`}</text>
+					</box>
 				)}
 			</box>
 
 			{/* One-line description: signature or first code line */}
 			<box height={1} flexDirection="row">
-				<box><text fg={theme.dimmed}>{`   ${description}`}</text></box>
+				<box>
+					<text fg={theme.dimmed}>{`   ${description}`}</text>
+				</box>
 			</box>
 
 			{/* Code lines: gutter + syntax-colored + term-highlighted */}
@@ -277,14 +318,18 @@ function ResultRow({ result, isSelected, isExpanded, terms }: ResultRowProps) {
 				if (dl.isGap) {
 					return (
 						<box key={`gap-${i}`} height={1} flexDirection="row">
-							<text fg={theme.dimmed}>{`${" ".repeat(gutterWidth + 2)}\u2502   ...`}</text>
+							<text
+								fg={theme.dimmed}
+							>{`${" ".repeat(gutterWidth + 2)}\u2502   ...`}</text>
 						</box>
 					);
 				}
 				const lineNum = String(dl.lineNo).padStart(gutterWidth);
 				return (
 					<box key={`l-${dl.lineNo}`} height={1} flexDirection="row">
-						<box><text fg={theme.dimmed}>{` ${lineNum} \u2502 `}</text></box>
+						<box>
+							<text fg={theme.dimmed}>{` ${lineNum} \u2502 `}</text>
+						</box>
 						<box>
 							<SyntaxLine line={dl.text} terms={terms} lang={lang} />
 						</box>
@@ -300,9 +345,7 @@ function ResultRow({ result, isSelected, isExpanded, terms }: ResultRowProps) {
 			)}
 
 			{/* Expanded view */}
-			{isExpanded && (
-				<ExpandedDetails result={result} />
-			)}
+			{isExpanded && <ExpandedDetails result={result} />}
 		</box>
 	);
 }
@@ -318,17 +361,32 @@ function ExpandedDetails({ result }: { result: SearchResult }) {
 	const { hasAST } = buildAstBadge(metadata);
 
 	return (
-		<box flexDirection="column" paddingLeft={3} paddingBottom={1} paddingTop={1}>
+		<box
+			flexDirection="column"
+			paddingLeft={3}
+			paddingBottom={1}
+			paddingTop={1}
+		>
 			{summary && (
 				<box height={1} flexDirection="row">
-					<box><text fg={theme.muted}>{"desc  "}</text></box>
-					<box><text fg={theme.text}>{summary}</text></box>
+					<box>
+						<text fg={theme.muted}>{"desc  "}</text>
+					</box>
+					<box>
+						<text fg={theme.text}>{summary}</text>
+					</box>
 				</box>
 			)}
 			{chunk.signature && (
 				<box height={1} flexDirection="row">
-					<box><text fg={theme.muted}>{"sig   "}</text></box>
-					<box><text fg={theme.warning}>{chunk.signature.replace(/\s+/g, " ").trim()}</text></box>
+					<box>
+						<text fg={theme.muted}>{"sig   "}</text>
+					</box>
+					<box>
+						<text fg={theme.warning}>
+							{chunk.signature.replace(/\s+/g, " ").trim()}
+						</text>
+					</box>
 				</box>
 			)}
 			<CodePreview
@@ -342,40 +400,70 @@ function ExpandedDetails({ result }: { result: SearchResult }) {
 					<text fg={theme.muted}>{"AST Metadata:"}</text>
 					{metadata.parameters && metadata.parameters.length > 0 && (
 						<box paddingLeft={2} height={1} flexDirection="row">
-							<box><text fg={theme.dimmed}>{"params   "}</text></box>
-							<box><text fg={theme.text}>
-								{metadata.parameters.map((p: any) => p.type ? `${p.name}: ${p.type}` : p.name).join(", ")}
-							</text></box>
+							<box>
+								<text fg={theme.dimmed}>{"params   "}</text>
+							</box>
+							<box>
+								<text fg={theme.text}>
+									{metadata.parameters
+										.map((p: any) => (p.type ? `${p.name}: ${p.type}` : p.name))
+										.join(", ")}
+								</text>
+							</box>
 						</box>
 					)}
 					{metadata.returnType && (
 						<box paddingLeft={2} height={1} flexDirection="row">
-							<box><text fg={theme.dimmed}>{"returns  "}</text></box>
-							<box><text fg={theme.text}>{metadata.returnType}</text></box>
+							<box>
+								<text fg={theme.dimmed}>{"returns  "}</text>
+							</box>
+							<box>
+								<text fg={theme.text}>{metadata.returnType}</text>
+							</box>
 						</box>
 					)}
 					{metadata.functionsCalled && metadata.functionsCalled.length > 0 && (
 						<box paddingLeft={2} height={1} flexDirection="row">
-							<box><text fg={theme.dimmed}>{"calls    "}</text></box>
-							<box><text fg={theme.info}>{metadata.functionsCalled.join(", ")}</text></box>
+							<box>
+								<text fg={theme.dimmed}>{"calls    "}</text>
+							</box>
+							<box>
+								<text fg={theme.info}>
+									{metadata.functionsCalled.join(", ")}
+								</text>
+							</box>
 						</box>
 					)}
 					{metadata.typesReferenced && metadata.typesReferenced.length > 0 && (
 						<box paddingLeft={2} height={1} flexDirection="row">
-							<box><text fg={theme.dimmed}>{"types    "}</text></box>
-							<box><text fg={theme.info}>{metadata.typesReferenced.join(", ")}</text></box>
+							<box>
+								<text fg={theme.dimmed}>{"types    "}</text>
+							</box>
+							<box>
+								<text fg={theme.info}>
+									{metadata.typesReferenced.join(", ")}
+								</text>
+							</box>
 						</box>
 					)}
 					{metadata.importsUsed && metadata.importsUsed.length > 0 && (
 						<box paddingLeft={2} height={1} flexDirection="row">
-							<box><text fg={theme.dimmed}>{"imports  "}</text></box>
-							<box><text fg={theme.text}>{metadata.importsUsed.join(", ")}</text></box>
+							<box>
+								<text fg={theme.dimmed}>{"imports  "}</text>
+							</box>
+							<box>
+								<text fg={theme.text}>{metadata.importsUsed.join(", ")}</text>
+							</box>
 						</box>
 					)}
 					{metadata.docstring && (
 						<box paddingLeft={2} flexDirection="row">
-							<box><text fg={theme.dimmed}>{"doc      "}</text></box>
-							<box><text fg={theme.text}>{metadata.docstring}</text></box>
+							<box>
+								<text fg={theme.dimmed}>{"doc      "}</text>
+							</box>
+							<box>
+								<text fg={theme.text}>{metadata.docstring}</text>
+							</box>
 						</box>
 					)}
 				</box>
@@ -437,7 +525,10 @@ export function ResultList({
 		usedH += cardHeights[i];
 		visibleCount++;
 	}
-	const visibleResults = results.slice(scrollOffset, scrollOffset + Math.max(1, visibleCount));
+	const visibleResults = results.slice(
+		scrollOffset,
+		scrollOffset + Math.max(1, visibleCount),
+	);
 
 	return (
 		<box flexDirection="column" width="100%" height="100%">
@@ -463,7 +554,9 @@ export function ResultList({
 
 			{scrollOffset + visibleCount < results.length && (
 				<box height={1}>
-					<text fg={theme.dimmed}>{`  \u25bc ${results.length - scrollOffset - visibleCount} more below`}</text>
+					<text
+						fg={theme.dimmed}
+					>{`  \u25bc ${results.length - scrollOffset - visibleCount} more below`}</text>
 				</box>
 			)}
 		</box>

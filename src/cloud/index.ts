@@ -87,9 +87,7 @@ export {
 export type { OverlayIndexOptions } from "./overlay.js";
 
 // Overlay merger
-export {
-	OverlayMerger,
-} from "./merger.js";
+export { OverlayMerger } from "./merger.js";
 export type { MergedSearchResult } from "./merger.js";
 
 // Cloud-aware search

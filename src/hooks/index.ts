@@ -2,7 +2,7 @@
  * Claude Code Hooks Module
  *
  * Handles Claude Code hook events for tool interception and session management.
- * Entry point: `claudemem hook` command reads JSON from stdin.
+ * Entry point: `mnemex hook` command reads JSON from stdin.
  */
 
 export { handleHook } from "./dispatcher.js";

@@ -94,9 +94,7 @@ export function CodePreview({
 		<box flexDirection="column" width="100%">
 			<box paddingLeft={1} paddingBottom={0}>
 				<text fg={theme.muted}>{filePath}</text>
-				{startLine > 1 && (
-					<text fg={theme.dimmed}> (line {startLine})</text>
-				)}
+				{startLine > 1 && <text fg={theme.dimmed}> (line {startLine})</text>}
 			</box>
 			<code
 				content={displayContent}

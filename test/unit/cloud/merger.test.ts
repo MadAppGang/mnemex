@@ -37,7 +37,10 @@ function makeCloudResult(
 	};
 }
 
-function makeChunk(filePath: string, overrides: Partial<CodeChunk> = {}): CodeChunk {
+function makeChunk(
+	filePath: string,
+	overrides: Partial<CodeChunk> = {},
+): CodeChunk {
 	return {
 		id: `id-${filePath}`,
 		contentHash: `hash-${filePath}`,
@@ -101,7 +104,11 @@ describe("OverlayMerger — cloud results only", () => {
 
 	test("respects limit", () => {
 		const cloud = Array.from({ length: 5 }, (_, i) =>
-			makeCloudResult({ contentHash: `h${i}`, filePath: `src/file${i}.ts`, score: 1 - i * 0.1 }),
+			makeCloudResult({
+				contentHash: `h${i}`,
+				filePath: `src/file${i}.ts`,
+				score: 1 - i * 0.1,
+			}),
 		);
 
 		const results = OverlayMerger.merge(cloud, [], [], 3);
@@ -120,7 +127,12 @@ describe("OverlayMerger — overlay results only", () => {
 			makeOverlayResult("src/other-dirty.ts", 0.5),
 		];
 
-		const results = OverlayMerger.merge([], overlay, ["src/dirty.ts", "src/other-dirty.ts"], 10);
+		const results = OverlayMerger.merge(
+			[],
+			overlay,
+			["src/dirty.ts", "src/other-dirty.ts"],
+			10,
+		);
 
 		expect(results).toHaveLength(2);
 		for (const r of results) {
@@ -161,8 +173,16 @@ describe("OverlayMerger — empty results", () => {
 describe("OverlayMerger — dirty file suppression", () => {
 	test("filters cloud results for dirty file paths", () => {
 		const cloud = [
-			makeCloudResult({ contentHash: "h1", filePath: "src/dirty.ts", score: 0.9 }),
-			makeCloudResult({ contentHash: "h2", filePath: "src/clean.ts", score: 0.7 }),
+			makeCloudResult({
+				contentHash: "h1",
+				filePath: "src/dirty.ts",
+				score: 0.9,
+			}),
+			makeCloudResult({
+				contentHash: "h2",
+				filePath: "src/clean.ts",
+				score: 0.7,
+			}),
 		];
 		const overlay = [makeOverlayResult("src/dirty.ts", 0.85)];
 
@@ -183,7 +203,11 @@ describe("OverlayMerger — dirty file suppression", () => {
 
 	test("allows cloud results for non-dirty file paths", () => {
 		const cloud = [
-			makeCloudResult({ contentHash: "h1", filePath: "src/clean.ts", score: 0.8 }),
+			makeCloudResult({
+				contentHash: "h1",
+				filePath: "src/clean.ts",
+				score: 0.8,
+			}),
 		];
 
 		const results = OverlayMerger.merge(cloud, [], ["src/dirty.ts"], 10);
@@ -195,7 +219,11 @@ describe("OverlayMerger — dirty file suppression", () => {
 
 	test("overlay result takes place of suppressed cloud result", () => {
 		const cloud = [
-			makeCloudResult({ contentHash: "h1", filePath: "src/dirty.ts", score: 1.0 }),
+			makeCloudResult({
+				contentHash: "h1",
+				filePath: "src/dirty.ts",
+				score: 1.0,
+			}),
 		];
 		const overlay = [makeOverlayResult("src/dirty.ts", 0.9)];
 
@@ -293,12 +321,8 @@ describe("OverlayMerger — result ordering", () => {
 	});
 
 	test("mixed cloud+overlay results are sorted together", () => {
-		const cloud = [
-			makeCloudResult({ contentHash: "h1", score: 0.5 }),
-		];
-		const overlay = [
-			makeOverlayResult("src/dirty.ts", 0.9),
-		];
+		const cloud = [makeCloudResult({ contentHash: "h1", score: 0.5 })];
+		const overlay = [makeOverlayResult("src/dirty.ts", 0.9)];
 
 		const results = OverlayMerger.merge(cloud, overlay, [], 10);
 
@@ -319,7 +343,12 @@ describe("OverlayMerger — result ordering", () => {
 describe("OverlayMerger — MergedSearchResult shape", () => {
 	test("merged result has all SearchResult fields plus source", () => {
 		const cloud = [makeCloudResult()];
-		const results: MergedSearchResult[] = OverlayMerger.merge(cloud, [], [], 10);
+		const results: MergedSearchResult[] = OverlayMerger.merge(
+			cloud,
+			[],
+			[],
+			10,
+		);
 
 		expect(results[0]).toHaveProperty("chunk");
 		expect(results[0]).toHaveProperty("score");
@@ -330,7 +359,11 @@ describe("OverlayMerger — MergedSearchResult shape", () => {
 
 	test("cloud result chunk has contentHash and filePath from cloud response", () => {
 		const cloud = [
-			makeCloudResult({ contentHash: "deadbeef", filePath: "src/x.ts", score: 0.5 }),
+			makeCloudResult({
+				contentHash: "deadbeef",
+				filePath: "src/x.ts",
+				score: 0.5,
+			}),
 		];
 		const results = OverlayMerger.merge(cloud, [], [], 10);
 

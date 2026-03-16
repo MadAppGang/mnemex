@@ -218,7 +218,11 @@ export function ModelSelectScreen({
 			setEditingManual(true);
 			return;
 		}
-		if (key.name === "p" && subOption === "recommended" && wizardState.provider === "ollama") {
+		if (
+			key.name === "p" &&
+			subOption === "recommended" &&
+			wizardState.provider === "ollama"
+		) {
 			startPull();
 			return;
 		}
@@ -250,7 +254,7 @@ export function ModelSelectScreen({
 			{/* Header */}
 			<box flexDirection="row" paddingLeft={1} paddingTop={1}>
 				<text fg={theme.borderDim}>{"┌─"}</text>
-				<text fg={theme.primary}>{" claudemem "}</text>
+				<text fg={theme.primary}>{" mnemex "}</text>
 				<text fg={theme.borderDim}>{"─"}</text>
 				<text fg={theme.muted}>{" Setup "}</text>
 				<text fg={theme.borderDim}>{"─"}</text>
@@ -266,10 +270,14 @@ export function ModelSelectScreen({
 				{/* Option 1: Recommended */}
 				<box flexDirection="column" marginBottom={1}>
 					<box flexDirection="row">
-						<text fg={subOption === "recommended" ? theme.primary : theme.dimmed}>
+						<text
+							fg={subOption === "recommended" ? theme.primary : theme.dimmed}
+						>
 							{subOption === "recommended" ? "> " : "  "}
 						</text>
-						<text fg={subOption === "recommended" ? theme.valueBright : theme.text}>
+						<text
+							fg={subOption === "recommended" ? theme.valueBright : theme.text}
+						>
 							{"[1] Use recommended model"}
 						</text>
 					</box>
@@ -287,11 +295,14 @@ export function ModelSelectScreen({
 									<text fg={theme.dimmed}>{"  (alternative)"}</text>
 								</box>
 							)}
-							{wizardState.provider === "ollama" && !wizardState.pullComplete && (
-								<box marginTop={1} flexDirection="row">
-									<text fg={theme.dimmed}>{"  Press [p] to pull model now, or [Enter] to skip"}</text>
-								</box>
-							)}
+							{wizardState.provider === "ollama" &&
+								!wizardState.pullComplete && (
+									<box marginTop={1} flexDirection="row">
+										<text fg={theme.dimmed}>
+											{"  Press [p] to pull model now, or [Enter] to skip"}
+										</text>
+									</box>
+								)}
 							{wizardState.pullComplete && (
 								<box marginTop={1} flexDirection="row">
 									<text fg={theme.accentGreen}>{"  [downloaded]"}</text>
@@ -311,11 +322,15 @@ export function ModelSelectScreen({
 						</box>
 						<box marginTop={1} flexDirection="row" paddingLeft={2}>
 							<ProgressBar progress={pullProgress} width={30} />
-							<text fg={theme.muted}>{`  ${Math.round(pullProgress * 100)}%`}</text>
+							<text
+								fg={theme.muted}
+							>{`  ${Math.round(pullProgress * 100)}%`}</text>
 						</box>
 						{wizardState.pullProgress && (
 							<box paddingLeft={2}>
-								<text fg={theme.dimmed}>{wizardState.pullProgress.slice(0, 60)}</text>
+								<text fg={theme.dimmed}>
+									{wizardState.pullProgress.slice(0, 60)}
+								</text>
 							</box>
 						)}
 						<box marginTop={1}>
@@ -337,7 +352,9 @@ export function ModelSelectScreen({
 						<text fg={subOption === "installed" ? theme.primary : theme.dimmed}>
 							{subOption === "installed" ? "> " : "  "}
 						</text>
-						<text fg={subOption === "installed" ? theme.valueBright : theme.text}>
+						<text
+							fg={subOption === "installed" ? theme.valueBright : theme.text}
+						>
 							{`[2] Choose from installed (${installedModels.length} models)`}
 						</text>
 					</box>
@@ -345,7 +362,9 @@ export function ModelSelectScreen({
 						<box flexDirection="column" paddingLeft={6}>
 							{installedModels.slice(0, 8).map((m, i) => (
 								<box key={m} flexDirection="row">
-									<text fg={i === installedIndex ? theme.primary : theme.dimmed}>
+									<text
+										fg={i === installedIndex ? theme.primary : theme.dimmed}
+									>
 										{i === installedIndex ? "  > " : "    "}
 									</text>
 									<text
@@ -380,7 +399,9 @@ export function ModelSelectScreen({
 							marginTop={1}
 							marginLeft={4}
 							borderStyle="single"
-							borderColor={manualModel.length > 0 ? theme.primary : theme.border}
+							borderColor={
+								manualModel.length > 0 ? theme.primary : theme.border
+							}
 							paddingLeft={2}
 							paddingRight={2}
 							paddingTop={1}

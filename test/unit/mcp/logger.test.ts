@@ -217,10 +217,10 @@ describe("Logger", () => {
 	// -------------------------------------------------------------------------
 
 	describe("output format", () => {
-		test("includes [claudemem] prefix", () => {
+		test("includes [mnemex] prefix", () => {
 			const logger = new Logger("debug");
 			const output = captureStderr(() => logger.info("hello"));
-			expect(output.join("")).toContain("[claudemem]");
+			expect(output.join("")).toContain("[mnemex]");
 		});
 
 		test("extra arguments are appended to the output", () => {
@@ -263,9 +263,7 @@ describe("Logger", () => {
 				chunk: string | Uint8Array,
 				...args: unknown[]
 			): boolean => {
-				stdoutChunks.push(
-					typeof chunk === "string" ? chunk : chunk.toString(),
-				);
+				stdoutChunks.push(typeof chunk === "string" ? chunk : chunk.toString());
 				return true;
 			};
 
@@ -280,9 +278,9 @@ describe("Logger", () => {
 				process.stdout.write = originalWrite;
 			}
 
-			// No claudemem log lines should appear on stdout
+			// No mnemex log lines should appear on stdout
 			const combined = stdoutChunks.join("");
-			expect(combined).not.toContain("[claudemem]");
+			expect(combined).not.toContain("[mnemex]");
 		});
 	});
 });

@@ -5,11 +5,17 @@
  * and merges results using Reciprocal Rank Fusion.
  */
 
-import type { QueryRouter } from "../routing/query-router.js";
 import type { QueryIntent } from "../../types.js";
-import type { ISearchBackend, BackendResult, BackendName, MergedResult, SearchOptions } from "./types.js";
+import type { QueryRouter } from "../routing/query-router.js";
 import type { PipelineConfig } from "./config.js";
 import { rrfMerge } from "./merge.js";
+import type {
+	BackendName,
+	BackendResult,
+	ISearchBackend,
+	MergedResult,
+	SearchOptions,
+} from "./types.js";
 
 // ============================================================================
 // Backend → Intent Mapping
@@ -35,14 +41,19 @@ export class PipelineOrchestrator {
 		private config: PipelineConfig,
 	) {}
 
-	async search(query: string, options: SearchOptions = {}): Promise<MergedResult[]> {
+	async search(
+		query: string,
+		options: SearchOptions = {},
+	): Promise<MergedResult[]> {
 		const limit = options.limit ?? 10;
 
 		// 1. Route query to classify intent
 		const { classification } = await this.router.route(query);
 
 		// 2. Select backends based on intent + config
-		const intentBackendNames = INTENT_BACKENDS[classification.intent] ?? ["semantic"];
+		const intentBackendNames = INTENT_BACKENDS[classification.intent] ?? [
+			"semantic",
+		];
 
 		// Only activate backends that are both in the intent set and enabled in config
 		const selectedBackends = this.backends.filter((b) => {
@@ -60,7 +71,7 @@ export class PipelineOrchestrator {
 		const lspBackend = selectedBackends.find((b) => b.name === "lsp");
 		const otherBackends = selectedBackends.filter((b) => b.name !== "lsp");
 
-		let settled: Array<{ name: BackendName; results: BackendResult[] }> = [];
+		const settled: Array<{ name: BackendName; results: BackendResult[] }> = [];
 
 		if (
 			lspBackend &&
@@ -72,7 +83,10 @@ export class PipelineOrchestrator {
 			const lspPromise = lspBackend
 				.search(query, classification, options, signal)
 				.then((results) => ({ name: lspBackend.name as BackendName, results }))
-				.catch(() => ({ name: lspBackend.name as BackendName, results: [] as BackendResult[] }));
+				.catch(() => ({
+					name: lspBackend.name as BackendName,
+					results: [] as BackendResult[],
+				}));
 
 			const othersPromise = Promise.allSettled(
 				otherBackends.map((b) =>
@@ -86,8 +100,11 @@ export class PipelineOrchestrator {
 			// Use a manual race: if LSP resolves with definitive first, abort others
 			let lspResolved = false;
 			let othersResolved = false;
-			let lspResult: { name: BackendName; results: BackendResult[] } | null = null;
-			let othersResult: typeof othersPromise extends Promise<infer T> ? T : never = [] as never;
+			let lspResult: { name: BackendName; results: BackendResult[] } | null =
+				null;
+			let othersResult: typeof othersPromise extends Promise<infer T>
+				? T
+				: never = [] as never;
 
 			await Promise.race([
 				lspPromise.then((r) => {
@@ -151,7 +168,9 @@ export class PipelineOrchestrator {
 
 		// 6. Apply file pattern filter on final merged results (in case some backends didn't)
 		if (options.filePattern) {
-			const pat = options.filePattern.replace(/\*\*/g, ".*").replace(/\*/g, "[^/]*");
+			const pat = options.filePattern
+				.replace(/\*\*/g, ".*")
+				.replace(/\*/g, "[^/]*");
 			const regex = new RegExp(pat, "i");
 			return merged.filter((r) => !r.file || regex.test(r.file));
 		}

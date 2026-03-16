@@ -1,109 +1,106 @@
 {
-  "name": "mnemex",
-  "displayName": "mnemex",
-  "description": "Semantic code search and symbol navigation for your codebase. AST-aware chunking, vector embeddings, and PageRank symbol graph.",
-  "version": "0.1.0",
-  "publisher": "MadAppGang",
-  "license": "MIT",
-  "icon": "icon.png",
-  "homepage": "https://github.com/MadAppGang/claudemem",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/MadAppGang/claudemem"
-  },
-  "bugs": {
-    "url": "https://github.com/MadAppGang/claudemem/issues"
-  },
-  "engines": {
-    "vscode": "^1.85.0"
-  },
-  "categories": [
-    "Programming Languages",
-    "Other"
-  ],
-  "activationEvents": [
-    "onView:claudememSearch",
-    "onCommand:claudemem.reindex",
-    "onCommand:claudemem.openSearch",
-    "onCommand:claudemem.openCompanion"
-  ],
-  "main": "./dist/extension.js",
-  "contributes": {
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "claudemem-sidebar",
-          "title": "claudemem",
-          "icon": "$(search-fuzzy)"
-        }
-      ]
-    },
-    "views": {
-      "claudemem-sidebar": [
-        {
-          "id": "claudememSearch",
-          "name": "claudemem",
-          "type": "webview"
-        }
-      ]
-    },
-    "commands": [
-      {
-        "command": "claudemem.reindex",
-        "title": "claudemem: Re-index Project"
-      },
-      {
-        "command": "claudemem.openSearch",
-        "title": "claudemem: Open Search"
-      },
-      {
-        "command": "claudemem.openCompanion",
-        "title": "claudemem: Open Symbol Context Panel"
-      }
-    ],
-    "keybindings": [
-      {
-        "command": "claudemem.openCompanion",
-        "key": "cmd+shift+m",
-        "mac": "cmd+shift+m",
-        "when": "editorTextFocus"
-      }
-    ],
-    "configuration": {
-      "title": "claudemem",
-      "properties": {
-        "claudemem.binaryPath": {
-          "type": "string",
-          "default": "",
-          "description": "Path to the claudemem binary. Leave empty for auto-detection."
-        },
-        "claudemem.commandTimeoutSeconds": {
-          "type": "number",
-          "default": 60,
-          "description": "Timeout in seconds for claudemem CLI commands."
-        }
-      }
-    }
-  },
-  "scripts": {
-    "compile": "node esbuild.config.mjs",
-    "watch": "concurrently \"npm run watch:webview\" \"npm run watch:ext\"",
-    "watch:ext": "node esbuild.config.mjs --watch",
-    "watch:webview": "cd webview-ui && npm run build -- --watch",
-    "build": "npm run build:webview && node esbuild.config.mjs --production",
-    "build:webview": "cd webview-ui && npm run build",
-    "typecheck": "tsc --noEmit && cd webview-ui && tsc --noEmit",
-    "package": "npm run build && npx vsce package",
-    "vscode:prepublish": "npm run build",
-    "test": "vitest run",
-    "test:watch": "vitest"
-  },
-  "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@types/vscode": "^1.85.0",
-    "concurrently": "^8.2.0",
-    "esbuild": "^0.20.0",
-    "typescript": "^5.3.0",
-    "vitest": "^1.6.1"
-  }
+	"name": "mnemex",
+	"displayName": "mnemex",
+	"description": "Semantic code search and symbol navigation for your codebase. AST-aware chunking, vector embeddings, and PageRank symbol graph.",
+	"version": "0.1.0",
+	"publisher": "MadAppGang",
+	"license": "MIT",
+	"icon": "icon.png",
+	"homepage": "https://github.com/MadAppGang/claudemem",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/MadAppGang/claudemem"
+	},
+	"bugs": {
+		"url": "https://github.com/MadAppGang/claudemem/issues"
+	},
+	"engines": {
+		"vscode": "^1.85.0"
+	},
+	"categories": ["Programming Languages", "Other"],
+	"activationEvents": [
+		"onView:mnemexSearch",
+		"onCommand:mnemex.reindex",
+		"onCommand:mnemex.openSearch",
+		"onCommand:mnemex.openCompanion"
+	],
+	"main": "./dist/extension.js",
+	"contributes": {
+		"viewsContainers": {
+			"activitybar": [
+				{
+					"id": "mnemex-sidebar",
+					"title": "mnemex",
+					"icon": "$(search-fuzzy)"
+				}
+			]
+		},
+		"views": {
+			"mnemex-sidebar": [
+				{
+					"id": "mnemexSearch",
+					"name": "mnemex",
+					"type": "webview"
+				}
+			]
+		},
+		"commands": [
+			{
+				"command": "mnemex.reindex",
+				"title": "mnemex: Re-index Project"
+			},
+			{
+				"command": "mnemex.openSearch",
+				"title": "mnemex: Open Search"
+			},
+			{
+				"command": "mnemex.openCompanion",
+				"title": "mnemex: Open Symbol Context Panel"
+			}
+		],
+		"keybindings": [
+			{
+				"command": "mnemex.openCompanion",
+				"key": "cmd+shift+m",
+				"mac": "cmd+shift+m",
+				"when": "editorTextFocus"
+			}
+		],
+		"configuration": {
+			"title": "mnemex",
+			"properties": {
+				"mnemex.binaryPath": {
+					"type": "string",
+					"default": "",
+					"description": "Path to the mnemex binary. Leave empty for auto-detection."
+				},
+				"mnemex.commandTimeoutSeconds": {
+					"type": "number",
+					"default": 60,
+					"description": "Timeout in seconds for mnemex CLI commands."
+				}
+			}
+		}
+	},
+	"scripts": {
+		"compile": "node esbuild.config.mjs",
+		"watch": "concurrently \"npm run watch:webview\" \"npm run watch:ext\"",
+		"watch:ext": "node esbuild.config.mjs --watch",
+		"watch:webview": "cd webview-ui && npm run build -- --watch",
+		"build": "npm run build:webview && node esbuild.config.mjs --production",
+		"build:webview": "cd webview-ui && npm run build",
+		"typecheck": "tsc --noEmit && cd webview-ui && tsc --noEmit",
+		"package": "npm run build && npx vsce package",
+		"vscode:prepublish": "npm run build",
+		"test": "vitest run",
+		"test:watch": "vitest"
+	},
+	"devDependencies": {
+		"@types/node": "^20.0.0",
+		"@types/vscode": "^1.85.0",
+		"concurrently": "^8.2.0",
+		"esbuild": "^0.20.0",
+		"typescript": "^5.3.0",
+		"vitest": "^1.6.1"
+	}
 }

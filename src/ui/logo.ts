@@ -44,7 +44,7 @@ function getVersion(): string {
 }
 
 /**
- * ASCII logo for claudemem
+ * ASCII logo for mnemex
  */
 export function getLogo(): string {
 	const version = getVersion();

@@ -1,5 +1,5 @@
 /**
- * Auto-update manager for claudemem CLI
+ * Auto-update manager for mnemex CLI
  *
  * Features:
  * - Check npm registry for latest version
@@ -115,7 +115,10 @@ export class UpdateManager {
 		const scriptPath = process.argv[1] || "";
 
 		// Priority 1: Homebrew
-		if (scriptPath.includes("/opt/homebrew/") || scriptPath.includes("/usr/local/Cellar/")) {
+		if (
+			scriptPath.includes("/opt/homebrew/") ||
+			scriptPath.includes("/usr/local/Cellar/")
+		) {
 			return "brew";
 		}
 
@@ -125,7 +128,8 @@ export class UpdateManager {
 		}
 
 		// Check Bun runtime as fallback
-		const isBunRuntime = typeof (globalThis as { Bun?: unknown }).Bun !== "undefined";
+		const isBunRuntime =
+			typeof (globalThis as { Bun?: unknown }).Bun !== "undefined";
 		const isBunExec = process.execPath.toLowerCase().includes("bun");
 		if (isBunRuntime || isBunExec) {
 			return "bun";
