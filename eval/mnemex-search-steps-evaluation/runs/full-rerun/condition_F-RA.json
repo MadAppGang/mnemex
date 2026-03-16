@@ -1,0 +1,598 @@
+{
+  "condition": {
+    "name": "F-RA",
+    "description": "Router + expander (route-aware, no reranker)",
+    "useRouter": true,
+    "routerMethod": "regex",
+    "useExpander": true,
+    "expanderModel": "lfm2-2.6b",
+    "useReranker": false,
+    "dataset": "hybrid",
+    "routeAwareExpansion": true
+  },
+  "dataset": "hybrid",
+  "nQueries": 30,
+  "perQueryResults": [
+    {
+      "queryId": "sym-001-ResourceContent",
+      "query": "ResourceContent",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 73.670792,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/resources/resource.py"
+      ]
+    },
+    {
+      "queryId": "sym-002-get_prompt",
+      "query": "get_prompt",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 43.44829199999998,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/server/middleware/tool_injection.py"
+      ]
+    },
+    {
+      "queryId": "sym-003-Client",
+      "query": "Client",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 1082.352208,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/client/client.py"
+      ]
+    },
+    {
+      "queryId": "sym-004-FastMCP",
+      "query": "FastMCP",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 39.011792000000014,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/server/server.py"
+      ]
+    },
+    {
+      "queryId": "sym-005-list_resources",
+      "query": "list_resources",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 33.073083,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/server/middleware/tool_injection.py"
+      ]
+    },
+    {
+      "queryId": "sym-006-read_resource",
+      "query": "read_resource",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 40.73670799999991,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/server/middleware/tool_injection.py"
+      ]
+    },
+    {
+      "queryId": "sym-007-FastMCPBaseModel",
+      "query": "FastMCPBaseModel",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 50.19908299999997,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/utilities/types.py"
+      ]
+    },
+    {
+      "queryId": "sym-008-SessionKwargs",
+      "query": "SessionKwargs",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 38.61600000000021,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/client/transports.py"
+      ]
+    },
+    {
+      "queryId": "sym-009-Tool",
+      "query": "Tool",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 1206.91475,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/tools/tool.py"
+      ]
+    },
+    {
+      "queryId": "sym-010-Middleware",
+      "query": "Middleware",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 1596.7515829999998,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/server/middleware/middleware.py"
+      ]
+    },
+    {
+      "queryId": "sym-011-ToolResult",
+      "query": "ToolResult",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 79.88370799999939,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/tools/tool.py"
+      ]
+    },
+    {
+      "queryId": "sym-012-add",
+      "query": "add",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 1582.9296250000007,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "examples/sampling/tool_use.py"
+      ]
+    },
+    {
+      "queryId": "sym-013-list_prompts",
+      "query": "list_prompts",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 41.14000000000033,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/server/middleware/tool_injection.py"
+      ]
+    },
+    {
+      "queryId": "sym-014-FastMCPError",
+      "query": "FastMCPError",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 36.04620800000066,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/exceptions.py"
+      ]
+    },
+    {
+      "queryId": "sym-015-Prompt",
+      "query": "Prompt",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 1226.6206660000007,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/prompts/prompt.py"
+      ]
+    },
+    {
+      "queryId": "sym-016-FastMCPTransport",
+      "query": "FastMCPTransport",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 28.31579099999999,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/client/transports.py"
+      ]
+    },
+    {
+      "queryId": "sym-017-get_context",
+      "query": "get_context",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 29.91674999999941,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/server/dependencies.py"
+      ]
+    },
+    {
+      "queryId": "sym-018-json_schema_to_type",
+      "query": "json_schema_to_type",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 31.293000000000575,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/utilities/json_schema_type.py"
+      ]
+    },
+    {
+      "queryId": "sym-019-issubclass_safe",
+      "query": "issubclass_safe",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 34.939916999999696,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/utilities/types.py"
+      ]
+    },
+    {
+      "queryId": "sym-020-convert_openapi_schema_to_json_schema",
+      "query": "convert_openapi_schema_to_json_schema",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 35.168915999999626,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/utilities/openapi/json_schema_converter.py"
+      ]
+    },
+    {
+      "queryId": "sym-021-ClientTransport",
+      "query": "ClientTransport",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 32.22666600000048,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/client/transports.py"
+      ]
+    },
+    {
+      "queryId": "sym-022-FastMCPComponent",
+      "query": "FastMCPComponent",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 32.414458000000195,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/utilities/components.py"
+      ]
+    },
+    {
+      "queryId": "sym-023-Resource",
+      "query": "Resource",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 1201.5010420000008,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/resources/resource.py"
+      ]
+    },
+    {
+      "queryId": "sym-024-PromptResult",
+      "query": "PromptResult",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 33.96641699999964,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/prompts/prompt.py"
+      ]
+    },
+    {
+      "queryId": "sym-025-ToolError",
+      "query": "ToolError",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 40.60599999999977,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/exceptions.py"
+      ]
+    },
+    {
+      "queryId": "sym-026-SamplingTool",
+      "query": "SamplingTool",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 34.49766699999964,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/server/sampling/sampling_tool.py"
+      ]
+    },
+    {
+      "queryId": "sym-027-MCPServerConfig",
+      "query": "MCPServerConfig",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 1561.2122080000008,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py"
+      ]
+    },
+    {
+      "queryId": "sym-028-AuthProvider",
+      "query": "AuthProvider",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 43.05120900000111,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/server/auth/auth.py"
+      ]
+    },
+    {
+      "queryId": "sym-029-ResourceTemplate",
+      "query": "ResourceTemplate",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 39.111832999999024,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/resources/template.py"
+      ]
+    },
+    {
+      "queryId": "sym-030-TokenVerifier",
+      "query": "TokenVerifier",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 39.69291699999849,
+      "retrievedDocs": [],
+      "groundTruth": [
+        "src/fastmcp/server/auth/auth.py"
+      ]
+    }
+  ],
+  "metrics": {
+    "mrrAt10": 0,
+    "ndcgAt10": 0,
+    "ndcgAt5": 0,
+    "recallAt100": 0
+  },
+  "latency": {
+    "p50": 40.14945849999913,
+    "p95": 1573.1567873500007,
+    "mean": 346.31030963333336
+  }
+}

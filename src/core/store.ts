@@ -448,11 +448,17 @@ export class VectorStore implements IVectorStore {
 			const docType = (r.documentType || "code_chunk") as string;
 			if (docType === "symbol_summary" || docType === "file_summary") {
 				// Extract summary text and map to source code chunks
-				const sourceIds: string[] = r.sourceIds
-					? typeof r.sourceIds === "string"
-						? JSON.parse(r.sourceIds)
-						: r.sourceIds
-					: [];
+				let sourceIds: string[] = [];
+				if (r.sourceIds) {
+					try {
+						sourceIds =
+							typeof r.sourceIds === "string"
+								? JSON.parse(r.sourceIds)
+								: r.sourceIds;
+					} catch {
+						// Skip corrupted sourceIds from legacy index migration
+					}
+				}
 				const summaryText = r.content || "";
 				const targetMap =
 					docType === "symbol_summary" ? symbolSummaryById : fileSummaryById;
@@ -473,11 +479,18 @@ export class VectorStore implements IVectorStore {
 		const maxFused = topResults.length > 0 ? topResults[0].fusedScore : 1;
 		return topResults.map((r) => {
 			const docType = (r.documentType || "code_chunk") as string;
-			const meta = r.metadata
-				? typeof r.metadata === "string"
-					? JSON.parse(r.metadata)
-					: r.metadata
-				: undefined;
+			let meta: Record<string, unknown> | undefined;
+			if (r.metadata) {
+				try {
+					meta =
+						typeof r.metadata === "string"
+							? JSON.parse(r.metadata)
+							: r.metadata;
+				} catch {
+					// Skip corrupted metadata (e.g. from legacy index migration)
+					meta = undefined;
+				}
+			}
 			return {
 				chunk: {
 					id: r.id,

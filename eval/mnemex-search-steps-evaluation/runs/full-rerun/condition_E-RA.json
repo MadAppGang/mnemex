@@ -1,0 +1,1214 @@
+{
+  "condition": {
+    "name": "E-RA",
+    "description": "Full pipeline + route-aware expansion",
+    "useRouter": true,
+    "routerMethod": "regex",
+    "useExpander": true,
+    "expanderModel": "lfm2-2.6b",
+    "useReranker": true,
+    "dataset": "hybrid",
+    "routeAwareExpansion": true
+  },
+  "dataset": "hybrid",
+  "nQueries": 30,
+  "perQueryResults": [
+    {
+      "queryId": "sym-001-ResourceContent",
+      "query": "ResourceContent",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.5,
+      "ndcgAt5": 1.1309297535714575,
+      "ndcgAt10": 2.121500269676794,
+      "recallAtK": {
+        "1": 0,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 10699.506416,
+      "retrievedDocs": [
+        "src/fastmcp/resources/template.py",
+        "src/fastmcp/resources/resource.py",
+        "src/fastmcp/resources/resource.py",
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/resources/template.py",
+        "src/fastmcp/resources/resource.py",
+        "src/fastmcp/resources/resource.py",
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/resources/resource.py",
+        "src/fastmcp/server/middleware/middleware.py",
+        "src/fastmcp/resources/__init__.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/resources/types.py",
+        "src/fastmcp/resources/types.py",
+        "src/fastmcp/resources/resource.py",
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/server/middleware/middleware.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/resources/types.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/resources/resource.py"
+      ]
+    },
+    {
+      "queryId": "sym-002-get_prompt",
+      "query": "get_prompt",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 6285.361375,
+      "retrievedDocs": [
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/providers/transforming.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/prompts/prompt_manager.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/providers/transforming.py",
+        "src/fastmcp/contrib/mcp_mixin/mcp_mixin.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/prompts/prompt_manager.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/contrib/mcp_mixin/mcp_mixin.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/prompts/prompt_manager.py",
+        "tests/server/test_server_interactions.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/middleware/tool_injection.py"
+      ]
+    },
+    {
+      "queryId": "sym-003-Client",
+      "query": "Client",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 16313.313415999997,
+      "retrievedDocs": [
+        "src/fastmcp/server/auth/oauth_proxy.py",
+        "src/fastmcp/server/auth/oauth_proxy.py",
+        "examples/atproto_mcp/demo.py",
+        "examples/atproto_mcp/src/atproto_mcp/_atproto/_social.py",
+        "tests/server/openapi/test_performance_comparison.py",
+        "tests/server/openapi/test_comprehensive.py",
+        "src/fastmcp/server/auth/providers/in_memory.py",
+        "examples/tags_example.py",
+        "src/fastmcp/server/auth/providers/azure.py",
+        "tests/server/openapi/test_comprehensive.py",
+        "tests/server/openapi/test_comprehensive.py",
+        "tests/server/openapi/test_performance_comparison.py",
+        "examples/atproto_mcp/src/atproto_mcp/_atproto/_social.py",
+        "tests/server/openapi/test_openapi_features.py",
+        "src/fastmcp/server/auth/providers/in_memory.py",
+        "tests/server/openapi/test_comprehensive.py",
+        "tests/server/openapi/test_comprehensive.py",
+        "tests/server/openapi/test_server.py",
+        "tests/server/openapi/test_performance_comparison.py",
+        "examples/tags_example.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/client/client.py"
+      ]
+    },
+    {
+      "queryId": "sym-004-FastMCP",
+      "query": "FastMCP",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.09090909090909091,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 1
+      },
+      "latencyMs": 6533.600083999998,
+      "retrievedDocs": [
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/low_level.py",
+        "src/fastmcp/server/low_level.py",
+        "docs/docs.json",
+        "src/fastmcp/utilities/components.py",
+        "examples/fastmcp_config/server.py",
+        "examples/screenshot.py",
+        "src/fastmcp/contrib/bulk_tool_caller/example.py",
+        "examples/fastmcp_config_demo/server.py",
+        "src/fastmcp/utilities/inspect.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/__init__.py",
+        "src/fastmcp/server/dependencies.py",
+        "src/fastmcp/server/context.py",
+        "examples/simple_echo.py",
+        "examples/echo.py",
+        "src/fastmcp/server/low_level.py",
+        "src/fastmcp/server/low_level.py",
+        "src/fastmcp/server/low_level.py",
+        "docs/docs.json"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/server.py"
+      ]
+    },
+    {
+      "queryId": "sym-005-list_resources",
+      "query": "list_resources",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.5,
+      "ndcgAt5": 0.6309297535714575,
+      "ndcgAt10": 0.6309297535714575,
+      "recallAtK": {
+        "1": 0,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 5090.3575830000045,
+      "retrievedDocs": [
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/middleware/tool_injection.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/providers/transforming.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/providers/fastmcp_provider.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/providers/proxy.py",
+        "src/fastmcp/server/middleware/tool_injection.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/providers/transforming.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/providers/fastmcp_provider.py",
+        "src/fastmcp/client/client.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/middleware/tool_injection.py"
+      ]
+    },
+    {
+      "queryId": "sym-006-read_resource",
+      "query": "read_resource",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.3333333333333333,
+      "ndcgAt5": 0.5,
+      "ndcgAt10": 1.1895405204413554,
+      "recallAtK": {
+        "1": 0,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 5118.841791999999,
+      "retrievedDocs": [
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/middleware/tool_injection.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/server/middleware/tool_injection.py",
+        "src/fastmcp/server/middleware/tool_injection.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/resources/resource.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/resources/template.py",
+        "src/fastmcp/resources/resource.py",
+        "tests/resources/test_resources.py",
+        "tests/server/proxy/test_proxy_server.py",
+        "tests/server/test_server_interactions.py",
+        "tests/server/test_server_interactions.py",
+        "tests/server/test_server_interactions.py",
+        "tests/client/auth/test_oauth_client.py",
+        "tests/client/tasks/test_client_resource_tasks.py",
+        "tests/server/middleware/test_caching.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/middleware/tool_injection.py"
+      ]
+    },
+    {
+      "queryId": "sym-007-FastMCPBaseModel",
+      "query": "FastMCPBaseModel",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 1,
+      "ndcgAt5": 1,
+      "ndcgAt10": 1,
+      "recallAtK": {
+        "1": 1,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 4836.736457999999,
+      "retrievedDocs": [
+        "src/fastmcp/utilities/types.py",
+        "src/fastmcp/utilities/openapi/models.py",
+        "src/fastmcp/utilities/openapi/models.py",
+        "src/fastmcp/utilities/openapi/models.py",
+        "src/fastmcp/utilities/components.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/tools/tool_transform.py",
+        "src/fastmcp/utilities/components.py",
+        "src/fastmcp/utilities/openapi/models.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/tools/tool_transform.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/utilities/types.py",
+        "src/fastmcp/utilities/openapi/models.py",
+        "src/fastmcp/mcp_config.py",
+        "src/fastmcp/utilities/openapi/models.py",
+        "src/fastmcp/tools/tool_transform.py",
+        "src/fastmcp/utilities/openapi/models.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/mcp_config.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/utilities/types.py"
+      ]
+    },
+    {
+      "queryId": "sym-008-SessionKwargs",
+      "query": "SessionKwargs",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 1,
+      "ndcgAt5": 2.0177825608059994,
+      "ndcgAt10": 3.612882780014953,
+      "recallAtK": {
+        "1": 1,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 4717.379375000004,
+      "retrievedDocs": [
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/client/transports.py"
+      ]
+    },
+    {
+      "queryId": "sym-009-Tool",
+      "query": "Tool",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 16966.218042,
+      "retrievedDocs": [
+        "examples/smart_home/src/smart_home/lights/server.py",
+        "examples/atproto_mcp/src/atproto_mcp/server.py",
+        "src/fastmcp/contrib/bulk_tool_caller/__init__.py",
+        "src/fastmcp/utilities/openapi/formatters.py",
+        "src/fastmcp/contrib/bulk_tool_caller/__init__.py",
+        "examples/providers/sqlite/server.py",
+        "src/fastmcp/contrib/bulk_tool_caller/bulk_tool_caller.py",
+        "examples/tool_result_echo.py",
+        "examples/atproto_mcp/demo.py",
+        "examples/atproto_mcp/demo.py",
+        "examples/providers/sqlite/server.py",
+        "src/fastmcp/contrib/bulk_tool_caller/bulk_tool_caller.py",
+        "src/fastmcp/server/sampling/sampling_tool.py",
+        "tests/server/test_providers.py",
+        "src/fastmcp/server/openapi/routing.py",
+        "src/fastmcp/server/sampling/sampling_tool.py",
+        "src/fastmcp/server/sampling/sampling_tool.py",
+        "src/fastmcp/contrib/bulk_tool_caller/bulk_tool_caller.py",
+        "tests/server/test_server_interactions.py",
+        "tests/server/test_providers.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/tools/tool.py"
+      ]
+    },
+    {
+      "queryId": "sym-010-Middleware",
+      "query": "Middleware",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 22913.464875000005,
+      "retrievedDocs": [
+        "�U\n\u0000\u0000\u0000\u0000\u0000�U\n\u0000\u0000\u0000\u0000\u0000�U\n\u0000\u0000\u0000\u0000\u0000�U\n\u0000\u0000\u0000\u0000\u0000�V\n\u0000\u0000\u0000\u0000\u0000�V\n\u0000\u0000\u0000\u0000\u0000;W\n\u0000\u0000\u0000\u0000\u0000OW\n\u0000\u0000\u0000\u0000\u0000�W\n\u0000\u0000\u0000\u0000\u0000�W\n\u0000\u0000\u0000\u0000\u0000�W\n\u0000\u0000\u0000\u0000\u0000�W\n\u0000\u0000\u0000\u0000\u0000�W\n\u0000\u0000\u0000\u0000\u0000�W\n\u0000\u0000\u0000\u0000\u0000�W\n\u0000\u0000\u0000\u0000\u0000�W\n\u0000\u0000\u0000\u0000\u0000�W\n\u0000\u0000\u0000\u0000\u0000�W\n\u0000\u0000\u0000\u0000\u0000�W\n\u0000\u0000\u0000\u0000\u0000�W\n\u0000\u0000\u0000\u0000\u0000�X\n\u0000\u0000\u0000\u0000\u0000,Y\n\u0000\u0000\u0000\u0000\u0000-Y\n\u0000\u0000\u0000\u0000\u00008Y\n\u0000\u0000\u0000\u0000\u0000PY\n\u0000\u0000\u0000\u0000\u0000|Y\n\u0000\u0000\u0000\u0000\u0000�Y\n\u0000\u0000\u0000\u0000\u0000�Y\n\u0000\u0000\u0000\u0000\u0000�Y\n\u0000\u0000\u0000\u0000\u0000�Y\n\u0000\u0000\u0000\u0000\u0000�Y\n\u0000\u0000\u0000\u0000\u0000�Y\n\u0000\u0000\u0000\u0000\u0000�Y\n\u0000\u0000\u0000\u0000\u0000�Y\n\u0000\u0000\u0000\u0000\u0000�Z\n\u0000\u0000\u0000\u0000\u0000�Z\n\u0000\u0000\u0000\u0000\u0000�Z\n\u0000\u0000\u0000\u0000\u0000�Z\n\u0000\u0000\u0000\u0000\u0000�Z\n\u0000\u0000\u0000\u0000\u0000�Z\n\u0000\u0000\u0000\u0000\u0000�Z\n\u0000\u0000\u0000\u0000\u0000�Z\n\u0000\u0000\u0000\u0000\u0000�Z\n\u0000\u0000\u0000\u0000\u0000\t[\n\u0000\u0000\u0000\u0000\u0000\u0013[\n\u0000\u0000\u0000\u0000\u0000c[\n\u0000\u0000\u0000\u0000\u0000?]\n\u0000\u0000\u0000\u0000\u0000@]\n\u0000\u0000\u0000\u0000\u0000�]\n\u0000\u0000\u0000\u0000\u0000�]\n\u0000\u0000\u0000\u0000\u0000�]\n\u0000\u0000\u0000\u0000\u0000�]\n\u0000\u0000\u0000\u0000\u0000�]\n\u0000\u0000\u0000\u0000\u0000�]\n\u0000\u0000\u0000\u0000\u0000�]\n\u0000\u0000\u0000\u0000\u0000�]\n\u0000\u0000\u0000\u0000\u0000�]\n\u0000\u0000\u0000\u0000\u0000�]\n\u0000\u0000\u0000\u0000\u0000�]\n\u0000\u0000\u0000\u0000\u0000�]\n\u0000\u0000\u0000\u0000\u0000�]\n\u0000\u0000\u0000\u0000\u0000�]\n\u0000\u0000\u0000\u0000\u0000�]\n\u0000\u0000\u0000\u0000\u0000�]\n\u0000\u0000\u0000\u0000\u0000�]\n\u0000\u0000\u0000\u0000\u0000\u0002^\n\u0000\u0000\u0000\u0000\u0000\u0013^\n\u0000\u0000\u0000\u0000\u0000\u001d^\n\u0000\u0000\u0000\u0000\u0000 ^\n\u0000\u0000\u0000\u0000\u0000'^\n\u0000\u0000\u0000\u0000\u0000(^\n\u0000\u0000\u0000\u0000\u0000E`\n\u0000\u0000\u0000\u0000\u0000F`\n\u0000\u0000\u0000\u0000\u0000N`\n\u0000\u0000\u0000\u0000\u0000V`\n\u0000\u0000\u0000\u0000\u0000Y`\n\u0000\u0000\u0000\u0000\u0000[`\n\u0000\u0000\u0000\u0000\u0000b`\n\u0000\u0000\u0000\u0000\u0000�a\n\u0000\u0000\u0000\u0000\u0000�d\n\u0000\u0000\u0000\u0000\u0000#e\n\u0000\u0000\u0000\u0000\u00006f\n\u0000\u0000\u0000\u0000\u0000;f\n\u0000\u0000\u0000\u0000\u0000Ff\n\u0000\u0000\u0000\u0000\u0000sf\n\u0000\u0000\u0000\u0000\u0000�f\n\u0000\u0000\u0000\u0000\u0000�f\n\u0000\u0000\u0000\u0000\u0000�f\n\u0000\u0000\u0000\u0000\u0000�f\n\u0000\u0000\u0000\u0000\u0000�f\n\u0000\u0000\u0000\u0000\u0000�g\n\u0000\u0000\u0000\u0000\u0000�g\n\u0000\u0000\u0000\u0000\u0000�g\n\u0000\u0000\u0000\u0000\u0000�g\n\u0000\u0000\u0000\u0000\u0000�g\n\u0000\u0000\u0000\u0000\u0000\u001ei\n\u0000\u0000\u0000\u0000\u0000!i\n\u0000\u0000\u0000\u0000\u0000%i\n\u0000\u0000\u0000\u0000\u0000Pi\n\u0000\u0000\u0000\u0000\u0000Zi\n\u0000\u0000\u0000\u0000\u0000[i\n\u0000\u0000\u0000\u0000\u0000`i\n\u0000\u0000\u0000\u0000\u0000wi\n\u0000\u0000\u0000\u0000\u0000�i\n\u0000\u0000\u0000\u0000\u0000�i\n\u0000\u0000\u0000\u0000\u0000�i\n\u0000\u0000\u0000\u0000\u0000�i\n\u0000\u0000\u0000\u0000\u0000�i\n\u0000\u0000\u0000\u0000\u0000�i\n\u0000\u0000\u0000\u0000\u0000�i\n\u0000\u0000\u0000\u0000\u0000�i\n\u0000\u0000\u0000\u0000\u0000�i\n\u0000\u0000\u0000\u0000\u0000�i\n\u0000\u0000\u0000\u0000\u0000�i\n\u0000\u0000\u0000\u0000\u0000�i\n\u0000\u0000\u0000\u0000\u0000�i\n\u0000\u0000\u0000\u0000\u0000�i\n\u0000\u0000\u0000\u0000\u0000\bj\n\u0000\u0000\u0000\u0000\u0000�j\n\u0000\u0000\u0000\u0000\u0000Pk\n\u0000\u0000\u0000\u0000\u0000Rk\n\u0000\u0000\u0000\u0000\u0000Wk\n\u0000\u0000\u0000\u0000\u0000Zk\n\u0000\u0000\u0000\u0000\u0000:l\n\u0000\u0000\u0000\u0000\u0000\rm\n\u0000\u0000\u0000\u0000\u0000\u0017m\n\u0000\u0000\u0000\u0000\u0000\u001am\n\u0000\u0000\u0000\u0000\u0000\u001ep\n\u0000\u0000\u0000\u0000\u0000\u001fp\n\u0000\u0000\u0000\u0000\u0000$p\n\u0000\u0000\u0000\u0000\u0000Ep\n\u0000\u0000\u0000\u0000\u0000Jp\n\u0000\u0000\u0000\u0000\u0000Tp\n\u0000\u0000\u0000\u0000\u0000Up\n\u0000\u0000\u0000\u0000\u0000pp\n\u0000\u0000\u0000\u0000\u0000wp\n\u0000\u0000\u0000\u0000\u0000xp\n\u0000\u0000\u0000\u0000\u0000|p\n\u0000\u0000\u0000\u0000\u0000�p\n\u0000\u0000\u0000\u0000\u0000�p\n\u0000\u0000\u0000\u0000\u0000�p\n\u0000\u0000\u0000\u0000\u0000�p\n\u0000\u0000\u0000\u0000\u0000[r\n\u0000\u0000\u0000\u0000\u0000�s\n\u0000\u0000\u0000\u0000\u0000\u0000t\n\u0000\u0000\u0000\u0000\u0000\bt\n\u0000\u0000\u0000\u0000\u0000\ft\n\u0000\u0000\u0000\u0000\u0000\rt\n\u0000\u0000\u0000\u0000\u00009t\n\u0000\u0000\u0000\u0000\u0000:t\n\u0000\u0000\u0000\u0000\u0000ft\n\u0000\u0000\u0000\u0000\u0000mt\n\u0000\u0000\u0000\u0000\u0000pt\n\u0000\u0000\u0000\u0000\u0000wt\n\u0000\u0000\u0000\u0000\u0000�t\n\u0000\u0000\u0000\u0000\u0000�t\n\u0000\u0000\u0000\u0000\u0000�t\n\u0000\u0000\u0000\u0000\u0000�t\n\u0000\u0000\u0000\u0000\u0000�t\n\u0000\u0000\u0000\u0000\u0000�t\n\u0000\u0000\u0000\u0000\u0000�t\n\u0000\u0000\u0000\u0000\u0000�t\n\u0000\u0000\u0000\u0000\u0000�t\n\u0000\u0000\u0000\u0000\u0000�t\n\u0000\u0000\u0000\u0000\u0000�u\n\u0000\u0000\u0000\u0000\u0000�u\n\u0000\u0000\u0000\u0000\u0000�u\n\u0000\u0000\u0000\u0000\u0000\u0000v\n\u0000\u0000\u0000\u0000\u0000iv\n\u0000\u0000\u0000\u0000\u0000�x\n\u0000\u0000\u0000\u0000\u0000,y\n\u0000\u0000\u0000\u0000\u00000y\n\u0000\u0000\u0000\u0000\u00009y\n\u0000\u0000\u0000\u0000\u0000Fy\n\u0000\u0000\u0000\u0000\u0000Qy\n\u0000\u0000\u0000\u0000\u0000cy\n\u0000\u0000\u0000\u0000\u0000ky\n\u0000\u0000\u0000\u0000\u0000�y\n\u0000\u0000\u0000\u0000\u0000�y\n\u0000\u0000\u0000\u0000\u0000�y\n\u0000\u0000\u0000\u0000\u0000\u0004z\n\u0000\u0000\u0000\u0000\u0000�z\n\u0000\u0000\u0000\u0000\u0000�z\n\u0000\u0000\u0000\u0000\u0000�z\n\u0000\u0000\u0000\u0000\u0000�z\n\u0000\u0000\u0000\u0000\u0000�z\n\u0000\u0000\u0000\u0000\u0000�z\n\u0000\u0000\u0000\u0000\u0000�{\n\u0000\u0000\u0000\u0000\u0000�\n\u0000\u0000\u0000\u0000\u0000\b�\n\u0000\u0000\u0000\u0000\u0000\u000e�\n\u0000\u0000\u0000\u0000\u0000\u000f�\n\u0000\u0000\u0000\u0000\u0000%�\n\u0000\u0000\u0000\u0000\u0000(�\n\u0000\u0000\u0000\u0000\u00000�\n\u0000\u0000\u0000\u0000\u0000k�\n\u0000\u0000\u0000\u0000\u0000n�\n\u0000\u0000\u0000\u0000\u0000u�\n\u0000\u0000\u0000\u0000\u0000\u001e�\n\u0000\u0000\u0000\u0000\u0000!�\n\u0000\u0000\u0000\u0000\u00009�\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000\n�\n\u0000\u0000\u0000\u0000\u0000\u000f�\n\u0000\u0000\u0000\u0000\u0000-�\n\u0000\u0000\u0000\u0000\u00005�\n\u0000\u0000\u0000\u0000\u00006�\n\u0000\u0000\u0000\u0000\u0000>�\n\u0000\u0000\u0000\u0000\u0000R�\n\u0000\u0000\u0000\u0000\u0000]�\n\u0000\u0000\u0000\u0000\u0000_�\n\u0000\u0000\u0000\u0000\u0000q�\n\u0000\u0000\u0000\u0000\u0000}�\n\u0000\u0000\u0000\u0000\u0000ȃ\n\u0000\u0000\u0000\u0000\u0000̓\n\u0000\u0000\u0000\u0000\u0000ڃ\n\u0000\u0000\u0000\u0000\u0000O�\n\u0000\u0000\u0000\u0000\u0000Q�\n\u0000\u0000\u0000\u0000\u0000R�\n\u0000\u0000\u0000\u0000\u0000[�\n\u0000\u0000\u0000\u0000\u0000^�\n\u0000\u0000\u0000\u0000\u0000b�\n\u0000\u0000\u0000\u0000\u0000e�\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000ل\n\u0000\u0000\u0000\u0000\u0000�\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000\u0001�\n\u0000\u0000\u0000\u0000\u0000\u0003�\n\u0000\u0000\u0000\u0000\u0000D�\n\u0000\u0000\u0000\u0000\u0000I�\n\u0000\u0000\u0000\u0000\u0000J�\n\u0000\u0000\u0000\u0000\u0000V�\n\u0000\u0000\u0000\u0000\u0000\u0011�\n\u0000\u0000\u0000\u0000\u0000\u0016�\n\u0000\u0000\u0000\u0000\u0000&�\n\u0000\u0000\u0000\u0000\u00001�\n\u0000\u0000\u0000\u0000\u00005�\n\u0000\u0000\u0000\u0000\u00008�\n\u0000\u0000\u0000\u0000\u0000C�\n\u0000\u0000\u0000\u0000\u0000و\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000�\n\u0000\u0000\u0000\u0000\u0000�\n\u0000\u0000\u0000\u0000\u0000ߊ\n\u0000\u0000\u0000\u0000\u0000>�\n\u0000\u0000\u0000\u0000\u0000C�\n\u0000\u0000\u0000\u0000\u0000q�\n\u0000\u0000\u0000\u0000\u0000w�\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000΍\n\u0000\u0000\u0000\u0000\u0000\u0002�\n\u0000\u0000\u0000\u0000\u0000\b�\n\u0000\u0000\u0000\u0000\u00001�\n\u0000\u0000\u0000\u0000\u0000_�\n\u0000\u0000\u0000\u0000\u0000i�\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000ǐ\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000ё\n\u0000\u0000\u0000\u0000\u0000ӑ\n\u0000\u0000\u0000\u0000\u0000ԑ\n\u0000\u0000\u0000\u0000\u0000ؑ\n\u0000\u0000\u0000\u0000\u0000ݑ\n\u0000\u0000\u0000\u0000\u0000ߑ\n\u0000\u0000\u0000\u0000\u0000�\n\u0000\u0000\u0000\u0000\u0000�\n\u0000\u0000\u0000\u0000\u0000�\n\u0000\u0000\u0000\u0000\u0000�\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000\u0003�\n\u0000\u0000\u0000\u0000\u0000\u0004�\n\u0000\u0000\u0000\u0000\u0000\u0014�\n\u0000\u0000\u0000\u0000\u0000\u0017�\n\u0000\u0000\u0000\u0000\u0000\u001d�\n\u0000\u0000\u0000\u0000\u0000$�\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000Ӓ\n\u0000\u0000\u0000\u0000\u0000Ւ\n\u0000\u0000\u0000\u0000\u0000ؒ\n\u0000\u0000\u0000\u0000\u0000Ó\n\u0000\u0000\u0000\u0000\u0000Ǔ\n\u0000\u0000\u0000\u0000\u0000ʓ\n\u0000\u0000\u0000\u0000\u0000\r�\n\u0000\u0000\u0000\u0000\u0000\u001a�\n\u0000\u0000\u0000\u0000\u0000&�\n\u0000\u0000\u0000\u0000\u0000ɖ\n\u0000\u0000\u0000\u0000\u0000͖\n\u0000\u0000\u0000\u0000\u0000ݗ\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000'�\n\u0000\u0000\u0000\u0000\u0000m�\n\u0000\u0000\u0000\u0000\u0000}�\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000Ę\n\u0000\u0000\u0000\u0000\u0000Ϙ\n\u0000\u0000\u0000\u0000\u0000O�\n\u0000\u0000\u0000\u0000\u0000`�\n\u0000\u0000\u0000\u0000\u0000f�\n\u0000\u0000\u0000\u0000\u0000\u0000�\n\u0000\u0000\u0000\u0000\u0000?�\n\u0000\u0000\u0000\u0000\u0000G�\n\u0000\u0000\u0000\u0000\u0000_�\n\u0000\u0000\u0000\u0000\u0000`�\n\u0000\u0000\u0000\u0000\u0000b�\n\u0000\u0000\u0000\u0000\u0000~�\n\u0000\u0000\u0000\u0000\u0000�\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000֛\n\u0000\u0000\u0000\u0000\u0000ۛ\n\u0000\u0000\u0000\u0000\u0000ߛ\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000\u0003�\n\u0000\u0000\u0000\u0000\u0000\t�\n\u0000\u0000\u0000\u0000\u0000\n�\n\u0000\u0000\u0000\u0000\u0000\f�\n\u0000\u0000\u0000\u0000\u0000 �\n\u0000\u0000\u0000\u0000\u0000K�\n\u0000\u0000\u0000\u0000\u0000S�\n\u0000\u0000\u0000\u0000\u0000X�\n\u0000\u0000\u0000\u0000\u0000\u0007�\n\u0000\u0000\u0000\u0000\u0000\t�\n\u0000\u0000\u0000\u0000\u0000\u0010�\n\u0000\u0000\u0000\u0000\u0000\u0011�\n\u0000\u0000\u0000\u0000\u0000%�\n\u0000\u0000\u0000\u0000\u0000.�\n\u0000\u0000\u0000\u0000\u00001�\n\u0000\u0000\u0000\u0000\u00003�\n\u0000\u0000\u0000\u0000\u00008�\n\u0000\u0000\u0000\u0000\u0000W�\n\u0000\u0000\u0000\u0000\u0000`�\n\u0000\u0000\u0000\u0000\u0000n�\n\u0000\u0000\u0000\u0000\u0000؞\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000\f�\n\u0000\u0000\u0000\u0000\u0000\u001d�\n\u0000\u0000\u0000\u0000\u0000A�\n\u0000\u0000\u0000\u0000\u0000N�\n\u0000\u0000\u0000\u0000\u0000X�\n\u0000\u0000\u0000\u0000\u0000e�\n\u0000\u0000\u0000\u0000\u0000�\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000\r�\n\u0000\u0000\u0000\u0000\u0000\u0018�\n\u0000\u0000\u0000\u0000\u0000.�\n\u0000\u0000\u0000\u0000\u0000ܦ\n\u0000\u0000\u0000\u0000\u0000�\n\u0000\u0000\u0000\u0000\u0000\"�\n\u0000\u0000\u0000\u0000\u0000%�\n\u0000\u0000\u0000\u0000\u0000)�\n\u0000\u0000\u0000\u0000\u0000*�\n\u0000\u0000\u0000\u0000\u0000/�\n\u0000\u0000\u0000\u0000\u00004�\n\u0000\u0000\u0000\u0000\u0000;�\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000ݺ\n\u0000\u0000\u0000\u0000\u0000A�\n\u0000\u0000\u0000\u0000\u0000D�\n\u0000\u0000\u0000\u0000\u0000d�\n\u0000\u0000\u0000\u0000\u0000f�\n\u0000\u0000\u0000\u0000\u0000r�\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000-�\n\u0000\u0000\u0000\u0000\u00000�\n\u0000\u0000\u0000\u0000\u0000M�\n\u0000\u0000\u0000\u0000\u0000p�\n\u0000\u0000\u0000\u0000\u0000s�\n\u0000\u0000\u0000\u0000\u0000z�\n\u0000\u0000\u0000\u0000\u0000\u001c�\n\u0000\u0000\u0000\u0000\u0000+�\n\u0000\u0000\u0000\u0000\u0000@�\n\u0000\u0000\u0000\u0000\u0000D�\n\u0000\u0000\u0000\u0000\u0000F�\n\u0000\u0000\u0000\u0000\u0000H�\n\u0000\u0000\u0000\u0000\u0000V�\n\u0000\u0000\u0000\u0000\u0000X�\n\u0000\u0000\u0000\u0000\u0000`�\n\u0000\u0000\u0000\u0000\u0000u�\n\u0000\u0000\u0000\u0000\u0000*�\n\u0000\u0000\u0000\u0000\u0000+�\n\u0000\u0000\u0000\u0000\u00000�\n\u0000\u0000\u0000\u0000\u0000C�\n\u0000\u0000\u0000\u0000\u0000D�\n\u0000\u0000\u0000\u0000\u0000G�\n\u0000\u0000\u0000\u0000\u0000J�\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000\u0000\u0000��\n\u0000\u0000\u0000",
+        "src/fastmcp/contrib/component_manager/component_manager.py",
+        "src/fastmcp/server/auth/middleware.py",
+        "src/fastmcp/contrib/component_manager/component_manager.py",
+        "src/fastmcp/contrib/component_manager/component_manager.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/client/oauth_callback.py",
+        "src/fastmcp/contrib/component_manager/component_manager.py",
+        "src/fastmcp/server/auth/providers/descope.py",
+        "src/fastmcp/server/http.py",
+        "src/fastmcp/server/auth/providers/scalekit.py",
+        "tests/server/auth/test_oauth_proxy.py",
+        "tests/server/middleware/test_logging.py",
+        "tests/server/middleware/test_logging.py",
+        "tests/server/middleware/test_logging.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/middleware/middleware.py"
+      ]
+    },
+    {
+      "queryId": "sym-011-ToolResult",
+      "query": "ToolResult",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 1,
+      "ndcgAt5": 1.3868528072345416,
+      "ndcgAt10": 1.3868528072345416,
+      "recallAtK": {
+        "1": 1,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 4691.569499999998,
+      "retrievedDocs": [
+        "src/fastmcp/tools/tool.py",
+        "src/fastmcp/server/middleware/middleware.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/tools/tool_transform.py",
+        "src/fastmcp/tools/tool.py",
+        "src/fastmcp/tools/tool_transform.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/middleware/middleware.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "examples/providers/sqlite/server.py",
+        "src/fastmcp/server/middleware/tool_injection.py",
+        "src/fastmcp/server/providers/base.py",
+        "examples/tool_result_echo.py",
+        "examples/tool_result_echo.py",
+        "tests/tools/test_tool_transform.py",
+        "examples/providers/sqlite/server.py",
+        "examples/tool_result_echo.py",
+        "src/fastmcp/tools/tool_transform.py",
+        "tests/tools/test_tool_future_annotations.py",
+        "tests/server/middleware/test_caching.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/tools/tool.py"
+      ]
+    },
+    {
+      "queryId": "sym-012-add",
+      "query": "add",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 17087.74274999999,
+      "retrievedDocs": [
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/contrib/mcp_mixin/mcp_mixin.py",
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/dependencies.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/contrib/mcp_mixin/mcp_mixin.py",
+        "src/fastmcp/contrib/mcp_mixin/mcp_mixin.py",
+        "src/fastmcp/contrib/mcp_mixin/mcp_mixin.py",
+        "src/fastmcp/server/server.py",
+        "tests/server/test_server_interactions.py",
+        "tests/tools/test_tool_manager.py",
+        "tests/server/test_server.py",
+        "tests/prompts/test_prompt_manager.py",
+        "tests/utilities/test_typeadapter.py",
+        "tests/resources/test_resource_template.py",
+        "tests/server/test_server.py",
+        "tests/server/test_server.py",
+        "tests/server/test_server.py"
+      ],
+      "groundTruth": [
+        "examples/sampling/tool_use.py"
+      ]
+    },
+    {
+      "queryId": "sym-013-list_prompts",
+      "query": "list_prompts",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.125,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0.31546487678572877,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 4955.627374999996,
+      "retrievedDocs": [
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/providers/transforming.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/middleware/tool_injection.py",
+        "src/fastmcp/server/providers/fastmcp_provider.py",
+        "src/fastmcp/server/providers/proxy.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/middleware/tool_injection.py",
+        "src/fastmcp/server/providers/transforming.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/server/middleware/caching.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/middleware/tool_injection.py"
+      ]
+    },
+    {
+      "queryId": "sym-014-FastMCPError",
+      "query": "FastMCPError",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 1,
+      "ndcgAt5": 2.4484591188793923,
+      "ndcgAt10": 3.7544945117704582,
+      "recallAtK": {
+        "1": 1,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 4253.340832999995,
+      "retrievedDocs": [
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/server/dependencies.py",
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/server/dependencies.py",
+        "src/fastmcp/server/dependencies.py",
+        "src/fastmcp/server/dependencies.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/exceptions.py"
+      ]
+    },
+    {
+      "queryId": "sym-015-Prompt",
+      "query": "Prompt",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 15477.502124999999,
+      "retrievedDocs": [
+        "examples/memory.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/utilities/openapi/parser.py",
+        "examples/memory.py",
+        "examples/memory.py",
+        "examples/memory.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py",
+        "tests/contrib/test_component_manager.py",
+        "tests/client/tasks/test_client_prompt_tasks.py",
+        "tests/server/tasks/test_task_dependencies.py",
+        "tests/server/tasks/test_task_prompts.py",
+        "tests/client/tasks/test_client_prompt_tasks.py",
+        "tests/client/tasks/test_client_prompt_tasks.py",
+        "tests/server/tasks/test_task_dependencies.py",
+        "tests/server/tasks/test_task_prompts.py",
+        "tests/client/tasks/test_client_prompt_tasks.py",
+        "src/fastmcp/server/context.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/prompts/prompt.py"
+      ]
+    },
+    {
+      "queryId": "sym-016-FastMCPTransport",
+      "query": "FastMCPTransport",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.5,
+      "ndcgAt5": 1.5616063116448506,
+      "ndcgAt10": 2.218843494416854,
+      "recallAtK": {
+        "1": 0,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 5319.715874999994,
+      "retrievedDocs": [
+        "src/fastmcp/client/__init__.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/mcp_config.py",
+        "src/fastmcp/client/__init__.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/contrib/bulk_tool_caller/bulk_tool_caller.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "tests/client/test_client.py",
+        "tests/client/test_client.py",
+        "tests/server/proxy/test_proxy_server.py",
+        "tests/client/test_client.py",
+        "tests/server/proxy/test_stateful_proxy_client.py",
+        "tests/server/tasks/test_task_proxy.py",
+        "tests/client/test_client.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/client/transports.py"
+      ]
+    },
+    {
+      "queryId": "sym-017-get_context",
+      "query": "get_context",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 1,
+      "ndcgAt5": 1.3868528072345416,
+      "ndcgAt10": 1.7430599943425638,
+      "recallAtK": {
+        "1": 1,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 5051.191041999991,
+      "retrievedDocs": [
+        "src/fastmcp/server/dependencies.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/middleware/rate_limiting.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/dependencies.py",
+        "src/fastmcp/server/dependencies.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/resources/resource.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/resources/template.py",
+        "src/fastmcp/resources/template.py",
+        "src/fastmcp/tools/tool.py",
+        "src/fastmcp/tools/tool.py",
+        "src/fastmcp/server/middleware/rate_limiting.py",
+        "src/fastmcp/server/middleware/rate_limiting.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/dependencies.py"
+      ]
+    },
+    {
+      "queryId": "sym-018-json_schema_to_type",
+      "query": "json_schema_to_type",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.5,
+      "ndcgAt5": 1.0177825608059992,
+      "ndcgAt10": 1.3332474375917278,
+      "recallAtK": {
+        "1": 0,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 5053.402625000017,
+      "retrievedDocs": [
+        "src/fastmcp/utilities/openapi/schemas.py",
+        "src/fastmcp/utilities/json_schema_type.py",
+        "src/fastmcp/server/elicitation.py",
+        "src/fastmcp/utilities/openapi/schemas.py",
+        "src/fastmcp/utilities/json_schema_type.py",
+        "src/fastmcp/utilities/openapi/schemas.py",
+        "src/fastmcp/server/elicitation.py",
+        "src/fastmcp/utilities/json_schema_type.py",
+        "tests/utilities/openapi/test_nullable_fields.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/openapi/test_nullable_fields.py",
+        "tests/utilities/openapi/test_nullable_fields.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_json_schema_type.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/utilities/json_schema_type.py"
+      ]
+    },
+    {
+      "queryId": "sym-019-issubclass_safe",
+      "query": "issubclass_safe",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 1,
+      "ndcgAt5": 2.4484591188793923,
+      "ndcgAt10": 2.4484591188793923,
+      "recallAtK": {
+        "1": 1,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 5360.314500000008,
+      "retrievedDocs": [
+        "src/fastmcp/utilities/types.py",
+        "src/fastmcp/utilities/types.py",
+        "src/fastmcp/utilities/openapi/parser.py",
+        "src/fastmcp/utilities/types.py",
+        "src/fastmcp/utilities/types.py",
+        "src/fastmcp/cli/install/cursor.py",
+        "src/fastmcp/utilities/openapi/parser.py",
+        "src/fastmcp/cli/install/cursor.py",
+        "src/fastmcp/server/elicitation.py",
+        "src/fastmcp/server/event_store.py",
+        "src/fastmcp/server/elicitation.py",
+        "tests/utilities/test_types.py",
+        "tests/resources/test_resource_template.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/resources/test_resource_template.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_types.py",
+        "tests/utilities/test_types.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/utilities/types.py"
+      ]
+    },
+    {
+      "queryId": "sym-020-convert_openapi_schema_to_json_schema",
+      "query": "convert_openapi_schema_to_json_schema",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 1,
+      "ndcgAt5": 1.3868528072345416,
+      "ndcgAt10": 2.6486196931101613,
+      "recallAtK": {
+        "1": 1,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 5734.473457999993,
+      "retrievedDocs": [
+        "src/fastmcp/utilities/openapi/json_schema_converter.py",
+        "src/fastmcp/utilities/openapi/schemas.py",
+        "src/fastmcp/utilities/openapi/schemas.py",
+        "src/fastmcp/utilities/openapi/__init__.py",
+        "src/fastmcp/utilities/openapi/json_schema_converter.py",
+        "src/fastmcp/utilities/openapi/json_schema_converter.py",
+        "src/fastmcp/utilities/openapi/parser.py",
+        "src/fastmcp/utilities/openapi/json_schema_converter.py",
+        "src/fastmcp/utilities/openapi/json_schema_converter.py",
+        "src/fastmcp/utilities/openapi/json_schema_converter.py",
+        "src/fastmcp/utilities/openapi/__init__.py",
+        "src/fastmcp/utilities/openapi/schemas.py",
+        "src/fastmcp/utilities/openapi/json_schema_converter.py",
+        "src/fastmcp/utilities/openapi/json_schema_converter.py",
+        "tests/utilities/openapi/test_nullable_fields.py",
+        "tests/utilities/openapi/test_nullable_fields.py",
+        "tests/utilities/openapi/test_nullable_fields.py",
+        "tests/utilities/openapi/test_nullable_fields.py",
+        "tests/utilities/openapi/test_nullable_fields.py",
+        "tests/utilities/openapi/test_nullable_fields.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/utilities/openapi/json_schema_converter.py"
+      ]
+    },
+    {
+      "queryId": "sym-021-ClientTransport",
+      "query": "ClientTransport",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 1,
+      "ndcgAt5": 1.8868528072345416,
+      "ndcgAt10": 2.824715843671492,
+      "recallAtK": {
+        "1": 1,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 5800.717791999981,
+      "retrievedDocs": [
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/utilities/mcp_config.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/utilities/mcp_config.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/mcp_config.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/__init__.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/mcp_config.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/mcp_config.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/mcp_config.py",
+        "src/fastmcp/client/__init__.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/client/transports.py"
+      ]
+    },
+    {
+      "queryId": "sym-022-FastMCPComponent",
+      "query": "FastMCPComponent",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 5094.003999999986,
+      "retrievedDocs": [
+        "src/fastmcp/prompts/prompt.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/server/tasks/test_custom_subclass_tasks.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/utilities/components.py"
+      ]
+    },
+    {
+      "queryId": "sym-023-Resource",
+      "query": "Resource",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 16488.51916699999,
+      "retrievedDocs": [
+        "src/fastmcp/contrib/component_manager/component_service.py",
+        "src/fastmcp/server/middleware/tool_injection.py",
+        "src/fastmcp/resources/__init__.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/server/tasks/capabilities.py",
+        "src/fastmcp/resources/__init__.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/contrib/component_manager/component_service.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/auth/oauth_proxy.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/resources/resource_manager.py",
+        "examples/mount_example.py",
+        "src/fastmcp/server/tasks/capabilities.py",
+        "src/fastmcp/utilities/openapi/formatters.py",
+        "src/fastmcp/server/auth/auth.py",
+        "examples/mount_example.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/resources/resource.py"
+      ]
+    },
+    {
+      "queryId": "sym-024-PromptResult",
+      "query": "PromptResult",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.25,
+      "ndcgAt5": 0.43067655807339306,
+      "ndcgAt10": 1.6924434439490132,
+      "recallAtK": {
+        "1": 0,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 6107.2682920000225,
+      "retrievedDocs": [
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/prompts/__init__.py",
+        "src/fastmcp/server/middleware/middleware.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/server/providers/proxy.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/prompts/__init__.py",
+        "src/fastmcp/server/middleware/middleware.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/prompts/prompt_manager.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/providers/proxy.py",
+        "src/fastmcp/server/providers/fastmcp_provider.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/prompts/prompt.py"
+      ]
+    },
+    {
+      "queryId": "sym-025-ToolError",
+      "query": "ToolError",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.3333333333333333,
+      "ndcgAt5": 0.5,
+      "ndcgAt10": 0.8562071871080221,
+      "recallAtK": {
+        "1": 0,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 4940.405207999982,
+      "retrievedDocs": [
+        "src/fastmcp/tools/tool_manager.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/server/sampling/run.py",
+        "src/fastmcp/tools/tool_manager.py",
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/server/server.py",
+        "tests/tools/test_tool_manager.py",
+        "tests/tools/test_tool_manager.py",
+        "tests/server/middleware/test_middleware.py",
+        "tests/server/tasks/test_task_mount.py",
+        "tests/server/middleware/test_error_handling.py",
+        "tests/server/proxy/test_proxy_server.py",
+        "tests/server/proxy/test_proxy_client.py",
+        "tests/tools/test_tool_manager.py",
+        "tests/server/test_dependencies.py",
+        "tests/server/tasks/test_task_dependencies.py",
+        "tests/server/test_dependencies.py",
+        "tests/client/test_elicitation.py",
+        "tests/tools/test_tool_manager.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/exceptions.py"
+      ]
+    },
+    {
+      "queryId": "sym-026-SamplingTool",
+      "query": "SamplingTool",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 1,
+      "ndcgAt5": 1,
+      "ndcgAt10": 1,
+      "recallAtK": {
+        "1": 1,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 5496.401041000005,
+      "retrievedDocs": [
+        "src/fastmcp/server/sampling/sampling_tool.py",
+        "src/fastmcp/server/sampling/run.py",
+        "src/fastmcp/server/sampling/__init__.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/sampling/run.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/sampling/sampling_tool.py",
+        "src/fastmcp/server/sampling/sampling_tool.py",
+        "src/fastmcp/server/sampling/sampling_tool.py",
+        "src/fastmcp/server/sampling/sampling_tool.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/sampling/__init__.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/sampling/sampling_tool.py"
+      ]
+    },
+    {
+      "queryId": "sym-027-MCPServerConfig",
+      "query": "MCPServerConfig",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0.07142857142857142,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 1
+      },
+      "latencyMs": 16997.49987500001,
+      "retrievedDocs": [
+        "src/fastmcp/cli/run.py",
+        "src/fastmcp/settings.py",
+        "src/fastmcp/cli/cli.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/cli/run.py",
+        "src/fastmcp/settings.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/cli/cli.py",
+        "src/fastmcp/server/http.py",
+        "src/fastmcp/utilities/tests.py",
+        "src/fastmcp/cli/cli.py",
+        "src/fastmcp/settings.py",
+        "src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py",
+        "src/fastmcp/server/auth/oauth_proxy.py",
+        "tests/test_mcp_config.py",
+        "tests/test_mcp_config.py",
+        "tests/server/tasks/test_task_methods.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py"
+      ]
+    },
+    {
+      "queryId": "sym-028-AuthProvider",
+      "query": "AuthProvider",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.16666666666666666,
+      "ndcgAt5": 0,
+      "ndcgAt10": 1.2796353424232245,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 5197.662666000018,
+      "retrievedDocs": [
+        "src/fastmcp/server/auth/__init__.py",
+        "src/fastmcp/server/http.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/http.py",
+        "src/fastmcp/settings.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/settings.py",
+        "src/fastmcp/server/auth/__init__.py",
+        "src/fastmcp/settings.py",
+        "src/fastmcp/server/http.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/settings.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/http.py",
+        "src/fastmcp/server/http.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/auth/auth.py"
+      ]
+    },
+    {
+      "queryId": "sym-029-ResourceTemplate",
+      "query": "ResourceTemplate",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 1,
+      "ndcgAt5": 1,
+      "ndcgAt10": 1.3010299956639813,
+      "recallAtK": {
+        "1": 1,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 4918.394874999998,
+      "retrievedDocs": [
+        "src/fastmcp/resources/template.py",
+        "src/fastmcp/server/middleware/middleware.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/resources/__init__.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/providers/proxy.py",
+        "src/fastmcp/resources/resource_manager.py",
+        "src/fastmcp/server/providers/fastmcp_provider.py",
+        "src/fastmcp/resources/template.py",
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/resources/resource_manager.py",
+        "src/fastmcp/server/middleware/middleware.py",
+        "src/fastmcp/contrib/component_manager/component_service.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/contrib/component_manager/component_service.py",
+        "src/fastmcp/resources/__init__.py",
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/resources/resource_manager.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/resources/template.py"
+      ]
+    },
+    {
+      "queryId": "sym-030-TokenVerifier",
+      "query": "TokenVerifier",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.5,
+      "ndcgAt5": 1.1309297535714575,
+      "ndcgAt10": 1.1309297535714575,
+      "recallAtK": {
+        "1": 0,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 5197.417125000007,
+      "retrievedDocs": [
+        "src/fastmcp/server/auth/__init__.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/server/auth/__init__.py",
+        "src/fastmcp/server/auth/providers/jwt.py",
+        "src/fastmcp/server/auth/providers/in_memory.py",
+        "src/fastmcp/server/auth/providers/jwt.py",
+        "src/fastmcp/server/auth/providers/debug.py",
+        "src/fastmcp/server/auth/providers/jwt.py",
+        "src/fastmcp/server/auth/providers/github.py",
+        "src/fastmcp/server/auth/providers/discord.py",
+        "src/fastmcp/server/auth/providers/aws.py",
+        "src/fastmcp/server/auth/oidc_proxy.py",
+        "src/fastmcp/server/auth/providers/google.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/server/auth/providers/jwt.py",
+        "src/fastmcp/server/auth/providers/in_memory.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/server/auth/providers/aws.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/auth/auth.py"
+      ]
+    }
+  ],
+  "metrics": {
+    "mrrAt10": 0.46235569985569985,
+    "ndcgAt10": 1.1496285608074392,
+    "ndcgAt5": 0.7621655572913855,
+    "recallAt100": 0.7333333333333333
+  },
+  "latency": {
+    "p50": 5340.015187500001,
+    "p95": 17047.133456249998,
+    "mean": 8289.931651333334
+  }
+}

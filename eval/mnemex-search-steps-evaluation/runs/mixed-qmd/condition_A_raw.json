@@ -1,0 +1,392 @@
+[
+	{
+		"id": "sym-1",
+		"q": "ResourceContent",
+		"rr": 1,
+		"latency": 1727,
+		"docs": [
+			"src/fastmcp/resources/resource.py",
+			"src/fastmcp/resources/template.py",
+			"src/fastmcp/resources/types.py"
+		],
+		"gt": "src/fastmcp/resources/resource.py",
+		"label": "symbol_lookup"
+	},
+	{
+		"id": "sym-2",
+		"q": "get_prompt",
+		"rr": 0.1111111111111111,
+		"latency": 1359,
+		"docs": [
+			"src/fastmcp/server/middleware/middleware.py",
+			"src/fastmcp/server/server.py",
+			"src/fastmcp/server/providers/transforming.py"
+		],
+		"gt": "src/fastmcp/server/middleware/tool_injection.py",
+		"label": "symbol_lookup"
+	},
+	{
+		"id": "sym-3",
+		"q": "Client",
+		"rr": 0.25,
+		"latency": 1206,
+		"docs": [
+			"examples/tasks/client.py",
+			"examples/simple_echo.py",
+			"examples/echo.py"
+		],
+		"gt": "src/fastmcp/client/client.py",
+		"label": "symbol_lookup"
+	},
+	{
+		"id": "sym-4",
+		"q": "FastMCP",
+		"rr": 0,
+		"latency": 1153,
+		"docs": [
+			"src/fastmcp/contrib/bulk_tool_caller/example.py",
+			"src/fastmcp/server/context.py",
+			"examples/fastmcp_config/server.py"
+		],
+		"gt": "src/fastmcp/server/server.py",
+		"label": "symbol_lookup"
+	},
+	{
+		"id": "sym-5",
+		"q": "list_resources",
+		"rr": 0.25,
+		"latency": 1427,
+		"docs": [
+			"src/fastmcp/server/server.py",
+			"src/fastmcp/server/server.py",
+			"src/fastmcp/server/context.py"
+		],
+		"gt": "src/fastmcp/server/middleware/tool_injection.py",
+		"label": "symbol_lookup"
+	},
+	{
+		"id": "sym-6",
+		"q": "read_resource",
+		"rr": 1,
+		"latency": 1187,
+		"docs": [
+			"src/fastmcp/server/middleware/tool_injection.py",
+			"src/fastmcp/server/middleware/middleware.py",
+			"src/fastmcp/client/client.py"
+		],
+		"gt": "src/fastmcp/server/middleware/tool_injection.py",
+		"label": "symbol_lookup"
+	},
+	{
+		"id": "sym-7",
+		"q": "FastMCPBaseModel",
+		"rr": 1,
+		"latency": 1295,
+		"docs": [
+			"src/fastmcp/utilities/types.py",
+			"src/fastmcp/utilities/types.py",
+			"src/fastmcp/utilities/components.py"
+		],
+		"gt": "src/fastmcp/utilities/types.py",
+		"label": "symbol_lookup"
+	},
+	{
+		"id": "sym-8",
+		"q": "SessionKwargs",
+		"rr": 1,
+		"latency": 1212,
+		"docs": [
+			"src/fastmcp/client/transports.py",
+			"src/fastmcp/client/transports.py",
+			"src/fastmcp/client/transports.py"
+		],
+		"gt": "src/fastmcp/client/transports.py",
+		"label": "symbol_lookup"
+	},
+	{
+		"id": "sym-9",
+		"q": "Tool",
+		"rr": 0,
+		"latency": 1349,
+		"docs": [
+			"examples/smart_home/src/smart_home/lights/server.py",
+			"src/fastmcp/contrib/bulk_tool_caller/__init__.py",
+			"src/fastmcp/tools/__init__.py"
+		],
+		"gt": "src/fastmcp/tools/tool.py",
+		"label": "symbol_lookup"
+	},
+	{
+		"id": "sym-10",
+		"q": "Middleware",
+		"rr": 0,
+		"latency": 1267,
+		"docs": [
+			"src/fastmcp/server/middleware/__init__.py",
+			"src/fastmcp/server/server.py",
+			"src/fastmcp/server/auth/auth.py"
+		],
+		"gt": "src/fastmcp/server/middleware/middleware.py",
+		"label": "symbol_lookup"
+	},
+	{
+		"id": "sem-1",
+		"q": "how does error handling work in the server",
+		"rr": 0,
+		"latency": 1164,
+		"docs": [
+			"src/fastmcp/server/middleware/error_handling.py",
+			"src/fastmcp/server/openapi/components.py",
+			"src/fastmcp/server/middleware/error_handling.py"
+		],
+		"gt": "src/fastmcp/server/server.py",
+		"label": "semantic"
+	},
+	{
+		"id": "sem-2",
+		"q": "authentication middleware implementation",
+		"rr": 0,
+		"latency": 1156,
+		"docs": [
+			"src/fastmcp/server/auth/middleware.py",
+			"src/fastmcp/server/auth/auth.py",
+			"src/fastmcp/server/auth/middleware.py"
+		],
+		"gt": "src/fastmcp/server/middleware/__init__.py",
+		"label": "semantic"
+	},
+	{
+		"id": "sem-3",
+		"q": "how are tools registered and called",
+		"rr": 0,
+		"latency": 1315,
+		"docs": [
+			"examples/smart_home/src/smart_home/lights/server.py",
+			"src/fastmcp/contrib/bulk_tool_caller/example.py",
+			"src/fastmcp/contrib/bulk_tool_caller/__init__.py"
+		],
+		"gt": "src/fastmcp/tools/tool_manager.py",
+		"label": "semantic"
+	},
+	{
+		"id": "sem-4",
+		"q": "resource template URI matching logic",
+		"rr": 0.1,
+		"latency": 1259,
+		"docs": [
+			"src/fastmcp/server/providers/base.py",
+			"src/fastmcp/server/providers/transforming.py",
+			"src/fastmcp/server/providers/base.py"
+		],
+		"gt": "src/fastmcp/resources/template.py",
+		"label": "semantic"
+	},
+	{
+		"id": "sem-5",
+		"q": "client session and connection handling",
+		"rr": 1,
+		"latency": 1361,
+		"docs": [
+			"src/fastmcp/client/client.py",
+			"src/fastmcp/client/transports.py",
+			"src/fastmcp/client/transports.py"
+		],
+		"gt": "src/fastmcp/client/client.py",
+		"label": "semantic"
+	},
+	{
+		"id": "sem-6",
+		"q": "prompt message rendering",
+		"rr": 0.5,
+		"latency": 1242,
+		"docs": [
+			"src/fastmcp/prompts/prompt_manager.py",
+			"src/fastmcp/prompts/prompt.py",
+			"src/fastmcp/server/providers/proxy.py"
+		],
+		"gt": "src/fastmcp/prompts/prompt.py",
+		"label": "semantic"
+	},
+	{
+		"id": "sem-7",
+		"q": "how does the CLI parse server arguments",
+		"rr": 0,
+		"latency": 1444,
+		"docs": [
+			"src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py",
+			"src/fastmcp/cli/install/gemini_cli.py",
+			"tests/cli/test_install.py"
+		],
+		"gt": "src/fastmcp/cli/run.py",
+		"label": "semantic"
+	},
+	{
+		"id": "sem-8",
+		"q": "exception types and error codes",
+		"rr": 0.16666666666666666,
+		"latency": 1196,
+		"docs": [
+			"src/fastmcp/server/middleware/error_handling.py",
+			"src/fastmcp/server/middleware/error_handling.py",
+			"src/fastmcp/utilities/exceptions.py"
+		],
+		"gt": "src/fastmcp/exceptions.py",
+		"label": "semantic"
+	},
+	{
+		"id": "sem-9",
+		"q": "openapi schema conversion to json schema",
+		"rr": 0,
+		"latency": 1356,
+		"docs": [
+			"src/fastmcp/utilities/openapi/json_schema_converter.py",
+			"src/fastmcp/utilities/openapi/json_schema_converter.py",
+			"src/fastmcp/utilities/openapi/json_schema_converter.py"
+		],
+		"gt": "src/fastmcp/experimental/utilities/openapi/__init__.py",
+		"label": "semantic"
+	},
+	{
+		"id": "sem-10",
+		"q": "background task execution and progress tracking",
+		"rr": 0,
+		"latency": 1725,
+		"docs": [
+			"examples/tasks/server.py",
+			"examples/tasks/client.py",
+			"examples/tasks/server.py"
+		],
+		"gt": "src/fastmcp/server/server.py",
+		"label": "semantic"
+	},
+	{
+		"id": "exp-1",
+		"q": "how to create a custom MCP server with FastMCP",
+		"rr": 0,
+		"latency": 1305,
+		"docs": [
+			"examples/sampling/text.py",
+			"examples/sampling/tool_use.py",
+			"examples/simple_echo.py"
+		],
+		"gt": "src/fastmcp/server/server.py",
+		"label": "exploratory"
+	},
+	{
+		"id": "exp-2",
+		"q": "best practices for defining tools",
+		"rr": 0,
+		"latency": 1639,
+		"docs": [
+			"examples/smart_home/src/smart_home/lights/server.py",
+			"src/fastmcp/server/server.py",
+			"src/fastmcp/server/server.py"
+		],
+		"gt": "src/fastmcp/tools/tool.py",
+		"label": "exploratory"
+	},
+	{
+		"id": "exp-3",
+		"q": "setting up OAuth authentication",
+		"rr": 0,
+		"latency": 1538,
+		"docs": [
+			"src/fastmcp/server/auth/providers/auth0.py",
+			"src/fastmcp/client/auth/oauth.py",
+			"src/fastmcp/server/auth/providers/workos.py"
+		],
+		"gt": "src/fastmcp/server/auth/__init__.py",
+		"label": "exploratory"
+	},
+	{
+		"id": "exp-4",
+		"q": "configuring server middleware",
+		"rr": 0,
+		"latency": 1384,
+		"docs": [
+			"src/fastmcp/server/server.py",
+			"src/fastmcp/server/http.py",
+			"src/fastmcp/server/http.py"
+		],
+		"gt": "src/fastmcp/server/middleware/__init__.py",
+		"label": "exploratory"
+	},
+	{
+		"id": "exp-5",
+		"q": "working with resources and templates",
+		"rr": 0,
+		"latency": 2103,
+		"docs": [
+			"src/fastmcp/utilities/inspect.py",
+			"src/fastmcp/resources/template.py",
+			"src/fastmcp/server/server.py"
+		],
+		"gt": "src/fastmcp/resources/__init__.py",
+		"label": "exploratory"
+	},
+	{
+		"id": "exp-6",
+		"q": "how to mount sub-servers",
+		"rr": 0.3333333333333333,
+		"latency": 1405,
+		"docs": [
+			"examples/mount_example.py",
+			"examples/smart_home/src/smart_home/hub.py",
+			"src/fastmcp/server/server.py"
+		],
+		"gt": "src/fastmcp/server/server.py",
+		"label": "exploratory"
+	},
+	{
+		"id": "exp-7",
+		"q": "setting up SSE transport",
+		"rr": 1,
+		"latency": 1451,
+		"docs": [
+			"src/fastmcp/server/http.py",
+			"examples/get_file.py",
+			"src/fastmcp/mcp_config.py"
+		],
+		"gt": "src/fastmcp/server/http.py",
+		"label": "exploratory"
+	},
+	{
+		"id": "exp-8",
+		"q": "implementing sampling handlers",
+		"rr": 0,
+		"latency": 1260,
+		"docs": [
+			"src/fastmcp/client/client.py",
+			"src/fastmcp/server/sampling/run.py",
+			"src/fastmcp/client/client.py"
+		],
+		"gt": "src/fastmcp/experimental/sampling/__init__.py",
+		"label": "exploratory"
+	},
+	{
+		"id": "exp-9",
+		"q": "using providers pattern in server",
+		"rr": 0.2,
+		"latency": 1334,
+		"docs": [
+			"src/fastmcp/server/providers/base.py",
+			"src/fastmcp/server/providers/fastmcp_provider.py",
+			"src/fastmcp/server/server.py"
+		],
+		"gt": "src/fastmcp/server/providers/__init__.py",
+		"label": "exploratory"
+	},
+	{
+		"id": "exp-10",
+		"q": "dependency injection in tools",
+		"rr": 0.16666666666666666,
+		"latency": 1585,
+		"docs": [
+			"examples/smart_home/src/smart_home/lights/server.py",
+			"src/fastmcp/server/middleware/tool_injection.py",
+			"src/fastmcp/server/middleware/tool_injection.py"
+		],
+		"gt": "src/fastmcp/dependencies.py",
+		"label": "exploratory"
+	}
+]

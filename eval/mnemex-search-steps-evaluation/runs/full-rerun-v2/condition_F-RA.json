@@ -1,0 +1,1216 @@
+{
+  "condition": {
+    "name": "F-RA",
+    "description": "Router + expander (route-aware, no reranker)",
+    "useRouter": true,
+    "routerMethod": "regex",
+    "useExpander": true,
+    "expanderModel": "lfm2-2.6b",
+    "useReranker": false,
+    "dataset": "hybrid",
+    "routeAwareExpansion": true
+  },
+  "dataset": "hybrid",
+  "nQueries": 30,
+  "perQueryResults": [
+    {
+      "queryId": "sym-001-ResourceContent",
+      "query": "ResourceContent",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.5,
+      "ndcgAt5": 1.1309297535714575,
+      "ndcgAt10": 2.121500269676794,
+      "recallAtK": {
+        "1": 0,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 1045.597333,
+      "retrievedDocs": [
+        "src/fastmcp/resources/template.py",
+        "src/fastmcp/resources/resource.py",
+        "src/fastmcp/resources/resource.py",
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/resources/template.py",
+        "src/fastmcp/resources/resource.py",
+        "src/fastmcp/resources/resource.py",
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/resources/resource.py",
+        "src/fastmcp/server/middleware/middleware.py",
+        "src/fastmcp/resources/__init__.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/resources/types.py",
+        "src/fastmcp/resources/types.py",
+        "src/fastmcp/resources/resource.py",
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/server/middleware/middleware.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/resources/types.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/resources/resource.py"
+      ]
+    },
+    {
+      "queryId": "sym-002-get_prompt",
+      "query": "get_prompt",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 845.135708,
+      "retrievedDocs": [
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/providers/transforming.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/prompts/prompt_manager.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/providers/transforming.py",
+        "src/fastmcp/contrib/mcp_mixin/mcp_mixin.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/prompts/prompt_manager.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/contrib/mcp_mixin/mcp_mixin.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/prompts/prompt_manager.py",
+        "tests/server/test_server_interactions.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/middleware/tool_injection.py"
+      ]
+    },
+    {
+      "queryId": "sym-003-Client",
+      "query": "Client",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 5726.214083,
+      "retrievedDocs": [
+        "src/fastmcp/server/auth/oauth_proxy.py",
+        "src/fastmcp/server/auth/handlers/authorize.py",
+        "src/fastmcp/server/auth/providers/in_memory.py",
+        "src/fastmcp/server/auth/oauth_proxy.py",
+        "src/fastmcp/server/auth/oauth_proxy.py",
+        "src/fastmcp/server/auth/oauth_proxy.py",
+        "src/fastmcp/server/auth/oauth_proxy.py",
+        "examples/atproto_mcp/src/atproto_mcp/_atproto/_client.py",
+        "src/fastmcp/server/auth/oauth_proxy.py",
+        "examples/atproto_mcp/src/atproto_mcp/_atproto/_social.py",
+        "src/fastmcp/server/auth/handlers/authorize.py",
+        "src/fastmcp/server/auth/providers/in_memory.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/auth/oauth_proxy.py",
+        "src/fastmcp/server/auth/oauth_proxy.py",
+        "src/fastmcp/server/dependencies.py",
+        "examples/atproto_mcp/src/atproto_mcp/_atproto/_client.py",
+        "examples/atproto_mcp/demo.py",
+        "src/fastmcp/server/providers/proxy.py",
+        "src/fastmcp/cli/cli.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/client/client.py"
+      ]
+    },
+    {
+      "queryId": "sym-004-FastMCP",
+      "query": "FastMCP",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.09090909090909091,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 1
+      },
+      "latencyMs": 879.8204169999999,
+      "retrievedDocs": [
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/low_level.py",
+        "src/fastmcp/server/low_level.py",
+        "docs/docs.json",
+        "src/fastmcp/utilities/components.py",
+        "examples/fastmcp_config/server.py",
+        "examples/screenshot.py",
+        "src/fastmcp/contrib/bulk_tool_caller/example.py",
+        "examples/fastmcp_config_demo/server.py",
+        "src/fastmcp/utilities/inspect.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/__init__.py",
+        "src/fastmcp/server/dependencies.py",
+        "src/fastmcp/server/context.py",
+        "examples/simple_echo.py",
+        "examples/echo.py",
+        "src/fastmcp/server/low_level.py",
+        "src/fastmcp/server/low_level.py",
+        "src/fastmcp/server/low_level.py",
+        "docs/docs.json"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/server.py"
+      ]
+    },
+    {
+      "queryId": "sym-005-list_resources",
+      "query": "list_resources",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.5,
+      "ndcgAt5": 0.6309297535714575,
+      "ndcgAt10": 0.6309297535714575,
+      "recallAtK": {
+        "1": 0,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 1019.9022919999989,
+      "retrievedDocs": [
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/middleware/tool_injection.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/providers/transforming.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/providers/fastmcp_provider.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/providers/proxy.py",
+        "src/fastmcp/server/middleware/tool_injection.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/providers/transforming.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/providers/fastmcp_provider.py",
+        "src/fastmcp/client/client.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/middleware/tool_injection.py"
+      ]
+    },
+    {
+      "queryId": "sym-006-read_resource",
+      "query": "read_resource",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.3333333333333333,
+      "ndcgAt5": 0.5,
+      "ndcgAt10": 1.1895405204413554,
+      "recallAtK": {
+        "1": 0,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 865.3888340000012,
+      "retrievedDocs": [
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/middleware/tool_injection.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/server/middleware/tool_injection.py",
+        "src/fastmcp/server/middleware/tool_injection.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/resources/resource.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/resources/template.py",
+        "src/fastmcp/resources/resource.py",
+        "tests/resources/test_resources.py",
+        "tests/server/proxy/test_proxy_server.py",
+        "tests/server/test_server_interactions.py",
+        "tests/server/test_server_interactions.py",
+        "tests/server/test_server_interactions.py",
+        "tests/client/auth/test_oauth_client.py",
+        "tests/client/tasks/test_client_resource_tasks.py",
+        "tests/server/middleware/test_caching.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/middleware/tool_injection.py"
+      ]
+    },
+    {
+      "queryId": "sym-007-FastMCPBaseModel",
+      "query": "FastMCPBaseModel",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 1,
+      "ndcgAt5": 1,
+      "ndcgAt10": 1,
+      "recallAtK": {
+        "1": 1,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 886.1236660000013,
+      "retrievedDocs": [
+        "src/fastmcp/utilities/types.py",
+        "src/fastmcp/utilities/openapi/models.py",
+        "src/fastmcp/utilities/openapi/models.py",
+        "src/fastmcp/utilities/openapi/models.py",
+        "src/fastmcp/utilities/components.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/tools/tool_transform.py",
+        "src/fastmcp/utilities/components.py",
+        "src/fastmcp/utilities/openapi/models.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/tools/tool_transform.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/utilities/types.py",
+        "src/fastmcp/utilities/openapi/models.py",
+        "src/fastmcp/mcp_config.py",
+        "src/fastmcp/utilities/openapi/models.py",
+        "src/fastmcp/tools/tool_transform.py",
+        "src/fastmcp/utilities/openapi/models.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/mcp_config.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/utilities/types.py"
+      ]
+    },
+    {
+      "queryId": "sym-008-SessionKwargs",
+      "query": "SessionKwargs",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 1,
+      "ndcgAt5": 2.0177825608059994,
+      "ndcgAt10": 3.612882780014953,
+      "recallAtK": {
+        "1": 1,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 1291.8902089999992,
+      "retrievedDocs": [
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/client/transports.py"
+      ]
+    },
+    {
+      "queryId": "sym-009-Tool",
+      "query": "Tool",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 1815.280417,
+      "retrievedDocs": [
+        "src/fastmcp/utilities/openapi/formatters.py",
+        "src/fastmcp/contrib/bulk_tool_caller/bulk_tool_caller.py",
+        "examples/atproto_mcp/demo.py",
+        "src/fastmcp/server/middleware/tool_injection.py",
+        "src/fastmcp/server/openapi/routing.py",
+        "src/fastmcp/contrib/bulk_tool_caller/bulk_tool_caller.py",
+        "src/fastmcp/cli/cli.py",
+        "src/fastmcp/server/sampling/sampling_tool.py",
+        "src/fastmcp/server/sampling/sampling_tool.py",
+        "src/fastmcp/server/openapi/routing.py",
+        "src/fastmcp/server/sampling/sampling_tool.py",
+        "tests/server/openapi/test_comprehensive.py",
+        "tests/server/openapi/test_parameter_collisions.py",
+        "tests/server/openapi/test_openapi_features.py",
+        "tests/client/test_sampling.py",
+        "tests/server/openapi/test_comprehensive.py",
+        "tests/server/openapi/test_comprehensive.py",
+        "tests/client/test_sampling.py",
+        "tests/server/openapi/test_parameter_collisions.py",
+        "tests/server/sampling/test_sampling_tool.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/tools/tool.py"
+      ]
+    },
+    {
+      "queryId": "sym-010-Middleware",
+      "query": "Middleware",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 1789.407792,
+      "retrievedDocs": [
+        "\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000���(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0015\f\u0000\u0000.384T\u0003\u0000\u0000a\u0003\u0000\u0000y\u0003\u0000\u0000�\u0003\u0000\u0000�\u0003\u0000\u00003\u0004\u0000\u0000Q\u0004\u0000\u0000�\u0004\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000`u*)\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000Z\u000f\u0000\u0000\u0000\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0012�(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0018\u0000\u000010.2~\u000f\u0000\u0000�\u0010\u0000\u0000\u0007\u0000\u0000\u0000\u000f\u0000\u0000\u0000�\u0001\u0000\u0000�\u0001\u0000\u0000�\u0001\u0000\u0000\u0001\u0002\u0000\u0000\u0011\u0002\u0000\u0000�\u0002\u0000\u0000�\u0002\u0000\u0000�\u0002\u0000\u0000!\u0003\u0000\u0000�\u0003\u0000\u0000�\u0003\u0000\u0000�\u0003\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�/�(\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0019\u0000\u0000476,�\u0005\u0000\u0000�\u0006\u0000\u0000�\r\u0000\u0000�\r\u0000\u0000�\r\u0000\u0000\u0013\u0000\u0000\u0000 \u0000\u0000\u00008\u0000\u0000\u0000P\u0000\u0000\u0000`\u0000\u0000\u0000\u001d\u0000\u0000\u0000\u001d\u0000\u0000\u00001\u0000\u0000\u0000+\u0000\u0000\u0000\u000f\u0000\u0000\u0000$\u0000\u0000\u0000\u0012\u0000\u0000\u0000\u0000\u0000\u0000\u0000`{G/\t\u0000\u0000\u0000\u0012\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0018\u0000\u00008163\u0015\u0000\u0000\u0000\u0000\u0000\u0000\u0000�GG/\t\u0000\u0000\u0000\u0015\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\n\u0000\u0000\u0000\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000�u<)\t\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0011\r\u0000\u0000\u0000\u0000�@\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000j<)\t\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0016\u0000\u00005\u0000\u0000\u0000Y\u0000\u0000\u0000c\u0000\u0000\u0000�\u0000\u0000\u0000�\u0000\u0000\u0000�\u0000\u0000\u0000\u001f\u0000\u0000\u0000'\u0000\u0000\u0000�\u0000\u0000\u0000\u0019\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\\G/\t\u0000\u0000\u0000\u0019\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0015\u0000\u0000\u0000\u0000\u0000\u0000\u0014\u0000\u0000\u0000\u0000\u0000\u0000\u0000@yG/\t\u0000\u0000\u0000\u0014\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0014\u0000\u000040139\u0000\u0000\u0000I\u0000\u0000\u0000R\u0000\u0000\u0000[\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0005\u0000\u0000{\u0005\u0000\u0000�\u0005\u0000\u0000�\u0007\u0000\u0000�\u0007\u0000\u0000�\u0007\u0000\u0000~\b\u0000\u0000�\b\u0000\u0000*\t\u0000\u0000\u0015\u0000\u0000\u00005\u0000\u0000\u0000\u001b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�zG/\t\u0000\u0000\u0000\u001b\u0000\u0000\u0000\u0000\u0000\u0000\u0000+\f\u0000\u0000\u0000\u0000�?\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\"�(\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\r\u0000\u00001535�\u0000\u0000\u0000;\u0001\u0000\u0000�\u0001\u0000\u0000�\u0001\u0000\u0000�\u0001\u0000\u0000\u0002\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0017\u0000\u0000\u0000\u001d\u0000\u0000\u0000&\u0000\u0000\u0000\u0002\u0000\u0000\u00002\u0000\u0000\u0000�\u0000\u0000\u0000�\u0000\u0000\u0000�\u0000\u0000\u0000$\u0000\u0000\u0000\u001c\u0000\u0000\u0000\u0000\u0000\u0000\u0000��k/\t\u0000\u0000\u0000\u001c\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0001\u0010\u0000\u0000156,\t\u0000\u0000\u0000\u0000\u0000\u0000\u0000@f*)\t\u0000\u0000\u0000\t\u0000\u0000\u0000\u0000\u0000\u0000\u0000i\u0005\u0000\u0000�\u0000\u0000\u0000@\u0001\u0000\u0000]\u0001\u0000\u0000e\u0001\u0000\u0000|\u0001\u0000\u0000 \u0002\u0000\u0000_\u0002\u0000\u0000\u0002\u0000\u0000\u00002\u0000\u0000\u0000N\u0000\u0000\u0000�\u0000\u0000\u0000\u0007\u0001\u0000\u0000$\u0001\u0000\u0000\u0002\u0000\u0000\u0000\u0019\u0000\u0000\u0000�\u0000\u0000\u0000�\u0000\u0000\u0000&\u0000\u0000\u0000�\u0001\u0000\u0000�\u0001\u0000\u0000\u001a\u0002\u0000\u0000\u0007\u0003\u0000\u0000�\u0000\u0000\u0000�\u0000\u0000\u0000.\u0001\u0000\u0000�\u0000\u0000\u0000&\u0000\u0000\u0000�\u0001\u0000\u0000�\u0001\u0000\u0000\r\u0002\u0000\u0000�\u0002\u0000\u0000�\u0000\u0000\u0000�\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u0000@��(\t\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\f\u0000\u0000e\u0004\u0000\u0000\u0012\u0000\u0000\u0000b\u0000\u0000\u0000�\u0000\u0000\u0000�\u0000\u0000\u0000j\u0000\u0000\u0000�\u0000\u0000\u0000n\u0001\u0000\u0000s\u0001\u0000\u0000\u001f\u0002\u0000\u00001\u0002\u0000\u0000B\u0002\u0000\u0000\u0002\u0000\u0000�\u0002\u0000\u0000�\u0003\u0000\u00009\u0004\u0000\u0000�\u0004\u0000\u0000\t\u0000\u0000\u0000\u0000\u0000\u0000\u0000pq*)\t\u0000\u0000\u0000\t\u0000\u0000\u0000\u0000\u0000\u0000\u0000%\u0011\u0000\u0000\u0000\u0000\u0000\u0000\t\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000@�(\t\u0000\u0000\u0000\t\u0000\u0000\u0000\u0000\u0000\u0000\u0000k\b\u0000\u0000\u0000\u0000\u0000\u0000W\u0000\u0000\u0000h\u0000\u0000\u0000�\u0000\u0000\u0000�\u0000\u0000\u0000�\u0001\u0000\u0000V\u0000\u0000\u0000�\u0000\u0000\u0000\u001b\u0001\u0000\u0000>\u0001\u0000\u0000G\u0001\u0000\u0000\u0018\u0000\u0000\u0000\u0019\u0000\u0000\u0000�\u0000\u0000\u0000�\u0000\u0000\u0000�\u0000\u0000\u0000�\u0000\u0000\u0000X\u0002\u0000\u0000�\u0002\u0000\u0000�\u0002\u0000\u0000�\u0002\u0000\u0000.\u0000\u0000\u00003\u0000\u0000\u0000F\u0000\u0000\u0000H\u0000\u0000\u0000J\u0000\u0000\u0000e\u0000\u0000\u0000h\u0000\u0000\u0000�\u0000\u0000\u0000�\u0000\u0000\u0000�\u0000\u0000\u0000\u001c\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000�T�(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0010\u0000\u00003,16\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000`s<)\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000a\u0005\u0000\u0000Y\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u0000`��(\t\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u0000o\b\u0000\u00000724\u001b\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u001c\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u001d\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u001e\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u001f\u0000\u0000\u0000\u0000\u0000\u0000\u0000 \u0000\u0000\u0000\u0000\u0000\u0000\u0000!\u0000\u0000\u0000\u0000\u0000\u0000\u0000\"\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0014\u0000\u0000\u0000\u0000\u0000\u0000\u0000`vG/\t\u0000\u0000\u0000\u0014\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\n\u0000\u00001,11\n\u0000\u0000\u0000\u0000\u0000\u0000\u0000�W*)\t\u0000\u0000\u0000\n\u0000\u0000\u0000\u0000\u0000\u0000\u0000G\u0011\u0000\u0000S\u0000\u0000\u0000+\u0000\u0000\u0000\u0000\u0000\u0000\u0000,\u0000\u0000\u0000\u0000\u0000\u0000\u0000-\u0000\u0000\u0000\u0000\u0000\u0000\u0000.\u0000\u0000\u0000\u0000\u0000\u0000\u0000/\u0000\u0000\u0000\u0000\u0000\u0000\u00000\u0000\u0000\u0000\u0000\u0000\u0000\u00001\u0000\u0000\u0000\u0000\u0000\u0000\u00002\u0000\u0000\u0000\u0000\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000@P�(\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u00007\u0011\u0000\u00003083\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000�>�(\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000c\u001d\u0000\u0000\u0000\u0000\u0000\u0000;\u0000\u0000\u0000\u0000\u0000\u0000\u0000<\u0000\u0000\u0000\u0000\u0000\u0000\u0000=\u0000\u0000\u0000\u0000\u0000\u0000\u0000>\u0000\u0000\u0000\u0000\u0000\u0000\u0000\t\u0000\u0000\u0000\u0000\u0000\u0000\u0000p��(\t\u0000\u0000\u0000\t\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0016\u0000\u00007.48C\u0000\u0000\u0000\u0000\u0000\u0000\u0000D\u0000\u0000\u0000\u0000\u0000\u0000\u0000E\u0000\u0000\u0000\u0000\u0000\u0000\u0000F\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000Pg*)\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000&\u0010\u0000\u0000\u0000\u0000\u0000\u0000K\u0000\u0000\u0000\u0000\u0000\u0000\u0000L\u0000\u0000\u0000\u0000\u0000\u0000\u0000M\u0000\u0000\u0000\u0000\u0000\u0000\u0000N\u0000\u0000\u0000\u0000\u0000\u0000\u0000O\u0000\u0000\u0000\u0000\u0000\u0000\u0000P\u0000\u0000\u0000\u0000\u0000\u0000\u0000Q\u0000\u0000\u0000\u0000\u0000\u0000\u0000R\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0018�(\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u000f\u0000\u0000\u0000\u0000\u0000\u0000W\u0000\u0000\u0000\u0000\u0000\u0000\u0000X\u0000\u0000\u0000\u0000\u0000\u0000\u0000Y\u0000\u0000\u0000\u0000\u0000\u0000\u0000Z\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0015\u0000\u0000\u0000\u0000\u0000\u0000\u0000��k/\t\u0000\u0000\u0000\u0015\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0001\u0000\u0000570,\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000�8�(\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0018\u000b\u0000\u0000\u0000\u0000\u0000\u0000\f\u0000\u0000\u0000\u0000\u0000\u0000\u0000���(\t\u0000\u0000\u0000\f\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u001e\u0004\u0000\u0000064,\u000f\u0000\u0000\u0000\u0000\u0000\u0000\u0000�r�(\t\u0000\u0000\u0000\u000f\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0014\u0000\u00005,7.\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000�d<)\t\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000J\u0014\u0000\u0000N\u0000\u0000\u0000p\u0000\u0000\u0000\u0000\u0000\u0000\u0000q\u0000\u0000\u0000\u0000\u0000\u0000\u0000r\u0000\u0000\u0000\u0000\u0000\u0000\u0000s\u0000\u0000\u0000\u0000\u0000\u0000\u0000\t\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0010[*)\t\u0000\u0000\u0000\t\u0000\u0000\u0000\u0000\u0000\u0000\u0000A\u0005\u0000\u0000\u0000\u0000\u0000\u0000x\u0000\u0000\u0000\u0000\u0000\u0000\u0000y\u0000\u0000\u0000\u0000\u0000\u0000\u0000z\u0000\u0000\u0000\u0000\u0000\u0000\u0000{\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u000f\u0000\u0000\u0000\u0000\u0000\u0000\u0000���(\t\u0000\u0000\u0000\u000f\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000�u�(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u001c\u0000\u00002451�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0015\u0000\u0000\u0000\u0000\u0000\u0000\u0000�gG/\t\u0000\u0000\u0000\u0015\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0014\u0000\u0000\u0000\u0000\u0000\u0000\u000b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�a<)\t\u0000\u0000\u0000\u000b\u0000\u0000\u0000\u0000\u0000\u0000\u0000%\n\u0000\u0000\u0000\u0000\u0000@�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000�u�(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000j\u0006\u0000\u00008306\u001a\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000�k/\t\u0000\u0000\u0000\u001a\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0019\u0000\u0000\u0000\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000Pm�(\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u000b\u0000\u0000,6.4\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000�y<)\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000]\u0018\u0000\u0000\u0000\u0000�?�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000���(\t\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000G\u001c\u0000\u0000\u0000\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u00000M*)\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\r\u0000\u0000\u0000\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u0000��(\t\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0010\u0000\u0000\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000�k<)\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u001b\u0000\u0000\u0018\u0000\u0000\u0000\t\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000/�(\t\u0000\u0000\u0000\t\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u001d\u0000\u00005257\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�k�(\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000,8.5\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000`S<)\t\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0004\u0012\u0000\u0000\u0013\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000�2�(\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000\f\u0002\u0000\u00003,8.�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u00000��(\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u001a\u0000\u0000448,�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0002\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0010��(\t\u0000\u0000\u0000\u0002\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0017\u0000\u0000\f\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0001\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0002\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0003\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0004\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0005\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000�G*)\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0002\u0018\u0000\u0000k\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0010��(\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000k\u0005\u0000\u0000\u0000\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000@C�(\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0010\u0000\u0000\u0000\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u0000���(\t\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0010\u0000\u0000\u0000\u0000\u0000\u0000\u0010\u0000\u0000\u0000\u0000\u0000\u0000\u0000���(\t\u0000\u0000\u0000\u0010\u0000\u0000\u0000\u0000\u0000\u0000\u0000x\u0018\u0000\u000099,6\r\u0000\u0000\u0000\u0000\u0000\u0000\u0000���(\t\u0000\u0000\u0000\r\u0000\u0000\u0000\u0000\u0000\u0000\u0000\n\u0013\u0000\u00004255\t\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000.�(\t\u0000\u0000\u0000\t\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\f\u0000\u0000\u0000\u0000\u0000\u0000\"\u0001\u0000\u0000\u0000\u0000\u0000\u0000#\u0001\u0000\u0000\u0000\u0000\u0000\u0000'\u0001\u0000\u0000\u0000\u0000\u0000\u0000*\u0001\u0000\u0000\u0000\u0000\u0000\u0000\n\u0000\u0000\u0000\u0000\u0000\u0000\u0000`x�(\t\u0000\u0000\u0000\n\u0000\u0000\u0000\u0000\u0000\u0000\u0000\\\u000e\u0000\u00007,6.\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000�}<)\t\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\n\u0000\u0000��\u0002��\u0001\u0000\u0000\u0000\u0000\u0000\u0000�\u0001\u0000\u0000\u0000\u0000\u0000\u0000�\u0001\u0000\u0000\u0000\u0000\u0000\u0000�\u0001\u0000\u0000\u0000\u0000\u0000\u0000�\u0001\u0000\u0000\u0000\u0000\u0000\u0000�\u0001\u0000\u0000\u0000\u0000\u0000\u0000�\u0001\u0000\u0000\u0000\u0000\u0000\u0000�\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0002\u0000\u0000\u0000\u0000\u0000\u0000\u0000pk<)\t\u0000\u0000\u0000\u0002\u0000\u0000\u0000\u0000\u0000\u0000\u0000[\u0004\u0000\u0000(\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000 ��(\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0005\u0000\u0000,10.�\u0001\u0000\u0000\u0000\u0000\u0000\u0000�\u0001\u0000\u0000\u0000\u0000\u0000\u0000�\u0001\u0000\u0000\u0000\u0000\u0000\u0000",
+        "src/fastmcp/contrib/component_manager/component_manager.py",
+        "src/fastmcp/server/middleware/error_handling.py",
+        "�",
+        "src/fastmcp/server/auth/providers/workos.py",
+        "src/fastmcp/server/middleware/error_handling.py",
+        "src/fastmcp/server/middleware/error_handling.py",
+        "src/fastmcp/server/server.py",
+        "tests/server/auth/test_enhanced_error_responses.py",
+        "tests/server/middleware/test_rate_limiting.py",
+        "src/fastmcp/server/server.py",
+        "tests/server/middleware/test_rate_limiting.py",
+        "tests/server/middleware/test_rate_limiting.py",
+        "tests/server/middleware/test_rate_limiting.py",
+        "tests/server/http/test_http_middleware.py",
+        "tests/server/middleware/test_rate_limiting.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/middleware/middleware.py"
+      ]
+    },
+    {
+      "queryId": "sym-011-ToolResult",
+      "query": "ToolResult",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 1,
+      "ndcgAt5": 1.3868528072345416,
+      "ndcgAt10": 1.3868528072345416,
+      "recallAtK": {
+        "1": 1,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 885.8964589999996,
+      "retrievedDocs": [
+        "src/fastmcp/tools/tool.py",
+        "src/fastmcp/server/middleware/middleware.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/tools/tool_transform.py",
+        "src/fastmcp/tools/tool.py",
+        "src/fastmcp/tools/tool_transform.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/middleware/middleware.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "examples/providers/sqlite/server.py",
+        "src/fastmcp/server/middleware/tool_injection.py",
+        "src/fastmcp/server/providers/base.py",
+        "examples/tool_result_echo.py",
+        "examples/tool_result_echo.py",
+        "tests/tools/test_tool_transform.py",
+        "examples/providers/sqlite/server.py",
+        "examples/tool_result_echo.py",
+        "src/fastmcp/tools/tool_transform.py",
+        "tests/tools/test_tool_future_annotations.py",
+        "tests/server/middleware/test_caching.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/tools/tool.py"
+      ]
+    },
+    {
+      "queryId": "sym-012-add",
+      "query": "add",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 1718.2720829999998,
+      "retrievedDocs": [
+        "�\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u00105�(\t\u0000\u0000\u0000\n\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u001b\u0000\u0000\u000b\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�`\u0018)\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0017",
+        "�(\t\u0000\u0000\u0000\n\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u001b\u0000\u0000\u000b\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�`\u0018)\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0017\u0000\u0000\u0002\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0010\u0012�(\t\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000s\u0017\u0000\u00009124�\u0004\u0000\u0000\u0000\u0000\u0000\u0000P#�(\t\u0000\u0000\u0000\n\u0000\u0000\u0000\u0000\u0000\u0000\u0000%\u0003\u0000\u000012.5�\u0004\u0000\u0000\u0000\u0000\u0000\u0000 \u0016�(\t\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u00009889�\u0004\u0000\u0000\u0000\u0000\u0000\u0000b\u0000\u0000\u0000T\u0000\u0000\u0000\u0002\u0000\u0000\u0000\t\u0000\u0000\u0000#\u0000\u0000\u00001\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000%\u0000\u0000\u0000\u0017\u0000\u0000\u0000*\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u001b\u0000\u0000\u0000\n\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�֖(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u001c\u0000\u0000\u0014\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000\r\u0000\u0000\u0000\u0014\u0000\u0000\u0000\u001e\u0000\u0000\u0000+\u0000\u0000\u0000\u0003\u0000\u0000\u0000\b\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000p��(\t\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0014\u0000\u0000\u001b\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000:\u0000\u0000\u0000\u0012\u0000\u0000\u0000/\u0000\u0000\u00005\u0000\u0000\u00003\u0000\u0000\u0000E\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u001f\u0000\u0000\u0000?\u0000\u0000\u0000N\u0000\u0000\u0000\u0012\u0000\u0000\u0000&\u0000\u0000\u0000d\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000 \u0001�(\t\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0001\u0000\u0000@\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000���(\t\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u00000\u0012\u0000\u0000\u001f\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000���(\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000O\u001e\u0000\u0000\u0010\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000��(\t\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u0000:\u001c\u0000\u0000\u0014\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000`}\u0018)\t\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u001c\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000Pm\u0018)\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000395,�\u0004\u0000\u0000\u0000\u0000\u0000\u0000��(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u000f\u0000\u0000O\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000��(\t\u0000\u0000\u0000\t\u0000\u0000\u0000\u0000\u0000\u0000\u0000u\u0019\u0000\u0000`\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000��(\t\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u000e\u0000\u0000.\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�ϖ(\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000a\u000b\u0000\u0000Z\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�&�(\t\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u00006\u0007\u0000\u0000676,�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�5�(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000V\u001e\u0000\u0000\u001e\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000@\b�(\t\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u0000\u0000\u0000\u0000\b\u0001\u0000\u00003,12�\u0004\u0000\u0000\u0000\u0000\u0000\u0000 \b�(\t\u0000\u0000\u0000\f\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0016\u0000\u00008.82�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�a\u0018)\t\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\f\u0000\u0000��\u0001��\u0004\u0000\u0000\u0000\u0000\u0000\u0000�m\u0018)\t\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0005\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�a\u0018)\t\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000}\u0003\u0000\u0000�\t\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�v\u0018)\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0005\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000pr\u0018)\t\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0011\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000P͖(\t\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u001e\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�7�(\t\u0000\u0000\u0000\u000b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0013\u0000\u0000\u0005\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000@*�(\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0011\u0000\u0000\u0005\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0012�(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000=\u001d\u0000\u0000.499�\u0004\u0000\u0000\u0000\u0000\u0000\u0000p(�(\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0005\u0000",
+        "\u0000\u0000\n\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u001b\u0000\u0000\u000b\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�`\u0018)\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0017\u0000\u0000\u0002\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0010\u0012�(\t\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000s\u0017\u0000\u00009124�\u0004\u0000\u0000\u0000\u0000\u0000\u0000P#�(\t\u0000\u0000\u0000\n\u0000\u0000\u0000\u0000\u0000\u0000\u0000%\u0003\u0000\u000012.5�\u0004\u0000\u0000\u0000\u0000\u0000\u0000 \u0016�(\t\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u00009889�\u0004\u0000\u0000\u0000\u0000\u0000\u0000b\u0000\u0000\u0000T\u0000\u0000\u0000\u0002\u0000\u0000\u0000\t\u0000\u0000\u0000#\u0000\u0000\u00001\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000%\u0000\u0000\u0000\u0017\u0000\u0000\u0000*\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u001b\u0000\u0000\u0000\n\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�֖(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u001c\u0000\u0000\u0014\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000\r\u0000\u0000\u0000\u0014\u0000\u0000\u0000\u001e\u0000\u0000\u0000+\u0000\u0000\u0000\u0003\u0000\u0000\u0000\b\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000p��(\t\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0014\u0000\u0000\u001b\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000:\u0000\u0000\u0000\u0012\u0000\u0000\u0000/\u0000\u0000\u00005\u0000\u0000\u00003\u0000\u0000\u0000E\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u001f\u0000\u0000\u0000?\u0000\u0000\u0000N\u0000\u0000\u0000\u0012\u0000\u0000\u0000&\u0000\u0000\u0000d\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000 \u0001�(\t\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0001\u0000\u0000@\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000���(\t\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u00000\u0012\u0000\u0000\u001f\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000���(\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000O\u001e\u0000\u0000\u0010\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000��(\t\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u0000:\u001c\u0000\u0000\u0014\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000`}\u0018)\t\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u001c\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000Pm\u0018)\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000395,�\u0004\u0000\u0000\u0000\u0000\u0000\u0000��(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u000f\u0000\u0000O\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000��(\t\u0000\u0000\u0000\t\u0000\u0000\u0000\u0000\u0000\u0000\u0000u\u0019\u0000\u0000`\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000��(\t\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u000e\u0000\u0000.\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�ϖ(\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000a\u000b\u0000\u0000Z\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�&�(\t\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u00006\u0007\u0000\u0000676,�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�5�(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000V\u001e\u0000\u0000\u001e\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000@\b�(\t\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u0000\u0000\u0000\u0000\b\u0001\u0000\u00003,12�\u0004\u0000\u0000\u0000\u0000\u0000\u0000 \b�(\t\u0000\u0000\u0000\f\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0016\u0000\u00008.82�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�a\u0018)\t\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\f\u0000\u0000��\u0001��\u0004\u0000\u0000\u0000\u0000\u0000\u0000�m\u0018)\t\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0005\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�a\u0018)\t\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000}\u0003\u0000\u0000�\t\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�v\u0018)\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0005\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000pr\u0018)\t\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0011\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000P͖(\t\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u001e\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�7�(\t\u0000\u0000\u0000\u000b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0013\u0000\u0000\u0005\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000@*�(\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0011\u0000\u0000\u0005\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0012�(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000=\u001d\u0000\u0000.499�\u0004\u0000\u0000\u0000\u0000\u0000\u0000p(�(\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0005\u0000\u0000",
+        "5�(\t\u0000\u0000\u0000\n\u0000\u0000\u0000\u0000\u0000\u0000",
+        "\u000b\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�`\u0018)\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0017\u0000\u0000\u0002\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0010\u0012�(\t\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000s\u0017\u0000\u00009124�\u0004\u0000\u0000\u0000\u0000\u0000\u0000P#�(\t\u0000\u0000\u0000\n\u0000\u0000\u0000\u0000\u0000\u0000\u0000%\u0003\u0000\u000012.5�\u0004\u0000\u0000\u0000\u0000\u0000\u0000 \u0016�(\t\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u00009889�\u0004\u0000\u0000\u0000\u0000\u0000\u0000b\u0000\u0000\u0000T\u0000\u0000\u0000\u0002\u0000\u0000\u0000\t\u0000\u0000\u0000#\u0000\u0000\u00001\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000%\u0000\u0000\u0000\u0017\u0000\u0000\u0000*\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u001b\u0000\u0000\u0000\n\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�֖(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u001c\u0000\u0000\u0014\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000\r\u0000\u0000\u0000\u0014\u0000\u0000\u0000\u001e\u0000\u0000\u0000+\u0000\u0000\u0000\u0003\u0000\u0000\u0000\b\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000p��(\t\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0014\u0000\u0000\u001b\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000:\u0000\u0000\u0000\u0012\u0000\u0000\u0000/\u0000\u0000\u00005\u0000\u0000\u00003\u0000\u0000\u0000E\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u001f\u0000\u0000\u0000?\u0000\u0000\u0000N\u0000\u0000\u0000\u0012\u0000\u0000\u0000&\u0000\u0000\u0000d\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000 \u0001�(\t\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0001\u0000\u0000@\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000���(\t\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u00000\u0012\u0000\u0000\u001f\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000���(\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000O\u001e\u0000\u0000\u0010\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000��(\t\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u0000:\u001c\u0000\u0000\u0014\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000`}\u0018)\t\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u001c\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000Pm\u0018)\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000395,�\u0004\u0000\u0000\u0000\u0000\u0000\u0000��(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u000f\u0000\u0000O\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000��(\t\u0000\u0000\u0000\t\u0000\u0000\u0000\u0000\u0000\u0000\u0000u\u0019\u0000\u0000`\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000��(\t\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u000e\u0000\u0000.\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�ϖ(\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000a\u000b\u0000\u0000Z\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�&�(\t\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u00006\u0007\u0000\u0000676,�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�5�(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000V\u001e\u0000\u0000\u001e\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000@\b�(\t\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u0000\u0000\u0000\u0000\b\u0001\u0000\u00003,12�\u0004\u0000\u0000\u0000\u0000\u0000\u0000 \b�(\t\u0000\u0000\u0000\f\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0016\u0000\u00008.82�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�a\u0018)\t\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\f\u0000\u0000��\u0001��\u0004\u0000\u0000\u0000\u0000\u0000\u0000�m\u0018)\t\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0005\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�a\u0018)\t\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000}\u0003\u0000\u0000�\t\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�v\u0018)\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0005\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000pr\u0018)\t\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0011\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000P͖(\t\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u001e\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�7�(\t\u0000\u0000\u0000\u000b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0013\u0000\u0000\u0005\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000@*�(\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0011\u0000\u0000\u0005\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0012�(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000=\u001d\u0000\u0000.499�\u0004\u0000\u0000\u0000\u0000\u0000\u0000p(�(\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0005\u0000\u00005,8",
+        "src/fastmcp/resources/resource_manager.py",
+        "src/fastmcp/prompts/prompt_manager.py",
+        "src/fastmcp/resources/resource_manager.py",
+        "\u0000�\u0017\u0000\u0000\u0002\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0010\u0012�(\t\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000s\u0017\u0000\u00009124�\u0004\u0000\u0000\u0000\u0000\u0000\u0000P#�(\t\u0000\u0000\u0000\n\u0000\u0000\u0000\u0000\u0000\u0000\u0000%\u0003\u0000\u000012.5�\u0004\u0000\u0000\u0000\u0000\u0000\u0000 \u0016�(\t\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u00009889�\u0004\u0000\u0000\u0000\u0000\u0000\u0000b\u0000\u0000\u0000T\u0000\u0000\u0000\u0002\u0000\u0000\u0000\t\u0000\u0000\u0000#\u0000\u0000\u00001\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000%\u0000\u0000\u0000\u0017\u0000\u0000\u0000*\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u001b\u0000\u0000\u0000\n\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�֖(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u001c\u0000\u0000\u0014\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000\r\u0000\u0000\u0000\u0014\u0000\u0000\u0000\u001e\u0000\u0000\u0000+\u0000\u0000\u0000\u0003\u0000\u0000\u0000\b\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000p��(\t\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0014\u0000\u0000\u001b\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000:\u0000\u0000\u0000\u0012\u0000\u0000\u0000/\u0000\u0000\u00005\u0000\u0000\u00003\u0000\u0000\u0000E\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u001f\u0000\u0000\u0000?\u0000\u0000\u0000N\u0000\u0000\u0000\u0012\u0000\u0000\u0000&\u0000\u0000\u0000d\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000 \u0001�(\t\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0001\u0000\u0000@\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000���(\t\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u00000\u0012\u0000\u0000\u001f\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000���(\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000O\u001e\u0000\u0000\u0010\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000��(\t\u0000\u0000\u0000\u0007\u0000\u0000\u0000\u0000\u0000\u0000\u0000:\u001c\u0000\u0000\u0014\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000`}\u0018)\t\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u001c\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000Pm\u0018)\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000395,�\u0004\u0000\u0000\u0000\u0000\u0000\u0000��(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u000f\u0000\u0000O\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000��(\t\u0000\u0000\u0000\t\u0000\u0000\u0000\u0000\u0000\u0000\u0000u\u0019\u0000\u0000`\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000��(\t\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u000e\u0000\u0000.\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�ϖ(\t\u0000\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000a\u000b\u0000\u0000Z\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�&�(\t\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u00006\u0007\u0000\u0000676,�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�5�(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000V\u001e\u0000\u0000\u001e\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000@\b�(\t\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u0000\u0000\u0000\u0000\b\u0001\u0000\u00003,12�\u0004\u0000\u0000\u0000\u0000\u0000\u0000 \b�(\t\u0000\u0000\u0000\f\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0016\u0000\u00008.82�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�a\u0018)\t\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\f\u0000\u0000��\u0001��\u0004\u0000\u0000\u0000\u0000\u0000\u0000�m\u0018)\t\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0005\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�a\u0018)\t\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000}\u0003\u0000\u0000�\t\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�v\u0018)\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0005\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000pr\u0018)\t\u0000\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0011\u0000\u0000\u0000\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000P͖(\t\u0000\u0000\u0000\u000e\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0000\u001e\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000�7�(\t\u0000\u0000\u0000\u000b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0013\u0000\u0000\u0005\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000@*�(\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0011\u0000\u0000\u0005\u0000\u0000\u0000�\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0012�(\t\u0000\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000=\u001d\u0000\u0000.499�\u0004\u0000\u0000\u0000\u0000\u0000\u0000p(�(\t\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0005\u0000\u00005,",
+        "src/fastmcp/client/oauth_callback.py",
+        "src/fastmcp/contrib/mcp_mixin/mcp_mixin.py",
+        "src/fastmcp/resources/resource_manager.py",
+        "src/fastmcp/prompts/prompt_manager.py",
+        "src/fastmcp/resources/resource_manager.py",
+        "src/fastmcp/tools/tool_manager.py",
+        "src/fastmcp/prompts/prompt_manager.py",
+        "src/fastmcp/resources/resource_manager.py",
+        "src/fastmcp/prompts/prompt_manager.py",
+        "src/fastmcp/resources/resource_manager.py",
+        "src/fastmcp/tools/tool_manager.py"
+      ],
+      "groundTruth": [
+        "examples/sampling/tool_use.py"
+      ]
+    },
+    {
+      "queryId": "sym-013-list_prompts",
+      "query": "list_prompts",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.125,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0.31546487678572877,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 1079.7422499999993,
+      "retrievedDocs": [
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/providers/transforming.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/middleware/tool_injection.py",
+        "src/fastmcp/server/providers/fastmcp_provider.py",
+        "src/fastmcp/server/providers/proxy.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/middleware/tool_injection.py",
+        "src/fastmcp/server/providers/transforming.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/server/middleware/caching.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/middleware/tool_injection.py"
+      ]
+    },
+    {
+      "queryId": "sym-014-FastMCPError",
+      "query": "FastMCPError",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 1,
+      "ndcgAt5": 2.4484591188793923,
+      "ndcgAt10": 3.7544945117704582,
+      "recallAtK": {
+        "1": 1,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 1114.4674159999995,
+      "retrievedDocs": [
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/server/dependencies.py",
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/server/dependencies.py",
+        "src/fastmcp/server/dependencies.py",
+        "src/fastmcp/server/dependencies.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/exceptions.py"
+      ]
+    },
+    {
+      "queryId": "sym-015-Prompt",
+      "query": "Prompt",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 1846.1801670000023,
+      "retrievedDocs": [
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/utilities/openapi/__init__.py",
+        "src/fastmcp/utilities/openapi/formatters.py",
+        "src/fastmcp/utilities/openapi/__init__.py",
+        "src/fastmcp/server/context.py",
+        "tests/contrib/test_component_manager.py",
+        "tests/client/tasks/test_client_prompt_tasks.py",
+        "tests/server/openapi/test_openapi_performance.py",
+        "tests/server/tasks/test_task_dependencies.py",
+        "tests/server/tasks/test_task_prompts.py",
+        "tests/client/tasks/test_client_prompt_tasks.py",
+        "tests/client/tasks/test_client_prompt_tasks.py",
+        "tests/contrib/test_component_manager.py",
+        "tests/server/tasks/test_task_prompts.py",
+        "tests/server/tasks/test_task_dependencies.py",
+        "tests/client/tasks/test_client_prompt_tasks.py",
+        "tests/server/tasks/test_task_prompts.py",
+        "tests/client/tasks/test_client_prompt_tasks.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/prompts/prompt.py"
+      ]
+    },
+    {
+      "queryId": "sym-016-FastMCPTransport",
+      "query": "FastMCPTransport",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.5,
+      "ndcgAt5": 1.5616063116448506,
+      "ndcgAt10": 2.218843494416854,
+      "recallAtK": {
+        "1": 0,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 874.3945420000018,
+      "retrievedDocs": [
+        "src/fastmcp/client/__init__.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/mcp_config.py",
+        "src/fastmcp/client/__init__.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/contrib/bulk_tool_caller/bulk_tool_caller.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "tests/client/test_client.py",
+        "tests/client/test_client.py",
+        "tests/server/proxy/test_proxy_server.py",
+        "tests/client/test_client.py",
+        "tests/server/proxy/test_stateful_proxy_client.py",
+        "tests/server/tasks/test_task_proxy.py",
+        "tests/client/test_client.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/client/transports.py"
+      ]
+    },
+    {
+      "queryId": "sym-017-get_context",
+      "query": "get_context",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 1,
+      "ndcgAt5": 1.3868528072345416,
+      "ndcgAt10": 1.7430599943425638,
+      "recallAtK": {
+        "1": 1,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 1191.7816249999996,
+      "retrievedDocs": [
+        "src/fastmcp/server/dependencies.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/middleware/rate_limiting.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/dependencies.py",
+        "src/fastmcp/server/dependencies.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/resources/resource.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/resources/template.py",
+        "src/fastmcp/resources/template.py",
+        "src/fastmcp/tools/tool.py",
+        "src/fastmcp/tools/tool.py",
+        "src/fastmcp/server/middleware/rate_limiting.py",
+        "src/fastmcp/server/middleware/rate_limiting.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/dependencies.py"
+      ]
+    },
+    {
+      "queryId": "sym-018-json_schema_to_type",
+      "query": "json_schema_to_type",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.5,
+      "ndcgAt5": 1.0177825608059992,
+      "ndcgAt10": 1.3332474375917278,
+      "recallAtK": {
+        "1": 0,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 903.335959,
+      "retrievedDocs": [
+        "src/fastmcp/utilities/openapi/schemas.py",
+        "src/fastmcp/utilities/json_schema_type.py",
+        "src/fastmcp/server/elicitation.py",
+        "src/fastmcp/utilities/openapi/schemas.py",
+        "src/fastmcp/utilities/json_schema_type.py",
+        "src/fastmcp/utilities/openapi/schemas.py",
+        "src/fastmcp/server/elicitation.py",
+        "src/fastmcp/utilities/json_schema_type.py",
+        "tests/utilities/openapi/test_nullable_fields.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/openapi/test_nullable_fields.py",
+        "tests/utilities/openapi/test_nullable_fields.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_json_schema_type.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/utilities/json_schema_type.py"
+      ]
+    },
+    {
+      "queryId": "sym-019-issubclass_safe",
+      "query": "issubclass_safe",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 1,
+      "ndcgAt5": 2.4484591188793923,
+      "ndcgAt10": 2.4484591188793923,
+      "recallAtK": {
+        "1": 1,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 875.8730830000022,
+      "retrievedDocs": [
+        "src/fastmcp/utilities/types.py",
+        "src/fastmcp/utilities/types.py",
+        "src/fastmcp/utilities/openapi/parser.py",
+        "src/fastmcp/utilities/types.py",
+        "src/fastmcp/utilities/types.py",
+        "src/fastmcp/cli/install/cursor.py",
+        "src/fastmcp/utilities/openapi/parser.py",
+        "src/fastmcp/cli/install/cursor.py",
+        "src/fastmcp/server/elicitation.py",
+        "src/fastmcp/server/event_store.py",
+        "src/fastmcp/server/elicitation.py",
+        "tests/utilities/test_types.py",
+        "tests/resources/test_resource_template.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/resources/test_resource_template.py",
+        "tests/utilities/test_json_schema_type.py",
+        "tests/utilities/test_types.py",
+        "tests/utilities/test_types.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/utilities/types.py"
+      ]
+    },
+    {
+      "queryId": "sym-020-convert_openapi_schema_to_json_schema",
+      "query": "convert_openapi_schema_to_json_schema",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 1,
+      "ndcgAt5": 1.3868528072345416,
+      "ndcgAt10": 2.6486196931101613,
+      "recallAtK": {
+        "1": 1,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 978.0567499999997,
+      "retrievedDocs": [
+        "src/fastmcp/utilities/openapi/json_schema_converter.py",
+        "src/fastmcp/utilities/openapi/schemas.py",
+        "src/fastmcp/utilities/openapi/schemas.py",
+        "src/fastmcp/utilities/openapi/__init__.py",
+        "src/fastmcp/utilities/openapi/json_schema_converter.py",
+        "src/fastmcp/utilities/openapi/json_schema_converter.py",
+        "src/fastmcp/utilities/openapi/parser.py",
+        "src/fastmcp/utilities/openapi/json_schema_converter.py",
+        "src/fastmcp/utilities/openapi/json_schema_converter.py",
+        "src/fastmcp/utilities/openapi/json_schema_converter.py",
+        "src/fastmcp/utilities/openapi/__init__.py",
+        "src/fastmcp/utilities/openapi/schemas.py",
+        "src/fastmcp/utilities/openapi/json_schema_converter.py",
+        "src/fastmcp/utilities/openapi/json_schema_converter.py",
+        "tests/utilities/openapi/test_nullable_fields.py",
+        "tests/utilities/openapi/test_nullable_fields.py",
+        "tests/utilities/openapi/test_nullable_fields.py",
+        "tests/utilities/openapi/test_nullable_fields.py",
+        "tests/utilities/openapi/test_nullable_fields.py",
+        "tests/utilities/openapi/test_nullable_fields.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/utilities/openapi/json_schema_converter.py"
+      ]
+    },
+    {
+      "queryId": "sym-021-ClientTransport",
+      "query": "ClientTransport",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.5,
+      "ndcgAt5": 1.0616063116448506,
+      "ndcgAt10": 2.0343083712025827,
+      "recallAtK": {
+        "1": 0,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 929.0584170000002,
+      "retrievedDocs": [
+        "src/fastmcp/client/__init__.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/utilities/mcp_config.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/utilities/mcp_config.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/mcp_config.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/client/__init__.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/mcp_config.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/mcp_config.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/mcp_config.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/client/transports.py"
+      ]
+    },
+    {
+      "queryId": "sym-022-FastMCPComponent",
+      "query": "FastMCPComponent",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 969.3789169999982,
+      "retrievedDocs": [
+        "src/fastmcp/prompts/prompt.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/utilities/test_components.py",
+        "tests/server/tasks/test_custom_subclass_tasks.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/utilities/components.py"
+      ]
+    },
+    {
+      "queryId": "sym-023-Resource",
+      "query": "Resource",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 2016.5263749999976,
+      "retrievedDocs": [
+        "src/fastmcp/server/middleware/tool_injection.py",
+        "examples/atproto_mcp/demo.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/server/auth/oauth_proxy.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/client/transports.py",
+        "src/fastmcp/resources/resource_manager.py",
+        "src/fastmcp/server/providers/proxy.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "examples/mount_example.py",
+        "examples/mount_example.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/auth/oauth_proxy.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/utilities/openapi/formatters.py",
+        "tests/server/proxy/test_proxy_server.py",
+        "tests/server/middleware/test_tool_injection.py",
+        "src/fastmcp/utilities/openapi/formatters.py",
+        "tests/resources/test_resource_manager.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/resources/resource.py"
+      ]
+    },
+    {
+      "queryId": "sym-024-PromptResult",
+      "query": "PromptResult",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.25,
+      "ndcgAt5": 0.43067655807339306,
+      "ndcgAt10": 1.6924434439490132,
+      "recallAtK": {
+        "1": 0,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 932.7294589999983,
+      "retrievedDocs": [
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/prompts/__init__.py",
+        "src/fastmcp/server/middleware/middleware.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/server/providers/proxy.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/prompts/__init__.py",
+        "src/fastmcp/server/middleware/middleware.py",
+        "src/fastmcp/server/middleware/caching.py",
+        "src/fastmcp/prompts/prompt.py",
+        "src/fastmcp/prompts/prompt_manager.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/providers/proxy.py",
+        "src/fastmcp/server/providers/fastmcp_provider.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/prompts/prompt.py"
+      ]
+    },
+    {
+      "queryId": "sym-025-ToolError",
+      "query": "ToolError",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.3333333333333333,
+      "ndcgAt5": 0.5,
+      "ndcgAt10": 0.8562071871080221,
+      "recallAtK": {
+        "1": 0,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 1135.1028750000041,
+      "retrievedDocs": [
+        "src/fastmcp/tools/tool_manager.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/server/sampling/run.py",
+        "src/fastmcp/tools/tool_manager.py",
+        "src/fastmcp/exceptions.py",
+        "src/fastmcp/server/server.py",
+        "tests/tools/test_tool_manager.py",
+        "tests/tools/test_tool_manager.py",
+        "tests/server/middleware/test_middleware.py",
+        "tests/server/tasks/test_task_mount.py",
+        "tests/server/middleware/test_error_handling.py",
+        "tests/server/proxy/test_proxy_server.py",
+        "tests/server/proxy/test_proxy_client.py",
+        "tests/tools/test_tool_manager.py",
+        "tests/server/test_dependencies.py",
+        "tests/server/tasks/test_task_dependencies.py",
+        "tests/server/test_dependencies.py",
+        "tests/client/test_elicitation.py",
+        "tests/tools/test_tool_manager.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/exceptions.py"
+      ]
+    },
+    {
+      "queryId": "sym-026-SamplingTool",
+      "query": "SamplingTool",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.5,
+      "ndcgAt5": 0.6309297535714575,
+      "ndcgAt10": 0.6309297535714575,
+      "recallAtK": {
+        "1": 0,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 990.1090420000037,
+      "retrievedDocs": [
+        "src/fastmcp/server/sampling/__init__.py",
+        "src/fastmcp/server/sampling/sampling_tool.py",
+        "src/fastmcp/server/sampling/run.py",
+        "src/fastmcp/server/sampling/__init__.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/sampling/run.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/sampling/sampling_tool.py",
+        "src/fastmcp/server/sampling/sampling_tool.py",
+        "src/fastmcp/server/sampling/sampling_tool.py",
+        "src/fastmcp/server/sampling/sampling_tool.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py",
+        "src/fastmcp/server/context.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/sampling/sampling_tool.py"
+      ]
+    },
+    {
+      "queryId": "sym-027-MCPServerConfig",
+      "query": "MCPServerConfig",
+      "routerLabel": "semantic_search",
+      "reciprocalRank": 0,
+      "ndcgAt5": 0,
+      "ndcgAt10": 0,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "latencyMs": 1732.8323749999981,
+      "retrievedDocs": [
+        "�O��\\0�;�c�<�4\u0001=l\"\u000f�3C\u0014��b�<�Q����\":��Ƽ\u0002����@�;�Vx<W�(����;�\u0006=Z��<��P�x�����%�\u001a�g=\u0003;�\u001f�����\u0003�j\u0004\u000e=Շ\u001f��݁=i\u0011\u0012�МɼG�Ի�N�;*�%=��\u001c=\re\n=�\u0014�<B�'����:P(\u0016=�\fY��|\u001d�s�?��\u001e�:�\u0019ȼТ6��Vh����#;&<F\u0004�<;\u0004͹��<aOo�X��=���=\u0018���m�\n�('B=��\u001b;>M�<=�W��x+=\u0013{u;_\u0011>�o!^;k�y9��<�F�����:\u001f^߸yt�<A\u000f�;xΓ;@E8=�pE=�\t =C�+�9�\u0002=:��<���q��<s؅��L\u0017��R\\�\t��<�����4�<�q\u0016=�`\u0015=\u0011�A=�_N=Ғ&�kfo=\u0003���M\u001bV�0Z<�\\�G;JJ�:.d�;\u0013F\u0000��)#=�C\u0012�\u001e\u0005\u0018=j�g�l\u001aٺn�b=.O@;�\u0005��\"�/=�_\u0013�\n@����\u001e��P�<�pX<�fA�d!\u001b=\\�\u001f=%���T�$<\u0002�b=oaż0�;�׍ =�ø<X�?�\u001fh��&k\u000e��2\u0015�\u0005��<�.Y:}&S<vw�;\u001e�g<Yr3�,��<ɽ�;T����\u0013�S�R=�Q�;Х����<D�m�j\u001c�:.'���}B��z\u0011=�ӵ=��\u0007=8B��h������� �\u0010���\u0018��&��1'T���?=\u0018�\u0005=W���k:/;\u000es\u000f��s\u0006<ϸ}�A�.��*B<8�»o&�<\u0005Sv�3\u0001\u0004��y�<�v��IL�\t$��!Nz<H����<�b�;���=M\u0017d<P�\u0014�T�\b�˙�<��\f;\u0006�\u0000<�\u0001#���\u001c�\u0019\f�<Q�,�Y$;�xQZ=�\u0014�<��R��2 ����KǮ��9w<\u001d=��}��;��\u001d����<����\u0010�\u001b�l?�<\u000f\t\u0000��\u000b�ڴ5<�k\u0011�u25����;.4ݻd\u0011��o\u0003*�Q\u0011+��\u001eֻ�����K9%\u001f<��Dû?�h��B�=��<O�=<����u<\u0015=\u0012P�=9�>=�$��}ؼ:�\u0017�=.,��}�9<�]!�G�(={���*\u001f�Rb����3=Ǵ`;�S��\u001a�:����J��<v��x�6<�n\u001a=�\u0001ڻ\u001f{û�\\<��\u0000\u0018<�\u0001�����<�E޻���;$_�<�������:�v��V�*=��\u0000=J5Ѽ�L�;��'�+�B��������{��:��w����>?<�f����<����Pz���_�<�\u000bF<^n0�@�;=�t\u0003=;\u0001J�m\u0013���\tn�����\u001c3�<����(�����;4���X\u0011;\u0002mD���\u0013����:�L<��<�sٌ��N�;����!:�<cJ��\u0015����\u0015\u000f��\n�<ƴ�;��F<�n4��kW�]\n7=����A萼3g&��:<G�\u000e=�E\u001f<yi��l��<�.%=�\u0014�=�\u001e\u000e�Xu�<�\u0019w<$�y�e�\b<�{�<�y�=��p�v�^������\u0016\u0006��iB����<.u�<��\f;5�/��J�<�}�<o��;�禼-�N=��$�<㏼�'�=���;\fr��$ru���;��\b���;jG���b�<\"����l�<��b=���G\t�\u00040��].\b�+z%��ҁ;xN�:��\u0011=�PC=\u0010)!�^�\u0010=íJ���G��Q\u0017=i\t0=|�X��V\u0010����;�k�<{~���4\u0010��E\u0014�������==�-\u001a=\u0014�������7�v�`\u0013*�B��</���g\u0014�\u000ft{<�\u0000;<X�\u001c=�\u000b�;:�?=M\\\u001b=#\u001fQ=_@n����<r��;Ij\u0002������ݹ<����\u001a�\u001e���\u001f=5�+�����rj4�����F<�<��\u0006�Hۈ<�����T\u000f�#�W<�(\u0002�\t?�:3�,��e޼=K\u001a��ͼS�F�\u001d�O�\u0011m�<ny��\u000b$&=n6���>\u0002�qɬ<��l=gE��~�\r<1<i=��\u0000�LC\u0013�n���3'�<�b���\u0002ֻ\u0019�ͻ\".����x�+C�<[Q\u0005��t<rI߼��\b=o�~����;�\u0004~����<�\u0007Ӽ1r\u0007�ڨM�uu�:|�y=�*'=��\u001e=ⳣ�\"�2�C��<+�ʼ��\u0006���K����<o�X<E'�9o��<\u0003Uʻ�nѼ\b\u0016�<�\u000b����j�ĳ�=�\u0000\r�>��<��8����;z.���c\u0000=b�/���7=�~�;\u0010�\u000b�\u0006�K���<�:W<�;\u0000�� `�\u0003���1�\u001c=\u001e�����\u0013��Z���2\u000e=�7Ż%?�;%%d<П����s<z��<����d\u0004ͼ��@��\u0018\u001a�hl\u001b�\\ K;x�:;m`;;膦<��;ţ���hZ<\\27:\u0012!��Ѣ��Xp\u000b��>s���\u0006=���:\u001b�\u000e��ܯ;��F<\u0006\u001ey�\u0012�x��o�<\u0004Ї=,�};�?@=\u0019�\u0018���\u0017=��V:Pk\u0001<CeP=\u0006b�<�Gw��,���j �*�)����i\u0019\f=�?��V<Z<X1\u0000=b�������w׸�\u0004L1<��ڼ�;�=+�ּVXֻ\u0011�-�Lb�<�V�<vrӼ\u0007�9��\u001d:��r����\u0015=�X�<P��;Հ�<��z�.1\u000e=�=,=��\u001f=C.-<���\u00162^<\u001a��<39��4�K<\u0015R\u0001��u��9�l��[�\u001b\u0010\u001a�?b\u0014=�\u0001��n\u0019x=�T\u0018��ð<�� <��\u0003��\u001d�;�\u0005�<d�J��d;���:Ӓa;&��<��⺾��<\u001d��<�\u000f\f�&ND=O��;N\u000f3=�a��d�Ļ\u0001�<=l�;�m\u001a=G�<\u0005�M��ml���e=���=\u0014�����<�1鼈�&�M\u001bռ/\u0004����*=/�\t��\u001c�<yf:<��\\�\u001b�N;�K\u001f<��c��AP<���<\u0002Zۼr�D��\u001a�:\u0013\u0011=��2�<��8=�1�=|I���/I<\u001b:s=��2��\n\f=B�s=�:<6|n<�u�<\bX�<\u001b\r�;\u000eN#���\u0002<�V)��\u000f�\u0003Ѹ<0��<[���`H�:��~<Ō#<T�ϼ=S�<�k躟T����\u001f��1:�����T\u0017==� �\u000e�\u0001�G�}�\u0012ֿ�\u0016j�<�,j<}Qd<���<W_\b�Y��<l\u000b�=�-����\u0010= �2��:5<nLݺ�#]��\u001c��l�F�\u001f.��]G5�\u001dR'=�\u0007>���g��S�:hM\b��3\n���<��\u0001=k���\u0002�\n�h��<\u0002���� �;^���F%L<\u001dP�<JE7< ��<_�\n���\u0011��&�<�nt<4\u0012��^�a<�\u0001*=\u00184����v�����oa�<�\u0002\u000b��0(�-�\r=�/0�a\u001c��\u001b��9!\u0017*=\u000fg}<�6��f�\u0017<Om�<a�{=;��<����1�^����<FF�;P���\u0001vg��S�<Ws�<��k��\u0013\t����v3��=�<�M2<�]\u0019<�m�;��\u0010�C>\n=�m���%�\u0015ר�_\rX��J�<$ئ<\u0002vU�\u0014)\u0016=�]|<\b�b�D�\r���t<*��<�\u0000�<B�\u000b�;Z�<�ѷ<t�\u0005<�\u0010�<�Ȏ<�\tN�3$�s込�+�<B�\u0006�N��<�<s�\u0000=!\u0014�<I\u0013\u000e<Le\f�\u0003R⼮�\u0007=��x9�[�<C&ּ��+=�hf=ߵ�<k�r�x$����\u0007�snI<��p<yB1��\u001a���.�<��7�j��1~��\rݼ��Ӽ\u00039\u0012<F�\t=�Ƈ=�1I=\u001d:o<S�\u0002�S����$�<(���J\u0010��Dn�=e5\u0013�\u0003�2���\u000f=k\u001c\u0013<�]\"���z<��\u000e=m?�<E]�<.������<�9\u001a=�\u0013=þ\u001b=Q��<�\"\u001a���ǻ\u0013��<�൹*��<�\u000b=�܋�������<ܠ\u0005��k�<!\u0001�<�!�<��f�,\u001c%�\u00046\u001f=�$�<g\u0005��\f�h<�:\f�\u0019YC�Q⌹\n\f�<�>���5�<��\u0007=�3>=\"\u001c'�7�\u0002=�G�=\u001at�9I�v<wr��\u0014�N���\u000b=\u0017,���\u000eT;&p�<Qi\f=\u001c(V�a>�<�d�<<6���h\u0012=�wl<�\u0018P�ox�<M:�<}p!�~J\u001d=�\r\u0010=��j<nq������\\ƾ�.�M=O`\u0003=P��;t\u0000\u0016�%�\u0015��7�9�Mȼ\u0010�`��'<<�\"i��y&�c�y�\u0005��;�\u0013�;,�\u0002=K�@�Q�X<whM=_��<�n�=R])���$;�xc�W�;;Q\u0011O�sU�:�و;Hޚ<\u0019�\u0007��}=\u0013��=���<ֱ��\u0015��<=�ϻ\u0001p�<Α�<W4\u000e=���d~\f��;\u001b<=?s=����t}漰�;�<�<�{\u000f�wI@�\t�U��n0=j.�8�\u001f�<�;R�E\u0012<�/�<��4�Ϲ[��p����\u0012=K�?�$~M��\t�=\u0018h�=\u000057�[[⼪��< 9�;�W�=�\u000f(=<*�<m\u0006\r��\u000f[������;8=ߴ�=\u001b6 =�VB=�����5�;�3a=�7p��U&=�\u001f4=",
+        "src/fastmcp/utilities/ui.py",
+        "src/fastmcp/server/auth/oauth_proxy.py",
+        "src/fastmcp/server/auth/jwt_issuer.py",
+        "src/fastmcp/server/auth/oauth_proxy.py",
+        "src/fastmcp/server/auth/oauth_proxy.py",
+        "src/fastmcp/utilities/ui.py",
+        "src/fastmcp/mcp_config.py",
+        "src/fastmcp/server/auth/jwt_issuer.py",
+        "src/fastmcp/server/auth/jwt_issuer.py",
+        "src/fastmcp/mcp_config.py",
+        "src/fastmcp/mcp_config.py",
+        "src/fastmcp/mcp_config.py",
+        "src/fastmcp/server/auth/jwt_issuer.py",
+        "src/fastmcp/server/auth/jwt_issuer.py",
+        "examples/testing_demo/tests/test_server.py",
+        "src/fastmcp/mcp_config.py",
+        "tests/cli/test_run.py",
+        "tests/contrib/test_mcp_mixin.py",
+        "tests/server/auth/test_jwt_issuer.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py"
+      ]
+    },
+    {
+      "queryId": "sym-028-AuthProvider",
+      "query": "AuthProvider",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.16666666666666666,
+      "ndcgAt5": 0,
+      "ndcgAt10": 1.2796353424232245,
+      "recallAtK": {
+        "1": 0,
+        "5": 0,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 877.3301670000001,
+      "retrievedDocs": [
+        "src/fastmcp/server/auth/__init__.py",
+        "src/fastmcp/server/http.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/http.py",
+        "src/fastmcp/settings.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/settings.py",
+        "src/fastmcp/server/auth/__init__.py",
+        "src/fastmcp/settings.py",
+        "src/fastmcp/server/http.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/settings.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/http.py",
+        "src/fastmcp/server/http.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/auth/auth.py"
+      ]
+    },
+    {
+      "queryId": "sym-029-ResourceTemplate",
+      "query": "ResourceTemplate",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 1,
+      "ndcgAt5": 1,
+      "ndcgAt10": 1.3010299956639813,
+      "recallAtK": {
+        "1": 1,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 872.6973329999964,
+      "retrievedDocs": [
+        "src/fastmcp/resources/template.py",
+        "src/fastmcp/server/middleware/middleware.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/resources/__init__.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/providers/proxy.py",
+        "src/fastmcp/resources/resource_manager.py",
+        "src/fastmcp/server/providers/fastmcp_provider.py",
+        "src/fastmcp/resources/template.py",
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/resources/resource_manager.py",
+        "src/fastmcp/server/middleware/middleware.py",
+        "src/fastmcp/contrib/component_manager/component_service.py",
+        "src/fastmcp/client/client.py",
+        "src/fastmcp/contrib/component_manager/component_service.py",
+        "src/fastmcp/resources/__init__.py",
+        "src/fastmcp/server/providers/base.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/server/server.py",
+        "src/fastmcp/resources/resource_manager.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/resources/template.py"
+      ]
+    },
+    {
+      "queryId": "sym-030-TokenVerifier",
+      "query": "TokenVerifier",
+      "routerLabel": "symbol_lookup",
+      "reciprocalRank": 0.5,
+      "ndcgAt5": 1.1309297535714575,
+      "ndcgAt10": 1.1309297535714575,
+      "recallAtK": {
+        "1": 0,
+        "5": 1,
+        "10": 1,
+        "20": 1
+      },
+      "latencyMs": 864.2973750000019,
+      "retrievedDocs": [
+        "src/fastmcp/server/auth/__init__.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/server/auth/__init__.py",
+        "src/fastmcp/server/auth/providers/jwt.py",
+        "src/fastmcp/server/auth/providers/in_memory.py",
+        "src/fastmcp/server/auth/providers/jwt.py",
+        "src/fastmcp/server/auth/providers/debug.py",
+        "src/fastmcp/server/auth/providers/jwt.py",
+        "src/fastmcp/server/auth/providers/github.py",
+        "src/fastmcp/server/auth/providers/discord.py",
+        "src/fastmcp/server/auth/providers/aws.py",
+        "src/fastmcp/server/auth/oidc_proxy.py",
+        "src/fastmcp/server/auth/providers/google.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/server/auth/providers/jwt.py",
+        "src/fastmcp/server/auth/providers/in_memory.py",
+        "src/fastmcp/server/auth/auth.py",
+        "src/fastmcp/server/auth/providers/aws.py"
+      ],
+      "groundTruth": [
+        "src/fastmcp/server/auth/auth.py"
+      ]
+    }
+  ],
+  "metrics": {
+    "mrrAt10": 0.42664141414141415,
+    "ndcgAt10": 1.1109793035108573,
+    "ndcgAt5": 0.7223549992241111,
+    "recallAt100": 0.7
+  },
+  "latency": {
+    "p50": 984.0828960000017,
+    "p95": 1939.8705813999993,
+    "mean": 1298.4274473333337
+  }
+}
