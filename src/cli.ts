@@ -35,6 +35,7 @@ import {
 	getVoyageApiKey,
 	hasApiKey,
 	isLearningEnabled,
+	isLocalEmbeddingProvider,
 	isVectorEnabled,
 	loadGlobalConfig,
 	saveGlobalConfig,
@@ -721,8 +722,8 @@ async function handleIndex(args: string[]): Promise<void> {
 	// Check if vector mode is enabled
 	const vectorEnabled = isVectorEnabled(projectPath);
 
-	// Check for API key (not needed when vector mode is disabled)
-	if (vectorEnabled && !hasApiKey()) {
+	// Check for API key (not needed when vector mode is disabled or using local providers)
+	if (vectorEnabled && !hasApiKey() && !isLocalEmbeddingProvider(projectPath)) {
 		console.error("Error: OpenRouter API key not configured.");
 		console.error("Run 'mnemex init' to set up, or set OPENROUTER_API_KEY.");
 		process.exit(1);
@@ -1505,8 +1506,8 @@ async function handleSearch(args: string[]): Promise<void> {
 	// Check if vector mode is enabled in config
 	const vectorEnabled = isVectorEnabled(projectPath);
 
-	// Check for API key (not needed for keyword-only search or when vector mode disabled)
-	if (!keywordOnly && vectorEnabled && !hasApiKey()) {
+	// Check for API key (not needed for keyword-only search, local providers, or when vector mode disabled)
+	if (!keywordOnly && vectorEnabled && !hasApiKey() && !isLocalEmbeddingProvider(projectPath)) {
 		console.error("Error: OpenRouter API key not configured.");
 		console.error("Run 'mnemex init' to set up, or set OPENROUTER_API_KEY.");
 		process.exit(1);
@@ -2479,7 +2480,7 @@ View stats anytime with: mnemex learn
 			? { lmstudioEndpoint: embeddingEndpoint }
 			: {}),
 		...(embeddingProvider === "local" && embeddingEndpoint
-			? { localEndpoint: embeddingEndpoint }
+			? { localEndpoint: embeddingEndpoint.endsWith("/v1") ? embeddingEndpoint : `${embeddingEndpoint}/v1` }
 			: {}),
 		enableEnrichment,
 		...(llmSpec ? { llm: llmSpec } : {}),
