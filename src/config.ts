@@ -535,6 +535,19 @@ export function hasApiKey(): boolean {
 	return !!getApiKey();
 }
 
+/** Embedding providers that run locally and do not require a cloud API key */
+const LOCAL_PROVIDERS = new Set(["ollama", "lmstudio", "local"]);
+
+/**
+ * Check if the project uses a local embedding provider (ollama, lmstudio, local)
+ * that does not require an OpenRouter API key.
+ */
+export function isLocalEmbeddingProvider(projectPath: string): boolean {
+	const config = loadProjectConfig(projectPath);
+	const provider = config?.embeddingProvider;
+	return provider != null && LOCAL_PROVIDERS.has(provider);
+}
+
 /**
  * Get Voyage AI API key from environment or config
  */
