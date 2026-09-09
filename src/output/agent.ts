@@ -56,6 +56,41 @@ function indexComplete(result: EnrichedIndexResult): void {
 			console.log(`configured_model=${result.configuredModel}`);
 		}
 	}
+	// The embedding cache's own accounting. Emitted whenever the seam ran at
+	// all, INCLUDING `tier=none` (the user's opt-out) and `tier=l0` (degraded to
+	// in-process only): a consumer comparing a cached run against a control run
+	// has to be able to tell "the cache was off" from "the field is missing
+	// because this build has no cache".
+	//
+	// Corroboration, never proof. A cache that wrongly reported a hit would
+	// report it here too — the count that settles it is the provider's own
+	// request log, plus `cost`/`total_tokens` above, which the cache cannot
+	// fabricate.
+	if (result.embedCache) {
+		console.log(`embed_cache_tier=${result.embedCache.tier}`);
+		console.log(`embed_cache_hits=${result.embedCache.hits}`);
+		console.log(`embed_cache_misses=${result.embedCache.misses}`);
+		console.log(`embed_cache_writes=${result.embedCache.writes}`);
+	}
+	// The AUTHORITATIVE upgrade channel (§5.3): two of the four entry points
+	// that call index() render no progress at all, so the `[migrating]` notice
+	// reaches nobody there. A machine consumer that sees this knows the run
+	// rebuilt from scratch and re-embedded the whole repository once.
+	if (result.upgradedFromIndexVersion !== undefined) {
+		console.log(
+			`upgraded_from_index_version=${result.upgradedFromIndexVersion}`,
+		);
+	}
+	// Files whose rows were rolled back because at least one chunk came back
+	// with no vector, and whose tracker stamp was withheld so the next run
+	// redoes them. Silence here means every file that was indexed is in the
+	// store.
+	if (result.filesDeferred && result.filesDeferred.length > 0) {
+		console.log(`files_deferred=${result.filesDeferred.length}`);
+		for (const file of result.filesDeferred) {
+			console.log(`deferred_file=${file}`);
+		}
+	}
 	if (result.errors.length > 0) {
 		console.log(`errors=${result.errors.length}`);
 	}

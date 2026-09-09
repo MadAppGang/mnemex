@@ -240,6 +240,17 @@ export const ENV = {
 	MNEMEX_ON_MODEL_MISMATCH: "MNEMEX_ON_MODEL_MISMATCH",
 	/** Colour theme override: "light" | "dark" (read pre-dotenv, see src/ui/theme-env.ts) */
 	MNEMEX_THEME: "MNEMEX_THEME",
+	// NOT REGISTERED HERE, deliberately: `MNEMEX_DISABLE_EMBED_CACHE` and
+	// `MNEMEX_EMBED_CACHE_PATH`. `src/core/embed-cache.ts` owns and reads both
+	// (`ENV_DISABLE` / `ENV_PATH` there), because that module may not import
+	// this one — it is a leaf on purpose, so the embedding cache cannot pull
+	// config, keychain or the LLM stack into its graph, and a unit test pins its
+	// import list. Registering the names here would need exactly that import.
+	//
+	// The cost is discoverability, which this comment pays: grep for either name
+	// and land in `embed-cache.ts`. The related config field IS here —
+	// `GlobalConfig.embedCache` — and reaches the cache as a parameter from
+	// `Indexer.index()`, which imports both sides.
 } as const;
 
 /** Context7 API endpoint */

@@ -32,9 +32,16 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
+	embeddingTextFingerprint,
+	getModelContextLength,
 	OllamaEmbeddingsClient,
 	OpenRouterEmbeddingsClient,
 } from "../../../src/core/embeddings.js";
+import { TotalEmbeddingFailureError } from "../../../src/core/embeddings-errors.js";
+import type {
+	EmbeddingProvider,
+	IEmbeddingsClient,
+} from "../../../src/types.js";
 
 const realFetch = globalThis.fetch;
 
@@ -159,6 +166,23 @@ describe("total failure is never a per-text condition", () => {
 
 		expect(error).toBeInstanceOf(Error);
 		expect((error as Error).message).toContain("all 2 texts");
+
+		// BY IDENTITY, not by message. The caching seam has to tell this apart
+		// from every other embedding failure to decide whether a batch can be
+		// served from cache with empty slots for the misses (some hits) or must
+		// stay fatal (no hits) — and it may not import `embeddings.ts`, because
+		// that would pull `config.ts` into the cache's import graph. So the class
+		// lives in a leaf both modules can see.
+		expect(error).toBeInstanceOf(TotalEmbeddingFailureError);
+		const total = error as TotalEmbeddingFailureError;
+		expect(total.provider).toBe("OpenRouter");
+		expect(total.total).toBe(2);
+		// The MESSAGE IS UNCHANGED from the anonymous Error this replaced, so
+		// anything matching on the string is unaffected.
+		expect(total.message).toContain(
+			"embeddings failed for all 2 texts, so this is not a per-text problem.",
+		);
+		expect(total.message).toContain("First failure:");
 	}, 60_000);
 
 	test("a PARTIAL failure still skips and warns — the deliberate behaviour", async () => {
@@ -214,4 +238,52 @@ describe("embedOne", () => {
 		expect(error).toBeInstanceOf(Error);
 		expect((error as Error).message).toContain("test-model");
 	}, 60_000);
+});
+
+describe("embeddingTextFingerprint — the one declared below-seam transform", () => {
+	function clientLike(
+		provider: EmbeddingProvider,
+		model: string,
+	): IEmbeddingsClient {
+		return {
+			getModel: () => model,
+			getProvider: () => provider,
+			getDimension: () => undefined,
+			isLocal: () => provider === "ollama",
+			embed: async () => ({ embeddings: [] }),
+			embedOne: async () => [1],
+		};
+	}
+
+	test("ollama reports its truncation limit, because it truncates", () => {
+		// `OllamaEmbeddingsClient.embed` pre-truncates every text to
+		// `getModelContextLength(model)`, so the vector corresponds to
+		// truncate(text, K) while the cache key is over `text`. K is a CODE
+		// CONSTANT keyed by model name, not a property of the model's identity,
+		// so it has to travel with the row or an edit to the table silently
+		// changes the vector behind an unchanged key.
+		expect(
+			embeddingTextFingerprint(clientLike("ollama", "nomic-embed-text")),
+		).toBe(`trunc:${getModelContextLength("nomic-embed-text")}`);
+	});
+
+	test("a model with no table entry still reports the default it will use", () => {
+		// The dangerous case is a model that FALLS THROUGH to the 8192 default:
+		// adding it to the table later changes the truncation without changing
+		// the model name. The fingerprint moves with it, so those rows are
+		// vetoed instead of silently reused.
+		const unknown = "some-model-nobody-listed";
+		expect(getModelContextLength(unknown)).toBe(8192);
+		expect(embeddingTextFingerprint(clientLike("ollama", unknown))).toBe(
+			"trunc:8192",
+		);
+	});
+
+	test("a client that transforms nothing reports the empty string", () => {
+		for (const provider of ["openrouter", "voyage", "local"] as const) {
+			expect(embeddingTextFingerprint(clientLike(provider, "any-model"))).toBe(
+				"",
+			);
+		}
+	});
 });

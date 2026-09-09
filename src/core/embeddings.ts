@@ -25,6 +25,7 @@ import type {
 	EmbedResult,
 	IEmbeddingsClient,
 } from "../types.js";
+import { TotalEmbeddingFailureError } from "./embeddings-errors.js";
 
 // ============================================================================
 // Constants
@@ -104,10 +105,17 @@ function assertNotTotalFailure(
 ): void {
 	if (total === 0 || failedCount < total) return;
 	const cause = warnings[0] ?? "no error recorded";
-	throw new Error(
-		`${provider} embeddings failed for all ${total} texts, so this is not a per-text problem.\n` +
-			`  First failure: ${cause}`,
-	);
+	// A NAMED class, not an anonymous Error, and the MESSAGE TEXT IS UNCHANGED —
+	// `TotalEmbeddingFailureError` renders exactly the two lines this used to
+	// build, so anything matching on the string is unaffected.
+	//
+	// The identity is what the caching seam needs. `CachingEmbeddingsClient` has
+	// to decide whether a failed batch can be served from cache with empty slots
+	// for the misses (hits > 0) or must stay fatal (hits === 0), and it may not
+	// import this module — `embeddings.ts` imports `config.ts`, which is one end
+	// of the import chain the caching proxy's allowlist forbids. The class
+	// therefore lives in `embeddings-errors.ts`, a leaf with no imports at all.
+	throw new TotalEmbeddingFailureError(provider, total, cause);
 }
 
 /** Default endpoints */
@@ -1363,10 +1371,42 @@ export function getModelContextLength(modelId: string): number {
 
 /**
  * Truncate texts to fit within model's context window
+ *
+ * ZERO CALLERS TODAY, and wiring it into a client is not a local change:
+ * `embeddingTextFingerprint()` below is the ONE declaration of which clients
+ * transform their text before embedding, and the embedding cache's third veto
+ * compares that fingerprint. A client that started truncating here without
+ * being named there would report `""`, the veto would go blind, and the cache
+ * would serve vectors for `truncate(text, K)` under a key over `text` — in a
+ * machine-global file whose entries are never invalidated. Update both in the
+ * same edit.
  */
 export function truncateForModel(texts: string[], modelId: string): string[] {
 	const maxTokens = getModelContextLength(modelId);
 	return texts.map((text) => truncateToTokenLimit(text, maxTokens));
+}
+
+/**
+ * Everything a client does to the text below the embedding-cache seam that
+ * `(model, dimension)` does not already capture. `""` means "this client
+ * transforms nothing".
+ *
+ * THE ONE PLACE A BELOW-SEAM TEXT TRANSFORM IS DECLARED (architecture §4.5).
+ * The cache key is `sha256(model \0 dimension \0 text)`, so any transform
+ * applied after the key is computed makes the stored vector correspond to
+ * something other than the key's text. `OllamaEmbeddingsClient.embed`
+ * pre-truncates every text to `getModelContextLength(model)` — a CODE CONSTANT
+ * keyed by model name, not a property of the model's identity. Editing
+ * `MODEL_CONTEXT_LENGTHS`, or adding a model that falls through to the 8192
+ * default, would otherwise change the vector behind an unchanged key.
+ *
+ * Computed HERE and injected into the caching proxy, which may not import this
+ * module (see `embeddings-errors.ts` for why).
+ */
+export function embeddingTextFingerprint(client: IEmbeddingsClient): string {
+	return client.getProvider() === "ollama"
+		? `trunc:${getModelContextLength(client.getModel())}`
+		: "";
 }
 
 /**

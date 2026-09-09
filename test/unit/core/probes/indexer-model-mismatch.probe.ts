@@ -190,6 +190,15 @@ beforeEach(() => {
 	// Keep the run off the network and out of the developer's global lock file.
 	process.env.MNEMEX_DOCS_ENABLED = "false";
 	process.env.MNEMEX_GLOBAL_LOCK_PATH = join(projectPath, "global.lock");
+	// …and out of the developer's real embedding cache. `index()` opens
+	// `~/.mnemex/embed-cache.db` by default, which is MACHINE-GLOBAL (CLAUDE.md
+	// #31): every repo on the machine shares that one file. This probe is about
+	// the model-mismatch decision, not the cache, but it runs the real
+	// `Indexer.index()` and is therefore a writer of it — which is how a
+	// 36,864-byte cache appeared in a real user's home directory, written by the
+	// committed test suite. Without this line `openEmbedCache()` now REFUSES and
+	// this probe fails loudly, which is the point of the guard.
+	process.env.MNEMEX_EMBED_CACHE_PATH = join(projectPath, "embed-cache.db");
 	delete process.env.MNEMEX_ON_MODEL_MISMATCH;
 });
 
@@ -197,6 +206,7 @@ afterAll(() => {
 	delete process.env.MNEMEX_MODEL;
 	delete process.env.MNEMEX_DOCS_ENABLED;
 	delete process.env.MNEMEX_GLOBAL_LOCK_PATH;
+	delete process.env.MNEMEX_EMBED_CACHE_PATH;
 	delete process.env.MNEMEX_ON_MODEL_MISMATCH;
 	for (const dir of tempDirs) {
 		rmSync(dir, { recursive: true, force: true });

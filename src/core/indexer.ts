@@ -18,6 +18,7 @@ import {
 	isDocsEnabled,
 	isEnrichmentEnabled,
 	isVectorEnabled,
+	loadGlobalConfig,
 	loadProjectConfig,
 } from "../config.js";
 import { createDocsFetcher, type DocsFetcher } from "../docs/index.js";
@@ -33,10 +34,12 @@ import type {
 	CodeUnit,
 	CodeUnitWithEmbedding,
 	EmbeddingProvider,
+	EmbedResult,
 	EnrichedIndexResult,
 	EnrichmentResult,
 	IEmbeddingsClient,
 	ILLMClient,
+	IndexEmbedCacheStats,
 	IndexResult,
 	IndexStatus,
 	SearchOptions,
@@ -47,14 +50,32 @@ import {
 	type CodeUnitExtractor,
 	createCodeUnitExtractor,
 } from "./ast/code-unit-extractor.js";
+import {
+	CachingEmbeddingsClient,
+	createCachingEmbeddingsClient,
+} from "./caching-embeddings-client.js";
 import { chunkFileByPath } from "./chunker.js";
-import { createEmbeddingsClient, testModelAvailability } from "./embeddings.js";
+import {
+	type EmbedCacheLike,
+	type EmbedCacheTier,
+	openEmbedCache,
+	resolveEmbedCacheMode,
+} from "./embed-cache.js";
+import {
+	createEmbeddingsClient,
+	embeddingTextFingerprint,
+	testModelAvailability,
+} from "./embeddings.js";
 import {
 	createEnricher,
 	type Enricher,
 	type FileToEnrich,
 } from "./enrichment/index.js";
-import { CURRENT_INDEX_VERSION, setIndexVersion } from "./index-version.js";
+import {
+	CURRENT_INDEX_VERSION,
+	getIndexVersion,
+	setIndexVersion,
+} from "./index-version.js";
 import {
 	formatInvalidationCounts,
 	invalidateForCommit,
@@ -286,7 +307,45 @@ export class Indexer {
 		waitedMs: number,
 	) => void;
 
+	/**
+	 * THE SEAM. On every non-search initialisation this is a
+	 * `CachingEmbeddingsClient` wrapping `rawEmbeddingsClient`; on a search
+	 * initialisation it IS `rawEmbeddingsClient`, so the read path is byte-for-byte
+	 * what it was before the cache existed (NFR-1).
+	 *
+	 * Assigned in exactly ONE place: `installEmbeddingsClient()`.
+	 */
 	private embeddingsClient: IEmbeddingsClient | null = null;
+	/**
+	 * The concrete provider client, never wrapped. The enricher takes THIS one:
+	 * its entries are LLM-generated summaries that can never hit a
+	 * content-addressed cache, so wrapping it would only add lookups that always
+	 * miss.
+	 *
+	 * Assigned in exactly ONE place: `installEmbeddingsClient()`. Keeping both
+	 * fields under one assignment is what stops the seam and the raw client from
+	 * ever describing two different models — which is what happens when only the
+	 * first of the two `createEmbeddingsClient()` sites is converted, because the
+	 * second one (the `use-indexed` adoption) replaces the client wholesale.
+	 */
+	private rawEmbeddingsClient: IEmbeddingsClient | null = null;
+	/**
+	 * The machine-global embedding cache, opened by `index()` BEFORE either lock
+	 * and `null` on every other path — including `clear()`, which initialises a
+	 * client and never embeds, and must not create and DDL a file it will not use.
+	 */
+	private embedCache: EmbedCacheLike | null = null;
+	/**
+	 * `GlobalConfig.embedCache`, resolved once per `index()` run. `undefined`
+	 * means the user never set it, which is ON — read with `=== false`, never for
+	 * falsiness.
+	 */
+	private embedCacheConfigEnabled: boolean | undefined;
+	/**
+	 * Set by the v2 -> v3 rebuild branch to the version being upgraded FROM, and
+	 * surfaced on `IndexResult.upgradedFromIndexVersion`.
+	 */
+	private upgradedFromIndexVersion: number | undefined;
 	private vectorStore: IVectorStore | null = null;
 	private fileTracker: IFileTracker | null = null;
 	private llmClient: ILLMClient | null = null;
@@ -434,6 +493,86 @@ export class Indexer {
 	}
 
 	/**
+	 * THE ONLY place either embeddings-client field is assigned.
+	 *
+	 * Both `createEmbeddingsClient()` sites go through it — the one in
+	 * `initialize()` and the one in the `use-indexed` adoption branch of
+	 * `indexInternal()` — so the raw client and the seam can never describe two
+	 * different models. That failure is silent and expensive: the adoption branch
+	 * replaces the client wholesale, so a proxy installed only in `initialize()`
+	 * would either be destroyed there, or would keep embedding with the
+	 * CONFIGURED model while the run records the ADOPTED one — writing vectors
+	 * under the wrong model identity into a cache that is shared by every repo on
+	 * the machine.
+	 *
+	 * `forSearch` leaves the seam UNWRAPPED. `search()` and `getStatus()` call
+	 * `initialize(true)` and must keep today's read path byte-for-byte (NFR-1);
+	 * `initialize()` is not memoised and `index()` always calls it with the
+	 * default `false`, so an index run after a search re-wraps correctly.
+	 *
+	 * Enrichment stays outside the seam by taking `rawEmbeddingsClient`.
+	 */
+	private installEmbeddingsClient(
+		raw: IEmbeddingsClient,
+		forSearch: boolean,
+	): void {
+		this.rawEmbeddingsClient = raw;
+		this.embeddingsClient = forSearch
+			? raw
+			: createCachingEmbeddingsClient(raw, {
+					// `null` on every path but `index()`; the proxy then serves the
+					// in-process L0 memo only, which costs nothing and creates no file.
+					cache: this.embedCache,
+					configEnabled: this.embedCacheConfigEnabled,
+					// Computed HERE because the proxy may not import `embeddings.ts`.
+					clientFingerprint: embeddingTextFingerprint(raw),
+				});
+	}
+
+	/**
+	 * The seam, narrowed to the three members the index path needs that are not
+	 * on `IEmbeddingsClient` — `embedContentOf`, `keyFor` and `stats`.
+	 *
+	 * Non-null and a `CachingEmbeddingsClient` on every non-search
+	 * initialisation, because `installEmbeddingsClient` wraps unconditionally
+	 * when `forSearch` is false — including when the cache is off, where the
+	 * proxy's mode is "off" and it passes straight through to the inner client.
+	 *
+	 * Throws rather than falling back, deliberately: a fallback would be a second
+	 * embedding code path that no test exercises and that would silently bypass
+	 * the NFR-2 assertion in `embedContentOf`. This throw is unreachable by
+	 * construction and says so.
+	 */
+	private cachingSeam(): CachingEmbeddingsClient {
+		const client = this.embeddingsClient;
+		if (!(client instanceof CachingEmbeddingsClient)) {
+			throw new Error("index path reached without the caching seam installed");
+		}
+		return client;
+	}
+
+	/** The RUNTIME tier — degradation moves this, never the user's mode. */
+	private embedCacheTier(): EmbedCacheTier {
+		return this.embeddingsClient instanceof CachingEmbeddingsClient
+			? this.embeddingsClient.stats().tier
+			: "none";
+	}
+
+	/** What the cache did this run, for `IndexResult`. Null when it never ran. */
+	private embedCacheResultStats(): IndexEmbedCacheStats | undefined {
+		if (!(this.embeddingsClient instanceof CachingEmbeddingsClient)) {
+			return undefined;
+		}
+		const stats = this.embeddingsClient.stats();
+		return {
+			tier: stats.tier,
+			hits: stats.hits,
+			misses: stats.misses,
+			writes: stats.writes,
+		};
+	}
+
+	/**
 	 * Initialize all components
 	 * @param forSearch - If true, use stored embedding model (for retrieval consistency)
 	 */
@@ -516,11 +655,16 @@ export class Indexer {
 				}
 			}
 
-			// Create embeddings client with appropriate model
-			this.embeddingsClient = createEmbeddingsClient({
-				model: modelToUse,
-				provider: providerToUse,
-			});
+			// Create embeddings client with appropriate model.
+			// Through installEmbeddingsClient, which is the ONLY assignment to
+			// either client field — see its docstring.
+			this.installEmbeddingsClient(
+				createEmbeddingsClient({
+					model: modelToUse,
+					provider: providerToUse,
+				}),
+				forSearch,
+			);
 		}
 
 		// Create vector store
@@ -541,9 +685,13 @@ export class Indexer {
 		if (!forSearch && this.enableEnrichment && this.vectorEnabled) {
 			try {
 				this.llmClient = await createLLMClient({}, this.projectPath);
+				// The RAW client, not the seam. Enrichment embeds LLM-generated
+				// summaries, which are new text every time and can never hit a
+				// content-addressed cache, so wrapping it would buy a lookup that
+				// always misses and a write that is never read.
 				this.enricher = createEnricher(
 					this.llmClient,
-					this.embeddingsClient!,
+					this.rawEmbeddingsClient!,
 					this.vectorStore,
 					this.fileTracker,
 				);
@@ -595,6 +743,24 @@ export class Indexer {
 			this.vectorEnabled && isDocsEnabled(this.projectPath)
 				? getDocsConfig(this.projectPath)
 				: null;
+
+		// Open the embedding cache BEFORE either lock, for the same reason the docs
+		// config is resolved here: the open sequence is the one region of this
+		// feature whose duration is not constant-bounded. It creates the directory,
+		// opens the file, and takes a brief exclusive lock for the WAL pragma —
+		// all before `busy_timeout` is set at all. Inside the locks that would be
+		// unbounded blocking against `isLockStale`'s 10 s heartbeat rule; outside
+		// them it is not in the budget at all.
+		//
+		// `null` on failure, always: the cache is an optimisation and the only
+		// thing a failure of it may ever cost is a recompute. The config opt-out is
+		// resolved first so a user who turned the cache off does not get a SQLite
+		// file created and DDL'd for something that will never be read.
+		this.embedCacheConfigEnabled = loadGlobalConfig().embedCache;
+		this.embedCache =
+			resolveEmbedCacheMode(this.embedCacheConfigEnabled) === "off"
+				? null
+				: openEmbedCache();
 
 		// LOCK ORDERING (deadlock-safe): ALWAYS acquire the MACHINE-GLOBAL lock
 		// FIRST, then the PER-PROJECT lock; release in REVERSE (project first, then
@@ -836,17 +1002,31 @@ export class Indexer {
 			// another model. Adopt that model; nothing is cleared for it.
 			this.recordModelAdoption(previousModel!, this.model);
 			this.model = previousModel!;
-			this.embeddingsClient = createEmbeddingsClient({
-				model: this.model,
-				provider: previousProvider,
-			});
+			// THE SECOND createEmbeddingsClient() SITE, and the one that is easy to
+			// miss: this branch is the production default for a model mismatch and
+			// it replaces the client wholesale. It goes through the same single
+			// assignment point, with forSearch=false, so the seam and the raw client
+			// both move to the adopted model together.
+			this.installEmbeddingsClient(
+				createEmbeddingsClient({
+					model: this.model,
+					provider: previousProvider,
+				}),
+				false,
+			);
 			// The enricher captured the OLD client by value in initialize(), so
 			// without this it would keep embedding summaries with the configured
 			// model and mix two vector spaces into one table.
-			if (this.enricher && this.llmClient) {
+			// `this.rawEmbeddingsClient` is in the condition rather than asserted:
+			// the `installEmbeddingsClient` call directly above assigns it
+			// unconditionally, so this is a narrowing, not a guard — and it is the
+			// one non-null assertion this feature would have ADDED to a site that
+			// had none (the pre-cache code passed `this.embeddingsClient` here,
+			// which was already non-optional).
+			if (this.enricher && this.llmClient && this.rawEmbeddingsClient) {
 				this.enricher = createEnricher(
 					this.llmClient,
-					this.embeddingsClient,
+					this.rawEmbeddingsClient,
 					this.vectorStore!,
 					this.fileTracker!,
 				);
@@ -863,6 +1043,39 @@ export class Indexer {
 				`[model] using ${this.model}, the model this index was built with, instead of ${this.modelAdoption?.configuredModel} ` +
 					`(set onModelMismatch: "force-model" to rebuild with ${this.modelAdoption?.configuredModel})`,
 			);
+		}
+
+		// ── Index v2 -> v3: the table predates the embedKey column ────────────
+		//
+		// A v3 batch carries 23 fields; a live v2 table has 22 columns and LanceDB
+		// 0.38 rejects the whole `add` with "Found field not in schema: embedKey".
+		// So the table has to be rebuilt once. There is no seeding pass and no
+		// in-place migration: this run re-embeds, and every run after it is served
+		// from the cache the rebuild fills.
+		//
+		// Guarded by `!force` because everything above has already decided whether
+		// the table survives — the corruption repair and the force-model rebuild
+		// both set `force` AND `alreadyCleared`, and asking a cleared store about
+		// its schema would answer for a table that no longer exists.
+		if (!force) {
+			const shape = await this.vectorStore!.hasEmbedKeyColumn();
+			// `=== false`, never falsy: `null` means "no table to ask", which is a
+			// fresh index and needs no migration.
+			if (shape === false) {
+				this.upgradedFromIndexVersion = getIndexVersion(this.projectPath);
+				// onProgress, not console.log: the MCP search tool runs this same
+				// index() in-process and stdout there is the JSON-RPC stream. It
+				// reaches at most two of the four entry points, which is why
+				// `upgradedFromIndexVersion` on the result is the authoritative
+				// channel.
+				this.onProgress?.(
+					0,
+					0,
+					"[migrating] this index predates the embedding-cache key column. " +
+						"Rebuilding it once — this run re-embeds; every run after it is served from the cache.",
+				);
+				force = true;
+			}
 		}
 
 		// Discover files
@@ -909,23 +1122,44 @@ export class Indexer {
 
 			// SMART INCREMENTAL: Collect old chunks for modified files BEFORE deleting
 			// This allows us to reuse embeddings for unchanged content
+			//
+			// ONLY THE POPULATION IS GATED. This loop does TWO things and the
+			// second is a mutation: `deleteByFile` below is the only place in the
+			// tree where a MODIFIED file's previous chunks are removed from
+			// LanceDB (the deleted-files loop above covers a disjoint set), and
+			// `addChunks` appends — no upsert, no primary key. Gating the whole
+			// loop on the tier therefore skips the delete on the healthy path and
+			// leaves every past edit's chunks in the table alongside the new ones:
+			// unbounded duplicate accumulation, with retrieval returning ghost
+			// chunks from every previous version of the file.
+			//
+			// Reused from LanceDB only when the persistent cache is NOT serving
+			// this run. On the healthy path the cache covers the same reuse
+			// across files and repos, and one seam is what makes the hit rate
+			// measurable; on any degraded or off path this is the only reuse
+			// there is, and it needs no cache file, no network call and no known
+			// dimension. The tier is read once, before the loop.
+			const reuseFromLance = this.embedCacheTier() !== "sqlite";
 			for (const modifiedFile of changes.modifiedFiles) {
-				// Chunks are stored with absolute paths, so use absolute path for lookups
-				const oldChunks =
-					await this.vectorStore!.getChunksWithVectors(modifiedFile);
-				if (oldChunks.length > 0) {
-					// Store old chunks indexed by contentHash for O(1) lookup
-					// Key by absolute path to match during embedding phase
-					const oldChunksMap = new Map<string, number[]>();
-					for (const chunk of oldChunks) {
-						if (chunk.contentHash && chunk.vector.length > 1) {
-							// >1 to exclude placeholder [0]
-							oldChunksMap.set(chunk.contentHash, chunk.vector);
+				if (reuseFromLance) {
+					// Chunks are stored with absolute paths, so use absolute path for lookups
+					const oldChunks =
+						await this.vectorStore!.getChunksWithVectors(modifiedFile);
+					if (oldChunks.length > 0) {
+						// Store old chunks indexed by contentHash for O(1) lookup
+						// Key by absolute path to match during embedding phase
+						const oldChunksMap = new Map<string, number[]>();
+						for (const chunk of oldChunks) {
+							if (chunk.contentHash && chunk.vector.length > 1) {
+								// >1 to exclude placeholder [0]
+								oldChunksMap.set(chunk.contentHash, chunk.vector);
+							}
 						}
+						this.oldChunksCache.set(modifiedFile, oldChunksMap);
 					}
-					this.oldChunksCache.set(modifiedFile, oldChunksMap);
 				}
-				// Now delete old data (use absolute path to match stored chunks)
+				// Now delete old data (use absolute path to match stored chunks).
+				// NEVER GATED — see above.
 				await this.vectorStore!.deleteByFile(modifiedFile);
 				this.fileTracker!.resetEnrichmentState(modifiedFile);
 			}
@@ -935,6 +1169,11 @@ export class Indexer {
 		// Each batch: parse → embed → store → release memory
 		const skippedFiles: string[] = [];
 		const errors: Array<{ file: string; error: string }> = [];
+		/**
+		 * Files whose tracker stamp was deferred and whose rows were removed
+		 * again, so the next run redoes them. Relative paths, for the report.
+		 */
+		const deferredFiles = new Set<string>();
 		let totalFilesIndexed = 0;
 		let totalChunksCreated = 0;
 		let totalCodeUnitsCreated = 0;
@@ -1025,7 +1264,21 @@ export class Indexer {
 				filePath: string;
 				fileHash: string;
 				vector: number[];
+				embedKey: string;
 			}>;
+
+			/**
+			 * Files in THIS batch that lost at least one chunk to an empty vector.
+			 *
+			 * Their tracker stamp is deferred and their rows are removed again, so
+			 * the next run redoes them from scratch. Both halves are required: a
+			 * deferral that skipped only `markIndexed` would leave rows in LanceDB
+			 * and no row in the tracker, `getChanges` classifies a file with no
+			 * tracker row as NEW, new files never reach the modified-files
+			 * `deleteByFile`, and `addChunks` appends — so every later run would
+			 * append another copy, permanently and per run.
+			 */
+			const filesWithMissingVectors = new Set<string>();
 
 			if (this.vectorEnabled) {
 				// Separate chunks into: cached (reuse vector) vs new (need embedding)
@@ -1040,6 +1293,7 @@ export class Indexer {
 					filePath: string;
 					fileHash: string;
 					vector: number[];
+					embedKey: string;
 				}> = [];
 
 				for (let i = 0; i < batchChunks.length; i++) {
@@ -1053,11 +1307,20 @@ export class Indexer {
 						cachedVectors.has(chunk.contentHash)
 					) {
 						// REUSE: Same content found in cache - skip embedding API call!
+						const reusedVector = cachedVectors.get(chunk.contentHash)!;
 						cachedChunks.push({
 							chunk,
 							filePath,
 							fileHash,
-							vector: cachedVectors.get(chunk.contentHash)!,
+							vector: reusedVector,
+							// FR-2 holds on this path too: the row carries the key the
+							// seam WOULD have computed for it, from the seam's own
+							// formula, at the reused vector's actual width. The formula
+							// still lives in exactly one file.
+							embedKey: this.cachingSeam().keyFor(
+								chunk.content,
+								reusedVector.length,
+							),
 						});
 					} else {
 						// NEW: Content changed or new chunk - needs embedding
@@ -1088,22 +1351,25 @@ export class Indexer {
 					filePath: string;
 					fileHash: string;
 					vector: number[];
+					embedKey: string;
 				}> = [];
 
 				if (chunksNeedingEmbedding.length > 0) {
-					const texts = chunksNeedingEmbedding.map((c) => c.chunk.content);
-					let embedResult: {
-						embeddings: number[][];
-						cost?: number;
-						totalTokens?: number;
-					};
+					const items = chunksNeedingEmbedding.map((c) => c.chunk);
+					let embedResult: EmbedResult;
 
 					try {
 						// Pass progress callback to track embedding progress
 						this.reportPhase("embedding");
-						embedResult = await this.embeddingsClient!.embed(
-							texts,
-							(completed, total, inProgress) => {
+						// `embedContentOf`, not `embed(texts)`: the cache key is over
+						// the chunk's OWN content, so the texts are derived inside the
+						// seam and re-checked against the items at dispatch. A transform
+						// inserted between the two would otherwise make every key
+						// address a vector for text that was never embedded.
+						embedResult = await this.cachingSeam().embedContentOf(
+							items,
+							"chunks",
+							(completed, total, inProgress, cachedHits) => {
 								// Stamp the lock per item, not just once per batch below.
 								// A single batch against a network embedding provider can run
 								// for minutes; stamping only at batch end left
@@ -1114,10 +1380,24 @@ export class Indexer {
 								if (this.onProgress) {
 									const reuseInfo =
 										reusedCount > 0 ? ` (${reusedCount} reused)` : "";
+									// `completed` counts every slot the seam RESOLVED, cache
+									// hits included, so the word "new" becomes a false claim
+									// the moment the cache serves anything: an all-hits batch
+									// would report "500/500 new" for work that never reached
+									// the provider. `(N cached)` is what makes a fast run
+									// legible instead of looking free or stalled.
+									//
+									// `(N reused)` is the OTHER reuse path (LanceDB vectors,
+									// §7.5's L1) and is only ever populated when the
+									// persistent tier is off or degraded. Both can therefore
+									// be non-zero at once on the degraded tier, and both are
+									// shown, because they came from different places.
+									const cached = cachedHits ?? 0;
+									const origin = cached > 0 ? `(${cached} cached)` : "new";
 									this.onProgress(
 										completed + reusedCount,
 										total + reusedCount,
-										`[embedding]${batchInfo} ${completed}/${total} new${reuseInfo}`,
+										`[embedding]${batchInfo} ${completed}/${total} ${origin}${reuseInfo}`,
 										inProgress,
 									);
 								}
@@ -1134,9 +1414,9 @@ export class Indexer {
 					if (embedResult.totalTokens) totalTokens += embedResult.totalTokens;
 
 					// Verify we got embeddings for all chunks
-					if (embedResult.embeddings.length !== texts.length) {
+					if (embedResult.embeddings.length !== items.length) {
 						throw new Error(
-							`Embedding count mismatch: expected ${texts.length}, got ${embedResult.embeddings.length}`,
+							`Embedding count mismatch: expected ${items.length}, got ${embedResult.embeddings.length}`,
 						);
 					}
 
@@ -1150,8 +1430,24 @@ export class Indexer {
 							filePath: c.filePath,
 							fileHash: c.fileHash,
 							vector: embedResult.embeddings[i],
+							embedKey: embedResult.keys?.[i] ?? "",
 						}))
-						.filter((c) => c.vector.length > 0);
+						.filter((c) => {
+							// `=== 0`, never truthiness (CLAUDE.md #15).
+							//
+							// A chunk with no vector is still DROPPED, exactly as before,
+							// but its file is now remembered. The seam can serve a batch
+							// from cache and leave the failed misses empty rather than
+							// throwing the whole run away — and stamping such a file at
+							// its current hash would delete those chunks from the index
+							// permanently, because no later incremental run looks at an
+							// unchanged file again.
+							if (c.vector.length === 0) {
+								filesWithMissingVectors.add(c.filePath);
+								return false;
+							}
+							return true;
+						});
 				}
 
 				// Combine cached + newly embedded chunks
@@ -1162,6 +1458,10 @@ export class Indexer {
 				validChunks = batchChunks.map((c) => ({
 					...c,
 					vector: [0], // Placeholder - BM25 search only (vector search disabled)
+					// Nothing was embedded, so there is no key. The placeholder never
+					// reaches the cache — this branch is the `else` of the vector test
+					// and calls no embeddings client at all.
+					embedKey: "",
 				}));
 			}
 
@@ -1170,6 +1470,7 @@ export class Indexer {
 				(c) => ({
 					...c.chunk,
 					vector: c.vector,
+					embedKey: c.embedKey,
 				}),
 			);
 
@@ -1186,6 +1487,25 @@ export class Indexer {
 			// write so a hang here is attributable to "writing:lance" in the report.
 			this.reportPhase("writing:lance");
 			await this.vectorStore!.addChunks(chunksWithEmbeddings);
+
+			// THE DEFERRAL MUST COVER THE WRITE, NOT ONLY THE TRACKER.
+			//
+			// `addChunks` above ran over `validChunks`, which still holds the
+			// SUCCESSFUL chunks of a file that lost one. Skipping only
+			// `markIndexed` further down would leave rows in LanceDB and no row in
+			// the tracker: `getChanges` then classifies the file as NEW, new files
+			// never enter the modified-files loop that deletes a file's previous
+			// rows, and `addChunks` is a bare append with no upsert and no primary
+			// key. Every subsequent run would append another copy, permanently.
+			//
+			// Deleting here leaves the file with no rows and no tracker entry — a
+			// consistent state the next run redoes from scratch. Safe because
+			// files are batched, not chunks, so a file's chunks are all in this
+			// batch; and a previously-indexed file's prior rows were already
+			// deleted by the modified-files loop.
+			for (const deferredFile of filesWithMissingVectors) {
+				await this.vectorStore!.deleteByFile(deferredFile);
+			}
 
 			// Forward progress: a batch of chunks was written to the vector store.
 			this.reportProgress();
@@ -1218,6 +1538,11 @@ export class Indexer {
 
 				for (const { filePath, fileHash } of validChunks) {
 					if (filesProcessedForUnits.has(filePath)) continue;
+					// A deferred file's rows were just deleted and it will be redone
+					// from scratch next run, so writing code units for it now would
+					// re-create exactly the orphan rows the delete above removed —
+					// `addCodeUnits` appends the same way `addChunks` does.
+					if (filesWithMissingVectors.has(filePath)) continue;
 					filesProcessedForUnits.add(filePath);
 
 					const language = getParserManager().getLanguage(
@@ -1262,27 +1587,28 @@ export class Indexer {
 						);
 					}
 
-					const unitTexts = batchUnitsToEmbed.map(({ unit }) => unit.content);
-					let unitEmbedResult: {
-						embeddings: number[][];
-						cost?: number;
-						totalTokens?: number;
-					};
+					const unitItems = batchUnitsToEmbed.map(({ unit }) => unit);
+					let unitEmbedResult: EmbedResult;
 
 					try {
-						unitEmbedResult = await this.embeddingsClient.embed(
-							unitTexts,
-							(completed, total, inProgress) => {
+						// Same seam as the chunk pass, same reason: the key is over the
+						// unit's own content, derived inside the seam.
+						unitEmbedResult = await this.cachingSeam().embedContentOf(
+							unitItems,
+							"code-units",
+							(completed, total, inProgress, cachedHits) => {
 								// Same reason as the chunk embed above: this call runs while
 								// the phase is still labelled "writing:lance", and without a
 								// per-item stamp the lock sat untouched for 351s here on a
 								// healthy run — past the 5-minute hung threshold.
 								this.reportProgress();
 								if (this.onProgress) {
+									const cached = cachedHits ?? 0;
+									const cachedInfo = cached > 0 ? ` (${cached} cached)` : "";
 									this.onProgress(
 										completed,
 										total,
-										`[units]${unitBatchInfo} ${completed}/${total} units`,
+										`[units]${unitBatchInfo} ${completed}/${total} units${cachedInfo}`,
 										inProgress,
 									);
 								}
@@ -1297,7 +1623,7 @@ export class Indexer {
 						unitEmbedResult = { embeddings: [] };
 					}
 
-					if (unitEmbedResult.embeddings.length === unitTexts.length) {
+					if (unitEmbedResult.embeddings.length === unitItems.length) {
 						if (unitEmbedResult.cost) totalCost += unitEmbedResult.cost;
 						if (unitEmbedResult.totalTokens)
 							totalTokens += unitEmbedResult.totalTokens;
@@ -1310,7 +1636,12 @@ export class Indexer {
 								.map(({ unit }, idx) => ({
 									...unit,
 									vector: unitEmbedResult.embeddings[idx],
+									embedKey: unitEmbedResult.keys?.[idx] ?? "",
 								}))
+								// `> 0`, i.e. `=== 0` inverted: a unit with no vector is
+								// dropped as before. Unit embedding is already non-fatal
+								// (its failure is caught above), so there is nothing to
+								// defer — the chunks for the file are stored either way.
 								.filter((u) => u.vector.length > 0);
 
 						if (unitsWithEmbeddings.length > 0) {
@@ -1333,7 +1664,11 @@ export class Indexer {
 				} else if (batchUnitsToEmbed.length > 0 && !this.vectorEnabled) {
 					// BM25-only mode: store units with placeholder vector
 					const unitsWithPlaceholder: CodeUnitWithEmbedding[] =
-						batchUnitsToEmbed.map(({ unit }) => ({ ...unit, vector: [0] }));
+						batchUnitsToEmbed.map(({ unit }) => ({
+							...unit,
+							vector: [0],
+							embedKey: "",
+						}));
 					this.reportPhase("writing:lance");
 					await this.vectorStore!.addCodeUnits(unitsWithPlaceholder);
 					totalCodeUnitsCreated += unitsWithPlaceholder.length;
@@ -1355,12 +1690,26 @@ export class Indexer {
 				fileChunkMap.get(filePath)!.chunkIds.push(chunk.id);
 			}
 
+			let deferredInBatch = 0;
 			for (const [filePath, { fileHash, chunkIds }] of fileChunkMap) {
+				// DEFERRED: at least one chunk of this file came back with an empty
+				// vector. Its rows were deleted above; leaving it unstamped is what
+				// makes the next run redo it. Stamping it at its current hash would
+				// drop those chunks from the index for good.
+				if (filesWithMissingVectors.has(filePath)) {
+					deferredFiles.add(relative(this.projectPath, filePath));
+					deferredInBatch++;
+					continue;
+				}
 				this.fileTracker!.markIndexed(filePath, fileHash, chunkIds);
 			}
 
-			totalFilesIndexed += fileChunkMap.size;
-			totalChunksCreated += chunksWithEmbeddings.length;
+			totalFilesIndexed += fileChunkMap.size - deferredInBatch;
+			// A deferred file's rows were deleted again, so counting its chunks
+			// here would report an index the store does not hold.
+			totalChunksCreated += validChunks.filter(
+				(c) => !filesWithMissingVectors.has(c.filePath),
+			).length;
 
 			// Collect files for enrichment
 			if (this.enableEnrichment && this.enricher) {
@@ -1540,6 +1889,33 @@ export class Indexer {
 		// Clean up: Release cached old chunks to free memory
 		this.oldChunksCache.clear();
 
+		// Keep the machine-global cache under its size cap, INSIDE both locks.
+		//
+		// Not after the `finally` that releases them: process B sits in the global
+		// lock's poll loop and takes it the instant A releases, so A's DELETE
+		// transactions and incremental vacuum would run concurrently with B's
+		// indexing against the one shared cache file. B's first write would wait
+		// the clamped busy_timeout, get SQLITE_BUSY, and latch its persistent tier
+		// off for its whole run — the multi-worktree case this feature exists for,
+		// switching itself off. Inside the lock the global lock is what serialises
+		// indexers machine-wide, so there is no such contention.
+		//
+		// Bounded, yielding and deadline-capped by the cache itself; a run that
+		// hits the deadline stops and the next one continues, because eviction is
+		// idempotent and incremental. Never a reason to fail a run.
+		if (this.embedCache) {
+			try {
+				this.reportPhase("embed-cache:evicting");
+				await this.embedCache.enforceBudget();
+				this.reportProgress();
+			} catch (error) {
+				console.warn(
+					"⚠️  Embedding cache eviction failed:",
+					error instanceof Error ? error.message : error,
+				);
+			}
+		}
+
 		const durationMs = Date.now() - startTime;
 
 		return {
@@ -1555,6 +1931,12 @@ export class Indexer {
 			configuredModel: this.modelAdoption?.configuredModel,
 			skippedFiles,
 			errors,
+			// Deferred files are DATA, not a progress line: --agent has no progress
+			// callback and the MCP tool passes none at all, and a run that quietly
+			// left files unindexed is exactly the thing a caller must be able to see.
+			filesDeferred: deferredFiles.size > 0 ? [...deferredFiles] : undefined,
+			upgradedFromIndexVersion: this.upgradedFromIndexVersion,
+			embedCache: this.embedCacheResultStats(),
 			cost: totalCost > 0 ? totalCost : undefined,
 			totalTokens: totalTokens > 0 ? totalTokens : undefined,
 			enrichment: enrichmentResult,
@@ -1995,10 +2377,14 @@ export class Indexer {
 				// Delete old chunks for this library first
 				await this.vectorStore!.deleteByFile(docsPath);
 
-				// Embed the chunks
-				const texts = chunks.map((c) => c.content);
-				const embedResult = await this.embeddingsClient!.embed(
-					texts,
+				// Embed the chunks — through the seam's content-derived entry point,
+				// like the chunk and code-unit passes. Docs are inside the cache
+				// deliberately: a package's documentation is byte-identical for every
+				// repo that depends on it, which is the case a machine-global cache
+				// exists for.
+				const embedResult = await this.cachingSeam().embedContentOf(
+					chunks,
+					"docs",
 					// Per-item stamp so a long docs-embedding batch cannot outlast the
 					// hung threshold; the batch-end stamp below alone is not enough.
 					() => this.reportProgress(),
@@ -2025,6 +2411,11 @@ export class Indexer {
 						contentHash: computeHash(chunk.content),
 						fileHash,
 						vector: embedResult.embeddings[idx],
+						// Docs chunks go through the same seam, so they carry the same
+						// audit key. Their content is shared across every repo that
+						// depends on the package, which is exactly where a
+						// machine-global cache pays.
+						embedKey: embedResult.keys?.[idx] ?? "",
 						// Store doc-specific metadata in name field for now
 						name: chunk.title,
 						signature: chunk.sourceUrl,

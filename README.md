@@ -491,6 +491,8 @@ Env vars:
 - `MNEMEX_MODEL` — override embedding model
 - `MNEMEX_ON_MODEL_MISMATCH` — `use-indexed` (default) or `force-model`, see below
 - `CONTEXT7_API_KEY` — for documentation fetching (optional)
+- `MNEMEX_DISABLE_EMBED_CACHE` — set to `1` to recompute every vector instead of reusing the embedding cache
+- `MNEMEX_EMBED_CACHE_PATH` — put the embedding cache somewhere other than `~/.mnemex/embed-cache.db`
 - `MNEMEX_THEME` — `light` or `dark`; mnemex's own theme override
 - `TERM_THEME` — `light` or `dark`; the shared terminal-theme convention, honoured when `MNEMEX_THEME` is unset
 
@@ -500,7 +502,41 @@ Inside tmux or zellij, mnemex asks the multiplexer, not your terminal, for the b
 
 Files:
 - `~/.mnemex/config.json` — global config (provider, model, docs settings)
+- `~/.mnemex/embed-cache.db` — embedding cache, shared by every repo on the machine
 - `.mnemex/` — project index (add to .gitignore)
+
+### Embedding cache
+
+Embedding the same text twice costs the same money and the same minutes as embedding it
+once, so mnemex keeps the vectors it has already paid for in a single SQLite file at
+`~/.mnemex/embed-cache.db`. It is **machine-global**: every repository, every clone and
+every git worktree on the machine reads and writes the same file, which is what makes the
+second worktree of a tree you have already indexed nearly free.
+
+An entry is keyed on the embedding model, the vector dimension and the exact text that was
+embedded — nothing else. Moving a file, switching branches, rebasing or re-cloning does not
+invalidate anything, because none of those change the text. Changing the model does, since
+the model is part of the key; the old entries stay until they are evicted.
+
+The file is capped at 2 GiB and evicts least-recently-used entries when it grows past that.
+Deleting it is always safe — the next index run pays full price once and refills it.
+
+Turn it off with `MNEMEX_DISABLE_EMBED_CACHE=1`, or persistently in `~/.mnemex/config.json`:
+
+```json
+{
+  "embedCache": false
+}
+```
+
+Point it elsewhere with `MNEMEX_EMBED_CACHE_PATH=/path/to/embed-cache.db` (each path is an
+independent cache). Either way search results are unchanged: vectors are cached as float32,
+which is what the index stores regardless, so a served vector is bit-for-bit the one the
+index would have held.
+
+`mnemex index` reports what it did — `Embed cache: 4210 cached, 96 embedded` — and
+`--agent` emits the same numbers as `embed_cache_tier`, `embed_cache_hits`,
+`embed_cache_misses` and `embed_cache_writes`.
 
 ### Changing the embedding model
 

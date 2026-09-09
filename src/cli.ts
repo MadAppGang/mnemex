@@ -61,6 +61,7 @@ import {
 	RECOMMENDED_MODELS,
 } from "./models/model-discovery.js";
 import { agentOutput } from "./output/agent.js";
+import type { IndexEmbedCacheStats } from "./types.js";
 // Note: learning module is imported lazily to avoid startup errors
 // Use: const { createLearningSystem } = await import("./learning/index.js");
 import {
@@ -792,6 +793,80 @@ export function reportAdoptedModel(effective: {
 	);
 }
 
+/**
+ * The `index` summary line for the embedding cache, or null when there is
+ * nothing to say.
+ *
+ * Why a line at all: the cache is what makes a warm run fast, and a fast run
+ * with no explanation reads as a run that did nothing. It is also the only
+ * place a user finds out that the persistent tier DEGRADED — §8's three
+ * degradation paths (unwritable directory, corrupt file, SQLITE_BUSY latch)
+ * each emit one stderr line on a path where stderr is routinely nobody's
+ * output, and then keep going at in-process-only speed for ever.
+ *
+ * `tier: "none"` prints nothing: the user switched the cache off and does not
+ * need a line of zeroes about it every run. Machine consumers still get
+ * `embed_cache_tier=none` from --agent, because a control run has to be able to
+ * confirm the cache really was off.
+ *
+ * Pure and exported so a test can assert the wording, as `reportAdoptedModel`
+ * above is.
+ */
+export function formatEmbedCacheLine(
+	stats: IndexEmbedCacheStats | undefined,
+): string | null {
+	if (!stats || stats.tier === "none") return null;
+	const degraded =
+		stats.tier === "l0"
+			? "  (in-process only — the persistent cache could not be used)"
+			: "";
+	return `  Embed cache:    ${stats.hits} cached, ${stats.misses} embedded${degraded}`;
+}
+
+/**
+ * The `index` summary line for a schema rebuild, or null when the run did not
+ * upgrade anything.
+ *
+ * The re-embed is a real cost — time on a local model, money on a paid one —
+ * and it happens once per repository, so it is named rather than left to be
+ * inferred from an unusually long "incremental" run.
+ *
+ * This is the HUMAN surface only, and it is not the authoritative one: the git
+ * post-commit hook and the MCP auto-reindex pass no `onProgress` and print no
+ * summary. `upgraded_from_index_version` on --agent, and
+ * `IndexResult.upgradedFromIndexVersion` in-process, are (§5.3).
+ */
+export function formatIndexUpgradeLine(
+	upgradedFromIndexVersion: number | undefined,
+): string | null {
+	if (upgradedFromIndexVersion === undefined) return null;
+	return (
+		`  Index upgraded: rebuilt from index version ${upgradedFromIndexVersion} ` +
+		"(a one-time full re-embed)"
+	);
+}
+
+/**
+ * The `index` summary line for files that were rolled back, or null when every
+ * file that was indexed made it into the store.
+ *
+ * A deferred file is one where at least one chunk came back with no vector (a
+ * provider outage part-way through a batch): its rows are removed again and its
+ * tracker stamp is withheld, so the next run redoes it from scratch. That is
+ * self-healing but not free — silence here would let a user believe a run
+ * indexed everything when it did not.
+ */
+export function formatDeferredFilesLine(
+	filesDeferred: string[] | undefined,
+): string | null {
+	if (!filesDeferred || filesDeferred.length === 0) return null;
+	const noun = filesDeferred.length === 1 ? "file" : "files";
+	return (
+		`  Deferred:       ${filesDeferred.length} ${noun} ` +
+		"(embedding failed; the next run redoes them)"
+	);
+}
+
 async function handleIndex(args: string[]): Promise<void> {
 	// Parse arguments
 	const force = args.includes("--force") || args.includes("-f");
@@ -965,6 +1040,12 @@ async function handleIndex(args: string[]): Promise<void> {
 		if (result.cost !== undefined) {
 			console.log(`  Cost:           $${result.cost.toFixed(6)}`);
 		}
+		const upgradeLine = formatIndexUpgradeLine(result.upgradedFromIndexVersion);
+		if (upgradeLine) console.log(upgradeLine);
+		const cacheLine = formatEmbedCacheLine(result.embedCache);
+		if (cacheLine) console.log(cacheLine);
+		const deferredLine = formatDeferredFilesLine(result.filesDeferred);
+		if (deferredLine) console.log(deferredLine);
 
 		// Show enrichment results if available
 		if (result.enrichment) {

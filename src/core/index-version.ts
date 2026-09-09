@@ -38,9 +38,35 @@ export const INDEX_VERSIONS: readonly VersionEntry[] = [
 			"code_unit_search",
 		],
 	},
+	{
+		version: 3,
+		name: "embed_key_column",
+		description: "Rows carry the embedding-cache key for audit",
+		features: [
+			"vector_search",
+			"bm25_search",
+			"symbol_graph",
+			"ast_metadata",
+			"hierarchical_units",
+			"code_unit_search",
+			"embedding_cache_audit",
+		],
+	},
 ] as const;
 
-export const CURRENT_INDEX_VERSION = 2;
+/**
+ * v2 -> v3 is a SCHEMA change, not just a feature flag.
+ *
+ * LanceDB infers the Arrow schema from the first batch written to a table and
+ * never declares it, so a v2 index has a 22-column schema on disk and a v3
+ * write carries 23 fields (`StoredChunk.embedKey`). Those cannot be mixed: the
+ * version is what lets the indexer notice the difference and rebuild once,
+ * rather than letting a v3 batch reach a live v2 table.
+ *
+ * The cost of that rebuild is one full re-embed, per repository, once — which
+ * is why `getUpgradeMessage` says so out loud.
+ */
+export const CURRENT_INDEX_VERSION = 3;
 
 /** Human-readable labels for feature identifiers */
 const FEATURE_DESCRIPTIONS: Record<string, string> = {
@@ -48,6 +74,8 @@ const FEATURE_DESCRIPTIONS: Record<string, string> = {
 		"AST metadata (function params, return types, async/exported flags)",
 	hierarchical_units: "Hierarchical code units (file > class > method)",
 	code_unit_search: "AST-aware search results",
+	embedding_cache_audit:
+		"Embedding-cache key on each row (cache hit-rate audit)",
 };
 
 // ============================================================================
@@ -105,10 +133,9 @@ export function getMissingFeatures(currentVersion: number): string[] {
  * Callers should print this to stderr.
  *
  * Example output:
- *   Index outdated (v1 -> v2). Missing features:
- *     - AST metadata (function params, return types, async/exported flags)
- *     - Hierarchical code units (file > class > method)
- *   Run 'mnemex index --force' to upgrade.
+ *   Index outdated (v2 -> v3). Missing features:
+ *     - Embedding-cache key on each row (cache hit-rate audit)
+ *   Run 'mnemex index' to upgrade (the next index run rebuilds automatically, re-embedding once).
  */
 export function getUpgradeMessage(projectPath: string): string | null {
 	const currentVersion = getIndexVersion(projectPath);
@@ -126,7 +153,14 @@ export function getUpgradeMessage(projectPath: string): string | null {
 		lines.push(`  - ${description}`);
 	}
 
-	lines.push("Run 'mnemex index --force' to upgrade.");
+	// NOT "--force". From v3 onwards the indexer detects an out-of-shape table
+	// itself (a live `hasEmbedKeyColumn()` read) and sets force for that run, so
+	// asking the user for the flag would be telling them to do something the run
+	// already does. The re-embed is named because the user pays for it: on a
+	// paid provider this line is the only warning before money is spent.
+	lines.push(
+		"Run 'mnemex index' to upgrade (the next index run rebuilds automatically, re-embedding once).",
+	);
 
 	return lines.join("\n");
 }

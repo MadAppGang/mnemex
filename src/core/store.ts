@@ -37,6 +37,13 @@ const CHUNKS_TABLE = "code_chunks";
 /** Column carrying the BM25 full-text index. */
 const FTS_COLUMN = "content";
 
+/**
+ * Column carrying the embedding-cache key — added by index version 3.
+ * Its presence in the Arrow schema is what distinguishes a v3 table from a v2
+ * one; see `VectorStore.hasEmbedKeyColumn`.
+ */
+export const EMBED_KEY_COLUMN = "embedKey";
+
 /** `IndexConfig.indexType` for a full-text index, upper-cased for comparison. */
 const FTS_INDEX_TYPE = "FTS";
 
@@ -297,6 +304,21 @@ interface StoredChunk {
 	signature: string;
 	fileHash: string;
 	vector: number[];
+	/**
+	 * Embedding-cache key for THIS row's `vector` — index version 3's column.
+	 *
+	 * `""` means "unknown", which is a legal and common value: enriched
+	 * documents (never cached), BM25 mode, a run with the cache disabled, or a
+	 * dimension that was never learned. Never null — Arrow infers the column
+	 * type from the first batch and a null would make it nullable-of-nothing,
+	 * the same class of hazard as the 0-dimension vector column.
+	 *
+	 * The invariant a consumer may rely on is only this: when non-empty, the key
+	 * addresses the vector stored BESIDE it in this row. Every write path that
+	 * replaces `vector` without recomputing the key must therefore clear it —
+	 * see `updateDocumentContent`.
+	 */
+	embedKey: string;
 	// Enriched document fields
 	documentType: string; // "code_chunk" for code, others for enriched docs
 	sourceIds: string; // JSON array of source chunk IDs
@@ -332,6 +354,11 @@ export interface IVectorStore {
 	initialize(): Promise<void>;
 	/** True when the table exists but its vector column has 0 dimensions. */
 	isUnqueryable(): Promise<boolean>;
+	/**
+	 * Tri-state live schema read for the index-v3 `embedKey` column.
+	 * See `VectorStore.hasEmbedKeyColumn` for why it is not memoised.
+	 */
+	hasEmbedKeyColumn(): Promise<boolean | null>;
 	addChunks(chunks: ChunkWithEmbedding[]): Promise<void>;
 	search(
 		queryText: string,
@@ -512,6 +539,61 @@ export class VectorStore implements IVectorStore {
 	}
 
 	/**
+	 * Does the table on disk carry the index-v3 `embedKey` column?
+	 *
+	 *   true  — a table exists and has it (v3-shaped).
+	 *   false — a table exists and does NOT (v2-shaped; the caller rebuilds).
+	 *   null  — there is no table yet, or its schema could not be read.
+	 *
+	 * The Arrow schema is INFERRED from whichever batch creates the table
+	 * (`createTable` in `addChunks` / `addDocuments` / `addCodeUnits`) and is
+	 * never declared, so an index written before v3 has a 22-column schema and a
+	 * 23-field batch against it is a schema mismatch. This read is how the
+	 * indexer notices, once, before it writes anything.
+	 *
+	 * DELIBERATELY NOT MEMOISED, and deliberately not folded into
+	 * `ensureTableOpen()`. A cached flag would go stale three independent ways,
+	 * all of which exist in this file today:
+	 *
+	 *   - `clear()` sets `this.table = null` but leaves derived state alone
+	 *     (compare the EXPLICIT `this.tableDimension = null` in `addChunks`'s
+	 *     dimension-mismatch branch, which exists because `clear()` does not do
+	 *     it);
+	 *   - the three `createTable` branches assign `this.table` DIRECTLY, never
+	 *     through `ensureTableOpen()`, so a flag computed there is never
+	 *     recomputed for the table they just created;
+	 *   - `ensureTableOpen()` returns the memoised `this.table` on every call
+	 *     after the first, so a flag computed there is computed once.
+	 *
+	 * There is one caller, it runs at most once per index run, and it runs
+	 * before any write. One schema read per run is not worth a cache, and a
+	 * cache here is worth a defect — this is CLAUDE.md #21's shape, decided the
+	 * other way round because the answer, not the setup, is what goes stale.
+	 *
+	 * `ensureTableOpen()`'s throw is NOT swallowed: `UnqueryableVectorIndexError`
+	 * is the read-side 0-dimension guard, and a probe that turned it into `null`
+	 * would be a second, quieter way past it. A caller that wants a non-throwing
+	 * corruption probe has `isUnqueryable()`, and the indexer runs that first.
+	 */
+	async hasEmbedKeyColumn(): Promise<boolean | null> {
+		const table = await this.ensureTableOpen();
+		if (!table) return null;
+
+		try {
+			const schema = await table.schema();
+			return schema.fields.some(
+				(f: { name: string }) => f.name === EMBED_KEY_COLUMN,
+			);
+		} catch {
+			// Schema unreadable on a table that just opened. No rebuild is
+			// triggered, so an incremental run then builds a 23-field batch and
+			// `table.add` fails loudly — which is the correct direction: mixing
+			// row shapes silently is the thing the version exists to prevent.
+			return null;
+		}
+	}
+
+	/**
 	 * Build the BM25 full-text index on `content` if, and only if, the one on
 	 * disk does not already cover the current corpus.
 	 *
@@ -591,6 +673,9 @@ export class VectorStore implements IVectorStore {
 			signature: chunk.signature || "",
 			fileHash: chunk.fileHash,
 			vector: chunk.vector,
+			// Index v3. Covers code chunks AND external-docs rows, which are
+			// written through this same method as documentType "code_chunk".
+			embedKey: chunk.embedKey ?? "",
 			// Enriched document fields (defaults for code chunks)
 			documentType: "code_chunk",
 			sourceIds: "[]",
@@ -1039,6 +1124,13 @@ export class VectorStore implements IVectorStore {
 			signature: "",
 			fileHash: doc.fileHash || "",
 			vector: doc.vector,
+			// Index v3. Always "" here: enrichment summaries are embedded with
+			// the RAW client, deliberately outside the caching seam (LLM output
+			// is non-deterministic for identical input, so such entries could
+			// never hit), so there is no key to record. The column is still
+			// written, because this method can be the one that CREATES the
+			// table and the Arrow schema is inferred from whichever batch does.
+			embedKey: "",
 			// Enriched document fields
 			documentType: doc.documentType,
 			sourceIds: JSON.stringify(doc.sourceIds || []),
@@ -1378,6 +1470,8 @@ export class VectorStore implements IVectorStore {
 			signature: unit.signature || "",
 			fileHash: unit.fileHash,
 			vector: unit.vector,
+			// Index v3.
+			embedKey: unit.embedKey ?? "",
 			// Document fields for unified storage
 			documentType: "code_unit",
 			sourceIds: "[]",
@@ -1459,7 +1553,14 @@ export class VectorStore implements IVectorStore {
 			// Delete old record
 			await table.delete(`id = '${escapeSqlLiteral(unitId)}'`);
 
-			// Insert updated record (watchdog-wrapped: same native write path)
+			// Insert updated record (watchdog-wrapped: same native write path).
+			//
+			// `embedKey` (index v3) is INHERITED here on purpose: this
+			// round-trips a row read back from the table and replaces only
+			// `summary`, leaving `vector` exactly as it was, so the key still
+			// addresses this row's vector. Because the row came from the table,
+			// this site can neither introduce the column nor create the table,
+			// and so cannot define the schema.
 			await withTimeout(
 				table.add([{ ...existing, summary }]),
 				LANCEDB_WRITE_TIMEOUT_MS,
@@ -1495,13 +1596,23 @@ export class VectorStore implements IVectorStore {
 			await table.delete(`id = '${escapeSqlLiteral(documentId)}'`);
 
 			// Insert updated record with new content and vector
-			// (watchdog-wrapped: same native write path)
+			// (watchdog-wrapped: same native write path).
+			//
+			// `embedKey` (index v3) is RESET, not inherited. This replaces both
+			// `content` and `vector`, so carrying `existing.embedKey` forward
+			// would leave a key describing a vector that no longer exists —
+			// breaking the one invariant the column has ("when non-empty, the
+			// key addresses the vector beside it") and making any hit-rate audit
+			// read from it wrong. Harmless today, because documents are written
+			// with `embedKey: ""` in the first place; wrong the moment document
+			// embeds come inside the caching seam.
 			await withTimeout(
 				table.add([
 					{
 						...existing,
 						content: newContent,
 						vector: newVector,
+						embedKey: "",
 						enrichedAt: new Date().toISOString(),
 					},
 				]),

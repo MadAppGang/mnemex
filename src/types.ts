@@ -147,6 +147,13 @@ export interface CodeUnit {
 export interface CodeUnitWithEmbedding extends CodeUnit {
 	/** Vector embedding */
 	vector: number[];
+	/**
+	 * Embedding-cache key for `vector` — `EmbedResult.keys` at the same slot.
+	 * `""`/absent when the vector did not come through the caching seam (BM25
+	 * placeholder, cache off, dimension unknown). Stored as
+	 * `StoredChunk.embedKey`; see index version 3.
+	 */
+	embedKey?: string;
 }
 
 // ============================================================================
@@ -230,6 +237,13 @@ export interface FormattedContext {
 export interface ChunkWithEmbedding extends CodeChunk {
 	/** Vector embedding */
 	vector: number[];
+	/**
+	 * Embedding-cache key for `vector` — `EmbedResult.keys` at the same slot.
+	 * `""`/absent when the vector did not come through the caching seam (BM25
+	 * placeholder, cache off, dimension unknown). Stored as
+	 * `StoredChunk.embedKey`; see index version 3.
+	 */
+	embedKey?: string;
 }
 
 // ============================================================================
@@ -303,6 +317,42 @@ export interface IndexResult {
 	adoptedIndexedModel?: boolean;
 	/** The configured model that was set aside (only when adoptedIndexedModel) */
 	configuredModel?: string;
+	/**
+	 * Files whose tracker stamp was DEFERRED because at least one of their
+	 * chunks came back with an empty vector, and whose rows were removed again
+	 * so the next run redoes them from scratch.
+	 *
+	 * A provider outage mid-run used to be fatal for the whole batch; the
+	 * embedding cache downgrades it to "serve the hits, skip the misses", which
+	 * would otherwise stamp the file at its current hash and drop those chunks
+	 * from the index permanently — no later incremental run looks at an
+	 * unchanged file again.
+	 */
+	filesDeferred?: string[];
+	/**
+	 * The index version this run rebuilt FROM, when it rebuilt because the
+	 * on-disk table predates the current schema.
+	 *
+	 * The authoritative channel, deliberately. `index()` is not always driven by
+	 * a human: the git post-commit hook passes no `onProgress`, and neither does
+	 * the MCP search tool's auto-reindex, so the `[migrating]` progress notice
+	 * reaches at most two of the four entry points.
+	 */
+	upgradedFromIndexVersion?: number;
+	/** What the embedding cache did this run. Absent when it never ran. */
+	embedCache?: IndexEmbedCacheStats;
+}
+
+/** Embedding-cache accounting for one index run, as rendered by the CLI. */
+export interface IndexEmbedCacheStats {
+	/** `"sqlite"` persistent, `"l0"` in-process only (degraded), `"none"` off. */
+	tier: "sqlite" | "l0" | "none";
+	/** Slots served from the cache instead of the provider. */
+	hits: number;
+	/** Slots that reached the provider. */
+	misses: number;
+	/** Vectors handed to the cache to store. */
+	writes: number;
 }
 
 export interface IndexStatus {
@@ -355,6 +405,16 @@ export type EmbeddingProgressCallback = (
 	total: number,
 	/** Number of items currently being processed (for animation) */
 	inProgress?: number,
+	/**
+	 * Slots served from the persistent embedding cache so far, so a renderer can
+	 * say "(N cached)". Optional and last, so every existing 3-parameter callback
+	 * stays assignable to this type — nothing has to change to be passed in.
+	 *
+	 * A caching proxy may skip the inner call entirely, so an all-hits run emits
+	 * progress that no provider request corresponds to; this parameter is what
+	 * makes that visible instead of looking like a stalled or free run.
+	 */
+	cachedHits?: number,
 ) => void;
 
 /** Result of embedding operation with usage stats */
@@ -370,6 +430,22 @@ export interface EmbedResult {
 	latencyMs?: number;
 	/** Throughput in tokens/second (totalTokens / latencyMs * 1000) */
 	throughputTokensPerSec?: number;
+	/**
+	 * The embedding-cache key per input slot, in input order — the audit column
+	 * stored as `StoredChunk.embedKey`.
+	 *
+	 * Present only when the embedding dimension was known or learned during the
+	 * call; absent otherwise, because the key is `sha256(model \0 dimension \0
+	 * text)` and a key computed without a dimension would address nothing.
+	 * Producers that do not cache leave it undefined.
+	 */
+	keys?: string[];
+	/**
+	 * How many slots were served from the embedding cache rather than the
+	 * provider. `cost` and `totalTokens` fall to 0 on a warm run, which looks
+	 * like a bug; this is what says otherwise.
+	 */
+	cacheHits?: number;
 }
 
 /**
@@ -503,6 +579,17 @@ export interface GlobalConfig {
 	 * Equivalent to exporting `MNEMEX_DISABLE_KEYCHAIN=1`.
 	 */
 	keychain?: boolean;
+
+	// ─── Embedding Cache ───
+	/**
+	 * User-facing opt-out for the machine-global persistent embedding cache
+	 * (default: enabled). Set to `false` to recompute every vector.
+	 * Equivalent to exporting `MNEMEX_DISABLE_EMBED_CACHE=1`.
+	 *
+	 * Read with `=== false`, never for falsiness, and never written unless the
+	 * user set it — an absent field means "untouched", not "off".
+	 */
+	embedCache?: boolean;
 }
 
 export interface ProjectConfig {
