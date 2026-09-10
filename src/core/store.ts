@@ -168,6 +168,101 @@ export class LanceWriteTimeoutError extends Error {
 }
 
 /**
+ * Thrown when an update (delete + add) failed AFTER its delete had committed.
+ *
+ * LanceDB has no upsert, so `updateUnitSummary` / `updateDocumentContent`
+ * express an update as a delete followed by an add, and the two are not atomic.
+ * Both methods used to swallow a failed add with `console.warn` and return
+ * normally, so the row was gone and every caller believed the update had
+ * succeeded — `updateUnitSummary` is the enrichment write-back path, so the
+ * symptom was a code unit silently vanishing from the index.
+ *
+ * `rowRestored` is the part a caller has to be able to act on:
+ *
+ *   - `true`  — the pre-update row was written back. The update did not happen;
+ *               nothing was lost. Retrying is safe.
+ *   - `false` — the restore ALSO failed. The row is gone from the index and
+ *               only a reindex will bring it back. Nothing can prevent this
+ *               once the delete has committed (see `restoreAfterFailedUpdate`),
+ *               which is exactly why it must be reported rather than warned.
+ */
+export class VectorStoreUpdateError extends Error {
+	constructor(
+		readonly operation: string,
+		readonly rowId: string,
+		readonly rowRestored: boolean,
+		cause: unknown,
+		readonly restoreError?: unknown,
+	) {
+		super(
+			`${operation} failed for '${rowId}': ${
+				cause instanceof Error ? cause.message : String(cause)
+			}. LanceDB has no upsert, so the row was deleted before the write; it ` +
+				(rowRestored
+					? "was restored, so the index is unchanged and the update did not happen."
+					: `was NOT restored (${
+							restoreError instanceof Error
+								? restoreError.message
+								: String(restoreError)
+						}) — it is missing from the index until the next reindex.`),
+			{ cause },
+		);
+		this.name = "VectorStoreUpdateError";
+	}
+}
+
+/**
+ * A `vector` read back out of LanceDB, as a plain `number[]` that can be
+ * written back.
+ *
+ * `table.query().toArray()` types its rows as records of JS values, and every
+ * other column really is one — but `vector` comes back as an Arrow `Vector`
+ * object, NOT the `number[]` that `StoredChunk` and `ChunkWithEmbedding`
+ * declare. Handing that object back to `table.add` makes LanceDB's schema
+ * inference walk it as a struct and reject the whole batch (measured on the
+ * installed 0.38):
+ *
+ *     Found field not in schema: vector.isValid at row 0
+ *
+ * That is one root cause with two symptoms, and both were silent-ish data
+ * loss: the delete-then-add updates below destroyed the row they were updating,
+ * and `getChunksWithVectors` -> indexer `reuseFromLance` -> `addChunks` failed
+ * the whole index run with exit 1 whenever a modified file met a degraded
+ * embedding cache. Normalising at the READ boundary fixes both, because a
+ * vector that never leaves this file as an Arrow object cannot be handed back
+ * as one.
+ *
+ * Bit-exactness is not incidental: `toArray()` on a Float32 column yields a
+ * `Float32Array`, each element widens to a JS double exactly, and writing it
+ * back into the same Float32 column narrows it back to the same bits. A reused
+ * vector that drifted would silently change every score computed against it.
+ *
+ * `[]` for an undecodable value is deliberate. It is not a silent hole: the
+ * write-side guard (`assertVectorDimension`, CLAUDE.md #15) rejects it before
+ * it can create an unqueryable column, and the indexer's reuse path already
+ * skips vectors of length <= 1.
+ */
+export function toPlainVector(value: unknown): number[] {
+	if (Array.isArray(value)) {
+		return value as number[];
+	}
+	if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+		return Array.from(value as unknown as ArrayLike<number>);
+	}
+	const arrowLike = value as
+		| { toArray?: () => ArrayLike<number>; length?: number }
+		| null
+		| undefined;
+	if (typeof arrowLike?.toArray === "function") {
+		return Array.from(arrowLike.toArray());
+	}
+	if (typeof arrowLike?.length === "number") {
+		return Array.from(arrowLike as ArrayLike<number>);
+	}
+	return [];
+}
+
+/**
  * Race a promise against a timeout.
  *
  * IMPORTANT — this CANNOT cancel the underlying operation. LanceDB's
@@ -390,7 +485,16 @@ export interface IVectorStore {
 	getDocumentTypeStats(): Promise<Record<DocumentType, number>>;
 	close(): Promise<void>;
 	addCodeUnits(units: CodeUnitWithEmbedding[]): Promise<void>;
+	/**
+	 * No-op when there is no such unit; THROWS `VectorStoreUpdateError` when the
+	 * write fails. The error's `rowRestored` says whether the row survived.
+	 */
 	updateUnitSummary(unitId: string, summary: string): Promise<void>;
+	/**
+	 * `false` means no such document — nothing else. A failed write THROWS
+	 * `VectorStoreUpdateError`, whose `rowRestored` says whether the row
+	 * survived.
+	 */
 	updateDocumentContent(
 		documentId: string,
 		newContent: string,
@@ -1018,7 +1122,13 @@ export class VectorStore implements IVectorStore {
 				parentName: row.parentName || undefined,
 				signature: row.signature || undefined,
 				fileHash: row.fileHash,
-				vector: row.vector,
+				// Normalised, not passed through: the caller
+				// (indexer.ts, `reuseFromLance`) hands this straight back to
+				// `addChunks`, and an Arrow `Vector` there fails the whole batch
+				// with "Found field not in schema: vector.isValid" — the exit-1
+				// on any incremental re-index of a modified file whose embedding
+				// cache is degraded. See `toPlainVector`.
+				vector: toPlainVector(row.vector),
 			}));
 		} catch {
 			return [];
@@ -1533,46 +1643,129 @@ export class VectorStore implements IVectorStore {
 	}
 
 	/**
-	 * Update summary for a code unit (used during bottom-up summarization)
+	 * Read one row by id, as an object LanceDB will accept back.
+	 *
+	 * `vector` is normalised here and nowhere later: an Arrow `Vector` handed
+	 * back to `table.add` is rejected for the whole batch (see
+	 * `toPlainVector`), and this is the only read whose result is written back.
+	 */
+	private async readRowForUpdate(
+		table: lancedb.Table,
+		id: string,
+	): Promise<StoredChunk | null> {
+		// Equality predicate: quote doubling only (CLAUDE.md #22).
+		const results = await table
+			.query()
+			.where(`id = '${escapeSqlLiteral(id)}'`)
+			.toArray();
+		if (results.length === 0) return null;
+
+		const existing = results[0] as StoredChunk;
+		return { ...existing, vector: toPlainVector(existing.vector) };
+	}
+
+	/**
+	 * Put back the row an update deleted, and build the error that says whether
+	 * it worked.
+	 *
+	 * WHY RESTORE-ON-FAILURE AND NOT ADD-BEFORE-DELETE. The delete's predicate
+	 * is `id = '...'` and both copies carry the same id, so an add-first order
+	 * would need the delete to distinguish two rows that differ only in the
+	 * field being updated — and until it ran, every reader matching on id
+	 * (`getCodeUnit`, `getChunksWithVectors`, search de-duplication) would see
+	 * two rows and pick one arbitrarily. Restoring keeps the one-row-per-id
+	 * invariant at all times; its only window is one where the row is briefly
+	 * ABSENT, which every reader already handles as a miss.
+	 *
+	 * The delete is re-issued before the restore because `withTimeout` cannot
+	 * cancel a native write (see `withTimeout`): a timed-out add may still land,
+	 * and re-deleting first makes the restore converge on exactly one row — the
+	 * original — instead of leaving a duplicate id behind. An add that lands
+	 * after the restore is the one case left uncovered, and it cannot be closed
+	 * without cancellation.
+	 */
+	private async restoreAfterFailedUpdate(
+		table: lancedb.Table,
+		operation: string,
+		rowId: string,
+		original: StoredChunk,
+		cause: unknown,
+	): Promise<VectorStoreUpdateError> {
+		try {
+			await table.delete(`id = '${escapeSqlLiteral(rowId)}'`);
+			await withTimeout(
+				table.add([original]),
+				LANCEDB_WRITE_TIMEOUT_MS,
+				`${operation}:restore`,
+			);
+			return new VectorStoreUpdateError(operation, rowId, true, cause);
+		} catch (restoreError) {
+			return new VectorStoreUpdateError(
+				operation,
+				rowId,
+				false,
+				cause,
+				restoreError,
+			);
+		}
+	}
+
+	/**
+	 * Update summary for a code unit (used during bottom-up summarization).
+	 *
+	 * A no-op when there is no such unit. THROWS `VectorStoreUpdateError` when
+	 * the write fails — the failure used to be swallowed with `console.warn`
+	 * while the deleted row stayed deleted, so callers were told an update had
+	 * succeeded that had in fact destroyed a row.
 	 */
 	async updateUnitSummary(unitId: string, summary: string): Promise<void> {
 		const table = await this.ensureTableOpen();
 		if (!table) return;
 
+		const existing = await this.readRowForUpdate(table, unitId);
+		if (!existing) return;
+
+		// Before the delete, never after it: a row whose vector cannot be
+		// written back must not be destroyed for nothing (CLAUDE.md #15).
+		assertVectorDimension(existing.vector.length, "updateUnitSummary");
+
+		// `embedKey` (index v3) is INHERITED here on purpose: this round-trips a
+		// row read back from the table and replaces only `summary`, leaving
+		// `vector` exactly as it was, so the key still addresses this row's
+		// vector. Because the row came from the table, this site can neither
+		// introduce the column nor create the table, and so cannot define the
+		// schema.
+		const updated: StoredChunk = { ...existing, summary };
+
+		// LanceDB has no upsert, so this is delete + add, and the two are not
+		// atomic. Everything that can fail without destroying anything has
+		// already run.
+		await table.delete(`id = '${escapeSqlLiteral(unitId)}'`);
+
 		try {
-			// LanceDB update via delete + insert pattern
-			// First, get the existing record (equality: quote doubling only)
-			const results = await table
-				.query()
-				.where(`id = '${escapeSqlLiteral(unitId)}'`)
-				.toArray();
-			if (results.length === 0) return;
-
-			const existing = results[0] as StoredChunk;
-
-			// Delete old record
-			await table.delete(`id = '${escapeSqlLiteral(unitId)}'`);
-
-			// Insert updated record (watchdog-wrapped: same native write path).
-			//
-			// `embedKey` (index v3) is INHERITED here on purpose: this
-			// round-trips a row read back from the table and replaces only
-			// `summary`, leaving `vector` exactly as it was, so the key still
-			// addresses this row's vector. Because the row came from the table,
-			// this site can neither introduce the column nor create the table,
-			// and so cannot define the schema.
+			// Watchdog-wrapped: same native write path as every other add.
 			await withTimeout(
-				table.add([{ ...existing, summary }]),
+				table.add([updated]),
 				LANCEDB_WRITE_TIMEOUT_MS,
 				"updateUnitSummary:table.add",
 			);
 		} catch (error) {
-			console.warn(`Failed to update summary for unit ${unitId}:`, error);
+			throw await this.restoreAfterFailedUpdate(
+				table,
+				"updateUnitSummary",
+				unitId,
+				existing,
+				error,
+			);
 		}
 	}
 
 	/**
-	 * Update document content and re-embed (used for summary refinement)
+	 * Update document content and re-embed (used for summary refinement).
+	 *
+	 * Returns `false` for exactly one thing — there is no such document — and
+	 * THROWS `VectorStoreUpdateError` when the write fails. Both used to return
+	 * `false`, which is why the one caller could not act on either.
 	 */
 	async updateDocumentContent(
 		documentId: string,
@@ -1582,49 +1775,50 @@ export class VectorStore implements IVectorStore {
 		const table = await this.ensureTableOpen();
 		if (!table) return false;
 
+		const existing = await this.readRowForUpdate(table, documentId);
+		if (!existing) return false;
+
+		// Both vectors are checked before the delete: the incoming one because
+		// an empty embedding must never reach a write (CLAUDE.md #15), and the
+		// stored one because it is the restore copy.
+		assertVectorDimension(newVector.length, "updateDocumentContent");
+		assertVectorDimension(existing.vector.length, "updateDocumentContent");
+
+		// `embedKey` (index v3) is RESET, not inherited. This replaces both
+		// `content` and `vector`, so carrying `existing.embedKey` forward would
+		// leave a key describing a vector that no longer exists — breaking the
+		// one invariant the column has ("when non-empty, the key addresses the
+		// vector beside it") and making any hit-rate audit read from it wrong.
+		// Harmless today, because documents are written with `embedKey: ""` in
+		// the first place; wrong the moment document embeds come inside the
+		// caching seam.
+		const updated: StoredChunk = {
+			...existing,
+			content: newContent,
+			vector: newVector,
+			embedKey: "",
+			enrichedAt: new Date().toISOString(),
+		};
+
+		await table.delete(`id = '${escapeSqlLiteral(documentId)}'`);
+
 		try {
-			// LanceDB update via delete + insert pattern (equality predicates)
-			const results = await table
-				.query()
-				.where(`id = '${escapeSqlLiteral(documentId)}'`)
-				.toArray();
-			if (results.length === 0) return false;
-
-			const existing = results[0] as StoredChunk;
-
-			// Delete old record
-			await table.delete(`id = '${escapeSqlLiteral(documentId)}'`);
-
-			// Insert updated record with new content and vector
-			// (watchdog-wrapped: same native write path).
-			//
-			// `embedKey` (index v3) is RESET, not inherited. This replaces both
-			// `content` and `vector`, so carrying `existing.embedKey` forward
-			// would leave a key describing a vector that no longer exists —
-			// breaking the one invariant the column has ("when non-empty, the
-			// key addresses the vector beside it") and making any hit-rate audit
-			// read from it wrong. Harmless today, because documents are written
-			// with `embedKey: ""` in the first place; wrong the moment document
-			// embeds come inside the caching seam.
 			await withTimeout(
-				table.add([
-					{
-						...existing,
-						content: newContent,
-						vector: newVector,
-						embedKey: "",
-						enrichedAt: new Date().toISOString(),
-					},
-				]),
+				table.add([updated]),
 				LANCEDB_WRITE_TIMEOUT_MS,
 				"updateDocumentContent:table.add",
 			);
-
-			return true;
 		} catch (error) {
-			console.warn(`Failed to update document ${documentId}:`, error);
-			return false;
+			throw await this.restoreAfterFailedUpdate(
+				table,
+				"updateDocumentContent",
+				documentId,
+				existing,
+				error,
+			);
 		}
+
+		return true;
 	}
 
 	/**
@@ -1648,7 +1842,9 @@ export class VectorStore implements IVectorStore {
 				enrichedAt: row.enrichedAt || undefined,
 				sourceIds: row.sourceIds ? JSON.parse(row.sourceIds) : undefined,
 				metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-				vector: row.vector,
+				// Declared `number[]`; Arrow hands back a `Vector`. Normalised
+				// so the declared type is the true one — see `toPlainVector`.
+				vector: toPlainVector(row.vector),
 			}));
 		} catch {
 			return [];

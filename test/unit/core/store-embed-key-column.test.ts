@@ -156,24 +156,24 @@ async function readRow(id: string): Promise<Record<string, unknown>> {
  * Run `fn` against a store whose table handle records the batch handed to
  * `add()` instead of writing it, and return that batch.
  *
- * WHY THIS SEAM AND NOT THE BYTES ON DISK. `updateUnitSummary` and
+ * WHY THIS SEAM AS WELL AS THE BYTES ON DISK. `updateUnitSummary` and
  * `updateDocumentContent` are delete-then-add round trips: they read a row back
  * with `table.query().toArray()` and re-add `{...existing, …}`. On the installed
- * LanceDB (0.38) that re-add ALWAYS fails, for a reason that has nothing to do
- * with this column — `toArray()` hands back `vector` as an Arrow `Vector`
- * object, and schema inference walks it as a struct:
+ * LanceDB (0.38) that re-add USED TO fail every time, for a reason that has
+ * nothing to do with this column — `toArray()` hands back `vector` as an Arrow
+ * `Vector` object, and schema inference walked it as a struct:
  *
  *     Found field not in schema: vector.isValid at row 0
  *
- * Reproduced on a table with no `embedKey` column at all, so it is PRE-EXISTING
- * and is not touched here. Both methods swallow it (`console.warn`, and `false`
- * from the second), and because the delete already committed, the row is gone.
+ * Both methods swallowed it, and because the delete had already committed, the
+ * row was gone. That is fixed (`toPlainVector` at the read boundary, plus a
+ * restore-and-throw on a failed add), and pinned by
+ * `store-update-row-loss.test.ts`, so each test below now ALSO asserts the
+ * key on disk through an independent connection.
  *
- * That makes the on-disk assertion unavailable for these two sites. This
- * captures the object they hand to `table.add` — the same values the bytes
- * would carry — at the store's own table handle, with no module mocking. The
- * `expect(batch).toHaveLength(1)` in each caller is what stops a swallowed
- * throw from reading as a pass.
+ * The capture is kept because it pins the value at the write itself, which is
+ * where `embedKey` is decided. The `expect(batch).toHaveLength(1)` in each
+ * caller is what stops a swallowed throw from reading as a pass.
  */
 async function captureRoundTripAdd(
 	fn: (store: IVectorStore) => Promise<unknown>,
@@ -336,6 +336,14 @@ describe("round-tripping writes", () => {
 			s.addCodeUnits([unit("sum", { embedKey: "survives-me" })]),
 		);
 
+		// The bytes first: a real write, read back through an independent
+		// connection. The capture below leaves the row deleted (it commits the
+		// delete and swallows the add), so it has to come second.
+		await withFreshStore((s) => s.updateUnitSummary("unit-sum", "on disk"));
+		const row = await readRow("unit-sum");
+		expect(row.summary).toBe("on disk");
+		expect(row[EMBED_KEY_COLUMN]).toBe("survives-me");
+
 		const batch = await captureRoundTripAdd((s) =>
 			s.updateUnitSummary("unit-sum", "a summary"),
 		);
@@ -367,6 +375,21 @@ describe("round-tripping writes", () => {
 		expect(batch).toHaveLength(1);
 		expect(batch[0].content).toBe("new content");
 		expect(batch[0][EMBED_KEY_COLUMN]).toBe("");
+
+		// ...and the same thing on the bytes. Re-seeded rather than reusing the
+		// row above, for two reasons: the capture commits the delete and
+		// swallows the add, so the row is gone; and a second pass over a row
+		// whose key the first pass had already reset could not tell a reset from
+		// an inherit.
+		await withFreshStore((s) =>
+			s.addChunks([chunk("upd", { id: "doc-upd2", embedKey: "stale-key" })]),
+		);
+		await withFreshStore((s) =>
+			s.updateDocumentContent("doc-upd2", "on disk", vec(9)),
+		);
+		const row = await readRow("doc-upd2");
+		expect(row.content).toBe("on disk");
+		expect(row[EMBED_KEY_COLUMN]).toBe("");
 	});
 });
 

@@ -822,10 +822,15 @@ export class Enricher {
 						const score = calculateRefinementScore(refinementResult.rounds);
 
 						if (refinementResult.success) {
-							successCount++;
-							roundsSum += refinementResult.rounds;
-
-							// Update the summary in the vector store
+							// Update the summary in the vector store BEFORE the
+							// counters move. A refinement whose write did not land
+							// is not a success: the store either restored the old
+							// summary or lost the row outright (LanceDB has no
+							// upsert, so the update is delete + add), and either
+							// way the refined text is not in the index. The write
+							// throws `VectorStoreUpdateError` on failure — it used
+							// to return `false` here, indistinguishably from "no
+							// such document", and this call site ignored both.
 							if (refinementResult.rounds > 0) {
 								// Re-embed the refined summary
 								const embedResult = await this.embeddingsClient.embed([
@@ -833,12 +838,23 @@ export class Enricher {
 								]);
 								const newVector = embedResult.embeddings[0];
 
-								await this.vectorStore.updateDocumentContent(
+								const written = await this.vectorStore.updateDocumentContent(
 									summary.id,
 									refinementResult.finalSummary,
 									newVector,
 								);
+								if (!written) {
+									// The document was removed between the read
+									// that found it and this write. Nothing was
+									// destroyed; it just is not there to refine.
+									throw new Error(
+										`Summary ${summary.id} is no longer in the index`,
+									);
+								}
 							}
+
+							successCount++;
+							roundsSum += refinementResult.rounds;
 						}
 
 						scoreSum += score;

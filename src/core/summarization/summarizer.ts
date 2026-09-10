@@ -112,11 +112,29 @@ export class BottomUpSummarizer {
 					const unit = batch[j];
 
 					if (result.status === "fulfilled" && result.value) {
-						// Cache the summary for use by parent units
+						// Cache the summary for use by parent units. Kept even if
+						// the write below fails: the parents' prompts still want
+						// the text, and the cache never reaches the index.
 						this.summaryCache.set(unit.id, result.value);
-						// Update in store
-						await this.store.updateUnitSummary(unit.id, result.value);
-						summariesGenerated++;
+						// Update in store.
+						//
+						// A failed write is recorded, not swallowed, and does NOT
+						// count towards `summariesGenerated`. It used to warn to
+						// stderr from inside the store while reporting success —
+						// and because LanceDB has no upsert, the failure had also
+						// deleted the unit's row, so the count claimed a summary
+						// for a code unit that had just vanished from the index.
+						// `VectorStoreUpdateError.rowRestored` says which of the
+						// two happened, so it is carried into the message.
+						try {
+							await this.store.updateUnitSummary(unit.id, result.value);
+							summariesGenerated++;
+						} catch (error) {
+							errors.push({
+								unitId: unit.id,
+								error: error instanceof Error ? error.message : String(error),
+							});
+						}
 					} else if (result.status === "rejected") {
 						errors.push({
 							unitId: unit.id,

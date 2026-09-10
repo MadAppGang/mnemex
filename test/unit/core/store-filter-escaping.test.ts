@@ -325,15 +325,14 @@ describe("code unit lookups (equality)", () => {
 		expect(children.map((c) => c.id)).toEqual(["unit_child"]);
 	});
 
-	// `updateUnitSummary` is deliberately NOT asserted end-to-end here. Its
-	// `id = '...'` predicate does need the equality escaper and now gets it, but
-	// the delete+insert that follows is broken for a separate, pre-existing
-	// reason: it re-adds the row it just read back from Arrow, and LanceDB
-	// rejects that with "Found field not in schema: vector.isValid", leaving the
-	// unit DELETED and the summary lost. Reproduced with a plain hex id, where
-	// both escapers render identically, so it predates this change and is out of
-	// scope for it. `updateDocumentContent` below survives only because it
-	// substitutes a fresh plain-array vector.
+	// `updateUnitSummary` is asserted end-to-end in
+	// `store-update-row-loss.test.ts` ("an underscored id round-trips"), which
+	// has the raw row reader `summary` needs — `rowToCodeUnit` does not map it.
+	// It could not be asserted anywhere while its delete+insert re-added the row
+	// it had just read back from Arrow, which LanceDB rejected with "Found field
+	// not in schema: vector.isValid": the unit was DELETED and the summary lost,
+	// whatever the predicate did. That is fixed at the read boundary
+	// (`toPlainVector`), so the predicate is now observable through it.
 	test("updateDocumentContent rewrites a doc whose id contains an underscore", async () => {
 		await seedDocs([
 			{ ...doc("summary", path, "file_summary", 1), id: "doc_summary" },
