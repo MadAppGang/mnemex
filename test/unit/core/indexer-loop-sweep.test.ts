@@ -382,6 +382,164 @@ describe("the rules fire on the shapes they exist for", () => {
 	});
 });
 
+describe("labels: a labelled jump carries its pending state to the statement it names", () => {
+	/**
+	 * The top-level walk used to enter every loop with NO label, so a
+	 * `continue outer;` aimed at the OUTERMOST loop found no jump target and the
+	 * pending region it carried was dropped: a false negative. The same loop one
+	 * level down was caught, because a nested loop is entered through the
+	 * `labeled_statement` case, which did pass its label. A `break` out of a
+	 * labelled BLOCK had no target at all, at any depth.
+	 */
+	const findings = (source: string) =>
+		sweepIndexerLoops(source, parser).findings.map(
+			(f) => `${f.rule} ${f.callee}`,
+		);
+
+	/** Region, labelled `continue` that skips the yield, then another region. */
+	const labelledBatches = (jump: string) => `
+		outer: for (const batch of batches) {
+			this.fileTracker!.getChunkIds(batch[0] ?? "");
+			await yieldToEventLoop();
+			for (const f of batch) {
+				this.fileTracker!.markIndexed(f, "h", []);
+				${jump}
+				await yieldToEventLoop();
+			}
+		}`;
+
+	test("a labelled `continue` to the OUTERMOST loop skips the yield; the next region is reached pending", () => {
+		expect(
+			findings(
+				cls(`
+	async batches(batches: string[][]) {${labelledBatches(
+		`if (f.endsWith(".md")) continue outer;`,
+	)}
+	}`),
+			),
+		).toEqual(["SR-2-caller getChunkIds"]);
+	});
+
+	test("the same labelled loop one level down: caught before and after the fix", () => {
+		expect(
+			findings(
+				cls(`
+	async runs(runs: string[][][]) {
+		for (const batches of runs) {${labelledBatches(
+			`if (f.endsWith(".md")) continue outer;`,
+		)}
+		}
+	}`),
+			),
+		).toEqual(["SR-2-caller getChunkIds"]);
+	});
+
+	test("control: a yield BEFORE the labelled `continue` settles it", () => {
+		expect(
+			findings(
+				cls(`
+	async batches(batches: string[][]) {${labelledBatches(
+		`if (f.endsWith(".md")) {
+					await yieldToEventLoop();
+					continue outer;
+				}`,
+	)}
+	}`),
+			),
+		).toEqual([]);
+	});
+
+	test("two labels on one loop: a `continue` to the OUTER label lands on that loop", () => {
+		expect(
+			findings(
+				cls(`
+	async batches(batches: string[][]) {
+		first: ${labelledBatches(`if (f.endsWith(".md")) continue first;`).trimStart()}
+	}`),
+			),
+		).toEqual(["SR-2-caller getChunkIds"]);
+	});
+
+	test("a `break` out of a labelled BLOCK skips the yield inside it", () => {
+		expect(
+			findings(
+				cls(`
+	async stamp(files: string[]) {
+		for (const f of files) {
+			this.fileTracker!.markIndexed(f, "h", []);
+			check: {
+				if (f.endsWith(".md")) break check;
+				await yieldToEventLoop();
+			}
+		}
+	}`),
+			),
+		).toEqual(["SR-2-caller markIndexed"]);
+		// An UNLABELLED `break` inside a labelled block leaves the loop, not
+		// the block: the loop exits, so nothing reaches the next turn pending.
+		expect(
+			findings(
+				cls(`
+	async stamp(files: string[]) {
+		for (const f of files) {
+			this.fileTracker!.markIndexed(f, "h", []);
+			check: {
+				if (f.endsWith(".md")) break;
+				await yieldToEventLoop();
+			}
+		}
+	}`),
+			),
+		).toEqual([]);
+	});
+});
+
+describe("a jump out of a `try` runs its `finally` on the way", () => {
+	const findings = (source: string) =>
+		sweepIndexerLoops(source, parser).findings.map(
+			(f) => `${f.rule} ${f.callee}`,
+		);
+
+	test("a `continue` through a `finally` that runs a region lands on the next turn pending", () => {
+		// Real flow: `.md` -> continue -> the finally's markIndexed -> the next
+		// turn's markIndexed. The yield after the try is skipped every time.
+		expect(
+			findings(
+				cls(`
+	async stamp(files: string[]) {
+		for (const f of files) {
+			try {
+				if (f.endsWith(".md")) continue;
+			} finally {
+				this.fileTracker!.markIndexed(f, "h", []);
+			}
+			await yieldToEventLoop();
+		}
+	}`),
+			),
+		).toEqual(["SR-2-caller markIndexed"]);
+	});
+
+	test("control: a `finally` with no region leaves the jump's state alone", () => {
+		expect(
+			findings(
+				cls(`
+	async stamp(files: string[]) {
+		for (const f of files) {
+			this.fileTracker!.markIndexed(f, "h", []);
+			await yieldToEventLoop();
+			try {
+				if (f.endsWith(".md")) continue;
+			} finally {
+				console.log(f);
+			}
+		}
+	}`),
+			),
+		).toEqual([]);
+	});
+});
+
 describe("mutation over the real indexer.ts", () => {
 	test("deleting ANY ONE `await yieldToEventLoop();` makes the sweep fire", () => {
 		const source = readFileSync(INDEXER_SOURCE, "utf8");

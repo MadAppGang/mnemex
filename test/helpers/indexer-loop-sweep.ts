@@ -18,7 +18,11 @@
  * analysis is a small data-flow walk, not a lexical "is there an await
  * between": it follows `if`/`else`, `try`/`catch`/`finally`, `continue`,
  * `break`, `return`, nested loops, and each loop's WRAP-AROUND to a fixpoint.
- * A yield inside one branch of an `if` does not settle the other branch.
+ * A yield inside one branch of an `if` does not settle the other branch. A
+ * labelled jump lands on the statement its label names, carrying whatever is
+ * pending: `continue outer;` on the outer loop's next turn, `break check;`
+ * straight after the labelled block `check: { … }`. A jump out of a `try`
+ * runs its `finally` on the way.
  *
  * ── WHAT COUNTS AS A YIELD: ONE THING ───────────────────────────────────────
  * Only the statement `await yieldToEventLoop();`. NOT any `await`. Measured in
@@ -56,9 +60,11 @@
  *   - STRAIGHT-LINE code outside any loop is not checked: a constant number of
  *     back-to-back regions is bounded by that count, and the rule exists for
  *     the N-fold case.
- *   - CONSERVATIVE on purpose: `a ? t.x() : t.y()` counts two regions, and an
- *     `async` helper that yields internally is not recognised as a yield. Both
- *     can only produce a false finding, never hide a real one.
+ *   - CONSERVATIVE on purpose: `a ? t.x() : t.y()` counts two regions, an
+ *     `async` helper that yields internally is not recognised as a yield, and
+ *     a jump through a `finally` that reaches a region lands pending even if
+ *     the finalizer yields afterwards. Each can only produce a false finding,
+ *     never hide a real one.
  *
  * It reads source and executes none.
  */
@@ -233,10 +239,37 @@ function join(a: State, b: State): State {
 }
 
 interface JumpTarget {
-	kind: "loop" | "switch";
-	label: string | null;
+	/**
+	 * `block` is any labelled statement that is not a loop (`check: { … }`, a
+	 * labelled `switch`): only `break <label>;` lands on it. `finally` is not a
+	 * target at all. It marks a `try` whose finalizer runs on every jump out of
+	 * its body or handler, on the way to wherever that jump lands.
+	 */
+	kind: "loop" | "switch" | "block" | "finally";
+	/** Every label naming the statement — `a: b: for (…)` has two. */
+	labels: readonly string[];
 	continueState: State;
 	breakState: State;
+	/** `finally` only: does the finalizer reach a region? */
+	finalizerReaches?: boolean;
+	/** `finally` only: the join of every jump state that enters the finalizer. */
+	crossing?: State;
+}
+
+/**
+ * The labels naming `node`, innermost first: `a: b: for (…)` gives ["b", "a"].
+ * Read through `.parent`, which web-tree-sitter rebuilds on every access, so
+ * nothing here compares nodes by identity.
+ */
+function labelsOf(node: Node): string[] {
+	const labels: string[] = [];
+	let p = node.parent;
+	while (p?.type === "labeled_statement") {
+		const label = p.childForFieldName("label")?.text;
+		if (label) labels.push(label);
+		p = p.parent;
+	}
+	return labels;
 }
 
 /**
@@ -544,20 +577,42 @@ export function sweepIndexerLoops(
 		return state;
 	}
 
+	/** Index in `targets` of the statement a jump lands on, or -1. */
 	function findTarget(
 		kind: "continue" | "break",
 		label: string | null,
-	): JumpTarget | undefined {
+	): number {
 		for (let i = targets.length - 1; i >= 0; i--) {
 			const t = targets[i] as JumpTarget;
 			if (label !== null) {
-				if (t.label === label) return t;
+				if (t.labels.includes(label)) return i;
 				continue;
 			}
+			// An unlabelled jump never lands on a labelled block or a `finally`
+			// marker, and an unlabelled `continue` never lands on a `switch`.
+			if (t.kind === "block" || t.kind === "finally") continue;
 			if (kind === "continue" && t.kind !== "loop") continue;
-			return t;
+			return i;
 		}
-		return undefined;
+		return -1;
+	}
+
+	/**
+	 * A jump that lands at `targets` depth `landsAt` first runs every `finally`
+	 * above that depth, innermost first. Each finalizer is entered with the
+	 * jump's state, and one that reaches a region lands the jump PENDING. That
+	 * is conservative: a finalizer that yields after its region really lands
+	 * settled. It can only add a finding, never hide one.
+	 */
+	function throughFinalizers(s: State, landsAt: number): State {
+		let state = s;
+		for (let j = targets.length - 1; j > landsAt; j--) {
+			const f = targets[j] as JumpTarget;
+			if (f.kind !== "finally") continue;
+			f.crossing = join(f.crossing ?? null, state);
+			if (f.finalizerReaches && state !== null) state = true;
+		}
+		return state;
 	}
 
 	function flowStatement(node: Node, s: State): State {
@@ -584,7 +639,22 @@ export function sweepIndexerLoops(
 			case "try_statement": {
 				const body = node.childForFieldName("body");
 				const handler = node.childForFieldName("handler");
-				const finalizer = node.childForFieldName("finalizer");
+				const fb =
+					node.childForFieldName("finalizer")?.childForFieldName("body") ??
+					null;
+				// While the body and handler run, a jump out of them runs `fb`
+				// first. Popped before `fb` itself is walked.
+				const frame: JumpTarget | null = fb
+					? {
+							kind: "finally",
+							labels: [],
+							continueState: null,
+							breakState: null,
+							finalizerReaches: regionCallsIn(fb).length > 0,
+							crossing: null,
+						}
+					: null;
+				if (frame) targets.push(frame);
 				const b = body ? flowStatement(body, s) : s;
 				// An exception can leave the body right after any region in it.
 				const threw = join(
@@ -596,30 +666,51 @@ export function sweepIndexerLoops(
 					const hb = handler.childForFieldName("body");
 					after = join(b, hb ? flowStatement(hb, threw) : threw);
 				}
-				if (finalizer) {
-					const fb = finalizer.childForFieldName("body");
-					const out = fb ? flowStatement(fb, join(after, threw)) : after;
+				if (frame) targets.pop();
+				if (fb) {
+					// Entered on the normal path, after a throw, and by every jump
+					// that left the body or handler.
+					const entry = join(join(after, threw), frame?.crossing ?? null);
+					const out = flowStatement(fb, entry);
 					return after === null ? null : out;
 				}
 				return after;
 			}
 			case "labeled_statement": {
-				const label = node.childForFieldName("label")?.text ?? null;
-				const body = node.childForFieldName("body");
-				if (body && LOOP_TYPES.has(body.type)) return flowLoop(body, s, label);
-				return body ? flowStatement(body, s) : s;
+				// `a: b: for (…)`: every label on the chain names ONE statement.
+				let body = node.childForFieldName("body");
+				while (body?.type === "labeled_statement") {
+					body = body.childForFieldName("body");
+				}
+				if (!body) return s;
+				if (LOOP_TYPES.has(body.type)) {
+					return flowLoop(body, s, labelsOf(body));
+				}
+				// A labelled BLOCK: `break check;` leaves it, and the state it
+				// carries rejoins the flow straight after the statement.
+				const target: JumpTarget = {
+					kind: "block",
+					labels: labelsOf(body),
+					continueState: null,
+					breakState: null,
+				};
+				targets.push(target);
+				const out = flowStatement(body, s);
+				targets.pop();
+				return join(out, target.breakState);
 			}
 			case "for_statement":
 			case "for_in_statement":
 			case "while_statement":
 			case "do_statement":
-				return flowLoop(node, s, null);
+				// Unlabelled: a labelled loop arrives through `labeled_statement`.
+				return flowLoop(node, s, []);
 			case "switch_statement": {
 				const value = flowExpr(node.childForFieldName("value"), s);
 				const body = node.childForFieldName("body");
 				const target: JumpTarget = {
 					kind: "switch",
-					label: null,
+					labels: [],
 					continueState: null,
 					breakState: null,
 				};
@@ -642,23 +733,31 @@ export function sweepIndexerLoops(
 					namedChildren(node).find((c) => c.type === "statement_identifier")
 						?.text ?? null;
 				const kind = node.type === "continue_statement" ? "continue" : "break";
-				const t = findTarget(kind, label);
+				const i = findTarget(kind, label);
+				// Even a jump whose target lies outside this walk runs the
+				// finalizers it leaves, so they are entered with its state.
+				const landing = throughFinalizers(s, i);
+				const t = targets[i];
 				if (t) {
-					if (kind === "continue") t.continueState = join(t.continueState, s);
-					else t.breakState = join(t.breakState, s);
+					if (kind === "continue") {
+						t.continueState = join(t.continueState, landing);
+					} else {
+						t.breakState = join(t.breakState, landing);
+					}
 				}
 				return null;
 			}
 			case "return_statement":
 			case "throw_statement":
-				flowExpr(node, s);
+				// Leaving the function runs every enclosing `finally` on the way.
+				throughFinalizers(flowExpr(node, s), -1);
 				return null;
 			default:
 				return flowExpr(node, s);
 		}
 	}
 
-	function flowLoop(loop: Node, s: State, label: string | null): State {
+	function flowLoop(loop: Node, s: State, labels: readonly string[]): State {
 		const body = loop.childForFieldName("body");
 		let entry = s;
 		let condition: Node | null = null;
@@ -683,7 +782,7 @@ export function sweepIndexerLoops(
 		const turn = (head: State): { end: State; target: JumpTarget } => {
 			const target: JumpTarget = {
 				kind: "loop",
-				label,
+				labels,
 				continueState: null,
 				breakState: null,
 			};
@@ -737,12 +836,15 @@ export function sweepIndexerLoops(
 	}
 
 	// Every loop in the file, each from a settled start (what precedes a loop
-	// is straight-line code, bounded by its length).
+	// is straight-line code, bounded by its length). A loop keeps its labels
+	// here too. Entered without them, a `continue outer;` aimed at the
+	// OUTERMOST loop found no target, and the pending region it carried was
+	// dropped: a false negative (fixture: `indexer-loop-sweep.test.ts`, labels).
 	walk(root, (node) => {
 		if (LOOP_TYPES.has(node.type)) {
 			recording = true;
 			targets.length = 0;
-			flowLoop(node, false, null);
+			flowLoop(node, false, labelsOf(node));
 		}
 		return undefined;
 	});

@@ -66,28 +66,29 @@ const HEARTBEAT_INTERVAL = lockConstant("HEARTBEAT_INTERVAL");
 const SAMPLE_MS = 100;
 
 /**
- * The synthetic pass. 2 700 files × 40 functions: ~54 000 chunks (measured: the
- * chunker makes ~20 per file of this shape) and ~108 000 symbols — above the
- * criterion's 50 000 — and a symbol-extraction phase whose parse
- * alone takes well over 10 s unyielded, so deleting its yields breaches the
- * stale rule (the falsifier). 2 000 phantom tracker rows give the
- * deleted-files loop 2 000 iterations of nothing but tracker regions.
+ * The synthetic pass. 2 700 files × 40 functions, EVERY ONE EXPORTED. Measured
+ * in run 1: 216 000 chunks and ~104 000 symbols — above the criterion's 50 000
+ * — and a symbol-extraction phase whose parse alone takes well over 10 s
+ * unyielded, so deleting its yields breaches the stale rule (the falsifier).
+ * 2 000 phantom tracker rows give the deleted-files loop 2 000 iterations of
+ * nothing but tracker regions.
  *
- * ONLY `exportedFiles` FILES EXPORT THEIR FUNCTIONS, and that is a known defect
- * held off, not a tuning. `tracker.ts`'s `resolveReferencesByName()` is ONE
- * UPDATE whose two correlated subqueries the planner answers from the partial
- * index `idx_symbols_exported` (`EXPLAIN QUERY PLAN`: "SEARCH s USING INDEX
- * idx_symbols_exported (is_exported=?)"), so it costs unresolved-references ×
- * EXPORTED symbols inside a single synchronous statement — measured, with every
- * function exported this pass blocked the heartbeat for 590 s. No caller-side
- * yield can split one statement, and `tracker.ts` is not this change's file:
- * it is logged for the orchestrator. Once it is fixed, set `exportedFiles` to
- * `files` and this test must still pass.
+ * Every file exports because `tracker.ts`'s `resolveReferencesByName()` scales
+ * with EXPORTED symbols, and a pass that exported almost nothing would not
+ * measure it. This test used to run with 3 exporting files, because that one
+ * UPDATE's two correlated subqueries were planned through the partial index
+ * `idx_symbols_exported` and cost unresolved-references × exported symbols
+ * inside ONE synchronous statement: with every function exported it starved
+ * the heartbeat for 590 s, and no caller-side yield can split a statement. The
+ * plan is now pinned by `EXPLAIN QUERY PLAN` in `tracker-resolve-plan.test.ts`.
+ * `indexer-heartbeat-exports.test.ts` measures the same statement at 500 files
+ * and also asserts how many references it resolved, which this test cannot see.
  */
+const FILES = 2700;
 const WORKLOAD = {
-	files: 2700,
+	files: FILES,
 	functionsPerFile: 40,
-	exportedFiles: 3,
+	exportedFiles: FILES,
 	delete: 100,
 	modify: 100,
 	add: 100,
