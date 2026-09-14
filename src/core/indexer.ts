@@ -91,10 +91,12 @@ import { createRepoMapGenerator } from "./repo-map.js";
 import { createVectorStore, type IVectorStore } from "./store.js";
 import { resolveStoreLocation } from "./store-location.js";
 import { createSymbolExtractor } from "./symbol-extractor.js";
+import { yieldToEventLoop } from "./sync-region.js";
 import {
 	computeFileHash,
 	computeHash,
 	createFileTracker,
+	type FileChanges,
 	type IFileTracker,
 } from "./tracker.js";
 
@@ -280,6 +282,55 @@ interface IndexerOptions {
 	/** Callback when waiting for the machine-global indexer to finish */
 	onWaitingForGlobalLock?: (holderPid: number, waitedMs: number) => void;
 }
+
+// ============================================================================
+// Loop sizes for tracker work inside the index lock (SR-2)
+// ============================================================================
+//
+// Every tracker call is ONE synchronous SQLite region, bounded by `tracker.ts`
+// (`sync-region.ts`, THE ARITHMETIC: <= 500 ms each). That bound becomes a
+// HEARTBEAT bound only if the event loop reaches its timers phase between two
+// regions (SR-2, CLAUDE.md #31) — so every loop below that calls the tracker
+// ends each region with `await yieldToEventLoop()`. Any other `await` does not
+// count: an await on an already-resolved promise is a microtask, and the lock's
+// 1 s heartbeat interval cannot run between microtasks.
+//
+// Swept by `test/unit/core/indexer-loop-sweep.test.ts`; measured from outside
+// the process by `test/unit/core/indexer-heartbeat.test.ts` (V2.4).
+
+/**
+ * Rows per symbol/reference write: ONE `BEGIN IMMEDIATE` region (R-txn — R3 in
+ * architecture §5.3's constants table) per `GRAPH_CHUNK` rows, a yield after
+ * each.
+ *
+ * It lives HERE, at the call site, because `tracker.ts` has no region-size
+ * constant: each tracker method is one region over whatever the caller passes,
+ * so the caller decides the size. Move it into `tracker.ts` if R3 gets a
+ * batched API of its own.
+ *
+ * Measured: one `insertSymbols` region costs ~0.4 ms at 128 rows and ~136 ms at
+ * 50 000. At realistic sizes the YIELD, not this number, is what bounds the
+ * heartbeat; this keeps each region near its measured cost.
+ */
+export const GRAPH_CHUNK = 128;
+
+/**
+ * Files per `getChanges()` call.
+ *
+ * `getChanges` is synchronous over every file it is given: one R1 SELECT over
+ * the whole `files` table, a `statSync` per file, a content hash for every file
+ * whose mtime moved, and an R-txn refreshing those mtimes. A shared store's
+ * first run in a new worktree sees every mtime differ, so one call hashes the
+ * whole repository in one block. The caller therefore feeds it slices, with a
+ * yield between them.
+ *
+ * Every call re-reads the whole table (R1 has no chunk constant), so the NUMBER
+ * of calls is capped at CHANGES_MAX_SLICES: the slice grows past CHANGES_SLICE
+ * only beyond 128 000 files, instead of re-reading a million-row table 500
+ * times.
+ */
+export const CHANGES_SLICE = 2000;
+export const CHANGES_MAX_SLICES = 64;
 
 // ============================================================================
 // Indexer Class
@@ -1099,7 +1150,7 @@ export class Indexer {
 			}
 		} else {
 			// Incremental indexing
-			const changes = this.fileTracker!.getChanges(allFiles);
+			const changes = await this.getChangesInSlices(allFiles);
 			filesToIndex = [...changes.newFiles, ...changes.modifiedFiles];
 			deletedFiles = changes.deletedFiles;
 
@@ -1112,13 +1163,23 @@ export class Indexer {
 				}
 			}
 
-			// Remove deleted files from index
+			// Remove deleted files from index.
+			//
+			// ORDER IS LOAD-BEARING: LanceDB first, the tracker row second. Once the
+			// row is gone getChanges never offers this file again, so the opposite
+			// order would leave its chunks behind for good if the second step failed.
+			//
+			// SR-2: two tracker regions per turn, a yield after EACH. The LanceDB
+			// await between them does not count — it is skipped for a file with no
+			// chunk ids, and even when it runs it is not a guaranteed macrotask.
 			for (const deletedFile of deletedFiles) {
 				const chunkIds = this.fileTracker!.getChunkIds(deletedFile);
 				if (chunkIds.length > 0) {
 					await this.vectorStore!.deleteByFile(deletedFile);
 				}
+				await yieldToEventLoop();
 				this.fileTracker!.removeFile(deletedFile);
+				await yieldToEventLoop();
 			}
 
 			// SMART INCREMENTAL: Collect old chunks for modified files BEFORE deleting
@@ -1163,6 +1224,8 @@ export class Indexer {
 				// NEVER GATED — see above.
 				await this.vectorStore!.deleteByFile(modifiedFile);
 				this.fileTracker!.resetEnrichmentState(modifiedFile);
+				// SR-2: the next turn's region must not follow this one unyielded.
+				await yieldToEventLoop();
 			}
 		}
 
@@ -1521,6 +1584,8 @@ export class Indexer {
 			// If so, we need to also clear file tracker for consistency
 			if (this.vectorStore!.dimensionMismatchCleared) {
 				this.fileTracker!.clear();
+				// SR-2: this batch's markIndexed loop is the next region.
+				await yieldToEventLoop();
 			}
 
 			// Phase 2b: Extract code units with AST metadata (once per file, not per chunk)
@@ -1703,6 +1768,9 @@ export class Indexer {
 					continue;
 				}
 				this.fileTracker!.markIndexed(filePath, fileHash, chunkIds);
+				// SR-2: one R-write per file, back to back for the whole batch
+				// without this.
+				await yieldToEventLoop();
 			}
 
 			totalFilesIndexed += fileChunkMap.size - deferredInBatch;
@@ -2153,6 +2221,50 @@ export class Indexer {
 	}
 
 	/**
+	 * `FileTracker.getChanges()` over `allFiles`, in slices with a yield between
+	 * them — see CHANGES_SLICE for why one call over a whole repository is a
+	 * heartbeat hazard.
+	 *
+	 * The same answer as one call. new/modified/unchanged concatenate in input
+	 * order. DELETED needs care: each call reports every tracked path that is not
+	 * in THAT slice, so a path is deleted iff EVERY slice reports it — the
+	 * intersection, kept in the first slice's order.
+	 */
+	private async getChangesInSlices(allFiles: string[]): Promise<FileChanges> {
+		const size = Math.max(
+			CHANGES_SLICE,
+			Math.ceil(allFiles.length / CHANGES_MAX_SLICES),
+		);
+		const newFiles: string[] = [];
+		const modifiedFiles: string[] = [];
+		const unchangedFiles: string[] = [];
+		let deletedFiles: string[] | null = null;
+		// At least one call, so an empty file list still reports every tracked
+		// path as deleted.
+		for (let start = 0; start === 0 || start < allFiles.length; start += size) {
+			const part = this.fileTracker!.getChanges(
+				allFiles.slice(start, start + size),
+			);
+			for (const f of part.newFiles) newFiles.push(f);
+			for (const f of part.modifiedFiles) modifiedFiles.push(f);
+			for (const f of part.unchangedFiles) unchangedFiles.push(f);
+			if (deletedFiles === null) {
+				deletedFiles = part.deletedFiles;
+			} else {
+				const stillMissing = new Set(part.deletedFiles);
+				deletedFiles = deletedFiles.filter((p) => stillMissing.has(p));
+			}
+			await yieldToEventLoop();
+		}
+		return {
+			newFiles,
+			modifiedFiles,
+			deletedFiles: deletedFiles ?? [],
+			unchangedFiles,
+		};
+	}
+
+	/**
 	 * Extract symbol graph from indexed files
 	 * Phase 4.5 of the indexing pipeline
 	 */
@@ -2168,6 +2280,8 @@ export class Indexer {
 		if (!force) {
 			for (const filePath of filesToIndex) {
 				this.fileTracker!.deleteSymbolsByFile(filePath);
+				// SR-2: one R-txn per file, and nothing else in this loop.
+				await yieldToEventLoop();
 			}
 		} else {
 			// Full reindex - clear all symbol data
@@ -2202,7 +2316,15 @@ export class Indexer {
 				);
 
 				if (symbols.length > 0) {
-					this.fileTracker!.insertSymbols(symbols);
+					// R3: one BEGIN IMMEDIATE region per GRAPH_CHUNK rows with a yield
+					// after each, where one region per file was unbounded in the file's
+					// symbol count. A failure part-way leaves the chunks already
+					// committed — the same partial state a failed insertReferences
+					// after a successful insertSymbols always left.
+					for (let i = 0; i < symbols.length; i += GRAPH_CHUNK) {
+						this.fileTracker!.insertSymbols(symbols.slice(i, i + GRAPH_CHUNK));
+						await yieldToEventLoop();
+					}
 
 					// Extract references
 					const references = await symbolExtractor.extractReferences(
@@ -2212,8 +2334,11 @@ export class Indexer {
 						symbols,
 					);
 
-					if (references.length > 0) {
-						this.fileTracker!.insertReferences(references);
+					for (let i = 0; i < references.length; i += GRAPH_CHUNK) {
+						this.fileTracker!.insertReferences(
+							references.slice(i, i + GRAPH_CHUNK),
+						);
+						await yieldToEventLoop();
 					}
 				}
 			} catch (error) {
@@ -2223,6 +2348,15 @@ export class Indexer {
 					error instanceof Error ? error.message : error,
 				);
 			}
+
+			// One file's work per yield — on the error path too, where a region may
+			// have run and thrown. The awaits above do NOT yield:
+			// `parserManager.parse()` returns a cached parser, so they resolve as
+			// microtasks and tree-sitter parses synchronously. Measured: 400 files
+			// through extractSymbols + extractReferences ran 2 377 ms with ZERO ticks
+			// of a 20 ms interval, so without this the whole symbol phase is one
+			// block and starves the lock heartbeat on any sizeable repository.
+			await yieldToEventLoop();
 
 			processedFiles++;
 			if (processedFiles % 50 === 0) {
@@ -2309,14 +2443,22 @@ export class Indexer {
 			return { librariesFetched: 0, chunksAdded: 0 };
 		}
 
-		// Filter to dependencies that need refresh
-		const depsToFetch = deps.filter((dep) =>
-			this.fileTracker!.needsDocsRefresh(
-				dep.name,
-				dep.majorVersion,
-				cacheTTLMs,
-			),
-		);
+		// Filter to dependencies that need refresh. A loop, not `filter()`: each
+		// check is a tracker read region, and an array iterator cannot yield
+		// between elements (SR-2).
+		const depsToFetch: typeof deps = [];
+		for (const dep of deps) {
+			if (
+				this.fileTracker!.needsDocsRefresh(
+					dep.name,
+					dep.majorVersion,
+					cacheTTLMs,
+				)
+			) {
+				depsToFetch.push(dep);
+			}
+			await yieldToEventLoop();
+		}
 
 		if (depsToFetch.length === 0) {
 			if (this.onProgress) {
@@ -2428,7 +2570,10 @@ export class Indexer {
 				// Forward progress: docs chunks were written to the vector store.
 				this.reportProgress();
 
-				// Mark as indexed in tracker
+				// Mark as indexed in tracker. SR-2: these invocations run
+				// concurrently and two can resume in one turn of the event loop, so
+				// this region yields first instead of trusting the awaits above.
+				await yieldToEventLoop();
 				this.fileTracker!.markDocsIndexed(
 					dep.name,
 					dep.majorVersion || null,
@@ -2454,6 +2599,8 @@ export class Indexer {
 		for (let i = 0; i < depsToFetch.length; i += concurrency) {
 			const batch = depsToFetch.slice(i, i + concurrency);
 			await Promise.all(batch.map(processDep));
+			// SR-2: the last invocation's region, then the next batch's first.
+			await yieldToEventLoop();
 		}
 
 		if (this.onProgress) {
