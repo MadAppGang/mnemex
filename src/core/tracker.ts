@@ -6,7 +6,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { GitDiffChangeDetector } from "../cloud/git-diff.js";
 import type {
@@ -21,6 +21,12 @@ import type {
 	SymbolReference,
 } from "../types.js";
 import { createDatabaseSync, type SQLiteDatabase } from "./sqlite.js";
+import {
+	busyTimeoutPragma,
+	clampedBusyTimeoutMs,
+	MAX_SYNC_REGION_MS,
+	type SyncRegion,
+} from "./sync-region.js";
 
 // ============================================================================
 // Types
@@ -317,6 +323,23 @@ export async function resolveHeadCommit(
  */
 const initializedSchemas = new Set<string>();
 
+/** One row of `PRAGMA database_list`. */
+interface DatabaseListRow {
+	name?: string;
+	file?: string;
+}
+
+/** The row `PRAGMA journal_mode` returns, set or read. */
+interface JournalModeRow {
+	journal_mode?: unknown;
+}
+
+function journalModeOf(row: JournalModeRow | undefined): string {
+	return typeof row?.journal_mode === "string"
+		? row.journal_mode.toLowerCase()
+		: "unknown";
+}
+
 /**
  * Stable identity of the database a connection is attached to, or null when it
  * has none and therefore must not be memoized.
@@ -337,23 +360,20 @@ const initializedSchemas = new Set<string>();
  *
  * The inode is folded in so that a database deleted and recreated at the same
  * path counts as a different database and gets the schema pass again.
+ *
+ * Pure over the rows: R0 reads `PRAGMA database_list` inside its region (SR-1)
+ * and passes them in, or `null` when that read failed.
  */
-function schemaMemoKey(db: SQLiteDatabase): string | null {
-	let file: string;
-	try {
-		const rows = db.prepare("PRAGMA database_list").all() as Array<{
-			name?: string;
-			file?: string;
-		}>;
-		const main = rows.find((row) => row.name === "main") ?? rows[0];
-		if (typeof main?.file !== "string" || main.file.length === 0) {
-			return null;
-		}
-		file = main.file;
-	} catch {
+function schemaMemoKey(rows: DatabaseListRow[] | null): string | null {
+	if (rows === null) {
 		// Unknown identity: treat as non-memoizable and re-apply the schema.
 		return null;
 	}
+	const main = rows.find((row) => row.name === "main") ?? rows[0];
+	if (typeof main?.file !== "string" || main.file.length === 0) {
+		return null;
+	}
+	const file = main.file;
 
 	try {
 		return `${file}:${statSync(file).ino}`;
@@ -373,6 +393,508 @@ export function resetTrackerSchemaCache(): void {
 	initializedSchemas.clear();
 }
 
+/**
+ * Delete a `-wal`/`-shm` pair whose database file is GONE.
+ *
+ * Such a pair belongs to a deleted database. A new database opened at the same
+ * path attaches to that dead write-ahead log, and while any connection to the
+ * old file is still alive it shares the old wal-index outright. bun's
+ * `close()` with unfinalized statements leaves exactly such a connection
+ * behind until a GC finalizes them (measured: it blocks `journal_mode =
+ * DELETE` until `Bun.gc(true)`). Under the rollback journal the tracker used
+ * before WAL, `rm .mnemex/index.db` was a clean reset; this keeps it one.
+ *
+ * ONLY when the main file is absent. Beside a live database its sidecars are
+ * live state, and deleting them would lose committed transactions.
+ */
+function removeOrphanedWalSidecars(dbPath: string): void {
+	if (dbPath === "" || dbPath === ":memory:" || dbPath.startsWith("file:")) {
+		return;
+	}
+	if (existsSync(dbPath)) return;
+	for (const sidecar of [`${dbPath}-wal`, `${dbPath}-shm`]) {
+		rmSync(sidecar, { force: true });
+	}
+}
+
+// ============================================================================
+// Schema DDL — issued ONLY inside region R0 (see TRACKER_REGIONS)
+// ============================================================================
+
+/*
+ * ONE STATEMENT PER ELEMENT, and R0 execs them one at a time — never as a
+ * batch. Measured on bun:sqlite (bun 1.4.0), each under another connection's
+ * write lock: a multi-statement `exec` whose statement returns SQLITE_BUSY does
+ * NOT stop. It carries on to the next statement, and the BUSY is lost —
+ *
+ *   exec("CREATE TABLE a (x); SELECT 1;")            no throw, `a` NOT created
+ *   exec("CREATE TABLE a (x); CREATE TABLE b (y);
+ *         CREATE INDEX ib ON b(y);")                 "no such table: main.b"
+ *
+ * — where better-sqlite3 throws SQLITE_BUSY in both cases. A batched schema
+ * pass under contention could therefore report SUCCESS over a half-created
+ * schema, which the memo would then mark done, or fail with an error that does
+ * not say "busy" and that no region can classify. One statement per `exec`
+ * surfaces the BUSY itself. Each element is one term in R0's count.
+ */
+
+/** The core tables and their indexes: 5 CREATE TABLE + 6 CREATE INDEX. */
+const CORE_SCHEMA_DDL: readonly string[] = [
+	`CREATE TABLE IF NOT EXISTS files (
+		path TEXT PRIMARY KEY,
+		content_hash TEXT NOT NULL,
+		mtime REAL NOT NULL,
+		chunk_ids TEXT NOT NULL,
+		indexed_at TEXT NOT NULL,
+		enrichment_state TEXT DEFAULT '{}',
+		enriched_at TEXT,
+		-- Commit this file was last indexed at. NULL = provenance unknown.
+		indexed_at_commit TEXT
+	)`,
+	`CREATE TABLE IF NOT EXISTS metadata (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL
+	)`,
+	`CREATE TABLE IF NOT EXISTS documents (
+		id TEXT PRIMARY KEY,
+		document_type TEXT NOT NULL,
+		file_path TEXT,
+		source_ids TEXT NOT NULL DEFAULT '[]',
+		created_at TEXT NOT NULL,
+		enriched_at TEXT,
+		-- Bi-temporal validity. Both NULL = provenance unknown, which means
+		-- CURRENTLY VALID: only a non-NULL invalidated_at_commit supersedes a
+		-- document. Facts are superseded, never deleted.
+		valid_from_commit TEXT,
+		invalidated_at_commit TEXT,
+		-- Commit that made this document SUSPECT without superseding it.
+		--
+		-- Only ever set on OBSERVED documents (session observations, project
+		-- docs): they cannot be re-derived from source, so a source change is
+		-- evidence that they may be wrong, never proof. Auto-invalidating them
+		-- would destroy a human/agent observation that no pipeline can
+		-- regenerate. NULL = not flagged. See src/core/invalidation.ts.
+		stale_at_commit TEXT
+	)`,
+	`CREATE TABLE IF NOT EXISTS indexed_docs (
+		library TEXT NOT NULL,
+		version TEXT,
+		provider TEXT NOT NULL,
+		content_hash TEXT NOT NULL,
+		fetched_at TEXT NOT NULL,
+		chunk_ids TEXT NOT NULL,
+		PRIMARY KEY (library, version, provider)
+	)`,
+	// Commit anchors for provenance.
+	//
+	// `ordinal` is the first-parent depth of the commit
+	// (`git rev-list --count --first-parent <sha>`). SHAs are not orderable,
+	// so recency comparisons use the ordinal.
+	//
+	// LIMITATION: the ordinal is monotonic and stable only for a history that
+	// is appended to. It is NOT stable across history rewrites — rebase,
+	// commit --amend, squash-merge and filter-branch all renumber commits, so
+	// previously recorded ordinals then refer to commits that no longer
+	// exist. After a rewrite the index must be rebuilt (`mnemex index
+	// --force`); there is no in-place repair.
+	`CREATE TABLE IF NOT EXISTS commits (
+		sha TEXT PRIMARY KEY,
+		ordinal INTEGER NOT NULL,
+		committed_at TEXT
+	)`,
+	"CREATE INDEX IF NOT EXISTS idx_commits_ordinal ON commits(ordinal)",
+	"CREATE INDEX IF NOT EXISTS idx_files_content_hash ON files(content_hash)",
+	"CREATE INDEX IF NOT EXISTS idx_documents_file_path ON documents(file_path)",
+	"CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(document_type)",
+	"CREATE INDEX IF NOT EXISTS idx_indexed_docs_library ON indexed_docs(library)",
+	"CREATE INDEX IF NOT EXISTS idx_indexed_docs_fetched ON indexed_docs(fetched_at)",
+];
+
+/** The symbol graph: 3 CREATE TABLE + 11 CREATE INDEX. */
+const SYMBOL_GRAPH_DDL: readonly string[] = [
+	`CREATE TABLE IF NOT EXISTS symbols (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		kind TEXT NOT NULL,
+		file_path TEXT NOT NULL,
+		start_line INTEGER NOT NULL,
+		end_line INTEGER NOT NULL,
+		signature TEXT,
+		docstring TEXT,
+		parent_id TEXT,
+		is_exported INTEGER DEFAULT 0,
+		language TEXT NOT NULL,
+		pagerank REAL DEFAULT 0.0,
+		in_degree INTEGER DEFAULT 0,
+		out_degree INTEGER DEFAULT 0,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		FOREIGN KEY (parent_id) REFERENCES symbols(id) ON DELETE SET NULL
+	)`,
+	`CREATE TABLE IF NOT EXISTS symbol_references (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		from_symbol_id TEXT NOT NULL,
+		to_symbol_name TEXT NOT NULL,
+		to_symbol_id TEXT,
+		kind TEXT NOT NULL,
+		file_path TEXT NOT NULL,
+		line INTEGER NOT NULL,
+		is_resolved INTEGER DEFAULT 0,
+		created_at TEXT NOT NULL,
+		FOREIGN KEY (from_symbol_id) REFERENCES symbols(id) ON DELETE CASCADE,
+		FOREIGN KEY (to_symbol_id) REFERENCES symbols(id) ON DELETE SET NULL
+	)`,
+	`CREATE TABLE IF NOT EXISTS graph_metadata (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	)`,
+	"CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name)",
+	"CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_path)",
+	"CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind)",
+	"CREATE INDEX IF NOT EXISTS idx_symbols_pagerank ON symbols(pagerank DESC)",
+	"CREATE INDEX IF NOT EXISTS idx_symbols_parent ON symbols(parent_id)",
+	"CREATE INDEX IF NOT EXISTS idx_symbols_exported ON symbols(is_exported) WHERE is_exported = 1",
+	"CREATE INDEX IF NOT EXISTS idx_refs_from ON symbol_references(from_symbol_id)",
+	"CREATE INDEX IF NOT EXISTS idx_refs_to ON symbol_references(to_symbol_id)",
+	"CREATE INDEX IF NOT EXISTS idx_refs_to_name ON symbol_references(to_symbol_name)",
+	"CREATE INDEX IF NOT EXISTS idx_refs_file ON symbol_references(file_path)",
+	"CREATE INDEX IF NOT EXISTS idx_refs_kind ON symbol_references(kind)",
+];
+
+/** Activity log (monitor mode): 1 CREATE TABLE + 1 CREATE INDEX. */
+const ACTIVITY_LOG_DDL: readonly string[] = [
+	`CREATE TABLE IF NOT EXISTS activity_log (
+		id        INTEGER PRIMARY KEY AUTOINCREMENT,
+		type      TEXT    NOT NULL,
+		metadata  TEXT    NOT NULL,
+		timestamp TEXT    NOT NULL
+	)`,
+	"CREATE INDEX IF NOT EXISTS idx_activity_log_id ON activity_log(id)",
+];
+
+/** The tables whose columns the migration probes — one `PRAGMA table_info` each. */
+const MIGRATED_TABLES = ["files", "documents"] as const;
+
+/**
+ * Columns added after their table first shipped. Each is added only when
+ * `PRAGMA table_info` shows it missing, so a database written by an older
+ * version migrates on the first open by a process that has not seen it.
+ */
+const COLUMN_MIGRATIONS: ReadonlyArray<{
+	readonly table: (typeof MIGRATED_TABLES)[number];
+	readonly column: string;
+	readonly ddl: string;
+}> = [
+	{
+		table: "files",
+		column: "enrichment_state",
+		ddl: "ALTER TABLE files ADD COLUMN enrichment_state TEXT DEFAULT '{}'",
+	},
+	{
+		table: "files",
+		column: "enriched_at",
+		ddl: "ALTER TABLE files ADD COLUMN enriched_at TEXT",
+	},
+	// Commit provenance. All nullable — every row written before commit
+	// tracking existed reads back NULL, which means "provenance unknown" and
+	// must be treated as CURRENTLY VALID, never as invalid.
+	{
+		table: "files",
+		column: "indexed_at_commit",
+		ddl: "ALTER TABLE files ADD COLUMN indexed_at_commit TEXT",
+	},
+	{
+		table: "documents",
+		column: "valid_from_commit",
+		ddl: "ALTER TABLE documents ADD COLUMN valid_from_commit TEXT",
+	},
+	{
+		table: "documents",
+		column: "invalidated_at_commit",
+		ddl: "ALTER TABLE documents ADD COLUMN invalidated_at_commit TEXT",
+	},
+	{
+		table: "documents",
+		column: "stale_at_commit",
+		ddl: "ALTER TABLE documents ADD COLUMN stale_at_commit TEXT",
+	},
+];
+
+/**
+ * Indexes on migrated columns. Created after the migration rather than in
+ * CORE_SCHEMA_DDL: that block is one `exec`, and a CREATE INDEX on a column an
+ * older database has not been migrated to yet would abort the whole setup.
+ */
+const MIGRATION_INDEXES = [
+	"CREATE INDEX IF NOT EXISTS idx_documents_stale ON documents(stale_at_commit)",
+	"CREATE INDEX IF NOT EXISTS idx_documents_invalidated ON documents(invalidated_at_commit)",
+] as const;
+
+// ============================================================================
+// Bounded regions — CLAUDE.md #31's bound, on the tracker's own connection
+// ============================================================================
+
+/**
+ * WHY. Every call through `sqlite.ts` is SYNCHRONOUS, so it blocks the event
+ * loop, and `lock.ts`'s `heartbeat` advances only from a 1 s `setInterval` that
+ * a blocked loop cannot run. `isLockStale`'s heartbeat rule (10 s) is 30x
+ * tighter than its progress rule (300 s), so it is the one that binds. While
+ * each worktree owned its own `index.db` nothing else wrote to it. Once the file
+ * is shared, another process's write transaction is contention this connection
+ * waits on, and an unbounded wait inside the index lock is how a second indexer
+ * reclaims a HELD lock (CLAUDE.md #27, #31).
+ *
+ * HOW. `sync-region.ts`'s mechanism, reused rather than copied. Every statement
+ * on this connection runs inside `withRegion()` (SR-1), which sets
+ * `busy_timeout` to the region's allowance DIVIDED by its blocking statements
+ * before the first one runs and back to 0 after the last, so each region's
+ * busy-wait is at most BUSY_TIMEOUT_MS = 250 ms however the contention falls
+ * (`sync-region.ts`, THE ARITHMETIC, [1]).
+ *
+ * THE RESTING VALUE IS 0, and that is a mechanism: a statement that escapes a
+ * region and has to wait throws SQLITE_BUSY at once instead of widening the
+ * bound in silence. It also overrides better-sqlite3's constructor default of
+ * 5 000 ms (`better-sqlite3/lib/database.js`), which `sqlite.ts` never touches —
+ * under Node, R0 is the first thing that bounds this connection at all.
+ *
+ * SR-2. The step from one region's bound to the heartbeat's needs the event
+ * loop to run BETWEEN regions. Every public method here is ONE region
+ * (`getChanges` is two, separated by file I/O, not by a loop) and none loops
+ * over regions; a caller that invokes these methods back to back in a
+ * synchronous loop defeats SR-2 and must yield itself. Both invariants are
+ * swept statically by `test/unit/core/tracker-regions.test.ts`.
+ */
+
+/**
+ * Busy-wait this PROCESS may spend on the tracker per window. Once spent, every
+ * region's clamp is 0, so a contended statement fails at once.
+ *
+ * MODULE state on purpose: a `FileTracker` is constructed per MCP request, so
+ * a per-instance budget would refill on every request and bound nothing
+ * (CLAUDE.md #21). WINDOWED rather than latched like the embed cache's, because
+ * the tracker has no degraded tier: a long-lived MCP server that spent its
+ * budget once must not fail fast for the rest of its life.
+ *
+ * The heartbeat bound does NOT rest on this; it rests on the per-region clamp.
+ * This decides only when to stop waiting at all.
+ */
+export const TRACKER_CONTENTION_BUDGET_MS = 1000;
+
+/** How often `TRACKER_CONTENTION_BUDGET_MS` refills. */
+export const TRACKER_CONTENTION_WINDOW_MS = 10_000;
+
+export type TrackerRegionName = "R0" | "R1" | "R-read" | "R-write" | "R-txn";
+
+/** What a region does when its bounded wait runs out (architecture §5.3, N7). */
+export type OnContention =
+	/** Reads: retry once INSIDE the same allowance, then TrackerContendedError. */
+	| "retry-once"
+	/** Writes: TrackerContendedError. Never skipped, never swallowed. */
+	| "fail"
+	/** R0: the constructor throws, so no half-initialised tracker is handed out. */
+	| "fail-open";
+
+export interface TrackerRegion extends SyncRegion {
+	readonly name: TrackerRegionName;
+	readonly onContention: OnContention;
+	/**
+	 * Run the callback inside `BEGIN IMMEDIATE` … `COMMIT`. This is what licenses
+	 * a `blockingStatements` of 2 however many statements the callback runs:
+	 * BEGIN IMMEDIATE takes the write lock at BEGIN, so only BEGIN and COMMIT can
+	 * wait (a WAL commit can contend with a checkpointer). A DEFERRED begin would
+	 * let the first write re-contend, and a read-then-write upgrade under WAL
+	 * returns SQLITE_BUSY_SNAPSHOT, which busy_timeout does not retry at all.
+	 */
+	readonly immediateTransaction: boolean;
+}
+
+/**
+ * R0's blocking statements, counted ONE BY ONE: every statement is its own
+ * `exec` in its own autocommit transaction, so each can wait on the busy
+ * handler independently. Derived from the arrays below it counts.
+ *
+ *    2   PRAGMA journal_mode = WAL, and its read-back when the switch is contended
+ *    1   PRAGMA database_list — the memo key; measured lock-free, counted anyway
+ *   11   CORE_SCHEMA_DDL.length
+ *   14   SYMBOL_GRAPH_DDL.length
+ *    2   ACTIVITY_LOG_DDL.length
+ *    2   PRAGMA table_info — MIGRATED_TABLES
+ *    6   ALTER TABLE, at most — COLUMN_MIGRATIONS
+ *    2   MIGRATION_INDEXES
+ *   --
+ *   40   → floor(250 / 40) = 6 ms per statement; 40 × 6 = 240 ms ≤ BUSY_TIMEOUT_MS
+ *
+ * The architecture's table says 15 ("the 14 constructor DDL execs + the
+ * pragma"). That counted `exec` CALLS; the DDL was then three batched execs
+ * carrying 11, 14 and 2 statements. It is now one statement per exec (see
+ * CORE_SCHEMA_DDL for the bun defect that forced it), and
+ * `tracker-regions.test.ts` counts the statements R0 really issues at the
+ * driver seam and pins this number EXACTLY.
+ *
+ * NOT one BEGIN IMMEDIATE (which would make it 2 + the pragmas): on a schema
+ * that is already current every `IF NOT EXISTS` is a no-op that under WAL takes
+ * no write lock — measured, it succeeds while another connection holds BEGIN
+ * EXCLUSIVE. BEGIN IMMEDIATE takes the write lock unconditionally, so every
+ * open of a shared store would queue behind whichever process is writing (V2.8).
+ */
+const R0_BLOCKING_STATEMENTS =
+	2 + // PRAGMA journal_mode = WAL, and its read-back when contended
+	1 + // PRAGMA database_list
+	CORE_SCHEMA_DDL.length +
+	SYMBOL_GRAPH_DDL.length +
+	ACTIVITY_LOG_DDL.length +
+	MIGRATED_TABLES.length +
+	COLUMN_MIGRATIONS.length +
+	MIGRATION_INDEXES.length;
+
+/**
+ * The tracker's regions. `blockingStatements` is a CLAIM about what the
+ * callback runs; changing one invalidates `sync-region.ts`'s arithmetic — redo
+ * it.
+ *
+ *   region    what runs                                   blocking   on contention
+ *   R0        WAL pragma, memo key, schema pass           40         fail the open
+ *   R1        getChanges' one SELECT over `files`         1          retry once
+ *   R-read    n read-only statements (`reads(n)`)         n          retry once
+ *   R-write   ONE autocommit write statement              1          fail
+ *   R-txn     BEGIN IMMEDIATE, any statements, COMMIT     2          fail
+ *
+ * The architecture's later write regions (R3, R5a/b, R7, R-recovery) all have
+ * R-txn's shape; they get their own names when their tables exist.
+ */
+export const TRACKER_REGIONS = {
+	open: {
+		name: "R0",
+		blockingStatements: R0_BLOCKING_STATEMENTS,
+		onContention: "fail-open",
+		immediateTransaction: false,
+	},
+	changes: {
+		name: "R1",
+		blockingStatements: 1,
+		onContention: "retry-once",
+		immediateTransaction: false,
+	},
+	read: {
+		name: "R-read",
+		blockingStatements: 1,
+		onContention: "retry-once",
+		immediateTransaction: false,
+	},
+	write: {
+		name: "R-write",
+		blockingStatements: 1,
+		onContention: "fail",
+		immediateTransaction: false,
+	},
+	txn: {
+		name: "R-txn",
+		blockingStatements: 2,
+		onContention: "fail",
+		immediateTransaction: true,
+	},
+} as const satisfies Record<string, TrackerRegion>;
+
+/** An R-read that runs `statements` independent SELECTs. */
+function reads(statements: number): TrackerRegion {
+	return { ...TRACKER_REGIONS.read, blockingStatements: statements };
+}
+
+/** A read may run twice (its retry), so it has twice the chances to wait. */
+function attemptsFor(region: TrackerRegion): number {
+	return region.onContention === "retry-once" ? 2 : 1;
+}
+
+/**
+ * The per-statement `busy_timeout` a region runs at: `sync-region.ts`'s shared
+ * clamp, with a read's retry counted as statements. A read that may run twice
+ * is divided by twice as many, which keeps [1] — region busy-wait ≤ 250 ms — a
+ * statement about the region INCLUDING its retry, not about each attempt.
+ */
+export function trackerBusyTimeoutMs(
+	region: TrackerRegion,
+	contentionUsedMs: number,
+): number {
+	return clampedBusyTimeoutMs(
+		{
+			name: region.name,
+			blockingStatements: region.blockingStatements * attemptsFor(region),
+		},
+		TRACKER_CONTENTION_BUDGET_MS,
+		contentionUsedMs,
+	);
+}
+
+/** This process's contention ledger. See TRACKER_CONTENTION_BUDGET_MS. */
+const contention = { windowStartedAt: 0, usedMs: 0 };
+
+function contentionUsedMs(now: number): number {
+	if (now - contention.windowStartedAt >= TRACKER_CONTENTION_WINDOW_MS) {
+		contention.windowStartedAt = now;
+		contention.usedMs = 0;
+	}
+	return contention.usedMs;
+}
+
+/**
+ * Charge a finished region, with `embed-cache.ts`'s rule: elapsed time beyond
+ * MAX_SYNC_REGION_MS (by definition not accounted work), plus the whole
+ * allowance whenever a statement actually returned SQLITE_BUSY. It over-charges
+ * a BUSY and cannot see a wait that ended in success, which is why nothing
+ * about the heartbeat rests on it.
+ */
+function chargeContention(
+	perStatementMs: number,
+	statements: number,
+	elapsedMs: number,
+	hitBusy: boolean,
+): void {
+	let charge = Math.max(0, elapsedMs - MAX_SYNC_REGION_MS);
+	if (hitBusy) charge += perStatementMs * statements;
+	contention.usedMs += charge;
+}
+
+/** Forget this process's contention. For tests. */
+export function resetTrackerContentionBudget(): void {
+	contention.windowStartedAt = 0;
+	contention.usedMs = 0;
+}
+
+/** SQLITE_BUSY in either driver: both set `code`; the message is the fallback. */
+function isSqliteBusy(error: unknown): boolean {
+	const code = (error as { code?: unknown } | null)?.code;
+	if (typeof code === "string" && code.startsWith("SQLITE_BUSY")) return true;
+	const message = error instanceof Error ? error.message : String(error);
+	return (
+		message.includes("SQLITE_BUSY") || message.includes("database is locked")
+	);
+}
+
+/**
+ * A region waited its whole bounded allowance and another process still held
+ * the lock.
+ *
+ * NAMED, and never converted into an empty result. There is no correct
+ * fallback for `getChanges`, a `files` upsert or a symbol write, and a read that
+ * answered "nothing" under contention would turn a busy store into a silently
+ * empty one (architecture §5.3, N7). `withRegion` has no parameter through
+ * which a fallback could be passed.
+ */
+export class TrackerContendedError extends Error {
+	readonly region: TrackerRegionName;
+
+	constructor(region: TrackerRegionName, cause: unknown) {
+		const detail = cause instanceof Error ? cause.message : String(cause);
+		super(
+			`tracker region ${region}: the index database stayed locked by another process past the bounded wait (${detail})`,
+			{ cause },
+		);
+		this.name = "TrackerContendedError";
+		this.region = region;
+	}
+}
+
 // ============================================================================
 // File Tracker Class
 // ============================================================================
@@ -390,6 +912,10 @@ export class FileTracker implements IFileTracker {
 	 * absence must never turn indexing into a failure.
 	 */
 	private currentCommitSha: string | null = null;
+	/** See `journalMode`. */
+	private journalModeValue = "unknown";
+	/** The region executing on this connection, for the nesting guard. */
+	private activeRegion: TrackerRegionName | null = null;
 
 	constructor(dbPath: string, projectRoot: string) {
 		// Ensure directory exists
@@ -399,180 +925,179 @@ export class FileTracker implements IFileTracker {
 		}
 
 		this.projectRoot = projectRoot;
+		removeOrphanedWalSidecars(dbPath);
 		this.db = createDatabaseSync(dbPath);
-		this.initializeSchema();
-	}
-
-	/**
-	 * Initialize the database schema
-	 *
-	 * Cheap to call on every construction: the whole pass — tables, indexes and
-	 * migrations — is skipped when this process has already applied it to this
-	 * database file (see `initializedSchemas`). What the schema IS is unchanged;
-	 * only how often it is issued.
-	 */
-	private initializeSchema(): void {
-		const memoKey = schemaMemoKey(this.db);
-		if (memoKey !== null && initializedSchemas.has(memoKey)) return;
-
-		this.db.exec(`
-      CREATE TABLE IF NOT EXISTS files (
-        path TEXT PRIMARY KEY,
-        content_hash TEXT NOT NULL,
-        mtime REAL NOT NULL,
-        chunk_ids TEXT NOT NULL,
-        indexed_at TEXT NOT NULL,
-        enrichment_state TEXT DEFAULT '{}',
-        enriched_at TEXT,
-        -- Commit this file was last indexed at. NULL = provenance unknown.
-        indexed_at_commit TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS metadata (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS documents (
-        id TEXT PRIMARY KEY,
-        document_type TEXT NOT NULL,
-        file_path TEXT,
-        source_ids TEXT NOT NULL DEFAULT '[]',
-        created_at TEXT NOT NULL,
-        enriched_at TEXT,
-        -- Bi-temporal validity. Both NULL = provenance unknown, which means
-        -- CURRENTLY VALID: only a non-NULL invalidated_at_commit supersedes a
-        -- document. Facts are superseded, never deleted.
-        valid_from_commit TEXT,
-        invalidated_at_commit TEXT,
-        -- Commit that made this document SUSPECT without superseding it.
-        --
-        -- Only ever set on OBSERVED documents (session observations, project
-        -- docs): they cannot be re-derived from source, so a source change is
-        -- evidence that they may be wrong, never proof. Auto-invalidating them
-        -- would destroy a human/agent observation that no pipeline can
-        -- regenerate. NULL = not flagged. See src/core/invalidation.ts.
-        stale_at_commit TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS indexed_docs (
-        library TEXT NOT NULL,
-        version TEXT,
-        provider TEXT NOT NULL,
-        content_hash TEXT NOT NULL,
-        fetched_at TEXT NOT NULL,
-        chunk_ids TEXT NOT NULL,
-        PRIMARY KEY (library, version, provider)
-      );
-
-      -- Commit anchors for provenance.
-      --
-      -- \`ordinal\` is the first-parent depth of the commit
-      -- (\`git rev-list --count --first-parent <sha>\`). SHAs are not orderable,
-      -- so recency comparisons use the ordinal.
-      --
-      -- LIMITATION: the ordinal is monotonic and stable only for a history that
-      -- is appended to. It is NOT stable across history rewrites — rebase,
-      -- commit --amend, squash-merge and filter-branch all renumber commits, so
-      -- previously recorded ordinals then refer to commits that no longer
-      -- exist. After a rewrite the index must be rebuilt (\`mnemex index
-      -- --force\`); there is no in-place repair.
-      CREATE TABLE IF NOT EXISTS commits (
-        sha TEXT PRIMARY KEY,
-        ordinal INTEGER NOT NULL,
-        committed_at TEXT
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_commits_ordinal ON commits(ordinal);
-      CREATE INDEX IF NOT EXISTS idx_files_content_hash ON files(content_hash);
-      CREATE INDEX IF NOT EXISTS idx_documents_file_path ON documents(file_path);
-      CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(document_type);
-      CREATE INDEX IF NOT EXISTS idx_indexed_docs_library ON indexed_docs(library);
-      CREATE INDEX IF NOT EXISTS idx_indexed_docs_fetched ON indexed_docs(fetched_at);
-    `);
-
-		// Symbol graph tables
-		this.initializeSymbolGraphSchema();
-
-		// Activity log table (for monitor mode)
-		this.db.exec(`
-      CREATE TABLE IF NOT EXISTS activity_log (
-        id        INTEGER PRIMARY KEY AUTOINCREMENT,
-        type      TEXT    NOT NULL,
-        metadata  TEXT    NOT NULL,
-        timestamp TEXT    NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_activity_log_id ON activity_log(id);
-    `);
-
-		// Migration: Add enrichment columns if they don't exist (for existing databases)
-		//
-		// Runs for every database this process has not seen before, including one
-		// created by an older version — the memo is only consulted above, never
-		// used to skip a migration on a first sighting.
-		this.migrateSchema();
-
-		if (memoKey !== null) {
-			initializedSchemas.add(memoKey);
-		}
-	}
-
-	/**
-	 * Migrate schema for existing databases
-	 */
-	private migrateSchema(): void {
 		try {
-			// Check if enrichment_state column exists
-			const columns = this.db
-				.prepare("PRAGMA table_info(files)")
-				.all() as Array<{ name: string }>;
-			const columnNames = columns.map((c) => c.name);
-
-			if (!columnNames.includes("enrichment_state")) {
-				this.db.exec(
-					"ALTER TABLE files ADD COLUMN enrichment_state TEXT DEFAULT '{}'",
-				);
-			}
-			if (!columnNames.includes("enriched_at")) {
-				this.db.exec("ALTER TABLE files ADD COLUMN enriched_at TEXT");
-			}
-
-			// Commit provenance. All nullable — every row written before commit
-			// tracking existed reads back NULL, which means "provenance unknown"
-			// and must be treated as CURRENTLY VALID, never as invalid.
-			if (!columnNames.includes("indexed_at_commit")) {
-				this.db.exec("ALTER TABLE files ADD COLUMN indexed_at_commit TEXT");
-			}
-
-			const documentColumns = this.db
-				.prepare("PRAGMA table_info(documents)")
-				.all() as Array<{ name: string }>;
-			const documentColumnNames = documentColumns.map((c) => c.name);
-
-			if (!documentColumnNames.includes("valid_from_commit")) {
-				this.db.exec("ALTER TABLE documents ADD COLUMN valid_from_commit TEXT");
-			}
-			if (!documentColumnNames.includes("invalidated_at_commit")) {
-				this.db.exec(
-					"ALTER TABLE documents ADD COLUMN invalidated_at_commit TEXT",
-				);
-			}
-			if (!documentColumnNames.includes("stale_at_commit")) {
-				this.db.exec("ALTER TABLE documents ADD COLUMN stale_at_commit TEXT");
-			}
-
-			// Indexed here rather than in initializeSchema: that block is one
-			// `exec`, and a CREATE INDEX on a column an older database has not been
-			// migrated to yet would abort the whole schema setup.
-			this.db.exec(
-				"CREATE INDEX IF NOT EXISTS idx_documents_stale ON documents(stale_at_commit)",
-			);
-			this.db.exec(
-				"CREATE INDEX IF NOT EXISTS idx_documents_invalidated ON documents(invalidated_at_commit)",
-			);
-		} catch {
-			// Ignore migration errors (columns might already exist)
+			this.openRegion();
+		} catch (error) {
+			// R0 fails the OPEN (architecture §5.3): no half-initialised tracker is
+			// ever handed out, and the connection it would have leaked is closed.
+			this.db.close();
+			throw error;
 		}
+	}
+
+	/**
+	 * The journal mode this connection ended up in: "wal" normally; a rollback
+	 * mode ("delete", …) when WAL did not stick — contended at open, or a
+	 * filesystem without shared memory; "memory" for an in-memory database.
+	 * Under a rollback mode readers DO contend with a writer, and every region is
+	 * clamped either way (architecture §3.5.3 item 5).
+	 */
+	get journalMode(): string {
+		return this.journalModeValue;
+	}
+
+	/**
+	 * THE ONE PLACE a statement may run on this connection (SR-1).
+	 *
+	 *   1. `busy_timeout` ← the region's divided allowance, BEFORE the first
+	 *      statement: pre-flight, never post-hoc (CLAUDE.md #27).
+	 *   2. An R-txn runs inside BEGIN IMMEDIATE … COMMIT, rolled back on a throw.
+	 *   3. SQLITE_BUSY: a read retries once inside the same allowance; anything
+	 *      else, and a read's second BUSY, is a TrackerContendedError.
+	 *   4. `busy_timeout` ← 0, the resting value, whatever happened.
+	 *
+	 * Regions do not nest: an inner region would overwrite the outer's clamp and
+	 * then rest it at 0 with the outer's statements still to run. A nested call
+	 * is a programming error and throws before it touches the connection.
+	 */
+	private withRegion<T>(region: TrackerRegion, fn: () => T): T {
+		if (this.activeRegion !== null) {
+			throw new Error(
+				`tracker: region ${region.name} opened inside region ${this.activeRegion}; regions must not nest`,
+			);
+		}
+		const attempts = attemptsFor(region);
+		const perStatementMs = trackerBusyTimeoutMs(
+			region,
+			contentionUsedMs(Date.now()),
+		);
+		const started = Date.now();
+		let hitBusy = false;
+		this.activeRegion = region.name;
+		try {
+			this.db.exec(busyTimeoutPragma(perStatementMs, "tracker"));
+			for (let attempt = 1; ; attempt++) {
+				try {
+					if (!region.immediateTransaction) return fn();
+					this.db.exec("BEGIN IMMEDIATE");
+					try {
+						const result = fn();
+						this.db.exec("COMMIT");
+						return result;
+					} catch (error) {
+						try {
+							this.db.exec("ROLLBACK");
+						} catch {
+							// No transaction left to roll back.
+						}
+						throw error;
+					}
+				} catch (error) {
+					if (!isSqliteBusy(error)) throw error;
+					hitBusy = true;
+					if (attempt < attempts) continue;
+					throw new TrackerContendedError(region.name, error);
+				}
+			}
+		} finally {
+			this.activeRegion = null;
+			try {
+				this.db.exec(busyTimeoutPragma(0, "tracker"));
+			} catch {
+				// A closed connection: there is nothing left to bound.
+			}
+			chargeContention(
+				perStatementMs,
+				region.blockingStatements * attempts,
+				Date.now() - started,
+				hitBusy,
+			);
+		}
+	}
+
+	/**
+	 * R0: WAL, then the schema pass, as ONE region — the constructor is
+	 * synchronous and cannot yield between two.
+	 *
+	 * WAL is set here, on the tracker's own connection, and NEVER in
+	 * `sqlite.ts`'s shared opener: the embed cache must set `auto_vacuum` BEFORE
+	 * WAL while its header is still empty (`embed-cache.ts`, open step 4), and a
+	 * pragma in the shared opener would silently reverse that order (V2.9).
+	 * `.get()`, not `.exec()`: the pragma returns the mode it ended in, and a
+	 * refusal is visible only in that row.
+	 *
+	 * The tracker does NOT set `auto_vacuum`. It has no eviction loop, and on a
+	 * file whose header already exists the pragma would be a silent no-op; it
+	 * could only ever arrive with a version bump that recreates the file.
+	 *
+	 * The schema pass runs at most once per process per database file
+	 * (`initializedSchemas`). What the schema IS is unchanged; only how often it
+	 * is issued.
+	 */
+	private openRegion(): void {
+		this.withRegion(TRACKER_REGIONS.open, () => {
+			try {
+				const row = this.db.prepare("PRAGMA journal_mode = WAL").get() as
+					| JournalModeRow
+					| undefined;
+				this.journalModeValue = journalModeOf(row);
+			} catch (error) {
+				// Switching a rollback-mode file INTO WAL needs a moment of exclusive
+				// access, which another process mid-read denies — measured:
+				// SQLITE_BUSY under a concurrent SHARED lock. That is "WAL did not
+				// stick THIS time", not a reason to refuse the open: stay in rollback
+				// mode, every region still clamped, and the next open tries again
+				// (architecture §3.5.3 item 5).
+				if (!isSqliteBusy(error)) throw error;
+				const row = this.db.prepare("PRAGMA journal_mode").get() as
+					| JournalModeRow
+					| undefined;
+				this.journalModeValue = journalModeOf(row);
+			}
+
+			let databaseList: DatabaseListRow[] | null = null;
+			try {
+				databaseList = this.db
+					.prepare("PRAGMA database_list")
+					.all() as DatabaseListRow[];
+			} catch (error) {
+				if (isSqliteBusy(error)) throw error;
+			}
+			const memoKey = schemaMemoKey(databaseList);
+			if (memoKey !== null && initializedSchemas.has(memoKey)) return;
+
+			// One statement per exec — see CORE_SCHEMA_DDL for why never a batch.
+			for (const statement of CORE_SCHEMA_DDL) this.db.exec(statement);
+			for (const statement of SYMBOL_GRAPH_DDL) this.db.exec(statement);
+			for (const statement of ACTIVITY_LOG_DDL) this.db.exec(statement);
+
+			// Migration: columns and indexes an older database lacks. Runs for every
+			// database this process has not seen before, including one created by
+			// an older version — the memo is only consulted above, never used to
+			// skip a migration on a first sighting.
+			try {
+				const present = new Set<string>();
+				for (const table of MIGRATED_TABLES) {
+					const columns = this.db
+						.prepare(`PRAGMA table_info(${table})`)
+						.all() as Array<{ name: string }>;
+					for (const column of columns) present.add(`${table}.${column.name}`);
+				}
+				for (const { table, column, ddl } of COLUMN_MIGRATIONS) {
+					if (!present.has(`${table}.${column}`)) this.db.exec(ddl);
+				}
+				for (const ddl of MIGRATION_INDEXES) this.db.exec(ddl);
+			} catch (error) {
+				// Ignored, as before: a column that already exists is not a failure.
+				// SQLITE_BUSY is NOT ignored — swallowing it would mark the schema done
+				// and hand out a tracker over a half-migrated file.
+				if (isSqliteBusy(error)) throw error;
+			}
+
+			if (memoKey !== null) initializedSchemas.add(memoKey);
+		});
 	}
 
 	/**
@@ -583,14 +1108,20 @@ export class FileTracker implements IFileTracker {
 		const modifiedFiles: string[] = [];
 		const unchangedFiles: string[] = [];
 
-		// Get all indexed files
+		// Get all indexed files — R1, one SELECT.
 		const indexedFiles = new Set<string>();
-		const stmt = this.db.prepare("SELECT path, content_hash, mtime FROM files");
-		const indexed = stmt.all() as Array<{
+		const indexed = this.withRegion(TRACKER_REGIONS.changes, () =>
+			this.db.prepare("SELECT path, content_hash, mtime FROM files").all(),
+		) as Array<{
 			path: string;
 			content_hash: string;
 			mtime: number;
 		}>;
+
+		// Files whose mtime moved but whose hash did not. Refreshed together in
+		// ONE region after the loop — the loop is file I/O and holds no lock —
+		// rather than as one autocommit UPDATE per file.
+		const mtimeRefreshes: Array<{ path: string; mtime: number }> = [];
 
 		const indexedMap = new Map(indexed.map((f) => [f.path, f]));
 		for (const f of indexed) {
@@ -621,7 +1152,7 @@ export class FileTracker implements IFileTracker {
 							modifiedFiles.push(filePath);
 						} else {
 							// Hash same, just update mtime
-							this.updateMtime(relativePath, currentMtime);
+							mtimeRefreshes.push({ path: relativePath, mtime: currentMtime });
 							unchangedFiles.push(filePath);
 						}
 					} else {
@@ -633,6 +1164,20 @@ export class FileTracker implements IFileTracker {
 					modifiedFiles.push(filePath);
 				}
 			}
+		}
+
+		// Two regions in one synchronous method, and no yield between them: the
+		// interface is synchronous. They are separated by file I/O, not by a loop,
+		// so this is two regions' worth of blocking, never N.
+		if (mtimeRefreshes.length > 0) {
+			this.withRegion(TRACKER_REGIONS.txn, () => {
+				const stmt = this.db.prepare(
+					"UPDATE files SET mtime = ? WHERE path = ?",
+				);
+				for (const refresh of mtimeRefreshes) {
+					stmt.run(refresh.mtime, refresh.path);
+				}
+			});
 		}
 
 		// Find deleted files
@@ -664,19 +1209,21 @@ export class FileTracker implements IFileTracker {
 			mtime = Date.now();
 		}
 
-		const stmt = this.db.prepare(`
+		this.withRegion(TRACKER_REGIONS.write, () => {
+			const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO files (path, content_hash, mtime, chunk_ids, indexed_at, indexed_at_commit)
       VALUES (?, ?, ?, ?, ?, ?)
     `);
 
-		stmt.run(
-			relativePath,
-			contentHash,
-			mtime,
-			JSON.stringify(chunkIds),
-			new Date().toISOString(),
-			this.currentCommitSha,
-		);
+			stmt.run(
+				relativePath,
+				contentHash,
+				mtime,
+				JSON.stringify(chunkIds),
+				new Date().toISOString(),
+				this.currentCommitSha,
+			);
+		});
 	}
 
 	/**
@@ -685,8 +1232,11 @@ export class FileTracker implements IFileTracker {
 	getChunkIds(filePath: string): string[] {
 		const relativePath = relative(this.projectRoot, filePath);
 
-		const stmt = this.db.prepare("SELECT chunk_ids FROM files WHERE path = ?");
-		const row = stmt.get(relativePath) as { chunk_ids: string } | undefined;
+		const row = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare("SELECT chunk_ids FROM files WHERE path = ?")
+				.get(relativePath),
+		) as { chunk_ids: string } | undefined;
 
 		if (!row) {
 			return [];
@@ -708,8 +1258,9 @@ export class FileTracker implements IFileTracker {
 			? relative(this.projectRoot, filePath)
 			: filePath;
 
-		const stmt = this.db.prepare("DELETE FROM files WHERE path = ?");
-		stmt.run(relativePath);
+		this.withRegion(TRACKER_REGIONS.write, () => {
+			this.db.prepare("DELETE FROM files WHERE path = ?").run(relativePath);
+		});
 	}
 
 	/**
@@ -718,10 +1269,13 @@ export class FileTracker implements IFileTracker {
 	getFileState(filePath: string): FileState | null {
 		const relativePath = relative(this.projectRoot, filePath);
 
-		const stmt = this.db.prepare(
-			"SELECT path, content_hash, mtime, chunk_ids FROM files WHERE path = ?",
-		);
-		const row = stmt.get(relativePath) as
+		const row = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare(
+					"SELECT path, content_hash, mtime, chunk_ids FROM files WHERE path = ?",
+				)
+				.get(relativePath),
+		) as
 			| {
 					path: string;
 					content_hash: string;
@@ -746,10 +1300,11 @@ export class FileTracker implements IFileTracker {
 	 * Get all indexed files
 	 */
 	getAllFiles(): FileState[] {
-		const stmt = this.db.prepare(
-			"SELECT path, content_hash, mtime, chunk_ids FROM files",
-		);
-		const rows = stmt.all() as Array<{
+		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare("SELECT path, content_hash, mtime, chunk_ids FROM files")
+				.all(),
+		) as Array<{
 			path: string;
 			content_hash: string;
 			mtime: number;
@@ -768,8 +1323,9 @@ export class FileTracker implements IFileTracker {
 	 * Get metadata value
 	 */
 	getMetadata(key: string): string | null {
-		const stmt = this.db.prepare("SELECT value FROM metadata WHERE key = ?");
-		const row = stmt.get(key) as { value: string } | undefined;
+		const row = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db.prepare("SELECT value FROM metadata WHERE key = ?").get(key),
+		) as { value: string } | undefined;
 		return row?.value || null;
 	}
 
@@ -777,38 +1333,43 @@ export class FileTracker implements IFileTracker {
 	 * Set metadata value
 	 */
 	setMetadata(key: string, value: string): void {
-		const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)
-    `);
-		stmt.run(key, value);
+		this.withRegion(TRACKER_REGIONS.write, () => {
+			this.db
+				.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)")
+				.run(key, value);
+		});
 	}
 
 	/**
 	 * Get statistics
 	 */
 	getStats(): { totalFiles: number; lastIndexed: string | null } {
-		const countStmt = this.db.prepare("SELECT COUNT(*) as count FROM files");
-		const countRow = countStmt.get() as { count: number };
-
-		const lastStmt = this.db.prepare(
-			"SELECT MAX(indexed_at) as last FROM files",
-		);
-		const lastRow = lastStmt.get() as { last: string | null };
-
-		return {
-			totalFiles: countRow.count,
-			lastIndexed: lastRow.last,
-		};
+		return this.withRegion(reads(2), () => {
+			const countRow = this.db
+				.prepare("SELECT COUNT(*) as count FROM files")
+				.get() as { count: number };
+			const lastRow = this.db
+				.prepare("SELECT MAX(indexed_at) as last FROM files")
+				.get() as { last: string | null };
+			return {
+				totalFiles: countRow.count,
+				lastIndexed: lastRow.last,
+			};
+		});
 	}
 
 	/**
 	 * Clear all data
 	 */
 	clear(): void {
-		this.db.exec("DELETE FROM files");
-		this.db.exec("DELETE FROM metadata");
-		this.db.exec("DELETE FROM documents");
-		this.db.exec("DELETE FROM indexed_docs");
+		// One transaction: a clear another process can observe half-done is a
+		// `files` table that no longer agrees with `metadata`.
+		this.withRegion(TRACKER_REGIONS.txn, () => {
+			this.db.exec("DELETE FROM files");
+			this.db.exec("DELETE FROM metadata");
+			this.db.exec("DELETE FROM documents");
+			this.db.exec("DELETE FROM indexed_docs");
+		});
 	}
 
 	// ========================================================================
@@ -820,13 +1381,12 @@ export class FileTracker implements IFileTracker {
 	 * Returns the inserted row ID.
 	 */
 	recordActivity(type: string, metadata: Record<string, unknown>): number {
-		const stmt = this.db.prepare(
-			"INSERT INTO activity_log (type, metadata, timestamp) VALUES (?, ?, ?)",
-		);
-		const result = stmt.run(
-			type,
-			JSON.stringify(metadata),
-			new Date().toISOString(),
+		const result = this.withRegion(TRACKER_REGIONS.write, () =>
+			this.db
+				.prepare(
+					"INSERT INTO activity_log (type, metadata, timestamp) VALUES (?, ?, ?)",
+				)
+				.run(type, JSON.stringify(metadata), new Date().toISOString()),
 		);
 		return Number(result.lastInsertRowid);
 	}
@@ -836,10 +1396,13 @@ export class FileTracker implements IFileTracker {
 	 * Used by the TUI monitor to poll for new activity.
 	 */
 	getActivity(sinceId = 0, limit = 50): ActivityRow[] {
-		const stmt = this.db.prepare(
-			"SELECT id, type, metadata, timestamp FROM activity_log WHERE id > ? ORDER BY id ASC LIMIT ?",
-		);
-		return stmt.all(sinceId, limit) as ActivityRow[];
+		return this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare(
+					"SELECT id, type, metadata, timestamp FROM activity_log WHERE id > ? ORDER BY id ASC LIMIT ?",
+				)
+				.all(sinceId, limit),
+		) as ActivityRow[];
 	}
 
 	/**
@@ -847,11 +1410,14 @@ export class FileTracker implements IFileTracker {
 	 * Called periodically by the TUI to prevent unbounded growth.
 	 */
 	pruneActivity(keepCount = 200): void {
-		this.db.exec(`
-      DELETE FROM activity_log WHERE id NOT IN (
-        SELECT id FROM activity_log ORDER BY id DESC LIMIT ${keepCount}
-      )
-    `);
+		// `keepCount` is BOUND, never rendered into the SQL (CLAUDE.md #22).
+		this.withRegion(TRACKER_REGIONS.write, () => {
+			this.db
+				.prepare(
+					"DELETE FROM activity_log WHERE id NOT IN (SELECT id FROM activity_log ORDER BY id DESC LIMIT ?)",
+				)
+				.run(keepCount);
+		});
 	}
 
 	/**
@@ -864,6 +1430,10 @@ export class FileTracker implements IFileTracker {
 	/**
 	 * Get the underlying database instance.
 	 * Used for integrations like the learning system.
+	 *
+	 * Statements run through this handle are OUTSIDE every region: they execute
+	 * at the resting busy_timeout of 0, so under contention they fail at once
+	 * rather than wait. SR-1 is a property of this file only.
 	 */
 	getDatabase(): SQLiteDatabase {
 		return this.db;
@@ -879,12 +1449,11 @@ export class FileTracker implements IFileTracker {
 	getEnrichmentState(filePath: string): EnrichmentStateMap {
 		const relativePath = relative(this.projectRoot, filePath);
 
-		const stmt = this.db.prepare(
-			"SELECT enrichment_state FROM files WHERE path = ?",
-		);
-		const row = stmt.get(relativePath) as
-			| { enrichment_state: string }
-			| undefined;
+		const row = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare("SELECT enrichment_state FROM files WHERE path = ?")
+				.get(relativePath),
+		) as { enrichment_state: string } | undefined;
 
 		if (!row?.enrichment_state) {
 			return {};
@@ -907,20 +1476,33 @@ export class FileTracker implements IFileTracker {
 	): void {
 		const relativePath = relative(this.projectRoot, filePath);
 
-		// Get current state
-		const current = this.getEnrichmentState(filePath);
-		current[documentType] = state;
+		// Read-modify-write in ONE immediate transaction. Two processes that each
+		// read the map and wrote their own key back would lose one of the keys;
+		// under BEGIN IMMEDIATE the second waits for the first.
+		this.withRegion(TRACKER_REGIONS.txn, () => {
+			const row = this.db
+				.prepare("SELECT enrichment_state FROM files WHERE path = ?")
+				.get(relativePath) as { enrichment_state: string } | undefined;
+			let current: EnrichmentStateMap = {};
+			if (row?.enrichment_state) {
+				try {
+					current = JSON.parse(row.enrichment_state);
+				} catch {
+					current = {};
+				}
+			}
+			current[documentType] = state;
 
-		const stmt = this.db.prepare(`
-			UPDATE files SET enrichment_state = ?, enriched_at = ?
-			WHERE path = ?
-		`);
-
-		stmt.run(
-			JSON.stringify(current),
-			state === "complete" ? new Date().toISOString() : null,
-			relativePath,
-		);
+			this.db
+				.prepare(
+					"UPDATE files SET enrichment_state = ?, enriched_at = ? WHERE path = ?",
+				)
+				.run(
+					JSON.stringify(current),
+					state === "complete" ? new Date().toISOString() : null,
+					relativePath,
+				);
+		});
 	}
 
 	/**
@@ -931,16 +1513,17 @@ export class FileTracker implements IFileTracker {
 
 		const hasComplete = Object.values(states).some((s) => s === "complete");
 
-		const stmt = this.db.prepare(`
-			UPDATE files SET enrichment_state = ?, enriched_at = ?
-			WHERE path = ?
-		`);
-
-		stmt.run(
-			JSON.stringify(states),
-			hasComplete ? new Date().toISOString() : null,
-			relativePath,
-		);
+		this.withRegion(TRACKER_REGIONS.write, () => {
+			this.db
+				.prepare(
+					"UPDATE files SET enrichment_state = ?, enriched_at = ? WHERE path = ?",
+				)
+				.run(
+					JSON.stringify(states),
+					hasComplete ? new Date().toISOString() : null,
+					relativePath,
+				);
+		});
 	}
 
 	/**
@@ -949,12 +1532,13 @@ export class FileTracker implements IFileTracker {
 	resetEnrichmentState(filePath: string): void {
 		const relativePath = relative(this.projectRoot, filePath);
 
-		const stmt = this.db.prepare(`
-			UPDATE files SET enrichment_state = '{}', enriched_at = NULL
-			WHERE path = ?
-		`);
-
-		stmt.run(relativePath);
+		this.withRegion(TRACKER_REGIONS.write, () => {
+			this.db
+				.prepare(
+					"UPDATE files SET enrichment_state = '{}', enriched_at = NULL WHERE path = ?",
+				)
+				.run(relativePath);
+		});
 	}
 
 	/**
@@ -969,8 +1553,9 @@ export class FileTracker implements IFileTracker {
 	 * Get all files that need enrichment for a specific document type
 	 */
 	getFilesNeedingEnrichment(documentType: DocumentType): string[] {
-		const stmt = this.db.prepare("SELECT path, enrichment_state FROM files");
-		const rows = stmt.all() as Array<{
+		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db.prepare("SELECT path, enrichment_state FROM files").all(),
+		) as Array<{
 			path: string;
 			enrichment_state: string;
 		}>;
@@ -1000,32 +1585,12 @@ export class FileTracker implements IFileTracker {
 	 * Track a document in the documents table
 	 */
 	trackDocument(doc: TrackedDocument): void {
-		const stmt = this.db.prepare(`
+		this.withRegion(TRACKER_REGIONS.write, () => {
+			const stmt = this.db.prepare(`
 			INSERT OR REPLACE INTO documents (id, document_type, file_path, source_ids, created_at, enriched_at, valid_from_commit)
 			VALUES (?, ?, ?, ?, ?, ?, ?)
 		`);
 
-		stmt.run(
-			doc.id,
-			doc.documentType,
-			doc.filePath,
-			JSON.stringify(doc.sourceIds),
-			doc.createdAt,
-			doc.enrichedAt || null,
-			this.currentCommitSha,
-		);
-	}
-
-	/**
-	 * Track multiple documents at once
-	 */
-	trackDocuments(docs: TrackedDocument[]): void {
-		const stmt = this.db.prepare(`
-			INSERT OR REPLACE INTO documents (id, document_type, file_path, source_ids, created_at, enriched_at, valid_from_commit)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
-		`);
-
-		for (const doc of docs) {
 			stmt.run(
 				doc.id,
 				doc.documentType,
@@ -1035,7 +1600,35 @@ export class FileTracker implements IFileTracker {
 				doc.enrichedAt || null,
 				this.currentCommitSha,
 			);
-		}
+		});
+	}
+
+	/**
+	 * Track multiple documents at once
+	 */
+	trackDocuments(docs: TrackedDocument[]): void {
+		if (docs.length === 0) return;
+
+		// ONE immediate transaction for the batch, where there used to be one
+		// autocommit INSERT per document: blockingStatements 2, not N.
+		this.withRegion(TRACKER_REGIONS.txn, () => {
+			const stmt = this.db.prepare(`
+			INSERT OR REPLACE INTO documents (id, document_type, file_path, source_ids, created_at, enriched_at, valid_from_commit)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`);
+
+			for (const doc of docs) {
+				stmt.run(
+					doc.id,
+					doc.documentType,
+					doc.filePath,
+					JSON.stringify(doc.sourceIds),
+					doc.createdAt,
+					doc.enrichedAt || null,
+					this.currentCommitSha,
+				);
+			}
+		});
 	}
 
 	/**
@@ -1044,10 +1637,13 @@ export class FileTracker implements IFileTracker {
 	getDocumentsForFile(filePath: string): TrackedDocument[] {
 		const relativePath = relative(this.projectRoot, filePath);
 
-		const stmt = this.db.prepare(
-			"SELECT id, document_type, file_path, source_ids, created_at, enriched_at FROM documents WHERE file_path = ?",
-		);
-		const rows = stmt.all(relativePath) as Array<{
+		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare(
+					"SELECT id, document_type, file_path, source_ids, created_at, enriched_at FROM documents WHERE file_path = ?",
+				)
+				.all(relativePath),
+		) as Array<{
 			id: string;
 			document_type: string;
 			file_path: string;
@@ -1070,10 +1666,13 @@ export class FileTracker implements IFileTracker {
 	 * Get all tracked documents of a specific type
 	 */
 	getDocumentsByType(documentType: DocumentType): TrackedDocument[] {
-		const stmt = this.db.prepare(
-			"SELECT id, document_type, file_path, source_ids, created_at, enriched_at FROM documents WHERE document_type = ?",
-		);
-		const rows = stmt.all(documentType) as Array<{
+		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare(
+					"SELECT id, document_type, file_path, source_ids, created_at, enriched_at FROM documents WHERE document_type = ?",
+				)
+				.all(documentType),
+		) as Array<{
 			id: string;
 			document_type: string;
 			file_path: string;
@@ -1098,28 +1697,35 @@ export class FileTracker implements IFileTracker {
 	deleteDocumentsForFile(filePath: string): void {
 		const relativePath = relative(this.projectRoot, filePath);
 
-		const stmt = this.db.prepare("DELETE FROM documents WHERE file_path = ?");
-		stmt.run(relativePath);
+		this.withRegion(TRACKER_REGIONS.write, () => {
+			this.db
+				.prepare("DELETE FROM documents WHERE file_path = ?")
+				.run(relativePath);
+		});
 	}
 
 	/**
 	 * Delete documents by type
 	 */
 	deleteDocumentsByType(documentType: DocumentType): void {
-		const stmt = this.db.prepare(
-			"DELETE FROM documents WHERE document_type = ?",
-		);
-		stmt.run(documentType);
+		this.withRegion(TRACKER_REGIONS.write, () => {
+			this.db
+				.prepare("DELETE FROM documents WHERE document_type = ?")
+				.run(documentType);
+		});
 	}
 
 	/**
 	 * Get document count by type
 	 */
 	getDocumentCounts(): Record<DocumentType, number> {
-		const stmt = this.db.prepare(
-			"SELECT document_type, COUNT(*) as count FROM documents GROUP BY document_type",
-		);
-		const rows = stmt.all() as Array<{ document_type: string; count: number }>;
+		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare(
+					"SELECT document_type, COUNT(*) as count FROM documents GROUP BY document_type",
+				)
+				.all(),
+		) as Array<{ document_type: string; count: number }>;
 
 		const counts: Record<string, number> = {};
 		for (const row of rows) {
@@ -1142,14 +1748,16 @@ export class FileTracker implements IFileTracker {
 		ordinal: number,
 		committedAt: string | null = null,
 	): void {
-		const stmt = this.db.prepare(`
+		this.withRegion(TRACKER_REGIONS.write, () => {
+			const stmt = this.db.prepare(`
 			INSERT INTO commits (sha, ordinal, committed_at)
 			VALUES (?, ?, ?)
 			ON CONFLICT(sha) DO UPDATE SET
 				ordinal = excluded.ordinal,
 				committed_at = COALESCE(excluded.committed_at, commits.committed_at)
 		`);
-		stmt.run(sha, ordinal, committedAt);
+			stmt.run(sha, ordinal, committedAt);
+		});
 	}
 
 	/**
@@ -1158,8 +1766,9 @@ export class FileTracker implements IFileTracker {
 	 * an error, it just cannot participate in recency comparisons.
 	 */
 	getCommitOrdinal(sha: string): number | null {
-		const stmt = this.db.prepare("SELECT ordinal FROM commits WHERE sha = ?");
-		const row = stmt.get(sha) as { ordinal: number } | undefined;
+		const row = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db.prepare("SELECT ordinal FROM commits WHERE sha = ?").get(sha),
+		) as { ordinal: number } | undefined;
 		return row ? row.ordinal : null;
 	}
 
@@ -1204,10 +1813,11 @@ export class FileTracker implements IFileTracker {
 			? relative(this.projectRoot, filePath)
 			: filePath;
 
-		const stmt = this.db.prepare(
-			"UPDATE files SET indexed_at_commit = ? WHERE path = ?",
-		);
-		stmt.run(sha, relativePath);
+		this.withRegion(TRACKER_REGIONS.write, () => {
+			this.db
+				.prepare("UPDATE files SET indexed_at_commit = ? WHERE path = ?")
+				.run(sha, relativePath);
+		});
 	}
 
 	/**
@@ -1221,12 +1831,11 @@ export class FileTracker implements IFileTracker {
 			? relative(this.projectRoot, filePath)
 			: filePath;
 
-		const stmt = this.db.prepare(
-			"SELECT indexed_at_commit FROM files WHERE path = ?",
-		);
-		const row = stmt.get(relativePath) as
-			| { indexed_at_commit: string | null }
-			| undefined;
+		const row = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare("SELECT indexed_at_commit FROM files WHERE path = ?")
+				.get(relativePath),
+		) as { indexed_at_commit: string | null } | undefined;
 		return row?.indexed_at_commit ?? null;
 	}
 
@@ -1237,12 +1846,14 @@ export class FileTracker implements IFileTracker {
 	setDocumentsValidFromCommit(documentIds: string[], sha: string | null): void {
 		if (documentIds.length === 0) return;
 
-		const stmt = this.db.prepare(
-			"UPDATE documents SET valid_from_commit = ? WHERE id = ?",
-		);
-		for (const id of documentIds) {
-			stmt.run(sha, id);
-		}
+		this.withRegion(TRACKER_REGIONS.txn, () => {
+			const stmt = this.db.prepare(
+				"UPDATE documents SET valid_from_commit = ? WHERE id = ?",
+			);
+			for (const id of documentIds) {
+				stmt.run(sha, id);
+			}
+		});
 	}
 
 	/**
@@ -1255,10 +1866,13 @@ export class FileTracker implements IFileTracker {
 	 * silently return nothing.
 	 */
 	getDocumentProvenance(documentId: string): DocumentProvenance | null {
-		const stmt = this.db.prepare(
-			"SELECT valid_from_commit, invalidated_at_commit, stale_at_commit FROM documents WHERE id = ?",
-		);
-		const row = stmt.get(documentId) as
+		const row = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare(
+					"SELECT valid_from_commit, invalidated_at_commit, stale_at_commit FROM documents WHERE id = ?",
+				)
+				.get(documentId),
+		) as
 			| {
 					valid_from_commit: string | null;
 					invalidated_at_commit: string | null;
@@ -1347,23 +1961,25 @@ export class FileTracker implements IFileTracker {
 		const variants = this.pathVariants(filePaths);
 		if (variants.length === 0) return 0;
 
-		let changed = 0;
-
-		for (const batch of FileTracker.chunk(
-			variants,
-			FileTracker.PATH_BATCH_SIZE,
-		)) {
-			const sql = buildSql(
-				FileTracker.placeholders(documentTypes.length),
-				FileTracker.placeholders(batch.length),
-			);
-			const result = this.db
-				.prepare(sql)
-				.run(...leadingParams, ...documentTypes, ...batch);
-			changed += result.changes;
-		}
-
-		return changed;
+		// Every batch in ONE immediate transaction: blockingStatements 2 however
+		// many batches, and a supersession nobody can observe half-applied.
+		return this.withRegion(TRACKER_REGIONS.txn, () => {
+			let changed = 0;
+			for (const batch of FileTracker.chunk(
+				variants,
+				FileTracker.PATH_BATCH_SIZE,
+			)) {
+				const sql = buildSql(
+					FileTracker.placeholders(documentTypes.length),
+					FileTracker.placeholders(batch.length),
+				);
+				const result = this.db
+					.prepare(sql)
+					.run(...leadingParams, ...documentTypes, ...batch);
+				changed += result.changes;
+			}
+			return changed;
+		});
 	}
 
 	/**
@@ -1426,19 +2042,21 @@ export class FileTracker implements IFileTracker {
 	clearDocumentsStale(documentIds: string[]): number {
 		if (documentIds.length === 0) return 0;
 
-		let changed = 0;
-		for (const batch of FileTracker.chunk(
-			documentIds,
-			FileTracker.PATH_BATCH_SIZE,
-		)) {
-			const result = this.db
-				.prepare(
-					`UPDATE documents SET stale_at_commit = NULL WHERE id IN (${FileTracker.placeholders(batch.length)})`,
-				)
-				.run(...batch);
-			changed += result.changes;
-		}
-		return changed;
+		return this.withRegion(TRACKER_REGIONS.txn, () => {
+			let changed = 0;
+			for (const batch of FileTracker.chunk(
+				documentIds,
+				FileTracker.PATH_BATCH_SIZE,
+			)) {
+				const result = this.db
+					.prepare(
+						`UPDATE documents SET stale_at_commit = NULL WHERE id IN (${FileTracker.placeholders(batch.length)})`,
+					)
+					.run(...batch);
+				changed += result.changes;
+			}
+			return changed;
+		});
 	}
 
 	/**
@@ -1451,25 +2069,29 @@ export class FileTracker implements IFileTracker {
 	): number {
 		if (filePaths.length === 0 || documentTypes.length === 0) return 0;
 
-		const variants = this.pathVariants(filePaths);
-		let total = 0;
-
-		for (const batch of FileTracker.chunk(
-			variants,
+		const batches = FileTracker.chunk(
+			this.pathVariants(filePaths),
 			FileTracker.PATH_BATCH_SIZE,
-		)) {
-			const sql = `
+		);
+		if (batches.length === 0) return 0;
+
+		// One SELECT per batch, each able to wait once: the region's count IS the
+		// batch count, so the clamp divides the allowance across all of them.
+		return this.withRegion(reads(batches.length), () => {
+			let total = 0;
+			for (const batch of batches) {
+				const sql = `
 				SELECT COUNT(*) as count FROM documents
 				WHERE document_type IN (${FileTracker.placeholders(documentTypes.length)})
 					AND file_path IN (${FileTracker.placeholders(batch.length)})
 			`;
-			const row = this.db.prepare(sql).get(...documentTypes, ...batch) as {
-				count: number;
-			};
-			total += row.count;
-		}
-
-		return total;
+				const row = this.db.prepare(sql).get(...documentTypes, ...batch) as {
+					count: number;
+				};
+				total += row.count;
+			}
+			return total;
+		});
 	}
 
 	/**
@@ -1490,14 +2112,17 @@ export class FileTracker implements IFileTracker {
 		if (filePaths.length === 0 || documentTypes.length === 0) return 0;
 
 		const variants = this.pathVariants(filePaths);
+		if (variants.length === 0) return 0;
 		const jsonPaths = documentTypes.map((t) => `$.${t}`);
-		let changed = 0;
 
-		for (const batch of FileTracker.chunk(
-			variants,
-			FileTracker.PATH_BATCH_SIZE,
-		)) {
-			const sql = `
+		// Every batch in ONE immediate transaction: blockingStatements 2.
+		return this.withRegion(TRACKER_REGIONS.txn, () => {
+			let changed = 0;
+			for (const batch of FileTracker.chunk(
+				variants,
+				FileTracker.PATH_BATCH_SIZE,
+			)) {
+				const sql = `
 				UPDATE files SET
 					enrichment_state = json_remove(
 						CASE WHEN json_valid(enrichment_state) THEN enrichment_state ELSE '{}' END,
@@ -1506,11 +2131,11 @@ export class FileTracker implements IFileTracker {
 					enriched_at = NULL
 				WHERE path IN (${FileTracker.placeholders(batch.length)})
 			`;
-			const result = this.db.prepare(sql).run(...jsonPaths, ...batch);
-			changed += result.changes;
-		}
-
-		return changed;
+				const result = this.db.prepare(sql).run(...jsonPaths, ...batch);
+				changed += result.changes;
+			}
+			return changed;
+		});
 	}
 
 	/**
@@ -1525,8 +2150,10 @@ export class FileTracker implements IFileTracker {
 			${limit && limit > 0 ? "LIMIT ?" : ""}
 		`;
 
-		const stmt = this.db.prepare(sql);
-		const rows = (limit && limit > 0 ? stmt.all(limit) : stmt.all()) as Array<{
+		const rows = this.withRegion(TRACKER_REGIONS.read, () => {
+			const stmt = this.db.prepare(sql);
+			return limit && limit > 0 ? stmt.all(limit) : stmt.all();
+		}) as Array<{
 			id: string;
 			document_type: string;
 			file_path: string | null;
@@ -1547,8 +2174,9 @@ export class FileTracker implements IFileTracker {
 	 * Per-type validity tallies in a single scan.
 	 */
 	getDocumentStatusCounts(): DocumentStatusCount[] {
-		const rows = this.db
-			.prepare(`
+		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare(`
 				SELECT
 					document_type,
 					COUNT(*) as total,
@@ -1557,7 +2185,8 @@ export class FileTracker implements IFileTracker {
 				FROM documents
 				GROUP BY document_type
 			`)
-			.all() as Array<{
+				.all(),
+		) as Array<{
 			document_type: string;
 			total: number;
 			invalidated: number;
@@ -1570,14 +2199,6 @@ export class FileTracker implements IFileTracker {
 			invalidated: row.invalidated ?? 0,
 			stale: row.stale ?? 0,
 		}));
-	}
-
-	/**
-	 * Update mtime for a file without changing other fields
-	 */
-	private updateMtime(relativePath: string, mtime: number): void {
-		const stmt = this.db.prepare("UPDATE files SET mtime = ? WHERE path = ?");
-		stmt.run(mtime, relativePath);
 	}
 
 	/**
@@ -1602,20 +2223,22 @@ export class FileTracker implements IFileTracker {
 		contentHash: string,
 		chunkIds: string[],
 	): void {
-		const stmt = this.db.prepare(`
+		this.withRegion(TRACKER_REGIONS.write, () => {
+			const stmt = this.db.prepare(`
 			INSERT OR REPLACE INTO indexed_docs
 			(library, version, provider, content_hash, fetched_at, chunk_ids)
 			VALUES (?, ?, ?, ?, ?, ?)
 		`);
 
-		stmt.run(
-			library,
-			version,
-			provider,
-			contentHash,
-			new Date().toISOString(),
-			JSON.stringify(chunkIds),
-		);
+			stmt.run(
+				library,
+				version,
+				provider,
+				contentHash,
+				new Date().toISOString(),
+				JSON.stringify(chunkIds),
+			);
+		});
 	}
 
 	/**
@@ -1638,13 +2261,15 @@ export class FileTracker implements IFileTracker {
 	 * Get indexed documentation state for a library
 	 */
 	getDocsState(library: string, version?: string): IndexedDocState | null {
-		const stmt = this.db.prepare(`
+		const row = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare(`
 			SELECT library, version, provider, content_hash, fetched_at, chunk_ids
 			FROM indexed_docs
 			WHERE library = ? AND (version = ? OR (version IS NULL AND ? IS NULL))
-		`);
-
-		const row = stmt.get(library, version || null, version || null) as
+		`)
+				.get(library, version || null, version || null),
+		) as
 			| {
 					library: string;
 					version: string | null;
@@ -1671,13 +2296,15 @@ export class FileTracker implements IFileTracker {
 	 * Get all indexed documentation entries
 	 */
 	getAllIndexedDocs(): IndexedDocState[] {
-		const stmt = this.db.prepare(`
+		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare(`
 			SELECT library, version, provider, content_hash, fetched_at, chunk_ids
 			FROM indexed_docs
 			ORDER BY library, version
-		`);
-
-		const rows = stmt.all() as Array<{
+		`)
+				.all(),
+		) as Array<{
 			library: string;
 			version: string | null;
 			provider: string;
@@ -1708,24 +2335,28 @@ export class FileTracker implements IFileTracker {
 	 * Delete indexed documentation for a library
 	 */
 	deleteIndexedDocs(library: string, version?: string): void {
-		if (version !== undefined) {
-			const stmt = this.db.prepare(
-				"DELETE FROM indexed_docs WHERE library = ? AND (version = ? OR (version IS NULL AND ? IS NULL))",
-			);
-			stmt.run(library, version, version);
-		} else {
-			const stmt = this.db.prepare(
-				"DELETE FROM indexed_docs WHERE library = ?",
-			);
-			stmt.run(library);
-		}
+		this.withRegion(TRACKER_REGIONS.write, () => {
+			if (version !== undefined) {
+				this.db
+					.prepare(
+						"DELETE FROM indexed_docs WHERE library = ? AND (version = ? OR (version IS NULL AND ? IS NULL))",
+					)
+					.run(library, version, version);
+			} else {
+				this.db
+					.prepare("DELETE FROM indexed_docs WHERE library = ?")
+					.run(library);
+			}
+		});
 	}
 
 	/**
 	 * Clear all indexed documentation
 	 */
 	clearAllIndexedDocs(): void {
-		this.db.exec("DELETE FROM indexed_docs");
+		this.withRegion(TRACKER_REGIONS.write, () => {
+			this.db.exec("DELETE FROM indexed_docs");
+		});
 	}
 
 	/**
@@ -1738,14 +2369,34 @@ export class FileTracker implements IFileTracker {
 		oldestFetch: string | null;
 		newestFetch: string | null;
 	} {
-		const countStmt = this.db.prepare(
-			"SELECT COUNT(DISTINCT library) as count FROM indexed_docs",
+		// Four SELECTs in ONE region; the arithmetic on their results runs after.
+		const { totalLibraries, docs, providerRows, times } = this.withRegion(
+			reads(4),
+			() => ({
+				totalLibraries: (
+					this.db
+						.prepare(
+							"SELECT COUNT(DISTINCT library) as count FROM indexed_docs",
+						)
+						.get() as { count: number }
+				).count,
+				docs: this.db
+					.prepare("SELECT chunk_ids FROM indexed_docs")
+					.all() as Array<{ chunk_ids: string }>,
+				providerRows: this.db
+					.prepare(
+						"SELECT provider, COUNT(*) as count FROM indexed_docs GROUP BY provider",
+					)
+					.all() as Array<{ provider: string; count: number }>,
+				times: this.db
+					.prepare(
+						"SELECT MIN(fetched_at) as oldest, MAX(fetched_at) as newest FROM indexed_docs",
+					)
+					.get() as { oldest: string | null; newest: string | null },
+			}),
 		);
-		const totalLibraries = (countStmt.get() as { count: number }).count;
 
 		// Count total chunks across all docs
-		const docsStmt = this.db.prepare("SELECT chunk_ids FROM indexed_docs");
-		const docs = docsStmt.all() as Array<{ chunk_ids: string }>;
 		let totalChunks = 0;
 		for (const doc of docs) {
 			try {
@@ -1757,26 +2408,10 @@ export class FileTracker implements IFileTracker {
 		}
 
 		// Count by provider
-		const providerStmt = this.db.prepare(
-			"SELECT provider, COUNT(*) as count FROM indexed_docs GROUP BY provider",
-		);
-		const providerRows = providerStmt.all() as Array<{
-			provider: string;
-			count: number;
-		}>;
 		const byProvider: Record<string, number> = {};
 		for (const row of providerRows) {
 			byProvider[row.provider] = row.count;
 		}
-
-		// Get oldest and newest fetch times
-		const timeStmt = this.db.prepare(`
-			SELECT MIN(fetched_at) as oldest, MAX(fetched_at) as newest FROM indexed_docs
-		`);
-		const times = timeStmt.get() as {
-			oldest: string | null;
-			newest: string | null;
-		};
 
 		return {
 			totalLibraries,
@@ -1788,75 +2423,6 @@ export class FileTracker implements IFileTracker {
 	}
 
 	// ========================================================================
-	// Symbol Graph Schema
-	// ========================================================================
-
-	/**
-	 * Initialize symbol graph tables
-	 */
-	private initializeSymbolGraphSchema(): void {
-		this.db.exec(`
-			-- Symbols table
-			CREATE TABLE IF NOT EXISTS symbols (
-				id TEXT PRIMARY KEY,
-				name TEXT NOT NULL,
-				kind TEXT NOT NULL,
-				file_path TEXT NOT NULL,
-				start_line INTEGER NOT NULL,
-				end_line INTEGER NOT NULL,
-				signature TEXT,
-				docstring TEXT,
-				parent_id TEXT,
-				is_exported INTEGER DEFAULT 0,
-				language TEXT NOT NULL,
-				pagerank REAL DEFAULT 0.0,
-				in_degree INTEGER DEFAULT 0,
-				out_degree INTEGER DEFAULT 0,
-				created_at TEXT NOT NULL,
-				updated_at TEXT NOT NULL,
-				FOREIGN KEY (parent_id) REFERENCES symbols(id) ON DELETE SET NULL
-			);
-
-			-- References table
-			CREATE TABLE IF NOT EXISTS symbol_references (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				from_symbol_id TEXT NOT NULL,
-				to_symbol_name TEXT NOT NULL,
-				to_symbol_id TEXT,
-				kind TEXT NOT NULL,
-				file_path TEXT NOT NULL,
-				line INTEGER NOT NULL,
-				is_resolved INTEGER DEFAULT 0,
-				created_at TEXT NOT NULL,
-				FOREIGN KEY (from_symbol_id) REFERENCES symbols(id) ON DELETE CASCADE,
-				FOREIGN KEY (to_symbol_id) REFERENCES symbols(id) ON DELETE SET NULL
-			);
-
-			-- Graph metadata table
-			CREATE TABLE IF NOT EXISTS graph_metadata (
-				key TEXT PRIMARY KEY,
-				value TEXT NOT NULL,
-				updated_at TEXT NOT NULL
-			);
-
-			-- Indexes for symbols
-			CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
-			CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_path);
-			CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind);
-			CREATE INDEX IF NOT EXISTS idx_symbols_pagerank ON symbols(pagerank DESC);
-			CREATE INDEX IF NOT EXISTS idx_symbols_parent ON symbols(parent_id);
-			CREATE INDEX IF NOT EXISTS idx_symbols_exported ON symbols(is_exported) WHERE is_exported = 1;
-
-			-- Indexes for references
-			CREATE INDEX IF NOT EXISTS idx_refs_from ON symbol_references(from_symbol_id);
-			CREATE INDEX IF NOT EXISTS idx_refs_to ON symbol_references(to_symbol_id);
-			CREATE INDEX IF NOT EXISTS idx_refs_to_name ON symbol_references(to_symbol_name);
-			CREATE INDEX IF NOT EXISTS idx_refs_file ON symbol_references(file_path);
-			CREATE INDEX IF NOT EXISTS idx_refs_kind ON symbol_references(kind);
-		`);
-	}
-
-	// ========================================================================
 	// Symbol CRUD Methods
 	// ========================================================================
 
@@ -1864,47 +2430,52 @@ export class FileTracker implements IFileTracker {
 	 * Insert a single symbol
 	 */
 	insertSymbol(symbol: SymbolDefinition): void {
-		const stmt = this.db.prepare(`
+		this.withRegion(TRACKER_REGIONS.write, () => {
+			const stmt = this.db.prepare(`
 			INSERT OR REPLACE INTO symbols
 			(id, name, kind, file_path, start_line, end_line, signature, docstring,
 			 parent_id, is_exported, language, pagerank, in_degree, out_degree, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`);
 
-		stmt.run(
-			symbol.id,
-			symbol.name,
-			symbol.kind,
-			symbol.filePath,
-			symbol.startLine,
-			symbol.endLine,
-			symbol.signature || null,
-			symbol.docstring || null,
-			symbol.parentId || null,
-			symbol.isExported ? 1 : 0,
-			symbol.language,
-			symbol.pagerankScore,
-			symbol.inDegree || 0,
-			symbol.outDegree || 0,
-			symbol.createdAt,
-			symbol.updatedAt,
-		);
+			stmt.run(
+				symbol.id,
+				symbol.name,
+				symbol.kind,
+				symbol.filePath,
+				symbol.startLine,
+				symbol.endLine,
+				symbol.signature || null,
+				symbol.docstring || null,
+				symbol.parentId || null,
+				symbol.isExported ? 1 : 0,
+				symbol.language,
+				symbol.pagerankScore,
+				symbol.inDegree || 0,
+				symbol.outDegree || 0,
+				symbol.createdAt,
+				symbol.updatedAt,
+			);
+		});
 	}
 
 	/**
-	 * Insert multiple symbols in a transaction (batched)
+	 * Insert multiple symbols in ONE immediate transaction (batched)
 	 */
 	insertSymbols(symbols: SymbolDefinition[]): void {
 		if (symbols.length === 0) return;
 
-		const stmt = this.db.prepare(`
+		// BEGIN IMMEDIATE inside the region, not `db.transaction()`: that is a
+		// DEFERRED begin in sqlite.ts's Bun branch, and R-txn's count of 2 rests
+		// on the write lock being taken at BEGIN (architecture §5.3, N32).
+		this.withRegion(TRACKER_REGIONS.txn, () => {
+			const stmt = this.db.prepare(`
 			INSERT OR REPLACE INTO symbols
 			(id, name, kind, file_path, start_line, end_line, signature, docstring,
 			 parent_id, is_exported, language, pagerank, in_degree, out_degree, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`);
 
-		this.db.transaction(() => {
 			for (const symbol of symbols) {
 				stmt.run(
 					symbol.id,
@@ -1932,8 +2503,9 @@ export class FileTracker implements IFileTracker {
 	 * Get a symbol by ID
 	 */
 	getSymbol(id: string): SymbolDefinition | null {
-		const stmt = this.db.prepare("SELECT * FROM symbols WHERE id = ?");
-		const row = stmt.get(id) as Record<string, unknown> | undefined;
+		const row = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db.prepare("SELECT * FROM symbols WHERE id = ?").get(id),
+		) as Record<string, unknown> | undefined;
 		return row ? this.rowToSymbol(row) : null;
 	}
 
@@ -1945,8 +2517,11 @@ export class FileTracker implements IFileTracker {
 			? relative(this.projectRoot, filePath)
 			: filePath;
 
-		const stmt = this.db.prepare("SELECT * FROM symbols WHERE file_path = ?");
-		const rows = stmt.all(relativePath) as Array<Record<string, unknown>>;
+		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare("SELECT * FROM symbols WHERE file_path = ?")
+				.all(relativePath),
+		) as Array<Record<string, unknown>>;
 		return rows.map((row) => this.rowToSymbol(row));
 	}
 
@@ -1954,17 +2529,13 @@ export class FileTracker implements IFileTracker {
 	 * Get symbols by name (with optional kind filter)
 	 */
 	getSymbolByName(name: string, kind?: SymbolKind): SymbolDefinition[] {
-		let rows: Array<Record<string, unknown>>;
-
-		if (kind) {
-			const stmt = this.db.prepare(
-				"SELECT * FROM symbols WHERE name = ? AND kind = ?",
-			);
-			rows = stmt.all(name, kind) as Array<Record<string, unknown>>;
-		} else {
-			const stmt = this.db.prepare("SELECT * FROM symbols WHERE name = ?");
-			rows = stmt.all(name) as Array<Record<string, unknown>>;
-		}
+		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
+			kind
+				? this.db
+						.prepare("SELECT * FROM symbols WHERE name = ? AND kind = ?")
+						.all(name, kind)
+				: this.db.prepare("SELECT * FROM symbols WHERE name = ?").all(name),
+		) as Array<Record<string, unknown>>;
 
 		return rows.map((row) => this.rowToSymbol(row));
 	}
@@ -1973,8 +2544,11 @@ export class FileTracker implements IFileTracker {
 	 * Get all symbols whose parent_id matches the given parentId
 	 */
 	getSymbolsByParent(parentId: string): SymbolDefinition[] {
-		const stmt = this.db.prepare("SELECT * FROM symbols WHERE parent_id = ?");
-		const rows = stmt.all(parentId) as Array<Record<string, unknown>>;
+		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare("SELECT * FROM symbols WHERE parent_id = ?")
+				.all(parentId),
+		) as Array<Record<string, unknown>>;
 		return rows.map((row) => this.rowToSymbol(row));
 	}
 
@@ -1982,8 +2556,9 @@ export class FileTracker implements IFileTracker {
 	 * Get all symbols
 	 */
 	getAllSymbols(): SymbolDefinition[] {
-		const stmt = this.db.prepare("SELECT * FROM symbols");
-		const rows = stmt.all() as Array<Record<string, unknown>>;
+		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db.prepare("SELECT * FROM symbols").all(),
+		) as Array<Record<string, unknown>>;
 		return rows.map((row) => this.rowToSymbol(row));
 	}
 
@@ -1991,10 +2566,11 @@ export class FileTracker implements IFileTracker {
 	 * Get top symbols by PageRank score
 	 */
 	getTopSymbols(limit: number): SymbolDefinition[] {
-		const stmt = this.db.prepare(
-			"SELECT * FROM symbols ORDER BY pagerank DESC LIMIT ?",
-		);
-		const rows = stmt.all(limit) as Array<Record<string, unknown>>;
+		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare("SELECT * FROM symbols ORDER BY pagerank DESC LIMIT ?")
+				.all(limit),
+		) as Array<Record<string, unknown>>;
 		return rows.map((row) => this.rowToSymbol(row));
 	}
 
@@ -2006,15 +2582,17 @@ export class FileTracker implements IFileTracker {
 			? relative(this.projectRoot, filePath)
 			: filePath;
 
-		// Delete references first (cascade would handle this, but be explicit)
-		this.db
-			.prepare("DELETE FROM symbol_references WHERE file_path = ?")
-			.run(relativePath);
+		this.withRegion(TRACKER_REGIONS.txn, () => {
+			// Delete references first (cascade would handle this, but be explicit)
+			this.db
+				.prepare("DELETE FROM symbol_references WHERE file_path = ?")
+				.run(relativePath);
 
-		// Delete symbols
-		this.db
-			.prepare("DELETE FROM symbols WHERE file_path = ?")
-			.run(relativePath);
+			// Delete symbols
+			this.db
+				.prepare("DELETE FROM symbols WHERE file_path = ?")
+				.run(relativePath);
+		});
 	}
 
 	/**
@@ -2049,37 +2627,40 @@ export class FileTracker implements IFileTracker {
 	 * Insert a single reference
 	 */
 	insertReference(ref: SymbolReference): void {
-		const stmt = this.db.prepare(`
+		this.withRegion(TRACKER_REGIONS.write, () => {
+			const stmt = this.db.prepare(`
 			INSERT INTO symbol_references
 			(from_symbol_id, to_symbol_name, to_symbol_id, kind, file_path, line, is_resolved, created_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		`);
 
-		stmt.run(
-			ref.fromSymbolId,
-			ref.toSymbolName,
-			ref.toSymbolId || null,
-			ref.kind,
-			ref.filePath,
-			ref.line,
-			ref.isResolved ? 1 : 0,
-			ref.createdAt,
-		);
+			stmt.run(
+				ref.fromSymbolId,
+				ref.toSymbolName,
+				ref.toSymbolId || null,
+				ref.kind,
+				ref.filePath,
+				ref.line,
+				ref.isResolved ? 1 : 0,
+				ref.createdAt,
+			);
+		});
 	}
 
 	/**
-	 * Insert multiple references in a transaction (batched)
+	 * Insert multiple references in ONE immediate transaction (batched)
 	 */
 	insertReferences(refs: SymbolReference[]): void {
 		if (refs.length === 0) return;
 
-		const stmt = this.db.prepare(`
+		// BEGIN IMMEDIATE inside the region, not `db.transaction()` (N32).
+		this.withRegion(TRACKER_REGIONS.txn, () => {
+			const stmt = this.db.prepare(`
 			INSERT INTO symbol_references
 			(from_symbol_id, to_symbol_name, to_symbol_id, kind, file_path, line, is_resolved, created_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		`);
 
-		this.db.transaction(() => {
 			for (const ref of refs) {
 				stmt.run(
 					ref.fromSymbolId,
@@ -2099,10 +2680,11 @@ export class FileTracker implements IFileTracker {
 	 * Get all references from a symbol
 	 */
 	getReferencesFrom(symbolId: string): SymbolReference[] {
-		const stmt = this.db.prepare(
-			"SELECT * FROM symbol_references WHERE from_symbol_id = ?",
-		);
-		const rows = stmt.all(symbolId) as Array<Record<string, unknown>>;
+		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare("SELECT * FROM symbol_references WHERE from_symbol_id = ?")
+				.all(symbolId),
+		) as Array<Record<string, unknown>>;
 		return rows.map((row) => this.rowToReference(row));
 	}
 
@@ -2110,10 +2692,11 @@ export class FileTracker implements IFileTracker {
 	 * Get all references to a symbol
 	 */
 	getReferencesTo(symbolId: string): SymbolReference[] {
-		const stmt = this.db.prepare(
-			"SELECT * FROM symbol_references WHERE to_symbol_id = ?",
-		);
-		const rows = stmt.all(symbolId) as Array<Record<string, unknown>>;
+		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare("SELECT * FROM symbol_references WHERE to_symbol_id = ?")
+				.all(symbolId),
+		) as Array<Record<string, unknown>>;
 		return rows.map((row) => this.rowToReference(row));
 	}
 
@@ -2121,10 +2704,11 @@ export class FileTracker implements IFileTracker {
 	 * Get all unresolved references
 	 */
 	getUnresolvedReferences(): SymbolReference[] {
-		const stmt = this.db.prepare(
-			"SELECT * FROM symbol_references WHERE is_resolved = 0",
-		);
-		const rows = stmt.all() as Array<Record<string, unknown>>;
+		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare("SELECT * FROM symbol_references WHERE is_resolved = 0")
+				.all(),
+		) as Array<Record<string, unknown>>;
 		return rows.map((row) => this.rowToReference(row));
 	}
 
@@ -2132,8 +2716,9 @@ export class FileTracker implements IFileTracker {
 	 * Get all references
 	 */
 	getAllReferences(): SymbolReference[] {
-		const stmt = this.db.prepare("SELECT * FROM symbol_references");
-		const rows = stmt.all() as Array<Record<string, unknown>>;
+		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db.prepare("SELECT * FROM symbol_references").all(),
+		) as Array<Record<string, unknown>>;
 		return rows.map((row) => this.rowToReference(row));
 	}
 
@@ -2141,10 +2726,13 @@ export class FileTracker implements IFileTracker {
 	 * Resolve a reference to a symbol
 	 */
 	resolveReference(refId: number, toSymbolId: string): void {
-		const stmt = this.db.prepare(
-			"UPDATE symbol_references SET to_symbol_id = ?, is_resolved = 1 WHERE id = ?",
-		);
-		stmt.run(toSymbolId, refId);
+		this.withRegion(TRACKER_REGIONS.write, () => {
+			this.db
+				.prepare(
+					"UPDATE symbol_references SET to_symbol_id = ?, is_resolved = 1 WHERE id = ?",
+				)
+				.run(toSymbolId, refId);
+		});
 	}
 
 	/**
@@ -2153,8 +2741,9 @@ export class FileTracker implements IFileTracker {
 	 */
 	resolveReferencesByName(): number {
 		// Resolve references where target_name matches a symbol name exactly
-		const result = this.db
-			.prepare(`
+		const result = this.withRegion(TRACKER_REGIONS.write, () =>
+			this.db
+				.prepare(`
 			UPDATE symbol_references
 			SET to_symbol_id = (
 				SELECT s.id FROM symbols s
@@ -2170,7 +2759,8 @@ export class FileTracker implements IFileTracker {
 				AND s.is_exported = 1
 			)
 		`)
-			.run();
+				.run(),
+		);
 
 		return result.changes;
 	}
@@ -2183,9 +2773,11 @@ export class FileTracker implements IFileTracker {
 			? relative(this.projectRoot, filePath)
 			: filePath;
 
-		this.db
-			.prepare("DELETE FROM symbol_references WHERE file_path = ?")
-			.run(relativePath);
+		this.withRegion(TRACKER_REGIONS.write, () => {
+			this.db
+				.prepare("DELETE FROM symbol_references WHERE file_path = ?")
+				.run(relativePath);
+		});
 	}
 
 	/**
@@ -2213,49 +2805,58 @@ export class FileTracker implements IFileTracker {
 	 * Update PageRank scores for all symbols
 	 */
 	updatePageRankScores(scores: Map<string, number>): void {
-		const stmt = this.db.prepare(
-			"UPDATE symbols SET pagerank = ? WHERE id = ?",
-		);
-
-		this.db.transaction(() => {
+		// ONE immediate transaction for the scores AND the timestamp that says they
+		// were computed. They used to be a transaction followed by a second,
+		// separate write — two regions with no yield between them (SR-2).
+		this.withRegion(TRACKER_REGIONS.txn, () => {
+			const stmt = this.db.prepare(
+				"UPDATE symbols SET pagerank = ? WHERE id = ?",
+			);
 			for (const [id, score] of scores) {
 				stmt.run(score, id);
 			}
-		});
 
-		// Update metadata
-		this.setGraphMetadata("pagerank_last_computed", new Date().toISOString());
+			const now = new Date().toISOString();
+			this.db
+				.prepare(
+					"INSERT OR REPLACE INTO graph_metadata (key, value, updated_at) VALUES (?, ?, ?)",
+				)
+				.run("pagerank_last_computed", now, now);
+		});
 	}
 
 	/**
 	 * Update in/out degree counts for all symbols
 	 */
 	updateDegreeCounts(): void {
-		// Update in_degree
-		this.db.exec(`
+		this.withRegion(TRACKER_REGIONS.txn, () => {
+			// Update in_degree
+			this.db.exec(`
 			UPDATE symbols SET in_degree = (
 				SELECT COUNT(*) FROM symbol_references r
 				WHERE r.to_symbol_id = symbols.id
 			)
 		`);
 
-		// Update out_degree
-		this.db.exec(`
+			// Update out_degree
+			this.db.exec(`
 			UPDATE symbols SET out_degree = (
 				SELECT COUNT(*) FROM symbol_references r
 				WHERE r.from_symbol_id = symbols.id
 			)
 		`);
+		});
 	}
 
 	/**
 	 * Get graph metadata value
 	 */
 	getGraphMetadata(key: string): string | null {
-		const stmt = this.db.prepare(
-			"SELECT value FROM graph_metadata WHERE key = ?",
-		);
-		const row = stmt.get(key) as { value: string } | undefined;
+		const row = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare("SELECT value FROM graph_metadata WHERE key = ?")
+				.get(key),
+		) as { value: string } | undefined;
 		return row?.value || null;
 	}
 
@@ -2263,67 +2864,72 @@ export class FileTracker implements IFileTracker {
 	 * Set graph metadata value
 	 */
 	setGraphMetadata(key: string, value: string): void {
-		const stmt = this.db.prepare(`
-			INSERT OR REPLACE INTO graph_metadata (key, value, updated_at)
-			VALUES (?, ?, ?)
-		`);
-		stmt.run(key, value, new Date().toISOString());
+		this.withRegion(TRACKER_REGIONS.write, () => {
+			this.db
+				.prepare(
+					"INSERT OR REPLACE INTO graph_metadata (key, value, updated_at) VALUES (?, ?, ?)",
+				)
+				.run(key, value, new Date().toISOString());
+		});
 	}
 
 	/**
 	 * Get symbol graph statistics
 	 */
 	getSymbolGraphStats(): SymbolGraphStats {
-		const symbolCount = (
-			this.db.prepare("SELECT COUNT(*) as count FROM symbols").get() as {
-				count: number;
-			}
-		).count;
-
-		const refCount = (
-			this.db
-				.prepare("SELECT COUNT(*) as count FROM symbol_references")
-				.get() as {
-				count: number;
-			}
-		).count;
-
-		const resolvedCount = (
-			this.db
+		// Six SELECTs in ONE region. The pagerank timestamp is read here rather
+		// than through getGraphMetadata(), which would be a second region with no
+		// yield before it (SR-2).
+		const raw = this.withRegion(reads(6), () => ({
+			symbolCount: (
+				this.db.prepare("SELECT COUNT(*) as count FROM symbols").get() as {
+					count: number;
+				}
+			).count,
+			refCount: (
+				this.db
+					.prepare("SELECT COUNT(*) as count FROM symbol_references")
+					.get() as { count: number }
+			).count,
+			resolvedCount: (
+				this.db
+					.prepare(
+						"SELECT COUNT(*) as count FROM symbol_references WHERE is_resolved = 1",
+					)
+					.get() as { count: number }
+			).count,
+			kindRows: this.db
+				.prepare("SELECT kind, COUNT(*) as count FROM symbols GROUP BY kind")
+				.all() as Array<{ kind: string; count: number }>,
+			refKindRows: this.db
 				.prepare(
-					"SELECT COUNT(*) as count FROM symbol_references WHERE is_resolved = 1",
+					"SELECT kind, COUNT(*) as count FROM symbol_references GROUP BY kind",
 				)
-				.get() as { count: number }
-		).count;
+				.all() as Array<{ kind: string; count: number }>,
+			pagerank: this.db
+				.prepare("SELECT value FROM graph_metadata WHERE key = ?")
+				.get("pagerank_last_computed") as { value: string } | undefined,
+		}));
 
 		// Symbols by kind
 		const symbolsByKind: Partial<Record<SymbolKind, number>> = {};
-		const kindRows = this.db
-			.prepare("SELECT kind, COUNT(*) as count FROM symbols GROUP BY kind")
-			.all() as Array<{ kind: string; count: number }>;
-		for (const row of kindRows) {
+		for (const row of raw.kindRows) {
 			symbolsByKind[row.kind as SymbolKind] = row.count;
 		}
 
 		// References by kind
 		const referencesByKind: Partial<Record<ReferenceKind, number>> = {};
-		const refKindRows = this.db
-			.prepare(
-				"SELECT kind, COUNT(*) as count FROM symbol_references GROUP BY kind",
-			)
-			.all() as Array<{ kind: string; count: number }>;
-		for (const row of refKindRows) {
+		for (const row of raw.refKindRows) {
 			referencesByKind[row.kind as ReferenceKind] = row.count;
 		}
 
 		return {
-			totalSymbols: symbolCount,
-			totalReferences: refCount,
-			resolvedReferences: resolvedCount,
+			totalSymbols: raw.symbolCount,
+			totalReferences: raw.refCount,
+			resolvedReferences: raw.resolvedCount,
 			symbolsByKind,
 			referencesByKind,
-			pagerankComputedAt:
-				this.getGraphMetadata("pagerank_last_computed") || undefined,
+			pagerankComputedAt: raw.pagerank?.value || undefined,
 		};
 	}
 
@@ -2331,9 +2937,11 @@ export class FileTracker implements IFileTracker {
 	 * Clear all symbol graph data
 	 */
 	clearSymbolGraph(): void {
-		this.db.exec("DELETE FROM symbol_references");
-		this.db.exec("DELETE FROM symbols");
-		this.db.exec("DELETE FROM graph_metadata");
+		this.withRegion(TRACKER_REGIONS.txn, () => {
+			this.db.exec("DELETE FROM symbol_references");
+			this.db.exec("DELETE FROM symbols");
+			this.db.exec("DELETE FROM graph_metadata");
+		});
 	}
 }
 

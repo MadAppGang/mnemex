@@ -80,11 +80,22 @@ export const MAX_SYNC_REGION_MS = 250;
  * re-contend for it. The numbers each owner declares are therefore
  * conservative.
  *
- * `name` is `embed-cache.ts`'s four regions. The tracker's regions widen this
- * union when the tracker adopts the bound; the extraction does not.
+ * `name` is the OWNER's label for a region: `embed-cache.ts` declares R1-R4,
+ * and `tracker.ts` declares R0, R1, R-read, R-write and R-txn. A label is
+ * carried into errors and telemetry and never into the arithmetic, which reads
+ * `blockingStatements` alone — so an "R1" in each file is two different regions
+ * in two different tables, not one shared region.
  */
 export interface SyncRegion {
-	readonly name: "R1" | "R2" | "R3" | "R4";
+	readonly name:
+		| "R0"
+		| "R1"
+		| "R2"
+		| "R3"
+		| "R4"
+		| "R-read"
+		| "R-write"
+		| "R-txn";
 	readonly blockingStatements: number;
 }
 
