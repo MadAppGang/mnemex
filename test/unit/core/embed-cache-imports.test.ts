@@ -35,9 +35,21 @@ interface Rule {
 
 const RULES: Rule[] = [
 	{
+		// `./sync-region.js` holds the blocking bound, extracted so the file
+		// tracker can reuse it. It is admitted ONLY because it is itself a
+		// zero-import leaf — see its own rule below.
 		file: "core/embed-cache.ts",
-		allowedLocal: ["./sqlite.js"],
+		allowedLocal: ["./sqlite.js", "./sync-region.js"],
 		allowNodeBuiltins: true,
+		required: true,
+	},
+	{
+		// The shared blocking bound. The cache imports it and the tracker will,
+		// so ANY import here becomes an edge from both at once — hence none at
+		// all, not even a node builtin.
+		file: "core/sync-region.ts",
+		allowedLocal: [],
+		allowNodeBuiltins: false,
 		required: true,
 	},
 	{
@@ -149,6 +161,11 @@ describe("the new cache modules import nothing that can widen config.ts's graph"
 
 	test("embeddings-errors.ts has ZERO imports of any kind", () => {
 		const source = readFileSync(join(SRC, "core/embeddings-errors.ts"), "utf8");
+		expect(importedSpecifiers(source)).toEqual([]);
+	});
+
+	test("sync-region.ts has ZERO imports of any kind", () => {
+		const source = readFileSync(join(SRC, "core/sync-region.ts"), "utf8");
 		expect(importedSpecifiers(source)).toEqual([]);
 	});
 

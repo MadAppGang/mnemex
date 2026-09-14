@@ -7,7 +7,9 @@
  * this to `IEmbeddingsClient`, and the indexer is what connects that to a run.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * IMPORT ALLOWLIST — node builtins and `./sqlite.js`, and NOTHING ELSE.
+ * IMPORT ALLOWLIST — node builtins, `./sqlite.js` and `./sync-region.js`, and
+ * NOTHING ELSE. (`./sync-region.js` holds the blocking bound, shared with the
+ * file tracker, and is itself a zero-import leaf — it cannot widen anything.)
  *
  * Not `../config.js`, not `./indexer.js`, not `./embeddings.js`, nothing under
  * `src/mcp/`. A machine-global write-path component must not be able to widen
@@ -31,7 +33,8 @@
  *   #22 no string interpolation into SQL. Every statement is parameterised; the
  *       ONE exception is `PRAGMA busy_timeout`, which cannot bind a parameter —
  *       see `applyClamp()`, which renders an integer computed from module
- *       constants and asserts that it is one.
+ *       constants through `busyTimeoutPragma()` (`./sync-region.ts`), which
+ *       asserts that it is one.
  *   #24 launches no process and touches no credential. Its DEFAULT PATH is a
  *       real user file, so the same deny-by-default shape guards it — see
  *       "THE USER-PATH GATE" below.
@@ -46,6 +49,21 @@ import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import type { SQLiteDatabase, Statement } from "./sqlite.js";
 import { createDatabaseSync } from "./sqlite.js";
+import type { SyncRegion } from "./sync-region.js";
+import {
+	BUSY_TIMEOUT_MS,
+	busyTimeoutPragma,
+	clampedBusyTimeoutMs,
+	MAX_SYNC_REGION_MS,
+	yieldToEventLoop,
+} from "./sync-region.js";
+
+// The blocking-bound mechanism moved to `./sync-region.ts` so the file tracker
+// can reuse the proven bound. Re-exported so every existing importer of these
+// names from `./embed-cache.js` — the caching proxy, the tests and
+// `scripts/measure-embed-cache-regions.cjs` — is untouched.
+export type { SyncRegion };
+export { BUSY_TIMEOUT_MS, MAX_SYNC_REGION_MS, yieldToEventLoop };
 
 // ════════════════════════════════════════════════════════════════════════════
 // Key (FR-1)
@@ -262,36 +280,21 @@ export function userEmbedCachePathRefusal(
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// THE BLOCKING BOUND — constants, regions, and the arithmetic
+// THE BLOCKING BOUND — this file's budget, region sizes and region table
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Why any of this exists.
+ * THE MECHANISM LIVES IN `./sync-region.ts`, shared with the file tracker:
+ * `BUSY_TIMEOUT_MS`, `MAX_SYNC_REGION_MS`, `SyncRegion`, the clamp's DIVIDED
+ * arithmetic (`clampedBusyTimeoutMs`), `busyTimeoutPragma`, `yieldToEventLoop`,
+ * and the derivation of `B_max = 500 ms` against `lock.ts`'s two staleness
+ * rules. The names this module's importers already used are re-exported above.
  *
- * `isLockStale()` (`lock.ts:157-187`) has TWO rules, and the tighter one is the
- * one that binds here:
- *
- *   PRIMARY   now - (lastProgressAt ?? heartbeat) > DEFAULT_PROGRESS_TIMEOUT   (300 000 ms)
- *   SECONDARY now - heartbeat                     > DEFAULT_STALE_TIMEOUT      ( 10 000 ms)
- *
- * `heartbeat` is written ONLY by `startHeartbeat()`'s 1 s `setInterval`
- * (`lock.ts:592-606`); `recordProgress()` writes `lastProgressAt` only. Every
- * SQLite call behind `sqlite.ts` is SYNCHRONOUS, so it blocks the event loop,
- * and a blocked loop cannot run that interval. This is CLAUDE.md #27's mechanism
- * verbatim with synchronous SQLite in place of `Bun.spawnSync`: exceed the
- * secondary rule and a SECOND indexer reclaims a held lock and runs concurrently.
+ * What stays here is what THIS file owns: its contention budget (each SQLite
+ * file has its own), its region sizes, and its region table. The derivation in
+ * `sync-region.ts` is stated against exactly these sizes — raising any of them,
+ * or `CONTENTION_BUDGET_MS`, invalidates it (CLAUDE.md #31). Redo it.
  */
-
-/**
- * Resting `PRAGMA busy_timeout`, and the busy-wait allowance for a WHOLE region.
- *
- * NOT the per-statement value: see `applyClamp()`. `busy_timeout` is a
- * per-statement timeout, so a region of 64 statements at 250 ms each could burn
- * 16 s. The clamp therefore DIVIDES this allowance across the region's blocking
- * statements, which is what makes the region — not the statement — the bounded
- * unit.
- */
-export const BUSY_TIMEOUT_MS = 250;
 
 /**
  * Total busy-wait per PROCESS (not per call — CLAUDE.md #27's shape). On
@@ -300,9 +303,6 @@ export const BUSY_TIMEOUT_MS = 250;
  * breaker's precedent).
  */
 export const CONTENTION_BUDGET_MS = 1000;
-
-/** Design target for the WORK inside any one region. Measured, not assumed. */
-export const MAX_SYNC_REGION_MS = 250;
 
 /** Point lookups per region — a YIELD boundary for the caller, not just a stamp. */
 export const LOOKUP_CHUNK = 64;
@@ -324,20 +324,6 @@ export const EVICT_TARGET_RATIO = 0.9;
  */
 export const TOUCH_RESOLUTION_MS = 60_000;
 
-/**
- * A bounded synchronous region: a contiguous run of statements the caller
- * executes without yielding.
- *
- * `blockingStatements` is the number of statements in the region that can
- * INDEPENDENTLY wait on the busy handler. Inside a transaction only the first
- * write can: once it holds the write lock, the later statements do not
- * re-contend for it. The numbers below are therefore conservative.
- */
-export interface SyncRegion {
-	readonly name: "R1" | "R2" | "R3" | "R4";
-	readonly blockingStatements: number;
-}
-
 /** Lookup slice: `LOOKUP_CHUNK` independent point SELECTs. */
 export const REGION_LOOKUP: SyncRegion = {
 	name: "R1",
@@ -349,75 +335,6 @@ export const REGION_WRITE: SyncRegion = { name: "R2", blockingStatements: 3 };
 export const REGION_EVICT: SyncRegion = { name: "R3", blockingStatements: 2 };
 /** Vacuum slice: one `PRAGMA incremental_vacuum(N)`. */
 export const REGION_VACUUM: SyncRegion = { name: "R4", blockingStatements: 1 };
-
-/**
- * ─────────────────────────────────────────────────────────────────────────────
- * THE ARITHMETIC — in CLAUDE.md #27's form, against the REAL constants.
- *
- * Constants, read from `src/core/lock.ts` (a test re-reads them from that file's
- * source so this cannot drift — they are module-private there and cannot be
- * imported without widening this file's import list):
- *
- *     DEFAULT_STALE_TIMEOUT     = 10000   (lock.ts:91)
- *     DEFAULT_PROGRESS_TIMEOUT  = 300000  (lock.ts:99)
- *     HEARTBEAT_INTERVAL        = 1000    (lock.ts:101)
- *
- * THE CORRECTION THIS CARRIES (plan review r3, HIGH, found by both reviewers
- * independently). Revision 2 of the design clamped `busy_timeout` ONCE PER
- * REGION to `min(250, remaining)` and derived
- * `B_max = CONTENTION_BUDGET_MS + MAX_SYNC_REGION_MS = 1250`. That does not
- * bound anything: `busy_timeout` is a PER-STATEMENT timeout, the budget is only
- * consulted at region entry, and R1 holds 64 statements — so one region could
- * block 64 × 250 ms = 16 s while the derivation said 1 250 ms. Revision 1's
- * `B_max = 500` was right by accident and wrong in its reasoning; revision 2
- * re-derived a number that rests on the same confusion pointing the other way.
- *
- * THE MECHANISM THAT ACTUALLY BOUNDS IT — one expression at region entry:
- *
- *     perStatementMs = floor( min(BUSY_TIMEOUT_MS, remainingBudget)
- *                             / region.blockingStatements )
- *
- * so, for a region the caller respects the size of:
- *
- *     region busy-wait  ≤  blockingStatements × perStatementMs
- *                       ≤  min(BUSY_TIMEOUT_MS, remaining)
- *                       ≤  BUSY_TIMEOUT_MS = 250 ms                    …[1]
- *
- * [1] holds for EVERY region independently of the process budget, of how many
- * regions ran before it, and of how the contention is distributed inside it.
- * The per-process budget is now a second, independent mechanism — it decides
- * WHEN TO DEGRADE, and the heartbeat bound no longer rests on it. That is the
- * difference between this and revision 2: the falsifier for [1] is a region
- * size, which the code controls, not an assumption about distribution.
- *
- *     B_max = 250  (busy-wait, WHOLE region, by [1])
- *           + 250  (work, MAX_SYNC_REGION_MS — measured per region, both drivers)
- *           = 500 ms
- *
- *     max age of `heartbeat` when ANOTHER process reads it
- *         = HEARTBEAT_INTERVAL + B_max + one lock-file write
- *         =       1000         +  500  +        ~1
- *         = 1501 ms   <   DEFAULT_STALE_TIMEOUT = 10000 ms
- *                                       margin  = 8499 ms  (8.5 s)
- *
- *     against the PRIMARY rule: 300000 / 500 = 600× margin.
- *
- *     compare CLAUDE.md #27:  6000 + 1000 = 7000 < 10000, margin 3000 ms.
- *
- * Two notes that keep the number honest rather than decorative:
- *
- *   - `B_max` is THIS FEATURE's contribution, not the process total. LanceDB
- *     writes and tree-sitter parsing block too; they do so today and this
- *     change does not lengthen them. The 8.5 s of headroom absorbs the sum.
- *   - `MAX_SYNC_REGION_MS` is a target that is MEASURED, not assumed —
- *     `scripts/measure-embed-cache-regions.cjs` reports the p99 of R1–R4 on both
- *     sqlite drivers. If one exceeds 250 ms, its size constant is halved.
- *     `stats().maxSyncRegionMs` reports the runtime maximum as TELEMETRY ONLY:
- *     it is the class's self-report about its own blocking, the same category
- *     as a millisecond budget standing in for a spawn count (CLAUDE.md #24), so
- *     the assertion is a `setInterval` tick gap measured from outside.
- * ─────────────────────────────────────────────────────────────────────────────
- */
 
 // ════════════════════════════════════════════════════════════════════════════
 // Port and data types
@@ -473,7 +390,7 @@ export interface EmbedCacheStats {
 	dimensionCorrections: number;
 	tier: EmbedCacheTier;
 	degraded: string | null;
-	/** Telemetry only — never an assertion. See THE ARITHMETIC above. */
+	/** Telemetry only — never an assertion. See THE ARITHMETIC in `./sync-region.ts`. */
 	maxSyncRegionMs: number;
 	/** Busy-wait charged to this process so far, against CONTENTION_BUDGET_MS. */
 	contentionUsedMs: number;
@@ -579,24 +496,6 @@ export function decodeVectorF32(bytes: Uint8Array): number[] {
 export function toBlobParam(view: Uint8Array): Uint8Array {
 	if (typeof globalThis.Bun !== "undefined") return view;
 	return Buffer.from(view.buffer, view.byteOffset, view.byteLength);
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// Yield
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Return control to the event loop's TIMERS phase, so a due `setInterval` — the
- * lock heartbeat — can run before the next synchronous region starts.
- *
- * The design pins the PROPERTY, not the primitive: `embed-cache-blocking.test.ts`
- * measures interval starvation directly with a 1 s `setInterval`, so whichever
- * primitive this uses has to actually deliver it.
- */
-export function yieldToEventLoop(): Promise<void> {
-	return new Promise<void>((r) => {
-		setTimeout(r, 0);
-	});
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -739,28 +638,26 @@ export class EmbedCache implements EmbedCacheLike {
 
 	/**
 	 * Set `busy_timeout` so that the WHOLE region — not one statement — is
-	 * bounded. See THE ARITHMETIC above for why the division is the load-bearing
-	 * part and why revision 2's once-per-region clamp was not a bound at all.
+	 * bounded. See THE ARITHMETIC in `./sync-region.ts` for why the division is
+	 * the load-bearing part and why revision 2's once-per-region clamp was not a
+	 * bound at all.
 	 *
 	 * This is the ONE place in this module where a value is rendered into SQL
 	 * text (CLAUDE.md #22): `PRAGMA` cannot bind a parameter. The value is
 	 * `Math.floor` of arithmetic over module constants — never anything a caller
-	 * supplies — and the assertion below proves it is a non-negative integer
+	 * supplies — and `busyTimeoutPragma()` proves it is a non-negative integer
 	 * before it is rendered.
 	 */
 	private applyClamp(region: SyncRegion): void {
-		const remaining = Math.max(0, CONTENTION_BUDGET_MS - this.contentionUsedMs);
-		const regionAllowanceMs = Math.min(BUSY_TIMEOUT_MS, remaining);
-		const perStatementMs = Math.floor(
-			regionAllowanceMs / region.blockingStatements,
+		// The arithmetic — the DIVISION included — is `clampedBusyTimeoutMs`; this
+		// file supplies its own budget. The memo and the connection stay here.
+		const perStatementMs = clampedBusyTimeoutMs(
+			region,
+			CONTENTION_BUDGET_MS,
+			this.contentionUsedMs,
 		);
 		if (perStatementMs === this.appliedBusyTimeoutMs) return;
-		if (!Number.isInteger(perStatementMs) || perStatementMs < 0) {
-			throw new Error(
-				`embed-cache: refusing to render a non-integer busy_timeout (${perStatementMs})`,
-			);
-		}
-		this.db.exec(`PRAGMA busy_timeout = ${perStatementMs}`);
+		this.db.exec(busyTimeoutPragma(perStatementMs, "embed-cache"));
 		this.appliedBusyTimeoutMs = perStatementMs;
 	}
 
