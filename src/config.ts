@@ -22,6 +22,13 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
+	INDEX_DB_FILE,
+	loadProjectConfig,
+	onProjectConfigSaved,
+	PROJECT_CONFIG_DIR,
+	VECTORS_DIR,
+} from "./core/project-config.js";
+import {
 	hydrateSecrets,
 	invalidateSecretSessionCache,
 	persistSecrets,
@@ -30,11 +37,7 @@ import {
 	setKeychainConfigOptOut,
 	setKeychainOptOutProvider,
 } from "./core/secrets.js";
-import type {
-	EmbeddingProvider,
-	GlobalConfig,
-	ProjectConfig,
-} from "./types.js";
+import type { EmbeddingProvider, GlobalConfig } from "./types.js";
 
 // ============================================================================
 // Constants
@@ -46,20 +49,22 @@ export const GLOBAL_CONFIG_DIR = join(homedir(), ".mnemex");
 /** Global config file path */
 export const GLOBAL_CONFIG_PATH = join(GLOBAL_CONFIG_DIR, "config.json");
 
-/** Project config directory name */
-export const PROJECT_CONFIG_DIR = ".mnemex";
-
-/** Project config file name (inside .mnemex/) */
-export const PROJECT_CONFIG_FILE = "config.json";
-
-/** Project config file at root (simpler alternative) */
-export const PROJECT_ROOT_CONFIG_FILE = "mnemex.json";
-
-/** Index database file name */
-export const INDEX_DB_FILE = "index.db";
-
-/** Vector store directory name */
-export const VECTORS_DIR = "vectors";
+/**
+ * The project config names, the index file names and the project config
+ * reader/writer live in `./core/project-config.ts`, so the store-location seam
+ * can read `indexDir` without importing this module (architecture §2.3,
+ * "Circular import"). Re-exported here unchanged, so every existing importer
+ * keeps working.
+ */
+export {
+	INDEX_DB_FILE,
+	loadProjectConfig,
+	PROJECT_CONFIG_DIR,
+	PROJECT_CONFIG_FILE,
+	PROJECT_ROOT_CONFIG_FILE,
+	saveProjectConfig,
+	VECTORS_DIR,
+} from "./core/project-config.js";
 
 /** Embedding models cache file */
 export const MODELS_CACHE_FILE = "embedding-models.json";
@@ -411,36 +416,6 @@ function normaliseExcludePatterns(patterns: readonly unknown[]): string[] {
 		out.push(pattern);
 	}
 	return out;
-}
-
-/**
- * Load project configuration
- * Checks: 1) mnemex.json (root), 2) .mnemex/config.json
- */
-export function loadProjectConfig(projectPath: string): ProjectConfig | null {
-	// First try mnemex.json at project root (preferred, simpler)
-	const rootConfigPath = join(projectPath, PROJECT_ROOT_CONFIG_FILE);
-	if (existsSync(rootConfigPath)) {
-		try {
-			const content = readFileSync(rootConfigPath, "utf-8");
-			return JSON.parse(content) as ProjectConfig;
-		} catch (error) {
-			console.warn("Failed to load mnemex.json:", error);
-		}
-	}
-
-	// Fall back to .mnemex/config.json
-	const configPath = join(projectPath, PROJECT_CONFIG_DIR, PROJECT_CONFIG_FILE);
-	if (existsSync(configPath)) {
-		try {
-			const content = readFileSync(configPath, "utf-8");
-			return JSON.parse(content) as ProjectConfig;
-		} catch (error) {
-			console.warn("Failed to load .mnemex/config.json:", error);
-		}
-	}
-
-	return null;
 }
 
 /**
@@ -1215,34 +1190,6 @@ export function hardenGlobalConfigFileMode(): boolean {
 	}
 }
 
-/**
- * Save project configuration
- */
-export function saveProjectConfig(
-	projectPath: string,
-	config: Partial<ProjectConfig>,
-): void {
-	const configDir = join(projectPath, PROJECT_CONFIG_DIR);
-	const configPath = join(configDir, PROJECT_CONFIG_FILE);
-
-	// Ensure directory exists
-	if (!existsSync(configDir)) {
-		mkdirSync(configDir, { recursive: true });
-	}
-
-	// Merge with existing config
-	const existing = loadProjectConfig(projectPath) || {
-		excludePatterns: [],
-		includePatterns: [],
-	};
-	const merged = { ...existing, ...config };
-
-	writeFileSync(configPath, JSON.stringify(merged, null, 2), "utf-8");
-
-	// The learning decision is cached per path; a rewrite must be visible.
-	resetLearningEnabledCache();
-}
-
 // ============================================================================
 // Project Paths
 // ============================================================================
@@ -1624,6 +1571,14 @@ function asModelMismatchMode(value: unknown): ModelMismatchMode | undefined {
  * in-process rewrite still takes effect.
  */
 const learningEnabledCache = new Map<string, boolean>();
+
+/**
+ * `saveProjectConfig` now lives in `./core/project-config.ts`, which cannot
+ * import this module, so the reset it used to call directly is registered here.
+ * This runs while the module is evaluated, before any lookup can fill the
+ * cache, so no rewrite is missed.
+ */
+onProjectConfigSaved(resetLearningEnabledCache);
 
 /** Cache key for the global-only lookup (no project path given). */
 const GLOBAL_LEARNING_CACHE_KEY = "\0global";
