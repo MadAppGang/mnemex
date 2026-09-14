@@ -173,8 +173,9 @@ function discoverLayout(startPath: string): GitLayoutResult {
 		if (entry?.isDirectory()) return layoutFrom(dir, dotGit, false);
 
 		// Linked worktree or submodule: `.git` is a FILE holding `gitdir: <path>`.
-		// `existsSync` cannot tell the two apart, which is the defect in
-		// `src/git/hook-manager.ts:75-84`.
+		// `existsSync` cannot tell the two apart, which was the hook manager's
+		// defect; `resolveHookDirs` in `src/git/hook-manager.ts` now reads this
+		// layout instead of assuming `.git` is a directory.
 		if (entry?.isFile()) {
 			const target = readGitfileTarget(dotGit);
 			if (target === null) {

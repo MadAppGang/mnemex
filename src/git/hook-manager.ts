@@ -14,6 +14,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { readGitLayout } from "../core/git-layout.js";
 import {
 	formatInvalidationCounts,
 	type InvalidationCounts,
@@ -62,6 +63,51 @@ ${HOOK_MARKER}
 `;
 
 // ============================================================================
+// Hook Location
+// ============================================================================
+
+interface HookDirs {
+	/** This checkout's own git dir. Its existence is what "a git repository" means to install(). */
+	gitDir: string;
+	/** Where git reads this checkout's hooks from. */
+	hooksDir: string;
+}
+
+/**
+ * Git keeps hooks in `<gitCommonDir>/hooks` for EVERY worktree of a repository.
+ * In a linked worktree `<projectPath>/.git` is a FILE (`gitdir: <path>`), so the
+ * old `<projectPath>/.git/hooks` pointed inside a file: install failed with
+ * ENOTDIR and status reported "not installed". Because the directory is shared,
+ * install, uninstall and status act on ONE hook whichever worktree runs them.
+ *
+ * The gate is unchanged: the layout is used only when `<projectPath>/.git`
+ * exists, which is today's test. `readGitLayout` inspects the start directory's
+ * `.git` first, so a layout found from there is rooted at `projectPath`. Every
+ * other case keeps today's `<projectPath>/.git` exactly:
+ *   - no repository, or a degraded one (`layout: null`, e.g. a pruned worktree's
+ *     dangling `.git` file) — `readGitLayout` never throws;
+ *   - a subdirectory of a checkout — git runs the hook from the worktree root,
+ *     so a hook installed on a subdirectory's behalf would index the whole
+ *     checkout instead of the project that asked;
+ *   - a bare repository — it has no `.git` entry and no commit is made in one.
+ *
+ * `core.hooksPath` is not honoured, as before.
+ */
+function resolveHookDirs(projectPath: string): HookDirs {
+	const dotGit = join(projectPath, ".git");
+	if (existsSync(dotGit)) {
+		const { layout } = readGitLayout(projectPath);
+		if (layout !== null) {
+			return {
+				gitDir: layout.gitDir,
+				hooksDir: join(layout.gitCommonDir, "hooks"),
+			};
+		}
+	}
+	return { gitDir: dotGit, hooksDir: join(dotGit, "hooks") };
+}
+
+// ============================================================================
 // Git Hook Manager Class
 // ============================================================================
 
@@ -72,8 +118,9 @@ export class GitHookManager {
 
 	constructor(projectPath: string) {
 		this.projectPath = projectPath;
-		this.gitDir = join(projectPath, ".git");
-		this.hooksDir = join(this.gitDir, "hooks");
+		const { gitDir, hooksDir } = resolveHookDirs(projectPath);
+		this.gitDir = gitDir;
+		this.hooksDir = hooksDir;
 	}
 
 	/**
