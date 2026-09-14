@@ -201,6 +201,126 @@ describe("SR-2 — the walk follows control flow, not source order", () => {
 	});
 });
 
+describe("SR-2 — a jump lands where its label says, and runs the `finally` it leaves", () => {
+	/**
+	 * The gaps `indexer-loop-sweep.ts` closed in its "labelled continue"
+	 * follow-up (`implementation-log-indexer-regions.md`). Each jump carried a
+	 * PENDING state to somewhere the walk never delivered it, so the state was
+	 * dropped and the fixture came back clean. All are latent in `tracker.ts`,
+	 * whose census pins `regionLoops` at 0, so only a fixture can show them.
+	 */
+
+	test("a `break` out of a labelled BLOCK skips the yield inside it; the next turn is reached pending", () => {
+		const source = cls(`
+	async stamp(xs: string[]) {
+		for (const x of xs) {
+			${REGION_A}
+			check: {
+				if (x === "") break check;
+				await yieldToEventLoop();
+			}
+		}
+	}`);
+		expect(sr2Texts(source)).toEqual([REGION_A]);
+	});
+
+	test("control: an UNLABELLED `break` inside a labelled block leaves the loop, not the block", () => {
+		// The loop exits, so nothing reaches a next turn pending.
+		const source = cls(`
+	async stamp(xs: string[]) {
+		for (const x of xs) {
+			${REGION_A}
+			check: {
+				if (x === "") break;
+				await yieldToEventLoop();
+			}
+		}
+	}`);
+		expect(sr2Texts(source)).toEqual([]);
+	});
+
+	test("control: a yield before `break check;` settles it", () => {
+		const source = cls(`
+	async stamp(xs: string[]) {
+		for (const x of xs) {
+			${REGION_A}
+			check: {
+				if (x === "") {
+					await yieldToEventLoop();
+					break check;
+				}
+				await yieldToEventLoop();
+			}
+		}
+	}`);
+		expect(sr2Texts(source)).toEqual([]);
+	});
+
+	test("two labels on one loop: a `continue` to the OUTER label lands on that loop", () => {
+		const source = cls(`
+	async grid(rows: string[][]) {
+		first: second: for (const row of rows) {
+			for (const x of row) {
+				${REGION_A}
+				if (x === "") continue first;
+				await yieldToEventLoop();
+			}
+		}
+	}`);
+		expect(sr2Texts(source)).toEqual([REGION_A]);
+	});
+
+	test("a `continue` through a `finally` that runs a region lands on the next turn pending", () => {
+		// Real flow: x === "" -> continue -> the finally's region A -> the next
+		// turn's region A. The yield after the try is skipped every time.
+		const source = cls(`
+	async stamp(xs: string[]) {
+		for (const x of xs) {
+			try {
+				if (x === "") continue;
+			} finally {
+				${REGION_A}
+			}
+			await yieldToEventLoop();
+		}
+	}`);
+		expect(sr2Texts(source)).toEqual([REGION_A]);
+	});
+
+	test("...and a labelled `continue` runs an inner loop's `finally` on its way to the outer loop", () => {
+		const source = cls(`
+	async grid(rows: string[][]) {
+		outer: for (const row of rows) {
+			for (const x of row) {
+				try {
+					if (x === "") continue outer;
+				} finally {
+					${REGION_A}
+				}
+				await yieldToEventLoop();
+			}
+		}
+	}`);
+		expect(sr2Texts(source)).toEqual([REGION_A]);
+	});
+
+	test("control: a `finally` with no region leaves the jump's state alone", () => {
+		const source = cls(`
+	async stamp(xs: string[]) {
+		for (const x of xs) {
+			${REGION_A}
+			await yieldToEventLoop();
+			try {
+				if (x === "") continue;
+			} finally {
+				console.log(x);
+			}
+		}
+	}`);
+		expect(sr2Texts(source)).toEqual([]);
+	});
+});
+
 describe("SR-2 — calls that REACH a region count as regions", () => {
 	test("a method that opens a region, called in a loop without a yield", () => {
 		expect(
