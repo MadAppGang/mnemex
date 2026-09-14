@@ -15,9 +15,9 @@
  */
 
 import { existsSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { inspectLock } from "../core/lock.js";
 import {
+	getIndexDbPathFor,
 	getLockPathFor,
 	resolveStoreLocation,
 } from "../core/store-location.js";
@@ -148,14 +148,13 @@ export async function buildIndexState(
 
 	const freshness = stateManager.getFreshness();
 
-	const indexDbPath = join(config.indexDir, "index.db");
+	// index.db and the lock come from ONE resolved store location, the same
+	// derivation as createStoreLock (decision I-8), so they cannot name two
+	// different stores.
+	const storeLocation = resolveStoreLocation(config.workspaceRoot);
+	const indexDbPath = getIndexDbPathFor(storeLocation);
 	const hasIndex = existsSync(indexDbPath);
-
-	// The lock is read where the indexer takes it: the resolved store location,
-	// the same derivation as createStoreLock. It is NOT rebuilt from
-	// config.indexDir, the MCP's own resolver, which ignores ProjectConfig.indexDir
-	// and double-joins an absolute MNEMEX_INDEX_DIR onto the workspace root.
-	const lockPath = getLockPathFor(resolveStoreLocation(config.workspaceRoot));
+	const lockPath = getLockPathFor(storeLocation);
 	const inspect = inspectLock(lockPath, HEARTBEAT_FRESH_TIMEOUT);
 
 	// ── Read-only stats (mirror status.ts; never throws) ──────────────────────

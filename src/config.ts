@@ -22,11 +22,8 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
-	INDEX_DB_FILE,
 	loadProjectConfig,
 	onProjectConfigSaved,
-	PROJECT_CONFIG_DIR,
-	VECTORS_DIR,
 } from "./core/project-config.js";
 import {
 	hydrateSecrets,
@@ -37,6 +34,12 @@ import {
 	setKeychainConfigOptOut,
 	setKeychainOptOutProvider,
 } from "./core/secrets.js";
+import {
+	getDocsCachePathFor,
+	getIndexDbPathFor,
+	getVectorStorePathFor,
+	resolveStoreLocation,
+} from "./core/store-location.js";
 import type { EmbeddingProvider, GlobalConfig } from "./types.js";
 
 // ============================================================================
@@ -1195,34 +1198,36 @@ export function hardenGlobalConfigFileMode(): boolean {
 // ============================================================================
 
 /**
- * Get the index directory for a project
- * Respects custom indexDir from project config
+ * The index STORE directory for a project.
+ *
+ * Delegates to the store-location seam, the same function the store lock
+ * derives its path from (`createStoreLock` -> `getLockPathFor`). That is the
+ * point (decision I-8): a lock and the data it protects resolve from ONE
+ * function, so `MNEMEX_INDEX_DIR` or `ProjectConfig.indexDir` moves both
+ * together, and no process can write one store under two locks. This used to
+ * read `ProjectConfig.indexDir` alone and ignore the environment variable,
+ * which the lock honoured.
+ *
+ * Returns the seam's REALPATH spelling, always absolute (`/private/tmp/…` for
+ * `/tmp/…` on macOS). Compare paths with `realpathSync`, never as strings
+ * against a caller's spelling (decision I-3).
+ *
+ * Memoized by the seam on realpath + `MNEMEX_INDEX_DIR`, and reset by every
+ * `saveProjectConfig`. A config file edited by hand or by another process is
+ * seen only after a long-lived process restarts (decision I-5).
  */
 export function getIndexDir(projectPath: string): string {
-	const projectConfig = loadProjectConfig(projectPath);
-	if (projectConfig?.indexDir) {
-		// If indexDir is absolute, use it directly
-		if (projectConfig.indexDir.startsWith("/")) {
-			return projectConfig.indexDir;
-		}
-		// Otherwise, treat as relative to project root
-		return join(projectPath, projectConfig.indexDir);
-	}
-	return join(projectPath, PROJECT_CONFIG_DIR);
+	return resolveStoreLocation(projectPath).storeDir;
 }
 
-/**
- * Get the path to the project's index database
- */
+/** `<storeDir>/index.db`, through the seam. */
 export function getIndexDbPath(projectPath: string): string {
-	return join(getIndexDir(projectPath), INDEX_DB_FILE);
+	return getIndexDbPathFor(resolveStoreLocation(projectPath));
 }
 
-/**
- * Get the path to the project's vector store
- */
+/** `<storeDir>/vectors`, through the seam. */
 export function getVectorStorePath(projectPath: string): string {
-	return join(getIndexDir(projectPath), VECTORS_DIR);
+	return getVectorStorePathFor(resolveStoreLocation(projectPath));
 }
 
 /**
@@ -1514,11 +1519,9 @@ export function getDocsConfig(projectPath?: string): Required<DocsConfig> {
 	};
 }
 
-/**
- * Get path to docs cache directory
- */
+/** `<storeDir>/docs-cache`, through the seam. */
 export function getDocsCachePath(projectPath: string): string {
-	return join(getIndexDir(projectPath), "docs-cache");
+	return getDocsCachePathFor(resolveStoreLocation(projectPath));
 }
 
 // ============================================================================

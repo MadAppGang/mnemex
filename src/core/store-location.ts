@@ -100,6 +100,18 @@ export interface StoreLocation {
 	readonly degradedReason: string | null;
 	/** Set when ProjectConfig.indexDir held the literal old default and was ignored (D2). */
 	readonly ignoredLegacyIndexDir: boolean;
+	/**
+	 * `MNEMEX_INDEX_DIR` exactly as the seam read it: not normalised, not made
+	 * absolute, not realpath'd. `undefined` when unset; `""` stays `""` (row 1
+	 * treats it as unset, but this field reports the input, not the decision).
+	 *
+	 * Exposed so nothing else has to read the variable: the seam is its ONE
+	 * reader (decision I-8). Decision I-9 rebuilds HEAD's double-joined memory
+	 * path from this exact string, and a normalised copy would name a directory
+	 * HEAD never wrote. The memo is keyed on this same string, so a memoized
+	 * location never reports another spelling's value.
+	 */
+	readonly envIndexDir: string | undefined;
 }
 
 /**
@@ -247,6 +259,7 @@ export function pickStoreDir(
 			gitLayout,
 			degradedReason,
 			ignoredLegacyIndexDir,
+			envIndexDir: inputs.envIndexDir,
 		});
 
 	// Row 1. Empty counts as unset, as it does at `src/mcp/config.ts`.

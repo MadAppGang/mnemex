@@ -10,7 +10,6 @@
  */
 
 import { existsSync, mkdirSync, statSync } from "node:fs";
-import { join } from "node:path";
 import {
 	createContext,
 	type ReactNode,
@@ -21,6 +20,10 @@ import {
 } from "react";
 import { getIndexVersion, needsUpgrade } from "../core/index-version.js";
 import { Indexer } from "../core/indexer.js";
+import {
+	getIndexDbPathFor,
+	resolveStoreLocation,
+} from "../core/store-location.js";
 import { FileTracker } from "../core/tracker.js";
 import { ProgressStore } from "../output/progress-store.js";
 import {
@@ -96,7 +99,8 @@ const AppContext = createContext<AppContextValue | null>(null);
  * Checks for the DB file existence/size and version.
  */
 function checkIndexReason(projectPath: string): "missing" | "outdated" | null {
-	const dbPath = join(projectPath, ".mnemex", "index.db");
+	// The seam's index.db, so an overridden store is found (decision I-8).
+	const dbPath = getIndexDbPathFor(resolveStoreLocation(projectPath));
 	if (!existsSync(dbPath)) return "missing";
 	try {
 		const stat = statSync(dbPath);
@@ -149,13 +153,17 @@ export function AppProvider({
 	// Without memoization, every state change creates a new tracker instance,
 	// which cascades through useCallback/useEffect dependencies and causes
 	// useActivityMonitor to re-run (truncating JSONL + resetting byte offsets).
+	//
+	// The directory and its index.db come from ONE resolved location, the
+	// seam's, as for every other reader (decision I-8): MNEMEX_INDEX_DIR and
+	// ProjectConfig.indexDir move both. A hand-built `<project>/.mnemex` opened
+	// an EMPTY tracker whenever either was set, and left a stray index.db behind.
 	const [tracker] = useState(() => {
-		const dbDir = join(projectPath, ".mnemex");
-		if (!existsSync(dbDir)) {
-			mkdirSync(dbDir, { recursive: true });
+		const loc = resolveStoreLocation(projectPath);
+		if (!existsSync(loc.storeDir)) {
+			mkdirSync(loc.storeDir, { recursive: true });
 		}
-		const dbPath = join(dbDir, "index.db");
-		return new FileTracker(dbPath, projectPath);
+		return new FileTracker(getIndexDbPathFor(loc), projectPath);
 	});
 
 	const pushNav = useCallback((symbolName: string) => {

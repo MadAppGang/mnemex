@@ -6,8 +6,11 @@
  */
 
 import { existsSync, statSync } from "node:fs";
-import { join } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+	getIndexDbPathFor,
+	resolveStoreLocation,
+} from "../../core/store-location.js";
 import { buildIndexState } from "../index-state.js";
 import type { ToolDeps } from "./deps.js";
 import { buildFreshness, errorResponse } from "./deps.js";
@@ -23,7 +26,10 @@ export function registerStatusTools(server: McpServer, deps: ToolDeps): void {
 			const startTime = Date.now();
 
 			try {
-				const indexDbPath = join(config.indexDir, "index.db");
+				// The store the lock guards, from the one resolver (decision I-8).
+				const indexDbPath = getIndexDbPathFor(
+					resolveStoreLocation(config.workspaceRoot),
+				);
 				const initialized = existsSync(indexDbPath);
 
 				let indexSizeBytes = 0;

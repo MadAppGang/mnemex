@@ -18,7 +18,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { loadGlobalConfig } from "../../../src/config.js";
@@ -320,9 +326,24 @@ async function runSearchCode(
 	return { text: result.content[0].text, opens, learningDdl };
 }
 
+/**
+ * Is `path` this workspace's index.db? Compared as FILES, not strings: the MCP
+ * tools resolve the db through the store-location seam, which returns the
+ * realpath spelling (`/private/var/…`), while `mkdtemp` hands out `/var/…` on
+ * macOS (decision I-3).
+ */
+function isWorkspaceDb(ws: Workspace, path: string): boolean {
+	if (path === ws.dbPath) return true;
+	try {
+		return realpathSync(path) === realpathSync(ws.dbPath);
+	} catch {
+		return false;
+	}
+}
+
 /** sqlite opens recorded against this workspace's index.db. */
 function indexDbOpens(ws: Workspace): number {
-	return sqliteOpens.filter((p) => p === ws.dbPath).length;
+	return sqliteOpens.filter((p) => isWorkspaceDb(ws, p)).length;
 }
 
 /**
@@ -333,7 +354,7 @@ function indexDbOpens(ws: Workspace): number {
 function learningDdlStatements(ws: Workspace): number {
 	return sqliteExecs.filter(
 		(e) =>
-			e.path === ws.dbPath &&
+			isWorkspaceDb(ws, e.path) &&
 			e.sql.includes("CREATE TABLE IF NOT EXISTS search_feedback"),
 	).length;
 }

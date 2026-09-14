@@ -31,6 +31,8 @@ import {
 	getContext7ApiKey,
 	getEmbeddingModel,
 	getEmbeddingProvider,
+	getIndexDbPath,
+	getIndexDir,
 	getLLMSpec,
 	getVoyageApiKey,
 	hasValidEmbeddingCredentials,
@@ -1397,7 +1399,7 @@ async function handleSync(args: string[]): Promise<void> {
 	// 4. Build cloud client and file tracker
 	const cloudClient = createThinCloudClient({ endpoint, token });
 	const { FileTracker } = await import("./core/tracker.js");
-	const dbPath = join(projectPath, ".mnemex", "index.db");
+	const dbPath = getIndexDbPath(projectPath);
 	const fileTracker = new FileTracker(dbPath, projectPath);
 
 	// 5. Sync graph
@@ -4731,11 +4733,14 @@ function formatSymbolRaw(symbol: {
 }
 
 /**
- * Get file tracker for a project path
+ * Get file tracker for a project path, or null when there is no index.db.
+ *
+ * The path comes from the store-location seam (via `getIndexDbPath`), so it is
+ * the store the lock guards (decision I-8). It used to be a hardcoded
+ * `<projectPath>/.mnemex/index.db`, which ignored both index-dir overrides.
  */
 function getFileTracker(projectPath: string): FileTracker | null {
-	const mnemexDir = join(projectPath, ".mnemex");
-	const dbPath = join(mnemexDir, "index.db");
+	const dbPath = getIndexDbPath(projectPath);
 
 	if (!existsSync(dbPath)) {
 		return null;
@@ -5713,12 +5718,15 @@ Subcommands:
 		case "install":
 			try {
 				await hookManager.install();
+				// The path the manager actually wrote. In a linked worktree that
+				// is `<gitCommonDir>/hooks/post-commit`, not `.git/hooks/…`.
+				const installed = await hookManager.status();
 				printLogo();
 				console.log("\n✅ Git hook installed successfully!\n");
 				console.log(
 					"  The post-commit hook will now auto-index changes after each commit.",
 				);
-				console.log("  Location: .git/hooks/post-commit\n");
+				console.log(installed.path ? `  Location: ${installed.path}\n` : "");
 			} catch (error) {
 				console.error(
 					`Error: ${error instanceof Error ? error.message : String(error)}`,
@@ -5747,6 +5755,7 @@ Subcommands:
 			console.log(`  Installed: ${status.installed ? "Yes" : "No"}`);
 			if (status.installed) {
 				console.log(`  Hook type: ${status.hookType}`);
+				if (status.path) console.log(`  Location:  ${status.path}`);
 			}
 			console.log("");
 			break;
@@ -5888,7 +5897,12 @@ async function handleOpenCodeIntegration(
 				// Check if indexed
 				const { createVectorStore } = await import("./core/store.js");
 				const { getVectorStorePath } = await import("./config.js");
-				const store = await createVectorStore(getVectorStorePath(projectPath));
+				// projectPath passed explicitly: derived from the store path it is
+				// the override's parent, not the project, once the store has moved.
+				const store = await createVectorStore(
+					getVectorStorePath(projectPath),
+					projectPath,
+				);
 				const stats = await store.getStats();
 				if (stats.totalChunks === 0) {
 					console.log("  ⚠️  Project not indexed. Run: mnemex index\n");
@@ -6208,6 +6222,7 @@ async function handleDocsFetch(
 					const tracker = createFileTracker(indexDbPath, projectPath);
 					const vectorStore = createVectorStore(
 						getVectorStorePath(projectPath),
+						projectPath,
 					);
 					try {
 						await vectorStore.initialize();
@@ -6259,7 +6274,15 @@ async function handleDocsFetch(
 }
 
 /**
- * Force refresh all documentation
+ * Force refresh all documentation: forget which libraries are indexed, so the
+ * next index run fetches them again.
+ *
+ * It WRITES index.db, so it holds the store lock (decision I-8: a fourth
+ * unlocked writer, missed by the design's inventory). Same policy as
+ * `docs clear` (D5): destructive and user-initiated, so it waits
+ * STORE_WRITER_LOCK_WAIT_MS, then REFUSES loudly and exits non-zero, having
+ * changed nothing. The tracker is opened INSIDE the lock, because opening
+ * index.db runs DDL, which is itself a write.
  */
 async function handleDocsRefresh(projectPath: string): Promise<void> {
 	const { createFileTracker } = await import("./core/tracker.js");
@@ -6272,19 +6295,54 @@ async function handleDocsRefresh(projectPath: string): Promise<void> {
 		return;
 	}
 
-	const tracker = createFileTracker(indexDbPath, projectPath);
+	const { resolveStoreLocation } = await import("./core/store-location.js");
+	const { describeStoreLockRefusal, STORE_WRITER_LOCK_WAIT_MS, withStoreLock } =
+		await import("./core/store-lock-policy.js");
+	let waitingShown = false;
+	const outcome = await withStoreLock(
+		resolveStoreLocation(projectPath),
+		{
+			waitTimeout: STORE_WRITER_LOCK_WAIT_MS,
+			phase: "docs:refresh",
+			onWaiting: (holderPid) => {
+				if (waitingShown) return;
+				waitingShown = true;
+				console.log(
+					`⏳ Waiting up to ${STORE_WRITER_LOCK_WAIT_MS / 1000}s for PID ${holderPid}, which holds the index store lock...`,
+				);
+			},
+		},
+		async (lock) => {
+			const tracker = createFileTracker(indexDbPath, projectPath);
+			try {
+				// Clear all indexed docs to force refresh on next index
+				tracker.clearAllIndexedDocs();
+				lock.recordProgress();
+			} finally {
+				tracker.close();
+			}
+		},
+	);
 
-	try {
-		// Clear all indexed docs to force refresh on next index
-		tracker.clearAllIndexedDocs();
-
-		printLogo();
-		console.log(
-			"\n📚 Documentation cache cleared. Run 'mnemex index' to refresh.\n",
+	if (!outcome.acquired) {
+		console.error(
+			`\n❌ Refusing to refresh documentation: ${describeStoreLockRefusal(outcome.refusal, outcome.lockPath)}.`,
 		);
-	} finally {
-		tracker.close();
+		console.error(
+			outcome.refusal.reason === "error"
+				? "   Nothing was changed."
+				: `   It did not finish within ${STORE_WRITER_LOCK_WAIT_MS / 1000}s. Nothing was changed; run this again once it has.`,
+		);
+		console.error(
+			"   If that process is stuck, 'mnemex index --force-unlock' clears its lock.\n",
+		);
+		process.exit(1);
 	}
+
+	printLogo();
+	console.log(
+		"\n📚 Documentation cache cleared. Run 'mnemex index' to refresh.\n",
+	);
 }
 
 /**
@@ -6359,7 +6417,10 @@ async function handleDocsClear(
 		},
 		async (lock) => {
 			const tracker = createFileTracker(indexDbPath, projectPath);
-			const vectorStore = createVectorStore(getVectorStorePath(projectPath));
+			const vectorStore = createVectorStore(
+				getVectorStorePath(projectPath),
+				projectPath,
+			);
 			await vectorStore.initialize();
 
 			try {
@@ -8232,8 +8293,10 @@ async function searchMnemex(
 async function handleRgPassthrough(args: string[]): Promise<void> {
 	const { parseRgArgs, mergeResults } = await import("./rg/index.js");
 
-	// Quick check: if no .mnemex/ index, exec bundled rg directly (zero overhead)
-	const mnemexDir = join(process.cwd(), ".mnemex");
+	// Quick check: if there is no store directory, exec bundled rg directly
+	// (zero overhead). Resolved through the seam, so an index that
+	// MNEMEX_INDEX_DIR or ProjectConfig.indexDir moved is still found (I-8).
+	const mnemexDir = getIndexDir(process.cwd());
 	if (!existsSync(mnemexDir)) {
 		await execRgDirect(args);
 		return;

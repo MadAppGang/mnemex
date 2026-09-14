@@ -5,6 +5,11 @@
  */
 
 import { join } from "node:path";
+import { PROJECT_CONFIG_DIR } from "../core/project-config.js";
+import {
+	resolveStoreLocation,
+	type StoreLocation,
+} from "../core/store-location.js";
 import {
 	DEFAULT_PIPELINE_CONFIG,
 	loadPipelineConfig,
@@ -20,8 +25,15 @@ export interface McpConfig {
 	workspaceRoot: string;
 	/** Pipeline configuration */
 	pipeline: PipelineConfig;
-	/** Index directory (MNEMEX_INDEX_DIR relative to workspaceRoot, or ".mnemex") */
+	/**
+	 * The index STORE directory: `resolveStoreLocation(workspaceRoot).storeDir`,
+	 * the function the store lock derives its path from. Honours
+	 * MNEMEX_INDEX_DIR (absolute as-is, relative to the worktree root) and
+	 * ProjectConfig.indexDir. Realpath spelling.
+	 */
 	indexDir: string;
+	/** Where the memory store keeps `memories/`. NOT always `indexDir`: see {@link memoryDirFor}. */
+	memoryDir: string;
 	/** Debounce delay for reindexing in ms (MNEMEX_DEBOUNCE_MS, default 120000) */
 	debounceMs: number;
 	/** Glob patterns for files to watch (MNEMEX_WATCH_PATTERNS, comma-separated) */
@@ -73,16 +85,50 @@ const DEFAULT_COMPLETION_POLL_MS = 2000;
 const DEFAULT_LOG_LEVEL: LogLevel = "warn";
 
 /**
+ * Where the MCP memory store lives. Deliberately NOT always the store directory.
+ *
+ * Memories are authored and cannot be rebuilt, so they are per-worktree data,
+ * not store data (architecture §2.4), and the store lock does not guard them.
+ * Before decision I-8 they lived in this file's own resolver's directory,
+ * `join(workspaceRoot, MNEMEX_INDEX_DIR ?? ".mnemex")`. Binding them to the
+ * seam's `storeDir` would silently move the memories of every user with
+ * `ProjectConfig.indexDir` (which that resolver ignored), and from Phase 3c
+ * everyone's, into the shared store. So they keep today's rule:
+ *
+ *   MNEMEX_INDEX_DIR set   the store directory: memories always followed the
+ *                          variable. An ABSOLUTE value now lands where it names,
+ *                          not double-joined onto the workspace root.
+ *   otherwise              `<workspaceRoot>/.mnemex`, wherever the store is.
+ *
+ * Phase 3c moves them to `worktreeDir`, with the other per-worktree files.
+ */
+export function memoryDirFor(
+	loc: StoreLocation,
+	workspaceRoot: string,
+): string {
+	return loc.kind === "env-override"
+		? loc.storeDir
+		: join(workspaceRoot, PROJECT_CONFIG_DIR);
+}
+
+/**
  * Parse environment variables and return an McpConfig.
  * Invalid numeric values fall back to defaults.
+ *
+ * @param workspaceRoot defaults to the CWD at startup, which is what the server
+ *   passes; tests pass a fixture directory instead of changing the CWD.
  */
-export function loadMcpConfig(): McpConfig {
-	const workspaceRoot = process.cwd();
-
-	const indexDirEnv = process.env.MNEMEX_INDEX_DIR;
-	const indexDir = indexDirEnv
-		? join(workspaceRoot, indexDirEnv)
-		: join(workspaceRoot, ".mnemex");
+export function loadMcpConfig(
+	workspaceRoot: string = process.cwd(),
+): McpConfig {
+	// ONE resolver (decision I-8): the store directory comes from the seam, the
+	// same function `createStoreLock` derives the lock from. This used to read
+	// MNEMEX_INDEX_DIR itself, ignoring ProjectConfig.indexDir and double-joining
+	// an absolute value onto the workspace root, so the MCP server's state files
+	// and the lock it inspected could name two different stores.
+	const storeLocation = resolveStoreLocation(workspaceRoot);
+	const indexDir = storeLocation.storeDir;
+	const memoryDir = memoryDirFor(storeLocation, workspaceRoot);
 
 	const debounceMs = parseIntWithDefault(
 		process.env.MNEMEX_DEBOUNCE_MS,
@@ -125,6 +171,7 @@ export function loadMcpConfig(): McpConfig {
 	return {
 		workspaceRoot,
 		indexDir,
+		memoryDir,
 		debounceMs,
 		watchPatterns,
 		ignorePatterns,

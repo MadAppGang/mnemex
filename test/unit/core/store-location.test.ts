@@ -155,6 +155,7 @@ describe("row 4 — outside any repository, today's behaviour (FR-7)", () => {
 			gitLayout: null,
 			degradedReason: null,
 			ignoredLegacyIndexDir: false,
+			envIndexDir: undefined,
 		});
 	});
 
@@ -316,6 +317,7 @@ describe("row 3 under the git-common-dir scope — what 3c turns on (via pickSto
 			gitLayout: null,
 			degradedReason: `gitdir-missing:${missing}`,
 			ignoredLegacyIndexDir: false,
+			envIndexDir: undefined,
 		});
 	});
 });
@@ -430,6 +432,48 @@ describe("rows 1-2 — overrides relocate the store, never pathRoot", () => {
 			}
 			expect(() => resolveStoreLocation(main.worktree)).not.toThrow();
 		}
+	});
+});
+
+describe("envIndexDir — MNEMEX_INDEX_DIR as read, so the seam stays its ONE reader (I-8, I-9)", () => {
+	test("holds the raw value, unnormalised: absolute, relative and unset", () => {
+		// Falsified by: filling envIndexDir from anything but inputs.envIndexDir
+		// (normalize, resolve or realpath it, or copy storeDir). I-9 rebuilds
+		// HEAD's legacy path as `join(workspaceRoot, raw)`, so a rewritten value
+		// names a directory HEAD never wrote.
+		const main = makeMainRepo(join(freshDir(), "main"));
+		const sub = join(main.worktree, "pkg");
+		mkdirSync(sub);
+		// Through a symlink, with `..`, a doubled and a trailing slash: realpath,
+		// normalize and resolve would each change this string.
+		const real = join(root, "env-raw-target");
+		mkdirSync(real);
+		const link = join(root, "env-raw-link");
+		symlinkSync(real, link);
+		const cases: Array<[string, string | undefined]> = [
+			["absolute", `${link}/x/..//`],
+			["relative", "./custom//store/"],
+			["unset", undefined],
+		];
+		for (const [label, raw] of cases) {
+			if (raw === undefined) delete process.env[INDEX_DIR_ENV_VAR];
+			else process.env[INDEX_DIR_ENV_VAR] = raw;
+			const loc = resolveStoreLocation(sub);
+			expect([label, loc.envIndexDir]).toStrictEqual([label, raw]);
+			expect(Object.isFrozen(loc)).toBe(true);
+		}
+
+		// Two spellings of one directory: one storeDir, and each memoized
+		// location still reports its OWN spelling (the memo key is the raw value).
+		process.env[INDEX_DIR_ENV_VAR] = "custom-store";
+		const plain = resolveStoreLocation(sub);
+		process.env[INDEX_DIR_ENV_VAR] = "./custom-store";
+		const dotted = resolveStoreLocation(sub);
+		expect(dotted.storeDir).toBe(plain.storeDir);
+		expect([plain.envIndexDir, dotted.envIndexDir]).toEqual([
+			"custom-store",
+			"./custom-store",
+		]);
 	});
 });
 
@@ -594,7 +638,13 @@ describe("the memo is never staler than today's unmemoized getIndexDir for what 
 			const unset = resolveStoreLocation(main.worktree);
 			process.env[INDEX_DIR_ENV_VAR] = "";
 			const empty = resolveStoreLocation(main.worktree);
-			expect(empty).toEqual(unset);
+			// Alike in every derived field. They differ only in envIndexDir, which
+			// reports the input as read, not the decision made from it.
+			const { envIndexDir: emptyRaw, ...emptyDerived } = empty;
+			const { envIndexDir: unsetRaw, ...unsetDerived } = unset;
+			expect(emptyDerived).toEqual(unsetDerived);
+			expect(emptyRaw).toBe("");
+			expect(unsetRaw).toBeUndefined();
 		} finally {
 			if (original === undefined) delete process.env[INDEX_DIR_ENV_VAR];
 			else process.env[INDEX_DIR_ENV_VAR] = original;
