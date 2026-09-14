@@ -2738,6 +2738,21 @@ export class FileTracker implements IFileTracker {
 	/**
 	 * Bulk resolve references by name
 	 * Resolves all unresolved references matching a symbol name
+	 *
+	 * `+s.is_exported`, NOT `s.is_exported`: the unary plus is load-bearing.
+	 * It stops that term from using an index, so the planner answers both
+	 * subqueries from `idx_symbols_name (name=?)`. Without it — and a tracker
+	 * database has no ANALYZE statistics — SQLite picks the partial index
+	 * `idx_symbols_exported`, and every unresolved reference walks EVERY
+	 * exported symbol, twice, inside this ONE synchronous statement. Measured:
+	 * 5.4 s at 8 000 exported x 20 000 references, and a lock heartbeat frozen
+	 * for 34.5 s at 20 000 x 40 000, past the 10 s stale rule (CLAUDE.md #31).
+	 * No caller-side yield can split one statement.
+	 *
+	 * The result set is unchanged: `+` is a no-op on the value, and both plans
+	 * visit a name's exported rows in rowid order, so `LIMIT 1` picks the same
+	 * row. `tracker-resolve-plan.test.ts` pins the PLAN (not a timing) and the
+	 * rows against the pre-fix statement.
 	 */
 	resolveReferencesByName(): number {
 		// Resolve references where target_name matches a symbol name exactly
@@ -2748,7 +2763,7 @@ export class FileTracker implements IFileTracker {
 			SET to_symbol_id = (
 				SELECT s.id FROM symbols s
 				WHERE s.name = symbol_references.to_symbol_name
-				AND s.is_exported = 1
+				AND +s.is_exported = 1
 				LIMIT 1
 			),
 			is_resolved = 1
@@ -2756,7 +2771,7 @@ export class FileTracker implements IFileTracker {
 			AND EXISTS (
 				SELECT 1 FROM symbols s
 				WHERE s.name = symbol_references.to_symbol_name
-				AND s.is_exported = 1
+				AND +s.is_exported = 1
 			)
 		`)
 				.run(),
