@@ -24,8 +24,11 @@
  *   - `deleteByFileHash` matches `deleteByFile` on all of the above
  *   - `deleteByDocumentType` / `deleteAllByFile` match them too
  *
- * The hardcoded `return 1` ("LanceDB doesn't return count") is out of scope and
- * is asserted as-is, so a future fix to the count is a deliberate change.
+ * `deleteByFile` returns LanceDB's real `numDeletedRows` (Phase 3a). Each seed
+ * here puts ONE row per file, so a successful delete reads 1 and a matchless
+ * one 0; `store-delete-count.test.ts` covers multi-row files. `deleteByFileHash`
+ * still returns a constant 1 (no caller in src/, retired in 3b) and is asserted
+ * as-is.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -95,7 +98,7 @@ afterEach(() => {
 async function withFreshStore<T>(
 	fn: (store: ReturnType<typeof createVectorStore>) => Promise<T>,
 ): Promise<T> {
-	const store = createVectorStore(dbPath);
+	const store = createVectorStore({ vectorsDir: dbPath, pathRoot: dir });
 	await store.initialize();
 	try {
 		return await fn(store);
@@ -246,9 +249,10 @@ describe("deletes on a store whose table is already open", () => {
 			return store.deleteByFile("src/never-indexed.ts");
 		});
 
-		// LanceDB does not report a count, so a matchless delete still reports 1.
-		// Pinned deliberately: the count is a known lie and out of scope here.
-		expect(deleted).toBe(1);
+		// The real count: nothing matched, so 0. This pinned the hardcoded 1
+		// ("LanceDB doesn't return count") until Phase 3a returned LanceDB's own
+		// `numDeletedRows`; an open table no longer makes a no-op look like work.
+		expect(deleted).toBe(0);
 		expect(await remainingIds()).toEqual(["alpha"]);
 	});
 });

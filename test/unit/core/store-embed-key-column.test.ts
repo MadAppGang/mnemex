@@ -65,7 +65,7 @@ afterEach(() => {
 async function withFreshStore<T>(
 	fn: (store: IVectorStore) => Promise<T>,
 ): Promise<T> {
-	const store = createVectorStore(dbPath);
+	const store = createVectorStore({ vectorsDir: dbPath, pathRoot: dir });
 	await store.initialize();
 	try {
 		return await fn(store);
@@ -178,7 +178,7 @@ async function readRow(id: string): Promise<Record<string, unknown>> {
 async function captureRoundTripAdd(
 	fn: (store: IVectorStore) => Promise<unknown>,
 ): Promise<Array<Record<string, unknown>>> {
-	const store = createVectorStore(dbPath);
+	const store = createVectorStore({ vectorsDir: dbPath, pathRoot: dir });
 	await store.initialize();
 	try {
 		// Open the real table first, then swap the handle. `ensureTableOpen()`
@@ -423,7 +423,7 @@ describe("hasEmbedKeyColumn", () => {
 	 * each step.
 	 */
 	test("answers per call across clear() and re-create on ONE instance", async () => {
-		const store = createVectorStore(dbPath);
+		const store = createVectorStore({ vectorsDir: dbPath, pathRoot: dir });
 		await store.initialize();
 		try {
 			expect(await store.hasEmbedKeyColumn()).toBeNull();

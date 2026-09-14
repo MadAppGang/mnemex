@@ -3874,7 +3874,11 @@ async function handleBenchmark(args: string[]): Promise<void> {
 			}
 
 			const { createVectorStore } = await import("./core/store.js");
-			const store = createVectorStore(tempDbPath);
+			const { resolveStoreLocation } = await import("./core/store-location.js");
+			const store = createVectorStore({
+				vectorsDir: tempDbPath,
+				pathRoot: resolveStoreLocation(projectPath).pathRoot,
+			});
 			await store.initialize();
 
 			// Add chunks with embeddings (filter out failed ones with empty vectors)
@@ -5897,12 +5901,13 @@ async function handleOpenCodeIntegration(
 				// Check if indexed
 				const { createVectorStore } = await import("./core/store.js");
 				const { getVectorStorePath } = await import("./config.js");
-				// projectPath passed explicitly: derived from the store path it is
-				// the override's parent, not the project, once the store has moved.
-				const store = await createVectorStore(
-					getVectorStorePath(projectPath),
-					projectPath,
+				const { resolveStoreLocation } = await import(
+					"./core/store-location.js"
 				);
+				const store = createVectorStore({
+					vectorsDir: getVectorStorePath(projectPath),
+					pathRoot: resolveStoreLocation(projectPath).pathRoot,
+				});
 				const stats = await store.getStats();
 				if (stats.totalChunks === 0) {
 					console.log("  ⚠️  Project not indexed. Run: mnemex index\n");
@@ -6220,10 +6225,10 @@ async function handleDocsFetch(
 				{ waitTimeout: STORE_WRITER_LOCK_WAIT_MS, phase: "docs" },
 				async (lock) => {
 					const tracker = createFileTracker(indexDbPath, projectPath);
-					const vectorStore = createVectorStore(
-						getVectorStorePath(projectPath),
-						projectPath,
-					);
+					const vectorStore = createVectorStore({
+						vectorsDir: getVectorStorePath(projectPath),
+						pathRoot: storeLocation.pathRoot,
+					});
 					try {
 						await vectorStore.initialize();
 						// Replace this library's old docs
@@ -6401,9 +6406,10 @@ async function handleDocsClear(
 	const { resolveStoreLocation } = await import("./core/store-location.js");
 	const { describeStoreLockRefusal, STORE_WRITER_LOCK_WAIT_MS, withStoreLock } =
 		await import("./core/store-lock-policy.js");
+	const storeLocation = resolveStoreLocation(projectPath);
 	let waitingShown = false;
 	const outcome = await withStoreLock(
-		resolveStoreLocation(projectPath),
+		storeLocation,
 		{
 			waitTimeout: STORE_WRITER_LOCK_WAIT_MS,
 			phase: "docs:clear",
@@ -6417,10 +6423,10 @@ async function handleDocsClear(
 		},
 		async (lock) => {
 			const tracker = createFileTracker(indexDbPath, projectPath);
-			const vectorStore = createVectorStore(
-				getVectorStorePath(projectPath),
-				projectPath,
-			);
+			const vectorStore = createVectorStore({
+				vectorsDir: getVectorStorePath(projectPath),
+				pathRoot: storeLocation.pathRoot,
+			});
 			await vectorStore.initialize();
 
 			try {

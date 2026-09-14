@@ -140,7 +140,7 @@ async function withFreshStore<T>(
 }
 
 async function makeStore() {
-	const store = createVectorStore(dbPath);
+	const store = createVectorStore({ vectorsDir: dbPath, pathRoot: dir });
 	await store.initialize();
 	return store;
 }

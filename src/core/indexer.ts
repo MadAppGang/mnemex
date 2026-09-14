@@ -721,7 +721,10 @@ export class Indexer {
 
 		// Create vector store
 		const vectorStorePath = getVectorStorePath(this.projectPath);
-		this.vectorStore = createVectorStore(vectorStorePath);
+		this.vectorStore = createVectorStore({
+			vectorsDir: vectorStorePath,
+			pathRoot: resolveStoreLocation(this.projectPath).pathRoot,
+		});
 		await this.vectorStore.initialize();
 
 		// Initialize enrichment if enabled (requires vector mode for embeddings).
@@ -1175,7 +1178,17 @@ export class Indexer {
 			for (const deletedFile of deletedFiles) {
 				const chunkIds = this.fileTracker!.getChunkIds(deletedFile);
 				if (chunkIds.length > 0) {
-					await this.vectorStore!.deleteByFile(deletedFile);
+					const rowsDeleted = await this.vectorStore!.deleteByFile(deletedFile);
+					// The tracker says this file has chunks, so a delete that removed
+					// none left them behind: they stay searchable once the tracker row
+					// below is gone, and nothing revisits them. Visible only because
+					// deleteByFile now returns LanceDB's real count, not a constant.
+					if (rowsDeleted === 0) {
+						console.warn(
+							`Warning: deleting ${deletedFile} removed 0 of its ${chunkIds.length} ` +
+								"chunk(s) from the vector store; they remain searchable.",
+						);
+					}
 				}
 				await yieldToEventLoop();
 				this.fileTracker!.removeFile(deletedFile);

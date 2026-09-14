@@ -90,7 +90,7 @@ describe("Unified Search", () => {
 		rmSync(TEST_DIR, { recursive: true, force: true });
 		mkdirSync(TEST_DIR, { recursive: true });
 
-		store = new VectorStore(VECTORS_DIR, TEST_DIR);
+		store = new VectorStore({ vectorsDir: VECTORS_DIR, pathRoot: TEST_DIR });
 		await store.initialize();
 
 		// Add code chunks
@@ -376,7 +376,10 @@ describe("Unified Search", () => {
 	test("empty index returns empty results", async () => {
 		const emptyDir = join(TEST_DIR, "empty-vectors");
 		mkdirSync(emptyDir, { recursive: true });
-		const emptyStore = new VectorStore(emptyDir, TEST_DIR);
+		const emptyStore = new VectorStore({
+			vectorsDir: emptyDir,
+			pathRoot: TEST_DIR,
+		});
 
 		const results = await emptyStore.search("test", makeVector(1), {
 			limit: 5,

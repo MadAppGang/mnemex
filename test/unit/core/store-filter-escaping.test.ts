@@ -131,7 +131,7 @@ afterEach(() => {
 async function withFreshStore<T>(
 	fn: (store: IVectorStore) => Promise<T>,
 ): Promise<T> {
-	const store = createVectorStore(dbPath);
+	const store = createVectorStore({ vectorsDir: dbPath, pathRoot: dir });
 	await store.initialize();
 	try {
 		return await fn(store);

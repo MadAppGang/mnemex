@@ -189,7 +189,10 @@ async function storedChunkCount(
 	projectPath: string,
 	filePath: string,
 ): Promise<number> {
-	const store = createVectorStore(getVectorStorePath(projectPath));
+	const store = createVectorStore({
+		vectorsDir: getVectorStorePath(projectPath),
+		pathRoot: projectPath,
+	});
 	await store.initialize();
 	try {
 		return (await store.getChunksWithVectors(filePath)).length;
@@ -470,7 +473,10 @@ describe("index v2 -> v3", () => {
 		// reaches at most two of the four entry points.
 		expect(upgraded.result.upgradedFromIndexVersion).toBe(2);
 		// ON DISK: the legacy row is gone (the table was rebuilt from scratch)…
-		const store = createVectorStore(getVectorStorePath(projectPath));
+		const store = createVectorStore({
+			vectorsDir: getVectorStorePath(projectPath),
+			pathRoot: projectPath,
+		});
 		await store.initialize();
 		try {
 			const legacy = await store.getChunksWithVectors(

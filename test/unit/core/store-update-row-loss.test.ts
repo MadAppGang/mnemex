@@ -149,7 +149,7 @@ function chunk(
 async function withFreshStore<T>(
 	fn: (store: IVectorStore) => Promise<T>,
 ): Promise<T> {
-	const store = createVectorStore(dbPath);
+	const store = createVectorStore({ vectorsDir: dbPath, pathRoot: dir });
 	await store.initialize();
 	try {
 		return await fn(store);
@@ -173,7 +173,7 @@ async function withFailingAdd<T>(
 	mode: "first" | "all",
 	fn: (store: IVectorStore) => Promise<T>,
 ): Promise<{ addCalls: number }> {
-	const store = createVectorStore(dbPath);
+	const store = createVectorStore({ vectorsDir: dbPath, pathRoot: dir });
 	await store.initialize();
 	try {
 		// Open the real table first, then swap the handle. `ensureTableOpen()`

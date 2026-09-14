@@ -460,6 +460,7 @@ export interface IVectorStore {
 		queryVector: number[] | undefined,
 		options?: SearchOptions,
 	): Promise<SearchResult[]>;
+	/** Rows actually deleted (LanceDB's `numDeletedRows`); 0 on no match or failure. */
 	deleteByFile(filePath: string): Promise<number>;
 	deleteByFileHash(fileHash: string): Promise<number>;
 	getChunksWithVectors(filePath: string): Promise<ChunkWithEmbedding[]>;
@@ -527,9 +528,28 @@ export interface IVectorStore {
 // Vector Store Class
 // ============================================================================
 
+/**
+ * Construction options for `VectorStore`. BOTH fields are required, and that is
+ * the mechanism: the positional `(dbPath, projectPath?)` it replaces let callers
+ * omit the second argument and inherit `dirname(dirname(dbPath))`, a directory
+ * derived from wherever the store happens to sit. An object with no optional
+ * field makes every such caller a compile error instead.
+ */
+export interface VectorStoreOptions {
+	/** The LanceDB directory: the store's `vectors/`. */
+	vectorsDir: string;
+	/**
+	 * The caller's own `resolveStoreLocation(startPath).pathRoot`: the worktree
+	 * root, or the start path outside a repository. Never derived from
+	 * `vectorsDir`, and never read back from the store.
+	 */
+	pathRoot: string;
+}
+
 export class VectorStore implements IVectorStore {
 	private dbPath: string;
-	private projectPath: string;
+	/** See `VectorStoreOptions.pathRoot`. Read by `getTestFileMode`. */
+	private pathRoot: string;
 	private db: lancedb.Connection | null = null;
 	private table: lancedb.Table | null = null;
 	private dimension: number | null = null;
@@ -537,11 +557,17 @@ export class VectorStore implements IVectorStore {
 	private _dimensionMismatchCleared = false;
 	private testFileDetector: TestFileDetector;
 
-	constructor(dbPath: string, projectPath?: string) {
-		this.dbPath = dbPath;
-		// Extract project path from dbPath if not provided
-		// dbPath is like: /path/to/project/.mnemex/vectors
-		this.projectPath = projectPath ?? dirname(dirname(dbPath));
+	/**
+	 * There is deliberately NO fallback for `pathRoot`. The store used to derive
+	 * it as `dirname(dirname(dbPath))`, which names the project only while the
+	 * store sits at `<project>/.mnemex/vectors`: under an index-dir override it
+	 * named the override's parent, for a benchmark temp store it named
+	 * `.mnemex`, and once the store moves under the git common dir it would name
+	 * `.git`. A default here would restore that trap silently.
+	 */
+	constructor(options: VectorStoreOptions) {
+		this.dbPath = options.vectorsDir;
+		this.pathRoot = options.pathRoot;
 		this.testFileDetector = createTestFileDetector();
 	}
 
@@ -924,7 +950,7 @@ export class VectorStore implements IVectorStore {
 
 		// Type-aware Reciprocal Rank Fusion
 		const weights = getUseCaseWeights(useCase || "search");
-		const testFileMode = getTestFileMode(this.projectPath);
+		const testFileMode = getTestFileMode(this.pathRoot);
 		const fused = typeAwareRRFFusion(
 			vectorResults,
 			bm25Results,
@@ -1026,7 +1052,10 @@ export class VectorStore implements IVectorStore {
 	}
 
 	/**
-	 * Delete all chunks from a specific file
+	 * Delete all chunks from a specific file.
+	 *
+	 * @returns the number of rows LanceDB deleted. 0 means nothing matched, there
+	 * is no table, or the delete failed (it never throws; see the catch).
 	 */
 	async deleteByFile(filePath: string): Promise<number> {
 		// REGRESSION: deleteByFile silently no-opped when the table had not been
@@ -1059,8 +1088,15 @@ export class VectorStore implements IVectorStore {
 				return 0;
 			}
 
-			await table.delete(`filePath = '${escapeSqlLiteral(filePath)}'`);
-			return 1; // LanceDB doesn't return count
+			// The REAL count. LanceDB 0.38 returns `DeleteResult { numDeletedRows,
+			// version }`; this returned a hardcoded 1 under the stale comment "LanceDB
+			// doesn't return count", so a delete that matched zero rows (the
+			// ghost-chunk defect: a relative path against absolute stored paths)
+			// reported success and its caller could not tell.
+			const { numDeletedRows } = await table.delete(
+				`filePath = '${escapeSqlLiteral(filePath)}'`,
+			);
+			return numDeletedRows;
 		} catch {
 			return 0;
 		}
@@ -1079,6 +1115,8 @@ export class VectorStore implements IVectorStore {
 			}
 
 			await table.delete(`fileHash = '${escapeSqlLiteral(fileHash)}'`);
+			// Still a constant, unlike deleteByFile: this member has no caller in
+			// src/ and is retired with its tests in Phase 3b (architecture §3.5).
 			return 1;
 		} catch {
 			return 0;
@@ -1487,7 +1525,7 @@ export class VectorStore implements IVectorStore {
 		const weights = typeWeights || getUseCaseWeights(useCase);
 
 		// Type-aware RRF fusion with test file handling
-		const testFileMode = getTestFileMode(this.projectPath);
+		const testFileMode = getTestFileMode(this.pathRoot);
 		const results = typeAwareRRFFusion(
 			vectorResults,
 			bm25Results,
@@ -2005,7 +2043,7 @@ export class VectorStore implements IVectorStore {
 		}
 
 		// RRF fusion with test file handling
-		const testFileMode = getTestFileMode(this.projectPath);
+		const testFileMode = getTestFileMode(this.pathRoot);
 		const results = reciprocalRankFusion(
 			vectorResults,
 			bm25Results,
@@ -2338,13 +2376,8 @@ function typeAwareRRFFusion(
 // ============================================================================
 
 /**
- * Create a vector store for a project
- * @param dbPath - Path to the vector database (e.g., /project/.mnemex/vectors)
- * @param projectPath - Optional explicit project path (derived from dbPath if not provided)
+ * Create a vector store. Both options are required; see `VectorStoreOptions`.
  */
-export function createVectorStore(
-	dbPath: string,
-	projectPath?: string,
-): IVectorStore {
-	return new VectorStore(dbPath, projectPath);
+export function createVectorStore(options: VectorStoreOptions): IVectorStore {
+	return new VectorStore(options);
 }

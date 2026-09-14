@@ -7,6 +7,7 @@ import {
 } from "../config.js";
 import { createEmbeddingsClient } from "../core/embeddings.js";
 import { createVectorStore, type IVectorStore } from "../core/store.js";
+import { resolveStoreLocation } from "../core/store-location.js";
 import { createFileTracker, type IFileTracker } from "../core/tracker.js";
 import { createLLMClient, type ILLMClient } from "../llm/client.js";
 import { getParserManager } from "../parsers/parser-manager.js";
@@ -144,7 +145,10 @@ export class AutocompleteEngine {
 		await parserManager.initialize();
 
 		const storePath = getVectorStorePath(this.projectPath);
-		this.store = createVectorStore(storePath);
+		this.store = createVectorStore({
+			vectorsDir: storePath,
+			pathRoot: resolveStoreLocation(this.projectPath).pathRoot,
+		});
 		await this.store.initialize();
 
 		const indexDbPath = getIndexDbPath(this.projectPath);

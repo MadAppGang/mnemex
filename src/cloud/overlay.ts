@@ -22,6 +22,7 @@ import {
 import { join } from "node:path";
 import { chunkFileByPath } from "../core/chunker.js";
 import { VectorStore } from "../core/store.js";
+import { resolveStoreLocation } from "../core/store-location.js";
 import { getParserManager } from "../parsers/parser-manager.js";
 import type { IEmbeddingsClient, SearchResult } from "../types.js";
 import type { DirtyFile, IOverlayIndex } from "./types.js";
@@ -59,10 +60,10 @@ export class OverlayIndex implements IOverlayIndex {
 		this.overlayDir = options.overlayDir;
 		this.embeddingsClient = options.embeddingsClient;
 		this.fingerprintPath = join(options.overlayDir, ".fingerprint");
-		this.vectorStore = new VectorStore(
-			join(options.overlayDir, "vectors"),
-			options.projectPath,
-		);
+		this.vectorStore = new VectorStore({
+			vectorsDir: join(options.overlayDir, "vectors"),
+			pathRoot: resolveStoreLocation(options.projectPath).pathRoot,
+		});
 	}
 
 	// --------------------------------------------------------------------------

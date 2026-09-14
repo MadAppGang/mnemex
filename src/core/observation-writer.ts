@@ -40,14 +40,15 @@ export async function appendObservation(
 	projectPath: string,
 	doc: DocumentWithEmbedding,
 ): Promise<ObserveOutcome> {
+	const storeLocation = resolveStoreLocation(projectPath);
 	const outcome = await withStoreLock(
-		resolveStoreLocation(projectPath),
+		storeLocation,
 		{ waitTimeout: OBSERVE_LOCK_WAIT_MS, phase: "observe" },
 		async (lock) => {
-			const store = createVectorStore(
-				getVectorStorePath(projectPath),
-				projectPath,
-			);
+			const store = createVectorStore({
+				vectorsDir: getVectorStorePath(projectPath),
+				pathRoot: storeLocation.pathRoot,
+			});
 			try {
 				await store.addDocuments([doc]);
 				lock.recordProgress();
