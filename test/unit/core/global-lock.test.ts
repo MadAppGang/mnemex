@@ -6,8 +6,8 @@
  * inspectLock). What is new here is:
  *  - createGlobalIndexLock() points at a machine-global path (~/.mnemex/...),
  *    overridable via MNEMEX_GLOBAL_LOCK_PATH.
- *  - IndexLock.fromLockPath() builds a lock from an explicit absolute path without
- *    breaking the (projectPath, indexDir) constructor.
+ *  - IndexLock takes an explicit absolute lock path, and the global lock uses
+ *    that constructor directly (fromLockPath is gone now that it takes a path).
  *
  * These tests prove:
  *  - getGlobalLockPath honors the env override and defaults under the home dir.
@@ -32,10 +32,11 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	createGlobalIndexLock,
-	createIndexLock,
+	createStoreLock,
 	getGlobalLockPath,
 	IndexLock,
 } from "../../../src/core/lock.js";
+import { resolveStoreLocation } from "../../../src/core/store-location.js";
 
 const DEAD_PID = 2_000_000_000; // almost certainly not a live process
 const tempDirs: string[] = [];
@@ -258,10 +259,10 @@ describe("global lock: wedged holder is auto-reclaimed", () => {
 	});
 });
 
-describe("IndexLock.fromLockPath", () => {
+describe("IndexLock(lockPath) — the constructor the global lock uses", () => {
 	test("builds a working lock from an explicit absolute path", async () => {
 		const lockPath = makeGlobalLockPath();
-		const lock = IndexLock.fromLockPath(lockPath);
+		const lock = new IndexLock(lockPath);
 		const result = await lock.acquire({ waitTimeout: 0 });
 		try {
 			expect(result.acquired).toBe(true);
@@ -271,13 +272,13 @@ describe("IndexLock.fromLockPath", () => {
 		}
 	});
 
-	test("does not break the (projectPath, indexDir) constructor", async () => {
-		// Backward-compat smoke: the classic constructor still resolves under the
-		// project's index dir, independent of fromLockPath.
+	test("the store lock still resolves under the project's index dir", async () => {
+		// While the store scope is per-worktree, the store lock derived from the
+		// resolved location lands under the project's own index dir.
 		const projectPath = mkdtempSync(join(tmpdir(), "global-lock-proj-"));
 		tempDirs.push(projectPath);
 		mkdirSync(join(projectPath, ".mnemex"), { recursive: true });
-		const lock = new IndexLock(projectPath);
+		const lock = createStoreLock(resolveStoreLocation(projectPath));
 		const result = await lock.acquire({ waitTimeout: 0 });
 		try {
 			expect(result.acquired).toBe(true);
@@ -301,7 +302,7 @@ describe("deadlock-safety: global + per-project locks are independent", () => {
 		mkdirSync(join(projectPath, ".mnemex"), { recursive: true });
 
 		const globalLock = createGlobalIndexLock();
-		const projectLock = createIndexLock(projectPath);
+		const projectLock = createStoreLock(resolveStoreLocation(projectPath));
 
 		// Acquire in the SAME order the indexer uses: global first, then project.
 		const g = await globalLock.acquire({ waitTimeout: 0 });

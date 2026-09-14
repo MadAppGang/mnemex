@@ -24,7 +24,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { resolveStoreLocation } from "../../../src/core/store-location.js";
 import type { SearchResult } from "../../../src/types.js";
 
 // ── Module mocks ────────────────────────────────────────────────────────────
@@ -33,9 +34,14 @@ import type { SearchResult } from "../../../src/types.js";
 let indexerResults: SearchResult[] = [];
 
 class FakeIndexLockError extends Error {}
+class FakeIndexedModelUnavailableError extends Error {}
 
+// Every named export an importer of indexer.js asks for must be here.
+// `search.ts` imports IndexedModelUnavailableError, and a factory without it
+// fails at link time with "Export named ... not found", before any test runs.
 mock.module("../../../src/core/indexer.js", () => ({
 	IndexLockError: FakeIndexLockError,
+	IndexedModelUnavailableError: FakeIndexedModelUnavailableError,
 	createIndexer: () => ({
 		index: async () => ({
 			filesIndexed: 0,
@@ -178,7 +184,10 @@ async function makeDeps(
 	// biome-ignore lint/suspicious/noExplicitAny: minimal test double
 	cache: any,
 ): Promise<ToolDeps> {
-	const stateManager = new IndexStateManager(ws.indexDir);
+	const stateManager = new IndexStateManager(
+		ws.indexDir,
+		resolveStoreLocation(dirname(ws.indexDir)),
+	);
 	await stateManager.initialize();
 	return {
 		cache,

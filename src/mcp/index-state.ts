@@ -17,6 +17,10 @@
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { inspectLock } from "../core/lock.js";
+import {
+	getLockPathFor,
+	resolveStoreLocation,
+} from "../core/store-location.js";
 import type { ToolDeps } from "./tools/deps.js";
 
 /** One of six mutually-exclusive index situations. */
@@ -147,10 +151,12 @@ export async function buildIndexState(
 	const indexDbPath = join(config.indexDir, "index.db");
 	const hasIndex = existsSync(indexDbPath);
 
-	// config.indexDir is already an ABSOLUTE, fully-resolved path (config.ts joins it
-	// onto workspaceRoot and honors MNEMEX_INDEX_DIR). inspectLock takes that directory
-	// directly and resolves join(indexDir, ".indexing.lock") — no double-join.
-	const inspect = inspectLock(config.indexDir, HEARTBEAT_FRESH_TIMEOUT);
+	// The lock is read where the indexer takes it: the resolved store location,
+	// the same derivation as createStoreLock. It is NOT rebuilt from
+	// config.indexDir, the MCP's own resolver, which ignores ProjectConfig.indexDir
+	// and double-joins an absolute MNEMEX_INDEX_DIR onto the workspace root.
+	const lockPath = getLockPathFor(resolveStoreLocation(config.workspaceRoot));
+	const inspect = inspectLock(lockPath, HEARTBEAT_FRESH_TIMEOUT);
 
 	// ── Read-only stats (mirror status.ts; never throws) ──────────────────────
 	let indexSizeBytes = 0;
@@ -221,7 +227,7 @@ export async function buildIndexState(
 				`Lock file present but holder PID ${inspect.pid} is not running — the lock appears stale.`,
 			);
 			recommendations.push(
-				`This is informational; no lock was removed. If you are sure no indexer is running, clear it manually (e.g. run 'mnemex index --force-unlock' or delete ${config.indexDir}/.indexing.lock).`,
+				`This is informational; no lock was removed. If you are sure no indexer is running, clear it manually (e.g. run 'mnemex index --force-unlock' or delete ${lockPath}).`,
 			);
 			if (canReturnCachedResults) {
 				recommendations.push(
@@ -265,7 +271,7 @@ export async function buildIndexState(
 				`Indexer (PID ${inspect.pid}) appears HUNG${inPhase}: it is alive but has made no indexing progress for ~${sinceProgressSec}s.`,
 			);
 			recommendations.push(
-				`It will be reclaimed automatically by the next index run; or force-unlock now (run 'mnemex index --force-unlock' or delete ${config.indexDir}/.indexing.lock).`,
+				`It will be reclaimed automatically by the next index run; or force-unlock now (run 'mnemex index --force-unlock' or delete ${lockPath}).`,
 			);
 			if (canReturnCachedResults) {
 				recommendations.push(

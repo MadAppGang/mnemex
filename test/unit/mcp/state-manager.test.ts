@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolveStoreLocation } from "../../../src/core/store-location.js";
 import { IndexStateManager } from "../../../src/mcp/state-manager.js";
 
 // ---------------------------------------------------------------------------
@@ -43,7 +44,10 @@ describe("IndexStateManager", () => {
 
 	beforeEach(async () => {
 		indexDir = makeTempIndexDir();
-		manager = new IndexStateManager(indexDir);
+		manager = new IndexStateManager(
+			indexDir,
+			resolveStoreLocation(rootOf(indexDir)),
+		);
 		// initialize() reads .reindex-timestamp and checks lock status.
 		// On a fresh temp dir there is no timestamp or lock.
 		await manager.initialize();

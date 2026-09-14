@@ -19,7 +19,8 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { resolveStoreLocation } from "../../../src/core/store-location.js";
 import {
 	buildIndexState,
 	HEARTBEAT_FRESH_TIMEOUT,
@@ -123,7 +124,10 @@ function makeDeps(
 }
 
 async function freshManager(indexDir: string): Promise<IndexStateManager> {
-	const m = new IndexStateManager(indexDir);
+	const m = new IndexStateManager(
+		indexDir,
+		resolveStoreLocation(dirname(indexDir)),
+	);
 	await m.initialize();
 	return m;
 }

@@ -1,19 +1,51 @@
 /**
  * Index Lock Manager
  *
- * Prevents race conditions when multiple processes try to index the same project.
- * Detects stale locks from dead processes to avoid infinite waits.
+ * One lock file serialises every writer of an index store, and stale locks left
+ * by dead or hung processes are reclaimed so a crash never wedges the next run.
+ *
+ * WHERE THE FILE LIVES. `IndexLock` takes the lock-file PATH and nothing else.
+ * The store lock's path comes from the store-location seam: `createStoreLock(loc)`
+ * uses `getLockPathFor(loc)`, which is `<storeDir>/.indexing.lock`. So the lock
+ * follows the data it guards, and two worktrees that resolve to one store contend
+ * on one file. The path used to be rebuilt from `projectPath`, so two worktrees
+ * took two files and both proceeded. The filename is declared ONCE, in
+ * `store-location.ts`, and this module does not repeat it.
+ *
+ * HOW IT IS TAKEN. Atomically. `open(path, "wx")` (O_CREAT|O_EXCL) either creates
+ * the file or fails with EEXIST, so exactly one contender wins. The old sequence
+ * (read absent, write, read back to verify) let two processes each verify their
+ * own write and both proceed.
+ *
+ * WHO MAY REMOVE IT. Every lock file carries an ownership token (`randomUUID()`).
+ * `release()` and the stale-reclaim path remove a lock only after proving it is
+ * the one they mean: they move it aside first and compare second. This is the
+ * same three-layer shape as the credential lock (CLAUDE.md #25a). A holder whose
+ * lock was reclaimed as stale therefore cannot unlink the new owner's file.
+ *
+ * HOW THE HOLDER UPDATES IT. Through the descriptor it created the file with,
+ * never through the path. If the lock was reclaimed, the holder's heartbeat
+ * lands in the detached inode, which nobody reads, instead of overwriting the
+ * new owner's file.
  */
 
+import { randomUUID } from "node:crypto";
 import {
+	closeSync,
 	existsSync,
+	fstatSync,
+	linkSync,
 	mkdirSync,
+	openSync,
 	readFileSync,
+	renameSync,
+	statSync,
 	unlinkSync,
-	writeFileSync,
+	writeSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { getLockPathFor, type StoreLocation } from "./store-location.js";
 
 /** Lock file data structure */
 interface LockData {
@@ -55,6 +87,14 @@ interface LockData {
 	phaseStartedAt?: number;
 	/** Human-readable start time for debugging */
 	startedAt: string;
+	/**
+	 * Ownership token, a `randomUUID()` written by `acquire()`. It is the only
+	 * thing that proves a lock file belongs to one particular holder: a pid can be
+	 * reused, and two locks taken by one process in the same millisecond share a
+	 * `startTime`. Optional for backward compat: a lock written by an older
+	 * binary has none, and is identified by (pid, startTime) instead.
+	 */
+	token?: string;
 }
 
 /** Lock acquisition result */
@@ -67,6 +107,8 @@ export interface LockResult {
 	holderPid?: number;
 	/** If already running, how long it's been running (ms) */
 	runningFor?: number;
+	/** When `reason` is "error": what failed, for the message shown to the user. */
+	errorMessage?: string;
 }
 
 /** Options for lock acquisition */
@@ -87,7 +129,6 @@ export interface LockOptions {
 	onWaiting?: (holderPid: number, waitedMs: number) => void;
 }
 
-const LOCK_FILENAME = ".indexing.lock";
 const DEFAULT_STALE_TIMEOUT = 10000; // 10 seconds without heartbeat = stale
 /**
  * Generous window (ms) after which a lock that has made no forward progress is
@@ -99,6 +140,29 @@ const DEFAULT_STALE_TIMEOUT = 10000; // 10 seconds without heartbeat = stale
 export const DEFAULT_PROGRESS_TIMEOUT = 300000; // 5 minutes without progress = hung
 const DEFAULT_POLL_INTERVAL = 1000; // Check every second
 const HEARTBEAT_INTERVAL = 1000; // Update heartbeat every 1 second
+
+/**
+ * A lock file that exists but does not parse is either mid-write (the creator
+ * has opened it and not yet written its record) or crash residue. It is re-read
+ * this many times, this far apart, before it is judged, so a torn read is not
+ * reported as a holder with no pid.
+ */
+const SETTLE_RETRIES = 3;
+const SETTLE_DELAY_MS = 20;
+
+/**
+ * When another process is reclaiming the same stale lock, back off this long and
+ * try again, at most this many times, before treating the lock as held.
+ */
+const RECLAIM_RETRY_DELAY_MS = 25;
+const MAX_CONTESTED_RECLAIMS = 20;
+
+/**
+ * `open(wx)` said EEXIST and then the file was gone when read: the holder
+ * released in between. That is normal, but a file that is always gone when read
+ * and always present when created is not, so the loop is bounded.
+ */
+const MAX_VANISHED_RETRIES = 100;
 
 /**
  * Check if a process is still running (cross-platform: Windows, Linux, macOS)
@@ -123,6 +187,30 @@ function isProcessRunning(pid: number): boolean {
 }
 
 /**
+ * Parse a lock record. `null` for anything that is not a complete record,
+ * including well-formed JSON missing the numeric fields (`{}`), which would
+ * otherwise reach `process.kill(undefined, 0)`. Trailing whitespace is legal:
+ * a holder pads a shrinking record rather than truncating (see `encodeRecord`).
+ */
+function parseLockData(text: string): LockData | null {
+	try {
+		const parsed = JSON.parse(text) as Partial<LockData> | null;
+		if (
+			parsed === null ||
+			typeof parsed !== "object" ||
+			typeof parsed.pid !== "number" ||
+			typeof parsed.startTime !== "number" ||
+			typeof parsed.heartbeat !== "number"
+		) {
+			return null;
+		}
+		return parsed as LockData;
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Read lock file data
  */
 function readLockFile(lockPath: string): LockData | null {
@@ -130,18 +218,218 @@ function readLockFile(lockPath: string): LockData | null {
 		if (!existsSync(lockPath)) {
 			return null;
 		}
-		const content = readFileSync(lockPath, "utf-8");
-		return JSON.parse(content) as LockData;
+		return parseLockData(readFileSync(lockPath, "utf-8"));
 	} catch {
 		return null;
 	}
 }
 
 /**
- * Write lock file data
+ * The record a holder writes, padded with spaces to at least `minBytes`.
+ *
+ * Padding instead of truncating is what lets the holder rewrite in place with
+ * ONE positional write: a shorter record never leaves the tail of a longer one
+ * behind, and there is no truncate-then-write window in which a reader sees an
+ * empty file.
  */
-function writeLockFile(lockPath: string, data: LockData): void {
-	writeFileSync(lockPath, JSON.stringify(data, null, 2));
+function encodeRecord(data: LockData, minBytes: number): Buffer {
+	const json = Buffer.from(JSON.stringify(data, null, 2), "utf8");
+	if (json.length >= minBytes) return json;
+	return Buffer.concat([json, Buffer.alloc(minBytes - json.length, 0x20)]);
+}
+
+/** What a lock file says and which inode says it: enough to name one lock exactly. */
+interface LockObservation {
+	/**
+	 * Identity: `t:<token>`; `p:<pid>:<startTime>` for a lock written before
+	 * tokens existed; `i:<inode>:<mtime>` for a file that does not parse.
+	 */
+	key: string;
+	/** Parsed contents, or null when the file is empty, partial or corrupt. */
+	data: LockData | null;
+	mtimeMs: number;
+}
+
+function identityKey(
+	data: LockData | null,
+	ino: number,
+	mtimeMs: number,
+): string {
+	if (data === null) return `i:${ino}:${Math.trunc(mtimeMs)}`;
+	if (typeof data.token === "string" && data.token.length > 0) {
+		return `t:${data.token}`;
+	}
+	return `p:${data.pid}:${data.startTime}`;
+}
+
+/** `null` when there is nothing at `path`. */
+function observeLockAt(path: string): LockObservation | null {
+	let text: string;
+	let ino: number;
+	let mtimeMs: number;
+	try {
+		const st = statSync(path);
+		ino = st.ino;
+		mtimeMs = st.mtimeMs;
+		text = readFileSync(path, "utf8");
+	} catch {
+		return null;
+	}
+	const data = parseLockData(text);
+	return { key: identityKey(data, ino, mtimeMs), data, mtimeMs };
+}
+
+/** Re-read a lock that does not parse, so a creator mid-write is not misjudged. */
+async function observeSettled(path: string): Promise<LockObservation | null> {
+	let observed = observeLockAt(path);
+	for (
+		let attempt = 0;
+		attempt < SETTLE_RETRIES && observed !== null && observed.data === null;
+		attempt++
+	) {
+		await new Promise((resolve) => setTimeout(resolve, SETTLE_DELAY_MS));
+		observed = observeLockAt(path);
+	}
+	return observed;
+}
+
+/**
+ * Whether a lock may be taken over. A parseable lock follows `isLockStale`. A
+ * lock that does not parse is given `staleTimeout` of mtime age to finish being
+ * written. Past that, it is residue from a process that died between creating
+ * the file and writing its record.
+ */
+function isReclaimable(
+	observed: LockObservation,
+	staleTimeout: number,
+	progressTimeout: number,
+): boolean {
+	if (observed.data !== null) {
+		return isLockStale(observed.data, staleTimeout, progressTimeout);
+	}
+	return Date.now() - observed.mtimeMs > staleTimeout;
+}
+
+/**
+ * Move the lock aside under a unique name, in one atomic `rename`, and say what
+ * was moved. Whatever this returns was removed from the well-known name by us
+ * alone, so comparing it cannot race with anyone.
+ */
+function detachLockFile(
+	lockPath: string,
+): { path: string; key: string } | null {
+	const path = `${lockPath}.detached-${randomUUID()}`;
+	try {
+		renameSync(lockPath, path);
+	} catch {
+		return null;
+	}
+	return { path, key: observeLockAt(path)?.key ?? "" };
+}
+
+/**
+ * Put back a lock we detached but were not entitled to remove.
+ *
+ * `link` rather than `rename`: it FAILS if the name is occupied instead of
+ * overwriting, so restoring can never clobber a third process's lock.
+ */
+function restoreDetachedLock(lockPath: string, detachedPath: string): boolean {
+	try {
+		linkSync(detachedPath, lockPath);
+	} catch {
+		return false;
+	}
+	try {
+		unlinkSync(detachedPath);
+	} catch {}
+	return true;
+}
+
+/** FNV-1a, for a short path-safe name derived from a lock identity. */
+function shortHash(value: string): string {
+	let h = 0x811c9dc5;
+	for (let i = 0; i < value.length; i++) {
+		h ^= value.charCodeAt(i);
+		h = Math.imul(h, 0x01000193) >>> 0;
+	}
+	return h.toString(16).padStart(8, "0");
+}
+
+/** Outcome of trying to take over a lock judged stale. */
+type Reclaim = "reclaimed" | "retry" | "ambiguous";
+
+/**
+ * Take over the lock identified by `observed`, or do nothing.
+ *
+ * THREE LAYERS, as for the credential lock (CLAUDE.md #25a, `src/config.ts`):
+ *
+ *  1. ELECTION. Only the process that wins `open(claim, "wx")` may touch the
+ *     lock at all. The claim is named after the lock's identity, so every process
+ *     that judged the same stale lock competes for the same claim. Without this,
+ *     C and D both judge one lock stale; C removes it and takes a fresh one; D
+ *     then removes C's LIVE lock.
+ *  2. RE-VERIFICATION. The winner re-reads the lock while holding the right, so
+ *     a takeover that completed since the judgement is seen.
+ *  3. DETACH AND COMPARE. `rename` moves one specific inode out of the name in
+ *     one step, and only then is its identity compared. If it was not ours to
+ *     remove it is put back, and if that fails the outcome is "ambiguous" and
+ *     the caller refuses rather than become a second holder.
+ *
+ * A process that dies holding the claim leaves a file named after a lock that is
+ * itself stale. The next pass drops it once it is older than `staleTimeout`.
+ */
+function reclaimStaleLock(
+	lockPath: string,
+	observed: LockObservation,
+	staleTimeout: number,
+	stillReclaimable: (current: LockObservation) => boolean,
+): Reclaim {
+	const claim = `${lockPath}.reclaim-${shortHash(observed.key)}`;
+	let claimFd: number;
+	try {
+		claimFd = openSync(claim, "wx");
+	} catch {
+		try {
+			if (Date.now() - statSync(claim).mtimeMs > staleTimeout) {
+				unlinkSync(claim);
+			}
+		} catch {}
+		return "retry";
+	}
+
+	try {
+		try {
+			writeSync(claimFd, String(process.pid));
+		} catch {}
+		try {
+			closeSync(claimFd);
+		} catch {}
+
+		// LAYER 2 — is the thing we judged still the thing that is there?
+		const current = observeLockAt(lockPath);
+		if (
+			current === null ||
+			current.key !== observed.key ||
+			!stillReclaimable(current)
+		) {
+			return "retry";
+		}
+
+		// LAYER 3 — swap first, compare second.
+		const detached = detachLockFile(lockPath);
+		if (detached === null) return "retry";
+		if (detached.key === observed.key) {
+			try {
+				unlinkSync(detached.path);
+			} catch {}
+			return "reclaimed";
+		}
+		return restoreDetachedLock(lockPath, detached.path) ? "retry" : "ambiguous";
+	} finally {
+		try {
+			unlinkSync(claim);
+		} catch {}
+	}
 }
 
 /**
@@ -250,12 +538,10 @@ export type LockInspection =
  * no unlink, no write, and only a `process.kill(pid, 0)` liveness probe — never a
  * real signal.
  *
- * @param indexDir      ABSOLUTE path to the index directory (e.g. config.indexDir).
- *                      The lock file is resolved as join(indexDir, ".indexing.lock").
- *                      This is the SOLE signature — no (projectPath, indexDir) form —
- *                      because config.indexDir is already absolute and is the only
- *                      thing the caller has; taking it directly avoids a path.join
- *                      double-join bug under MNEMEX_INDEX_DIR.
+ * @param lockPath      ABSOLUTE path to the lock file. For the store lock that is
+ *                      `getLockPathFor(loc)`: the caller derives it from the
+ *                      resolved store location, exactly as `createStoreLock` does,
+ *                      so the inspector reads the file the holder writes.
  * @param staleTimeout  Window (ms) for the informational isHeartbeatFresh flag.
  *                      Default DEFAULT_STALE_TIMEOUT (10000); the sole caller
  *                      (index-state.ts) passes HEARTBEAT_FRESH_TIMEOUT (30000).
@@ -264,24 +550,15 @@ export type LockInspection =
  *                      hang window used by acquire()'s reclaim path.
  */
 export function inspectLock(
-	indexDir: string,
+	lockPath: string,
 	staleTimeout: number = DEFAULT_STALE_TIMEOUT,
 	progressTimeout: number = DEFAULT_PROGRESS_TIMEOUT,
 ): LockInspection {
-	const lockPath = join(indexDir, LOCK_FILENAME);
+	// readLockFile returns null for an absent file, corrupt/partial JSON, and
+	// well-formed JSON missing the required numeric fields (e.g. `{}`), so the
+	// classification decision tree is total.
 	const lock = readLockFile(lockPath);
-
-	// readLockFile returns null for an absent file OR corrupt/partial JSON.
-	// Additionally guard against well-formed JSON missing the required numeric
-	// fields (e.g. `{}`), which would otherwise produce a process.kill(undefined,0)
-	// TypeError or NaN elapsed/heartbeat values. Treat all of these as "no lock"
-	// so the classification decision tree is total.
-	if (
-		!lock ||
-		typeof lock.pid !== "number" ||
-		typeof lock.startTime !== "number" ||
-		typeof lock.heartbeat !== "number"
-	) {
+	if (!lock) {
 		return { present: false };
 	}
 
@@ -327,15 +604,15 @@ export interface IIndexLock {
 	 * Stamp forward progress on the lock. Call AFTER each genuine unit of
 	 * indexing work completes (embed batch / addChunks / addCodeUnits). Advances
 	 * `lastProgressAt`, which is the signal `isLockStale` uses to detect a hung
-	 * holder. No-op if this process does not own the lock.
+	 * holder. No-op unless this instance holds the lock.
 	 */
 	recordProgress(): void;
 	/**
 	 * Record WHICH phase the holder has entered (e.g. "writing:lance"). Updates
 	 * `phase` and resets `phaseStartedAt` to now. Honest-reporting only: it does
 	 * NOT advance `lastProgressAt`, so it does NOT affect the hung DECISION — it
-	 * only lets the report attribute a hang to a phase. No-op if this process does
-	 * not own the lock.
+	 * only lets the report attribute a hang to a phase. No-op unless this
+	 * instance holds the lock.
 	 */
 	setPhase(phase: string): void;
 	isLocked(
@@ -349,12 +626,31 @@ export interface IIndexLock {
 	forceRelease(): boolean;
 }
 
+/** What a holder keeps: the descriptor it created the file with, and its record. */
+interface HeldLock {
+	fd: number;
+	/** The inode `fd` refers to, so `release()` can tell whether the name is still ours. */
+	ino: number;
+	data: LockData;
+	/** Bytes currently in the file; a rewrite pads to at least this. */
+	size: number;
+}
+
+type CreateAttempt =
+	| { kind: "created"; held: HeldLock }
+	| { kind: "exists" }
+	| { kind: "error"; message: string };
+
+function errorMessageOf(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
 /**
  * Index Lock Manager
  *
  * Usage:
  * ```typescript
- * const lock = new IndexLock(projectPath);
+ * const lock = createStoreLock(resolveStoreLocation(projectPath));
  *
  * const result = await lock.acquire({ waitTimeout: 30000 });
  * if (!result.acquired) {
@@ -370,26 +666,28 @@ export interface IIndexLock {
  * ```
  */
 export class IndexLock implements IIndexLock {
-	private lockPath: string;
+	private readonly lockPath: string;
 	private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-	private acquired = false;
-
-	constructor(projectPath: string, indexDir = ".mnemex") {
-		this.lockPath = join(projectPath, indexDir, LOCK_FILENAME);
-	}
+	/** Non-null exactly while this instance holds the lock. */
+	private held: HeldLock | null = null;
 
 	/**
-	 * Construct an IndexLock from an EXPLICIT absolute lock-file path instead of
-	 * deriving it from (projectPath, indexDir). Used by the machine-global lock,
-	 * whose lock file lives under the user's home dir rather than inside any single
-	 * project. Routes through the real constructor (throwaway projectPath) so the
-	 * private field initializers run, then overrides `lockPath` with the exact path.
-	 * The (projectPath, indexDir) constructor signature is left untouched.
+	 * @param lockPath ABSOLUTE path of the lock file. For the store lock use
+	 *                 `createStoreLock(loc)`, which derives it from the resolved
+	 *                 store location; do not rebuild it from a project path.
 	 */
-	static fromLockPath(lockPath: string): IndexLock {
-		const lock = new IndexLock("");
-		lock.lockPath = lockPath;
-		return lock;
+	constructor(lockPath: string) {
+		this.lockPath = lockPath;
+	}
+
+	/** The lock file this instance takes. */
+	get path(): string {
+		return this.lockPath;
+	}
+
+	/** The token in the file while this instance holds it; `null` otherwise. */
+	get ownershipToken(): string | null {
+		return this.held?.data.token ?? null;
 	}
 
 	/**
@@ -407,101 +705,139 @@ export class IndexLock implements IIndexLock {
 			onWaiting,
 		} = options;
 
+		if (this.held !== null) {
+			// O_EXCL against our own file would say "held", which is true.
+			return {
+				acquired: false,
+				reason: "already_running",
+				holderPid: process.pid,
+				runningFor: Date.now() - this.held.data.startTime,
+			};
+		}
+
 		const startWait = Date.now();
+		let contestedReclaims = 0;
+		let vanished = 0;
 
 		while (true) {
-			// Check for existing lock
-			const existingLock = readLockFile(this.lockPath);
-
-			if (existingLock) {
-				// Check if it's stale (dead process, hung holder, or no heartbeat).
-				// Passing progressTimeout here is what makes a hung-but-alive holder
-				// reclaimable instead of blocking every other process forever.
-				if (isLockStale(existingLock, staleTimeout, progressTimeout)) {
-					// Clean up stale lock and continue to acquire
-					try {
-						unlinkSync(this.lockPath);
-					} catch {
-						// Ignore - another process may have cleaned it up
-					}
-				} else {
-					// Lock is held by an active process
-					const waitedMs = Date.now() - startWait;
-
-					if (waitTimeout > 0 && waitedMs < waitTimeout) {
-						// Wait and retry
-						if (onWaiting) {
-							onWaiting(existingLock.pid, waitedMs);
-						}
-						await this.sleep(pollInterval);
-						continue;
-					}
-
-					// Timeout or no wait requested
-					return {
-						acquired: false,
-						reason: waitTimeout > 0 ? "timeout" : "already_running",
-						holderPid: existingLock.pid,
-						runningFor: Date.now() - existingLock.startTime,
-					};
-				}
-			}
-
-			// Try to acquire lock
-			const now = Date.now();
-			const lockData: LockData = {
-				pid: process.pid,
-				startTime: now,
-				heartbeat: now,
-				lastProgressAt: now,
-				startedAt: new Date(now).toISOString(),
-			};
-
-			try {
-				writeLockFile(this.lockPath, lockData);
-
-				// Verify we got the lock (another process might have won the race)
-				const verifyLock = readLockFile(this.lockPath);
-				if (verifyLock?.pid !== process.pid) {
-					// Lost the race, retry
-					continue;
-				}
-
-				// Successfully acquired
-				this.acquired = true;
+			const attempt = this.tryCreate();
+			if (attempt.kind === "created") {
+				this.held = attempt.held;
 				this.startHeartbeat();
-
 				return { acquired: true };
-			} catch (error) {
+			}
+			if (attempt.kind === "error") {
 				return {
 					acquired: false,
 					reason: "error",
+					errorMessage: attempt.message,
 				};
 			}
+
+			// EEXIST: somebody holds it, or held it and died.
+			const observed = await observeSettled(this.lockPath);
+			if (observed === null) {
+				// Released between our create and our read. Try again at once.
+				if (++vanished > MAX_VANISHED_RETRIES) {
+					return {
+						acquired: false,
+						reason: "error",
+						errorMessage: `${this.lockPath} exists when created but cannot be read`,
+					};
+				}
+				continue;
+			}
+
+			// A dead, hung or heartbeat-stale holder is reclaimed. Passing
+			// progressTimeout here is what makes a hung-but-alive holder reclaimable
+			// instead of blocking every other process forever.
+			if (isReclaimable(observed, staleTimeout, progressTimeout)) {
+				const outcome = reclaimStaleLock(
+					this.lockPath,
+					observed,
+					staleTimeout,
+					(current) => isReclaimable(current, staleTimeout, progressTimeout),
+				);
+				if (outcome === "reclaimed") continue;
+				if (outcome === "ambiguous") {
+					return {
+						acquired: false,
+						reason: "error",
+						errorMessage:
+							`could not put back a lock detached from ${this.lockPath}; ` +
+							"refusing rather than become a second holder",
+					};
+				}
+				// "retry": someone else is reclaiming this lock, or it changed.
+				if (contestedReclaims++ < MAX_CONTESTED_RECLAIMS) {
+					await this.sleep(RECLAIM_RETRY_DELAY_MS);
+					continue;
+				}
+			}
+
+			// Held by an active process.
+			const waitedMs = Date.now() - startWait;
+			if (waitTimeout > 0 && waitedMs < waitTimeout) {
+				if (onWaiting && observed.data !== null) {
+					onWaiting(observed.data.pid, waitedMs);
+				}
+				await this.sleep(pollInterval);
+				continue;
+			}
+
+			return {
+				acquired: false,
+				reason: waitTimeout > 0 ? "timeout" : "already_running",
+				holderPid: observed.data?.pid,
+				runningFor:
+					observed.data !== null
+						? Date.now() - observed.data.startTime
+						: undefined,
+			};
 		}
 	}
 
 	/**
-	 * Release the lock
+	 * Release the lock, removing the file only if it is still ours.
 	 */
 	release(): void {
 		this.stopHeartbeat();
 
-		if (!this.acquired) {
+		const held = this.held;
+		if (held === null) {
 			return;
 		}
+		this.held = null;
 
 		try {
-			// Only delete if we own the lock
-			const lock = readLockFile(this.lockPath);
-			if (lock?.pid === process.pid) {
-				unlinkSync(this.lockPath);
+			// Cheap pre-check, made while `fd` still pins our inode so its number
+			// cannot have been reused: if the name points elsewhere, our lock was
+			// reclaimed (or force-released) and the file there is someone else's.
+			let ours = true;
+			try {
+				ours = held.ino === 0 || statSync(this.lockPath).ino === held.ino;
+			} catch {
+				ours = false;
 			}
-		} catch {
-			// Ignore errors during cleanup
-		}
+			if (!ours) return;
 
-		this.acquired = false;
+			// Swap first, compare second (CLAUDE.md #25a). Reading the token and
+			// then unlinking the PATH is check-then-act: if the lock was reclaimed in
+			// between, that unlink would delete the new owner's lock.
+			const detached = detachLockFile(this.lockPath);
+			if (detached === null) return;
+			if (detached.key === `t:${held.data.token}`) {
+				try {
+					unlinkSync(detached.path);
+				} catch {}
+				return;
+			}
+			restoreDetachedLock(this.lockPath, detached.path);
+		} finally {
+			try {
+				closeSync(held.fd);
+			} catch {}
+		}
 	}
 
 	/**
@@ -553,19 +889,13 @@ export class IndexLock implements IIndexLock {
 	 * Stamp forward progress on the lock. Call AFTER each genuine unit of
 	 * indexing work completes (embed batch / addChunks / addCodeUnits) — never on
 	 * a timer or in a tight loop. Advances `lastProgressAt`, the signal that lets
-	 * a hung holder be detected and reclaimed. No-op if this process does not own
-	 * the lock. Mirrors startHeartbeat()'s safe read-check-write try/catch.
+	 * a hung holder be detected and reclaimed. No-op unless this instance holds
+	 * the lock.
 	 */
 	recordProgress(): void {
-		try {
-			const lock = readLockFile(this.lockPath);
-			if (lock?.pid === process.pid) {
-				lock.lastProgressAt = Date.now();
-				writeLockFile(this.lockPath, lock);
-			}
-		} catch {
-			// Ignore progress-recording errors
-		}
+		this.rewrite((data) => {
+			data.lastProgressAt = Date.now();
+		});
 	}
 
 	/**
@@ -574,34 +904,89 @@ export class IndexLock implements IIndexLock {
 	 * `phaseStartedAt = now`, the ONLY writer of both fields — the 1s heartbeat
 	 * and recordProgress deliberately leave them untouched so `now - phaseStartedAt`
 	 * stays an honest "stuck in this phase" measure. Does NOT advance
-	 * `lastProgressAt` (phase is reporting, not the hung signal). No-op if this
-	 * process does not own the lock. Mirrors recordProgress()'s safe
-	 * read-check-own-pid-write try/catch.
+	 * `lastProgressAt` (phase is reporting, not the hung signal). No-op unless
+	 * this instance holds the lock.
 	 */
 	setPhase(phase: string): void {
+		this.rewrite((data) => {
+			data.phase = phase;
+			data.phaseStartedAt = Date.now();
+		});
+	}
+
+	/**
+	 * `mkdir -p` the lock's directory, then `open(wx)`. A fresh clone has no store
+	 * directory yet, and without the mkdir its very first command would fail with
+	 * ENOENT and report `reason: "error"`.
+	 */
+	private tryCreate(): CreateAttempt {
 		try {
-			const lock = readLockFile(this.lockPath);
-			if (lock?.pid === process.pid) {
-				lock.phase = phase;
-				lock.phaseStartedAt = Date.now();
-				writeLockFile(this.lockPath, lock);
+			mkdirSync(dirname(this.lockPath), { recursive: true });
+		} catch (error) {
+			return { kind: "error", message: errorMessageOf(error) };
+		}
+
+		let fd: number;
+		try {
+			fd = openSync(this.lockPath, "wx");
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+				return { kind: "exists" };
 			}
+			return { kind: "error", message: errorMessageOf(error) };
+		}
+
+		const now = Date.now();
+		const data: LockData = {
+			pid: process.pid,
+			startTime: now,
+			heartbeat: now,
+			lastProgressAt: now,
+			startedAt: new Date(now).toISOString(),
+			token: randomUUID(),
+		};
+		try {
+			const record = encodeRecord(data, 0);
+			writeSync(fd, record, 0, record.length, 0);
+			const ino = fstatSync(fd).ino;
+			return { kind: "created", held: { fd, ino, data, size: record.length } };
+		} catch (error) {
+			// A lock we cannot stamp is a lock we must not claim: nothing could
+			// later prove it ours, so release would have to unlink blindly (#25a).
+			try {
+				closeSync(fd);
+			} catch {}
+			try {
+				unlinkSync(this.lockPath);
+			} catch {}
+			return { kind: "error", message: errorMessageOf(error) };
+		}
+	}
+
+	/**
+	 * Apply `mutate` to our record and write it through OUR descriptor, at
+	 * offset 0, in one call. Never through the path: after a reclaim the name
+	 * belongs to someone else, and our write must land in our own (detached)
+	 * inode rather than overwrite theirs.
+	 */
+	private rewrite(mutate: (data: LockData) => void): void {
+		const held = this.held;
+		if (held === null) return;
+		mutate(held.data);
+		try {
+			const record = encodeRecord(held.data, held.size);
+			writeSync(held.fd, record, 0, record.length, 0);
+			held.size = record.length;
 		} catch {
-			// Ignore phase-recording errors
+			// Ignore write errors; the next tick tries again.
 		}
 	}
 
 	private startHeartbeat(): void {
 		this.heartbeatInterval = setInterval(() => {
-			try {
-				const lock = readLockFile(this.lockPath);
-				if (lock?.pid === process.pid) {
-					lock.heartbeat = Date.now();
-					writeLockFile(this.lockPath, lock);
-				}
-			} catch {
-				// Ignore heartbeat errors
-			}
+			this.rewrite((data) => {
+				data.heartbeat = Date.now();
+			});
 		}, HEARTBEAT_INTERVAL);
 
 		// Don't keep process alive just for heartbeat
@@ -623,13 +1008,14 @@ export class IndexLock implements IIndexLock {
 }
 
 /**
- * Create an index lock for a project
+ * The store lock: one file, beside the data it guards (FR-2).
+ *
+ * It keys on the RESOLVED store directory, the same value the dataset resolves
+ * from, so two worktrees that share a store necessarily contend on one file.
+ * This is the only way production code obtains a store lock.
  */
-export function createIndexLock(
-	projectPath: string,
-	indexDir?: string,
-): IIndexLock {
-	return new IndexLock(projectPath, indexDir);
+export function createStoreLock(loc: StoreLocation): IndexLock {
+	return new IndexLock(getLockPathFor(loc));
 }
 
 /** Filename of the machine-global indexing lock (lives under ~/.mnemex). */
@@ -655,19 +1041,21 @@ export function getGlobalLockPath(): string {
 /**
  * Create the machine-global index lock. Reuses the full IndexLock machinery
  * (heartbeat, lastProgressAt/recordProgress, setPhase, progress-based staleness,
- * inspectLock) exactly as the per-project lock — so a WEDGED global holder is
+ * inspectLock) exactly as the store lock — so a WEDGED global holder is
  * auto-reclaimed after DEFAULT_PROGRESS_TIMEOUT by the next acquire(), the same
- * "reclaim + retry, never mark broken" recovery as the per-project lock.
+ * "reclaim + retry, never mark broken" recovery as the store lock.
  *
- * Ensures the parent directory exists before the lock is written.
+ * `acquire()` creates the parent directory (~/.mnemex, or the override's) before
+ * the first write, as it does for every lock.
+ *
+ * It is NOT what makes a shared store safe: its purpose is API-quota
+ * serialisation across repos, and its scope may legitimately narrow. The store
+ * lock is what serialises writers of one dataset.
  *
  * NOTE (v2, out of scope): this is the single-indexer MVP. A cross-session
  * coalescing queue (so waiters merge into one reindex instead of each running in
  * turn) is deliberately NOT built here.
  */
 export function createGlobalIndexLock(): IIndexLock {
-	const lockPath = getGlobalLockPath();
-	// Ensure ~/.mnemex (or the override's parent) exists before first write.
-	mkdirSync(dirname(lockPath), { recursive: true });
-	return IndexLock.fromLockPath(lockPath);
+	return new IndexLock(getGlobalLockPath());
 }

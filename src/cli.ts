@@ -6129,96 +6129,132 @@ async function handleDocsFetch(
 		return;
 	}
 
-	// Initialize components
+	// The tracker and the vector store are opened INSIDE the store lock, per
+	// library, below: opening index.db runs DDL, which is a write.
 	const indexDbPath = getIndexDbPath(projectPath);
-	const tracker = createFileTracker(indexDbPath, projectPath);
 	const embeddingsClient = createEmbeddingsClient({
 		model: getEmbeddingModel(projectPath),
 	});
-	const vectorStore = createVectorStore(getVectorStorePath(projectPath));
-	await vectorStore.initialize();
+	const { resolveStoreLocation } = await import("./core/store-location.js");
+	const { describeStoreLockRefusal, STORE_WRITER_LOCK_WAIT_MS, withStoreLock } =
+		await import("./core/store-lock-policy.js");
+	const storeLocation = resolveStoreLocation(projectPath);
 
-	try {
-		let libraries: Array<{ name: string; majorVersion?: string }>;
+	let libraries: Array<{ name: string; majorVersion?: string }>;
 
-		if (specificLibrary) {
-			libraries = [{ name: specificLibrary }];
-		} else {
-			const deps = await fetcher.detectDependencies(projectPath);
-			libraries = deps.map((d) => ({
-				name: d.name,
-				majorVersion: d.majorVersion,
-			}));
-		}
+	if (specificLibrary) {
+		libraries = [{ name: specificLibrary }];
+	} else {
+		const deps = await fetcher.detectDependencies(projectPath);
+		libraries = deps.map((d) => ({
+			name: d.name,
+			majorVersion: d.majorVersion,
+		}));
+	}
 
-		if (libraries.length === 0) {
-			console.log("  No dependencies detected.\n");
-			return;
-		}
+	if (libraries.length === 0) {
+		console.log("  No dependencies detected.\n");
+		return;
+	}
 
-		console.log(
-			`  Found ${libraries.length} ${specificLibrary ? "library" : "dependencies"}\n`,
-		);
+	console.log(
+		`  Found ${libraries.length} ${specificLibrary ? "library" : "dependencies"}\n`,
+	);
 
-		let successCount = 0;
-		for (const lib of libraries) {
-			process.stdout.write(`  Fetching ${lib.name}...`);
+	let successCount = 0;
+	let refused: { detail: string; isError: boolean } | null = null;
+	for (const lib of libraries) {
+		process.stdout.write(`  Fetching ${lib.name}...`);
 
-			try {
-				const chunks = await fetcher.fetchAndChunk(lib.name, {
-					version: lib.majorVersion,
-				});
+		try {
+			// Network phase, WITHOUT the store lock (D5): holding an index lock
+			// across network I/O is unbounded by construction. Only the write
+			// below takes it. Embedding before deleting also means a failed
+			// embed no longer leaves the library's old docs deleted.
+			const chunks = await fetcher.fetchAndChunk(lib.name, {
+				version: lib.majorVersion,
+			});
 
-				if (chunks.length === 0) {
-					console.log(" no docs found");
-					continue;
-				}
-
-				// Delete old docs
-				const docsPath = `docs:${lib.name}`;
-				await vectorStore.deleteByFile(docsPath);
-
-				// Embed and store
-				const texts = chunks.map((c) => c.content);
-				const embedResult = await embeddingsClient.embed(texts);
-
-				const fileHash = computeHash(chunks.map((c) => c.content).join(""));
-				const chunksWithEmbeddings = chunks.map((chunk, idx) => ({
-					id: chunk.id,
-					content: chunk.content,
-					filePath: docsPath,
-					startLine: 0,
-					endLine: 0,
-					language: "markdown",
-					chunkType: "module" as const,
-					contentHash: computeHash(chunk.content),
-					fileHash,
-					vector: embedResult.embeddings[idx],
-					name: chunk.title,
-					signature: chunk.sourceUrl,
-				}));
-
-				await vectorStore.addChunks(chunksWithEmbeddings);
-
-				tracker.markDocsIndexed(
-					lib.name,
-					lib.majorVersion || null,
-					chunks[0].provider,
-					fileHash,
-					chunks.map((c) => c.id),
-				);
-
-				console.log(` ✓ ${chunks.length} chunks`);
-				successCount++;
-			} catch (error) {
-				console.log(` ✗ ${error instanceof Error ? error.message : "failed"}`);
+			if (chunks.length === 0) {
+				console.log(" no docs found");
+				continue;
 			}
-		}
 
-		console.log(`\n  Fetched ${successCount}/${libraries.length} libraries\n`);
-	} finally {
-		tracker.close();
-		await vectorStore.close();
+			const docsPath = `docs:${lib.name}`;
+			const texts = chunks.map((c) => c.content);
+			const embedResult = await embeddingsClient.embed(texts);
+
+			const fileHash = computeHash(chunks.map((c) => c.content).join(""));
+			const chunksWithEmbeddings = chunks.map((chunk, idx) => ({
+				id: chunk.id,
+				content: chunk.content,
+				filePath: docsPath,
+				startLine: 0,
+				endLine: 0,
+				language: "markdown",
+				chunkType: "module" as const,
+				contentHash: computeHash(chunk.content),
+				fileHash,
+				vector: embedResult.embeddings[idx],
+				name: chunk.title,
+				signature: chunk.sourceUrl,
+			}));
+
+			// Write phase: the only part that holds the store lock.
+			const outcome = await withStoreLock(
+				storeLocation,
+				{ waitTimeout: STORE_WRITER_LOCK_WAIT_MS, phase: "docs" },
+				async (lock) => {
+					const tracker = createFileTracker(indexDbPath, projectPath);
+					const vectorStore = createVectorStore(
+						getVectorStorePath(projectPath),
+					);
+					try {
+						await vectorStore.initialize();
+						// Replace this library's old docs
+						await vectorStore.deleteByFile(docsPath);
+						await vectorStore.addChunks(chunksWithEmbeddings);
+						tracker.markDocsIndexed(
+							lib.name,
+							lib.majorVersion || null,
+							chunks[0].provider,
+							fileHash,
+							chunks.map((c) => c.id),
+						);
+						lock.recordProgress();
+					} finally {
+						tracker.close();
+						await vectorStore.close();
+					}
+				},
+			);
+			if (!outcome.acquired) {
+				console.log(" ✗ store locked");
+				refused = {
+					detail: describeStoreLockRefusal(outcome.refusal, outcome.lockPath),
+					isError: outcome.refusal.reason === "error",
+				};
+				break;
+			}
+
+			console.log(` ✓ ${chunks.length} chunks`);
+			successCount++;
+		} catch (error) {
+			console.log(` ✗ ${error instanceof Error ? error.message : "failed"}`);
+		}
+	}
+
+	console.log(`\n  Fetched ${successCount}/${libraries.length} libraries\n`);
+
+	if (refused !== null) {
+		// Fail closed, and loudly: nothing past this library was written.
+		console.error(`❌ Stopped: ${refused.detail}.`);
+		console.error(
+			refused.isError
+				? "   Nothing more was written."
+				: `   It did not finish within ${STORE_WRITER_LOCK_WAIT_MS / 1000}s. Nothing more was written; run this again once it has.\n`,
+		);
+		process.exit(1);
 	}
 }
 
@@ -6302,39 +6338,82 @@ async function handleDocsClear(
 		return;
 	}
 
-	const tracker = createFileTracker(indexDbPath, projectPath);
-	const vectorStore = createVectorStore(getVectorStorePath(projectPath));
-	await vectorStore.initialize();
+	// D5: destructive and user-initiated, so it waits the normal 30 s for the
+	// store lock and then REFUSES loudly. It never deletes without the lock.
+	const { resolveStoreLocation } = await import("./core/store-location.js");
+	const { describeStoreLockRefusal, STORE_WRITER_LOCK_WAIT_MS, withStoreLock } =
+		await import("./core/store-lock-policy.js");
+	let waitingShown = false;
+	const outcome = await withStoreLock(
+		resolveStoreLocation(projectPath),
+		{
+			waitTimeout: STORE_WRITER_LOCK_WAIT_MS,
+			phase: "docs:clear",
+			onWaiting: (holderPid) => {
+				if (waitingShown) return;
+				waitingShown = true;
+				console.log(
+					`⏳ Waiting up to ${STORE_WRITER_LOCK_WAIT_MS / 1000}s for PID ${holderPid}, which holds the index store lock...`,
+				);
+			},
+		},
+		async (lock) => {
+			const tracker = createFileTracker(indexDbPath, projectPath);
+			const vectorStore = createVectorStore(getVectorStorePath(projectPath));
+			await vectorStore.initialize();
 
-	try {
-		if (specificLibrary) {
-			// Clear specific library
-			const state = tracker.getDocsState(specificLibrary);
-			if (!state) {
-				console.log(`\n  No documentation found for '${specificLibrary}'.\n`);
-				return;
+			try {
+				if (specificLibrary) {
+					// Clear specific library
+					const state = tracker.getDocsState(specificLibrary);
+					if (!state) {
+						console.log(
+							`\n  No documentation found for '${specificLibrary}'.\n`,
+						);
+						return;
+					}
+
+					await vectorStore.deleteByFile(`docs:${specificLibrary}`);
+					tracker.deleteIndexedDocs(specificLibrary);
+					lock.recordProgress();
+
+					printLogo();
+					console.log(`\n✓ Cleared documentation for '${specificLibrary}'\n`);
+				} else {
+					// Clear all documentation
+					const docs = tracker.getAllIndexedDocs();
+
+					for (const doc of docs) {
+						await vectorStore.deleteByFile(`docs:${doc.library}`);
+						lock.recordProgress();
+					}
+					tracker.clearAllIndexedDocs();
+
+					printLogo();
+					console.log(
+						`\n✓ Cleared all documentation (${docs.length} libraries)\n`,
+					);
+				}
+			} finally {
+				tracker.close();
+				await vectorStore.close();
 			}
+		},
+	);
 
-			await vectorStore.deleteByFile(`docs:${specificLibrary}`);
-			tracker.deleteIndexedDocs(specificLibrary);
-
-			printLogo();
-			console.log(`\n✓ Cleared documentation for '${specificLibrary}'\n`);
-		} else {
-			// Clear all documentation
-			const docs = tracker.getAllIndexedDocs();
-
-			for (const doc of docs) {
-				await vectorStore.deleteByFile(`docs:${doc.library}`);
-			}
-			tracker.clearAllIndexedDocs();
-
-			printLogo();
-			console.log(`\n✓ Cleared all documentation (${docs.length} libraries)\n`);
-		}
-	} finally {
-		tracker.close();
-		await vectorStore.close();
+	if (!outcome.acquired) {
+		console.error(
+			`\n❌ Refusing to clear documentation: ${describeStoreLockRefusal(outcome.refusal, outcome.lockPath)}.`,
+		);
+		console.error(
+			outcome.refusal.reason === "error"
+				? "   Nothing was deleted."
+				: `   It did not finish within ${STORE_WRITER_LOCK_WAIT_MS / 1000}s. Nothing was deleted; run this again once it has.`,
+		);
+		console.error(
+			"   If that process is stuck, 'mnemex index --force-unlock' clears its lock.\n",
+		);
+		process.exit(1);
 	}
 }
 
@@ -6391,9 +6470,6 @@ async function handleObserve(args: string[]): Promise<void> {
 	const confIdx = args.indexOf("--confidence");
 	const confidence = confIdx >= 0 ? Number.parseFloat(args[confIdx + 1]) : 0.7;
 
-	const { createIndexer } = await import("./core/indexer.js");
-	const indexer = createIndexer({ projectPath });
-
 	try {
 		const embeddingsClient = createEmbeddingsClient();
 
@@ -6424,11 +6500,35 @@ async function handleObserve(args: string[]): Promise<void> {
 			vector: embedding,
 		};
 
-		// Write to LanceDB via vectorStore
-		const { createVectorStore } = await import("./core/store.js");
-		const store = await createVectorStore(projectPath);
-		await store.addDocuments([doc]);
-		await store.close();
+		// Write to LanceDB under the store lock. D5: wait 2 s, then skip the
+		// append and warn; never hang behind an index run. The embedding above is
+		// a network call, made BEFORE the lock is taken on purpose.
+		const { appendObservation } = await import("./core/observation-writer.js");
+		const { OBSERVE_LOCK_WAIT_MS } = await import(
+			"./core/store-lock-policy.js"
+		);
+		const outcome = await appendObservation(projectPath, doc);
+		if (!outcome.recorded) {
+			if (agentMode) {
+				console.log(`observation_id=${id}`);
+				console.log("recorded=false");
+				console.log(`reason=${outcome.reason}`);
+				if (outcome.holderPid !== undefined) {
+					console.log(`holder_pid=${outcome.holderPid}`);
+				}
+			}
+			if (outcome.reason === "lock_error") {
+				// Not contention: the lock could not be taken at all. That is a
+				// failure, not a degraded success.
+				console.error(`Error: observation not recorded: ${outcome.detail}`);
+				process.exit(1);
+			}
+			console.error(
+				`⚠️  Observation not recorded: ${outcome.detail}. ` +
+					`Skipped after ${OBSERVE_LOCK_WAIT_MS / 1000}s rather than wait; run it again once that finishes.`,
+			);
+			return;
+		}
 
 		if (agentMode) {
 			console.log(`observation_id=${id}`);
@@ -6453,8 +6553,6 @@ async function handleObserve(args: string[]): Promise<void> {
 			console.error(`Error: ${String(error)}`);
 		}
 		process.exit(1);
-	} finally {
-		await indexer.close();
 	}
 }
 

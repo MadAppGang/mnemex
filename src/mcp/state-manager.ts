@@ -8,7 +8,8 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { IndexLock } from "../core/lock.js";
+import { createStoreLock } from "../core/lock.js";
+import type { StoreLocation } from "../core/store-location.js";
 import type { FreshnessMetadata } from "./types.js";
 
 const REINDEX_TIMESTAMP_FILE = ".reindex-timestamp";
@@ -29,7 +30,18 @@ export class IndexStateManager {
 	/** Whether a reindex is currently running */
 	private reindexInProgress = false;
 
-	constructor(private indexDir: string) {}
+	/**
+	 * @param indexDir       where `.reindex-timestamp` is kept.
+	 * @param storeLocation  the resolved store: the lock is read where the
+	 *                       indexer takes it (`createStoreLock`), never
+	 *                       rebuilt from `indexDir`. `join(indexDir, "..")` plus
+	 *                       a re-appended `.mnemex` was wrong for every custom
+	 *                       index directory.
+	 */
+	constructor(
+		private indexDir: string,
+		private readonly storeLocation: StoreLocation,
+	) {}
 
 	/**
 	 * Initialize state by reading existing timestamp file and checking for stale locks.
@@ -51,9 +63,7 @@ export class IndexStateManager {
 
 		// Check if a stale lock is present and clear reindexInProgress
 		// The IndexLock isLocked() call checks heartbeat freshness
-		const projectPath = join(this.indexDir, "..");
-		const lock = new IndexLock(projectPath);
-		const lockStatus = lock.isLocked();
+		const lockStatus = createStoreLock(this.storeLocation).isLocked();
 		// If there's an active (non-stale) lock, a reindex was in progress
 		// when we started. Mark it but it will resolve when completion-detector fires.
 		this.reindexInProgress = lockStatus.locked;

@@ -24,6 +24,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 // Import the REAL IndexLockError so `err instanceof IndexLockError` holds.
 import { IndexLockError } from "../../../src/core/indexer.js";
+import { resolveStoreLocation } from "../../../src/core/store-location.js";
 
 const LOCK_FILENAME = ".indexing.lock";
 const tempDirs: string[] = [];
@@ -123,7 +124,10 @@ async function makeDeps(
 	workspaceRoot: string,
 	indexDir: string,
 ): Promise<ToolDeps> {
-	const stateManager = new IndexStateManager(indexDir);
+	const stateManager = new IndexStateManager(
+		indexDir,
+		resolveStoreLocation(workspaceRoot),
+	);
 	await stateManager.initialize();
 	const cache = {
 		get: async () => ({

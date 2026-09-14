@@ -279,7 +279,7 @@ describe("§6.3 Test A — the hit path stamps the lock", () => {
 			memoryBudgetBytes: 0,
 		});
 
-		const lock = new IndexLock(dir, ".");
+		const lock = new IndexLock(lockPath);
 		const acquired = await lock.acquire();
 		expect(acquired.acquired).toBe(true);
 
@@ -333,7 +333,7 @@ describe("§6.3 Test A — the hit path stamps the lock", () => {
 			memoryBudgetBytes: 0,
 		});
 
-		const lock = new IndexLock(dir, ".");
+		const lock = new IndexLock(lockPath);
 		expect((await lock.acquire()).acquired).toBe(true);
 		try {
 			const observed = await observe(() =>

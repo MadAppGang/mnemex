@@ -82,13 +82,14 @@ import {
 } from "./invalidation.js";
 import {
 	createGlobalIndexLock,
-	createIndexLock,
+	createStoreLock,
 	type IIndexLock,
 	type LockOptions,
 } from "./lock.js";
 import { createReferenceGraphManager } from "./reference-graph.js";
 import { createRepoMapGenerator } from "./repo-map.js";
 import { createVectorStore, type IVectorStore } from "./store.js";
+import { resolveStoreLocation } from "./store-location.js";
 import { createSymbolExtractor } from "./symbol-extractor.js";
 import {
 	computeFileHash,
@@ -790,7 +791,7 @@ export class Indexer {
 		}
 
 		// Acquire per-project lock to prevent concurrent indexing of THIS repo.
-		this.indexLock = createIndexLock(this.projectPath);
+		this.indexLock = createStoreLock(resolveStoreLocation(this.projectPath));
 		const lockResult = await this.indexLock.acquire({
 			...this.lockOptions,
 			onWaiting: this.onWaitingForLock,
@@ -2069,7 +2070,7 @@ export class Indexer {
 		holderPid?: number;
 		runningFor?: number;
 	} {
-		const lock = createIndexLock(this.projectPath);
+		const lock = createStoreLock(resolveStoreLocation(this.projectPath));
 		const status = lock.isLocked();
 		return {
 			inProgress: status.locked,
@@ -2082,7 +2083,7 @@ export class Indexer {
 	 * Force release a stale lock (use when a previous indexing process died)
 	 */
 	forceUnlock(): boolean {
-		const lock = createIndexLock(this.projectPath);
+		const lock = createStoreLock(resolveStoreLocation(this.projectPath));
 		return lock.forceRelease();
 	}
 

@@ -30,6 +30,10 @@ import {
 	spawnMnemexDetached,
 } from "../core/entry-point-launcher.js";
 import { primeSecrets } from "../core/secrets.js";
+import {
+	getLockPathFor,
+	resolveStoreLocation,
+} from "../core/store-location.js";
 import { SymbolEditor } from "../editor/editor.js";
 import { LspManager } from "../lsp/manager.js";
 import { MemoryStore } from "../memory/store.js";
@@ -175,7 +179,9 @@ export async function startMcpServer(): Promise<void> {
 	// -------------------------------------------------------------------------
 	// Step 3: Initialize IndexStateManager
 	// -------------------------------------------------------------------------
-	const stateManager = new IndexStateManager(config.indexDir);
+	// The resolved store: where the spawned `mnemex index` takes its lock.
+	const storeLocation = resolveStoreLocation(config.workspaceRoot);
+	const stateManager = new IndexStateManager(config.indexDir, storeLocation);
 	await stateManager.initialize();
 
 	// -------------------------------------------------------------------------
@@ -202,6 +208,7 @@ export async function startMcpServer(): Promise<void> {
 	const completionDetector = new CompletionDetector(
 		config.indexDir,
 		config.completionPollMs,
+		getLockPathFor(storeLocation),
 	);
 
 	// -------------------------------------------------------------------------

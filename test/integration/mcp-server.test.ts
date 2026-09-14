@@ -16,7 +16,8 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { resolveStoreLocation } from "../../src/core/store-location.js";
 import type { IndexCache } from "../../src/mcp/cache.js";
 import { CompletionDetector } from "../../src/mcp/completion-detector.js";
 import type { Logger } from "../../src/mcp/logger.js";
@@ -234,7 +235,10 @@ describe("IndexStateManager tracks freshness across file changes", () => {
 
 	beforeEach(async () => {
 		({ root, indexDir } = makeTempWorkspace());
-		manager = new IndexStateManager(indexDir);
+		manager = new IndexStateManager(
+			indexDir,
+			resolveStoreLocation(dirname(indexDir)),
+		);
 		// No .reindex-timestamp exists → lastIndexed = null
 		await manager.initialize();
 	});
@@ -311,7 +315,10 @@ describe("Fresh index becomes stale when files change", () => {
 		knownDate = new Date("2026-01-15T10:00:00.000Z");
 		writeTimestamp(indexDir, knownDate);
 
-		manager = new IndexStateManager(indexDir);
+		manager = new IndexStateManager(
+			indexDir,
+			resolveStoreLocation(dirname(indexDir)),
+		);
 		await manager.initialize();
 	});
 
@@ -376,11 +383,18 @@ describe("DebounceReindexer schedules reindex after file changes", () => {
 	beforeEach(async () => {
 		({ root, indexDir } = makeTempWorkspace());
 		previousPath = hideMnemexFromPath(join(root, "empty-bin"));
-		manager = new IndexStateManager(indexDir);
+		manager = new IndexStateManager(
+			indexDir,
+			resolveStoreLocation(dirname(indexDir)),
+		);
 		await manager.initialize();
 		cache = makeStubCache();
 		// Short poll interval for tests (not actually used in these tests)
-		completionDetector = new CompletionDetector(indexDir, 50);
+		completionDetector = new CompletionDetector(
+			indexDir,
+			50,
+			join(indexDir, ".indexing.lock"),
+		);
 		recorder = makeRecordingLauncher();
 	});
 
@@ -543,7 +557,10 @@ describe("FileWatcher detects changes and updates state manager", () => {
 
 	beforeEach(async () => {
 		({ root, indexDir } = makeTempWorkspace());
-		manager = new IndexStateManager(indexDir);
+		manager = new IndexStateManager(
+			indexDir,
+			resolveStoreLocation(dirname(indexDir)),
+		);
 		await manager.initialize();
 
 		// Create a test TypeScript file in the workspace
@@ -684,7 +701,10 @@ describe("Full flow: fresh state -> file change -> stale with details -> reindex
 		const originalTimestamp = new Date("2026-03-01T08:00:00.000Z");
 		writeTimestamp(indexDir, originalTimestamp);
 
-		manager = new IndexStateManager(indexDir);
+		manager = new IndexStateManager(
+			indexDir,
+			resolveStoreLocation(dirname(indexDir)),
+		);
 		await manager.initialize();
 	});
 
@@ -774,7 +794,10 @@ describe("Full flow: fresh state -> file change -> stale with details -> reindex
 		const completedAt = afterComplete.lastIndexed!;
 
 		// Create a fresh manager that reads the on-disk timestamp
-		const manager2 = new IndexStateManager(indexDir);
+		const manager2 = new IndexStateManager(
+			indexDir,
+			resolveStoreLocation(dirname(indexDir)),
+		);
 		await manager2.initialize();
 
 		const freshness2 = manager2.getFreshness();
@@ -794,7 +817,10 @@ describe("buildFreshness includes responseTimeMs", () => {
 
 	beforeEach(async () => {
 		({ root, indexDir } = makeTempWorkspace());
-		manager = new IndexStateManager(indexDir);
+		manager = new IndexStateManager(
+			indexDir,
+			resolveStoreLocation(dirname(indexDir)),
+		);
 		await manager.initialize();
 	});
 
@@ -837,7 +863,10 @@ describe("buildFreshness includes responseTimeMs", () => {
 		const ts = new Date("2026-02-01T12:00:00.000Z");
 		writeTimestamp(indexDir, ts);
 
-		const freshManager = new IndexStateManager(indexDir);
+		const freshManager = new IndexStateManager(
+			indexDir,
+			resolveStoreLocation(dirname(indexDir)),
+		);
 		await freshManager.initialize();
 
 		const result = buildFreshness(freshManager, Date.now());
@@ -874,7 +903,10 @@ describe("MCP server state when no .reindex-timestamp exists", () => {
 	test("IndexStateManager without timestamp reports stale + no lastIndexed", async () => {
 		// Simulate the server startup scenario: indexDir exists (from mkdirSync above)
 		// but has no .reindex-timestamp (e.g., index.db exists but no timestamp written)
-		const manager = new IndexStateManager(indexDir);
+		const manager = new IndexStateManager(
+			indexDir,
+			resolveStoreLocation(dirname(indexDir)),
+		);
 		await manager.initialize();
 
 		const freshness = manager.getFreshness();
@@ -889,7 +921,10 @@ describe("MCP server state when no .reindex-timestamp exists", () => {
 	});
 
 	test("buildFreshness for uninitialized workspace includes correct stale metadata", async () => {
-		const manager = new IndexStateManager(indexDir);
+		const manager = new IndexStateManager(
+			indexDir,
+			resolveStoreLocation(dirname(indexDir)),
+		);
 		await manager.initialize();
 
 		const startTime = Date.now();
@@ -905,7 +940,10 @@ describe("MCP server state when no .reindex-timestamp exists", () => {
 	});
 
 	test("after recording changes on uninitialized workspace, staleSince is set", async () => {
-		const manager = new IndexStateManager(indexDir);
+		const manager = new IndexStateManager(
+			indexDir,
+			resolveStoreLocation(dirname(indexDir)),
+		);
 		await manager.initialize();
 
 		// Simulate the watcher firing on a stale workspace that was never indexed
@@ -924,7 +962,10 @@ describe("MCP server state when no .reindex-timestamp exists", () => {
 	});
 
 	test("reindex cycle on uninitialized workspace produces fresh state", async () => {
-		const manager = new IndexStateManager(indexDir);
+		const manager = new IndexStateManager(
+			indexDir,
+			resolveStoreLocation(dirname(indexDir)),
+		);
 		await manager.initialize();
 
 		// Initially unindexed
@@ -942,7 +983,10 @@ describe("MCP server state when no .reindex-timestamp exists", () => {
 	});
 
 	test("multiple reindex cycles maintain correct state", async () => {
-		const manager = new IndexStateManager(indexDir);
+		const manager = new IndexStateManager(
+			indexDir,
+			resolveStoreLocation(dirname(indexDir)),
+		);
 		await manager.initialize();
 
 		// Cycle 1
@@ -998,10 +1042,17 @@ describe("Race condition: reindex not triggered twice concurrently", () => {
 	beforeEach(async () => {
 		({ root, indexDir } = makeTempWorkspace());
 		previousPath = hideMnemexFromPath(join(root, "empty-bin"));
-		manager = new IndexStateManager(indexDir);
+		manager = new IndexStateManager(
+			indexDir,
+			resolveStoreLocation(dirname(indexDir)),
+		);
 		await manager.initialize();
 		cache = makeStubCache();
-		completionDetector = new CompletionDetector(indexDir, 50);
+		completionDetector = new CompletionDetector(
+			indexDir,
+			50,
+			join(indexDir, ".indexing.lock"),
+		);
 		recorder = makeRecordingLauncher();
 	});
 
