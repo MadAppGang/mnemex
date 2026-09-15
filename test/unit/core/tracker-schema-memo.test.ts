@@ -371,9 +371,15 @@ describe("FileTracker schema memo", () => {
 		expect(tablesOf(oldDb)).toContain("commits");
 		expect(tablesOf(oldDb)).toContain("symbols");
 
-		// And it is usable, including the columns the migration added.
+		// It is usable once it has the index-v4 shape. A pre-v4 `files` has no
+		// `branch_id` and no ALTER can give it the v4 primary key, so every v4
+		// write goes through the §3.5.1 DROP pass first. That is what the indexer
+		// does on this signal, and the memo must not hide the signal either.
+		expect(migrated.trackerNeedsV4Schema()).toBe(true);
+		migrated.rebuildTreeScopedSchemaForV4();
+		expect(migrated.trackerNeedsV4Schema()).toBe(false);
 		migrated.setCurrentCommit("a".repeat(40));
-		migrated.markIndexed(join(oldRoot, "src.ts"), "hash-1", ["chunk-1"]);
+		migrated.markIndexed(0, join(oldRoot, "src.ts"), "hash-1", ["chunk-1"]);
 		expect(migrated.getFileIndexedCommit("src.ts")).toBe("a".repeat(40));
 		migrated.close();
 	});

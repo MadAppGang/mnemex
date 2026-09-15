@@ -8,9 +8,16 @@
  *
  * argv: <projectDir> <files> <functionsPerFile> <exportedFiles> <delete> <modify> <add> <phantom>
  *
- * Only the first <exportedFiles> files export their functions. See the
- * parent's WORKLOAD for why: `resolveReferencesByName()` costs
- * unresolved-references x EXPORTED symbols in one statement.
+ * Only the first <exportedFiles> files export their functions. The parent
+ * passes all of them (its WORKLOAD comment says why): `resolveReferencesByName()`
+ * is the statement that scales with EXPORTED symbols, so a pass that exported
+ * almost nothing would not measure it. Its plan, which once cost
+ * unresolved-references x exported symbols, is now pinned by
+ * `tracker-resolve-plan.test.ts`.
+ *
+ * The phantom rows are seeded under `BRANCH_ID_SHARED`: the project is a temp
+ * directory with no git layout, so every row the indexer itself writes there
+ * carries that id too (index version 4, `files` primary key `(branch_id, path)`).
  *
  *   run 1  a first index of <files> files. The tracker is empty and the run is
  *          not forced, so it takes the INCREMENTAL path: getChanges over every
@@ -160,6 +167,7 @@ for (let i = 0; i < toAdd; i++) {
 	const seed = createFileTracker(getIndexDbPath(projectDir), projectDir);
 	for (let i = 0; i < phantom; i++) {
 		seed.markIndexed(
+			0,
 			join(projectDir, "phantom", `p${i}.ts`),
 			`phantom-${i}`,
 			[],

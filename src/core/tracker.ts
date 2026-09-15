@@ -7,7 +7,7 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
-import { dirname, isAbsolute, join, relative } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { GitDiffChangeDetector } from "../cloud/git-diff.js";
 import type {
 	DocProviderType,
@@ -20,7 +20,9 @@ import type {
 	SymbolKind,
 	SymbolReference,
 } from "../types.js";
+import { toRepoRelative } from "./repo-path.js";
 import { createDatabaseSync, type SQLiteDatabase } from "./sqlite.js";
+import { resolveStoreLocation } from "./store-location.js";
 import {
 	busyTimeoutPragma,
 	clampedBusyTimeoutMs,
@@ -146,7 +148,17 @@ export interface IndexedDocState {
  */
 export interface IFileTracker {
 	getChanges(currentFiles: string[]): FileChanges;
-	markIndexed(filePath: string, contentHash: string, chunkIds: string[]): void;
+	/**
+	 * `branchId` FIRST, so a caller that omits it is a type error rather than a
+	 * row written under the wrong branch: the registry's id for the current
+	 * HEAD, or `BRANCH_ID_SHARED` in a store with no git layout.
+	 */
+	markIndexed(
+		branchId: number,
+		filePath: string,
+		contentHash: string,
+		chunkIds: string[],
+	): void;
 	getChunkIds(filePath: string): string[];
 	removeFile(filePath: string): void;
 	getFileState(filePath: string): FileState | null;
@@ -155,6 +167,15 @@ export interface IFileTracker {
 	setMetadata(key: string, value: string): void;
 	getStats(): { totalFiles: number; lastIndexed: string | null };
 	clear(): void;
+	/** §6.1's third upgrade signal: `files` exists and lacks `branch_id`. */
+	trackerNeedsV4Schema(): boolean;
+	/**
+	 * The highest branch id any row carries across `BRANCH_ID_TABLES`, or null
+	 * when none does. The branch registry's `nextId` raise reads it.
+	 */
+	highestBranchId(): number | null;
+	/** §3.5.1's DROP + inline CREATE pass, for the v4 upgrade. */
+	rebuildTreeScopedSchemaForV4(): void;
 	recordActivity(type: string, metadata: Record<string, unknown>): number;
 	getActivity(sinceId?: number, limit?: number): ActivityRow[];
 	pruneActivity(keepCount?: number): void;
@@ -394,6 +415,17 @@ export function resetTrackerSchemaCache(): void {
 }
 
 /**
+ * Forget ONE database's schema memo, so any `FileTracker` constructed later in
+ * this process re-runs the ordinary pass against the shape the database has
+ * NOW. `rebuildTreeScopedSchemaForV4` calls it before its COMMIT (N30): a
+ * long-lived MCP server that upgrades a store must not go on trusting a memo
+ * taken against the old tables.
+ */
+function forgetTrackerSchema(memoKey: string | null): void {
+	if (memoKey !== null) initializedSchemas.delete(memoKey);
+}
+
+/**
  * Delete a `-wal`/`-shm` pair whose database file is GONE.
  *
  * Such a pair belongs to a deleted database. A new database opened at the same
@@ -438,76 +470,111 @@ function removeOrphanedWalSidecars(dbPath: string): void {
  * surfaces the BUSY itself. Each element is one term in R0's count.
  */
 
-/** The core tables and their indexes: 5 CREATE TABLE + 6 CREATE INDEX. */
-const CORE_SCHEMA_DDL: readonly string[] = [
-	`CREATE TABLE IF NOT EXISTS files (
-		path TEXT PRIMARY KEY,
-		content_hash TEXT NOT NULL,
-		mtime REAL NOT NULL,
-		chunk_ids TEXT NOT NULL,
-		indexed_at TEXT NOT NULL,
-		enrichment_state TEXT DEFAULT '{}',
-		enriched_at TEXT,
-		-- Commit this file was last indexed at. NULL = provenance unknown.
-		indexed_at_commit TEXT
-	)`,
-	`CREATE TABLE IF NOT EXISTS metadata (
-		key TEXT PRIMARY KEY,
-		value TEXT NOT NULL
-	)`,
-	`CREATE TABLE IF NOT EXISTS documents (
-		id TEXT PRIMARY KEY,
-		document_type TEXT NOT NULL,
-		file_path TEXT,
-		source_ids TEXT NOT NULL DEFAULT '[]',
-		created_at TEXT NOT NULL,
-		enriched_at TEXT,
-		-- Bi-temporal validity. Both NULL = provenance unknown, which means
-		-- CURRENTLY VALID: only a non-NULL invalidated_at_commit supersedes a
-		-- document. Facts are superseded, never deleted.
-		valid_from_commit TEXT,
-		invalidated_at_commit TEXT,
-		-- Commit that made this document SUSPECT without superseding it.
-		--
-		-- Only ever set on OBSERVED documents (session observations, project
-		-- docs): they cannot be re-derived from source, so a source change is
-		-- evidence that they may be wrong, never proof. Auto-invalidating them
-		-- would destroy a human/agent observation that no pipeline can
-		-- regenerate. NULL = not flagged. See src/core/invalidation.ts.
-		stale_at_commit TEXT
-	)`,
-	`CREATE TABLE IF NOT EXISTS indexed_docs (
-		library TEXT NOT NULL,
-		version TEXT,
-		provider TEXT NOT NULL,
-		content_hash TEXT NOT NULL,
-		fetched_at TEXT NOT NULL,
-		chunk_ids TEXT NOT NULL,
-		PRIMARY KEY (library, version, provider)
-	)`,
-	// Commit anchors for provenance.
-	//
-	// `ordinal` is the first-parent depth of the commit
-	// (`git rev-list --count --first-parent <sha>`). SHAs are not orderable,
-	// so recency comparisons use the ordinal.
-	//
-	// LIMITATION: the ordinal is monotonic and stable only for a history that
-	// is appended to. It is NOT stable across history rewrites — rebase,
-	// commit --amend, squash-merge and filter-branch all renumber commits, so
-	// previously recorded ordinals then refer to commits that no longer
-	// exist. After a rewrite the index must be rebuilt (`mnemex index
-	// --force`); there is no in-place repair.
-	`CREATE TABLE IF NOT EXISTS commits (
-		sha TEXT PRIMARY KEY,
-		ordinal INTEGER NOT NULL,
-		committed_at TEXT
-	)`,
-	"CREATE INDEX IF NOT EXISTS idx_commits_ordinal ON commits(ordinal)",
+/**
+ * `files` at index version 4 (architecture §3.5). `branch_id` holds the branch
+ * registry's REAL id for the HEAD that wrote the row, or `BRANCH_ID_SHARED`
+ * (0) in a store with no git layout. There is no placeholder value (decision
+ * I-10). The primary key is `(branch_id, path)`: under `(path)` a second
+ * branch's row would REPLACE the first's.
+ *
+ * `CREATE TABLE IF NOT EXISTS` does nothing against a pre-v4 `files`, and no
+ * `ALTER` can change a primary key, so a v3 database reaches this shape only
+ * through `rebuildTreeScopedSchemaForV4` (§3.5.1).
+ */
+const FILES_TABLE_DDL = `CREATE TABLE IF NOT EXISTS files (
+	branch_id INTEGER NOT NULL,
+	path TEXT NOT NULL,
+	content_hash TEXT NOT NULL,
+	mtime REAL NOT NULL,
+	chunk_ids TEXT NOT NULL,
+	indexed_at TEXT NOT NULL,
+	enrichment_state TEXT DEFAULT '{}',
+	enriched_at TEXT,
+	-- Commit this file was last indexed at. NULL = provenance unknown.
+	indexed_at_commit TEXT,
+	PRIMARY KEY (branch_id, path)
+)`;
+
+const METADATA_TABLE_DDL = `CREATE TABLE IF NOT EXISTS metadata (
+	key TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+)`;
+
+const DOCUMENTS_TABLE_DDL = `CREATE TABLE IF NOT EXISTS documents (
+	id TEXT PRIMARY KEY,
+	document_type TEXT NOT NULL,
+	file_path TEXT,
+	source_ids TEXT NOT NULL DEFAULT '[]',
+	created_at TEXT NOT NULL,
+	enriched_at TEXT,
+	-- Bi-temporal validity. Both NULL = provenance unknown, which means
+	-- CURRENTLY VALID: only a non-NULL invalidated_at_commit supersedes a
+	-- document. Facts are superseded, never deleted.
+	valid_from_commit TEXT,
+	invalidated_at_commit TEXT,
+	-- Commit that made this document SUSPECT without superseding it.
+	--
+	-- Only ever set on OBSERVED documents (session observations, project
+	-- docs): they cannot be re-derived from source, so a source change is
+	-- evidence that they may be wrong, never proof. Auto-invalidating them
+	-- would destroy a human/agent observation that no pipeline can
+	-- regenerate. NULL = not flagged. See src/core/invalidation.ts.
+	stale_at_commit TEXT
+)`;
+
+const INDEXED_DOCS_TABLE_DDL = `CREATE TABLE IF NOT EXISTS indexed_docs (
+	library TEXT NOT NULL,
+	version TEXT,
+	provider TEXT NOT NULL,
+	content_hash TEXT NOT NULL,
+	fetched_at TEXT NOT NULL,
+	chunk_ids TEXT NOT NULL,
+	PRIMARY KEY (library, version, provider)
+)`;
+
+// Commit anchors for provenance.
+//
+// `ordinal` is the first-parent depth of the commit
+// (`git rev-list --count --first-parent <sha>`). SHAs are not orderable,
+// so recency comparisons use the ordinal.
+//
+// LIMITATION: the ordinal is monotonic and stable only for a history that
+// is appended to. It is NOT stable across history rewrites — rebase,
+// commit --amend, squash-merge and filter-branch all renumber commits, so
+// previously recorded ordinals then refer to commits that no longer
+// exist. After a rewrite the index must be rebuilt (`mnemex index
+// --force`); there is no in-place repair.
+const COMMITS_TABLE_DDL = `CREATE TABLE IF NOT EXISTS commits (
+	sha TEXT PRIMARY KEY,
+	ordinal INTEGER NOT NULL,
+	committed_at TEXT
+)`;
+
+const FILES_INDEX_DDL: readonly string[] = [
 	"CREATE INDEX IF NOT EXISTS idx_files_content_hash ON files(content_hash)",
+];
+
+const DOCUMENTS_INDEX_DDL: readonly string[] = [
 	"CREATE INDEX IF NOT EXISTS idx_documents_file_path ON documents(file_path)",
 	"CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(document_type)",
+];
+
+const INDEXED_DOCS_INDEX_DDL: readonly string[] = [
 	"CREATE INDEX IF NOT EXISTS idx_indexed_docs_library ON indexed_docs(library)",
 	"CREATE INDEX IF NOT EXISTS idx_indexed_docs_fetched ON indexed_docs(fetched_at)",
+];
+
+/** The core tables and their indexes: 5 CREATE TABLE + 6 CREATE INDEX. */
+const CORE_SCHEMA_DDL: readonly string[] = [
+	FILES_TABLE_DDL,
+	METADATA_TABLE_DDL,
+	DOCUMENTS_TABLE_DDL,
+	INDEXED_DOCS_TABLE_DDL,
+	COMMITS_TABLE_DDL,
+	"CREATE INDEX IF NOT EXISTS idx_commits_ordinal ON commits(ordinal)",
+	...FILES_INDEX_DDL,
+	...DOCUMENTS_INDEX_DDL,
+	...INDEXED_DOCS_INDEX_DDL,
 ];
 
 /** The symbol graph: 3 CREATE TABLE + 11 CREATE INDEX. */
@@ -630,6 +697,80 @@ const MIGRATION_INDEXES = [
 	"CREATE INDEX IF NOT EXISTS idx_documents_stale ON documents(stale_at_commit)",
 	"CREATE INDEX IF NOT EXISTS idx_documents_invalidated ON documents(invalidated_at_commit)",
 ] as const;
+
+// ============================================================================
+// Index version 4: branch ids and the §3.5.1 rebuild
+// ============================================================================
+
+/**
+ * The tables that carry a `branch_id` in this build. The branch registry's
+ * `nextId` raise (branch-registry.ts, C1 mechanism 2) reads the highest id
+ * from EVERY table listed here, and `tracker-branch-id.test.ts` fails if a
+ * table with a `branch_id` column is missing from the list. Leaving one out
+ * re-opens C1 for that table.
+ *
+ * `files` only, for now. The other five tree-scoped tables gain `branch_id`
+ * in Phase 3b, together with the statements that scope them. A `branch_id`
+ * leading key under unscoped statements makes every path lookup on those tables
+ * a table scan, and takes away the index `resolveReferencesByName`'s plan
+ * depends on (`tracker-resolve-plan.test.ts`).
+ */
+export const BRANCH_ID_TABLES = ["files"] as const;
+
+/** Each listed table's two probes, written as literals: no interpolated SQL. */
+const BRANCH_ID_PROBES: Readonly<
+	Record<
+		(typeof BRANCH_ID_TABLES)[number],
+		{ readonly columns: string; readonly highest: string }
+	>
+> = {
+	files: {
+		columns: "PRAGMA table_info(files)",
+		highest: "SELECT MAX(branch_id) AS highest FROM files",
+	},
+};
+
+/**
+ * §3.5.1: the six TREE-scoped tables. `commits`, `metadata` and `activity_log`
+ * describe the repository and survive the rebuild. None of the six has an FTS
+ * shadow table in this schema.
+ */
+const TREE_SCOPED_DROP_DDL: readonly string[] = [
+	"DROP TABLE IF EXISTS files",
+	"DROP TABLE IF EXISTS documents",
+	"DROP TABLE IF EXISTS indexed_docs",
+	"DROP TABLE IF EXISTS symbols",
+	"DROP TABLE IF EXISTS symbol_references",
+	"DROP TABLE IF EXISTS graph_metadata",
+];
+
+/**
+ * The CREATEs `rebuildTreeScopedSchemaForV4` issues INLINE, after its DROPs and
+ * inside the same transaction (N30), rather than leaving them to the ordinary
+ * schema pass. That pass is memoized per process, and in a real run it has
+ * already run against the OLD tables by the time the rebuild starts. The
+ * statements are shared with that pass; issuing them here is what the rebuild
+ * owns.
+ */
+const TREE_SCOPED_CREATE_DDL: readonly string[] = [
+	FILES_TABLE_DDL,
+	DOCUMENTS_TABLE_DDL,
+	INDEXED_DOCS_TABLE_DDL,
+	...FILES_INDEX_DDL,
+	...DOCUMENTS_INDEX_DDL,
+	...INDEXED_DOCS_INDEX_DDL,
+	...MIGRATION_INDEXES,
+	...SYMBOL_GRAPH_DDL,
+];
+
+/** A branch id is a safe integer >= 0; 0 is the shared marker. */
+function assertBranchId(branchId: number): void {
+	if (!Number.isSafeInteger(branchId) || branchId < 0) {
+		throw new RangeError(
+			`tracker: ${String(branchId)} is not a branch id (a safe integer >= 0)`,
+		);
+	}
+}
 
 // ============================================================================
 // Bounded regions — CLAUDE.md #31's bound, on the tracker's own connection
@@ -901,7 +1042,20 @@ export class TrackerContendedError extends Error {
 
 export class FileTracker implements IFileTracker {
 	private db: SQLiteDatabase;
-	private projectRoot: string;
+	/**
+	 * What every stored path is relative TO (architecture §3.1): the seam's
+	 * `pathRoot` for the start path this tracker was opened with, the worktree
+	 * root inside a repository. Resolved here rather than taken from the
+	 * caller, so every tracker on a store agrees with the indexer and the
+	 * vector store about what a stored path means.
+	 */
+	private readonly pathRoot: string;
+	/**
+	 * The start path exactly as the caller spelled it. Used ONLY by
+	 * `pathVariants`, to also match an absolute path a writer stored in that
+	 * spelling. Never a root for a stored path: that is `pathRoot`.
+	 */
+	private readonly startPath: string;
 	/**
 	 * Commit anchor for the current indexing run, set once per run by the
 	 * indexer via `recordHeadCommit()` / `setCurrentCommit()`.
@@ -917,14 +1071,15 @@ export class FileTracker implements IFileTracker {
 	/** The region executing on this connection, for the nesting guard. */
 	private activeRegion: TrackerRegionName | null = null;
 
-	constructor(dbPath: string, projectRoot: string) {
+	constructor(dbPath: string, startPath: string) {
 		// Ensure directory exists
 		const dir = dirname(dbPath);
 		if (!existsSync(dir)) {
 			mkdirSync(dir, { recursive: true });
 		}
 
-		this.projectRoot = projectRoot;
+		this.pathRoot = resolveStoreLocation(startPath).pathRoot;
+		this.startPath = startPath;
 		removeOrphanedWalSidecars(dbPath);
 		this.db = createDatabaseSync(dbPath);
 		try {
@@ -1101,7 +1256,32 @@ export class FileTracker implements IFileTracker {
 	}
 
 	/**
-	 * Get changes between current files and indexed state
+	 * A path argument in STORED form. Absolute: repo-relative under `pathRoot`,
+	 * or null when it is not under it. Relative: taken AS the stored path. Every
+	 * relative path this class is handed came out of the index (`getChanges`'
+	 * `deletedFiles`, `getFilesNeedingEnrichment`) or out of git, which is
+	 * repo-root relative. It is never re-resolved against the process cwd, which
+	 * is what `relative(root, "src/a.ts")` used to do. A null binds as SQL NULL
+	 * and matches no row: a path outside the tree is "not tracked", not an error.
+	 */
+	private storedPath(filePath: string): string | null {
+		return isAbsolute(filePath)
+			? toRepoRelative(this.pathRoot, filePath)
+			: filePath;
+	}
+
+	/**
+	 * Get changes between current files and indexed state.
+	 *
+	 * Takes ABSOLUTE paths and compares STORED ones (§3.5.2, N14).
+	 * `newFiles`, `modifiedFiles` and `unchangedFiles` echo the caller's paths,
+	 * while `deletedFiles` are stored, repo-relative paths. A current file with no
+	 * stored path (outside `pathRoot`) is left out of the comparison AND out of
+	 * the deletion candidates, so a file outside the tree can never cause a
+	 * delete.
+	 *
+	 * Unscoped by branch in this build: the `{ branchId, pathPrefix }` scope is
+	 * Phase 3b's (§3.5.2).
 	 */
 	getChanges(currentFiles: string[]): FileChanges {
 		const newFiles: string[] = [];
@@ -1109,10 +1289,12 @@ export class FileTracker implements IFileTracker {
 		const unchangedFiles: string[] = [];
 
 		// Get all indexed files — R1, one SELECT.
-		const indexedFiles = new Set<string>();
 		const indexed = this.withRegion(TRACKER_REGIONS.changes, () =>
-			this.db.prepare("SELECT path, content_hash, mtime FROM files").all(),
+			this.db
+				.prepare("SELECT branch_id, path, content_hash, mtime FROM files")
+				.all(),
 		) as Array<{
+			branch_id: number;
 			path: string;
 			content_hash: string;
 			mtime: number;
@@ -1120,49 +1302,60 @@ export class FileTracker implements IFileTracker {
 
 		// Files whose mtime moved but whose hash did not. Refreshed together in
 		// ONE region after the loop — the loop is file I/O and holds no lock —
-		// rather than as one autocommit UPDATE per file.
-		const mtimeRefreshes: Array<{ path: string; mtime: number }> = [];
+		// rather than as one autocommit UPDATE per file. Each keeps the branch id
+		// of the row it came from, so every UPDATE is a primary-key lookup on
+		// `(branch_id, path)`, never a scan of `files` inside the region.
+		const mtimeRefreshes: Array<{
+			branchId: number;
+			path: string;
+			mtime: number;
+		}> = [];
 
 		const indexedMap = new Map(indexed.map((f) => [f.path, f]));
-		for (const f of indexed) {
-			indexedFiles.add(f.path);
-		}
+		// The stored form of every current file, computed once, so the
+		// comparison and the deletion candidates cannot disagree about it.
+		const currentStored = new Set<string>();
 
 		// Check each current file
 		for (const filePath of currentFiles) {
-			const relativePath = relative(this.projectRoot, filePath);
+			const storedPath = this.storedPath(filePath);
+			if (storedPath === null) continue;
+			currentStored.add(storedPath);
 
-			if (!indexedMap.has(relativePath)) {
+			const indexedFile = indexedMap.get(storedPath);
+			if (indexedFile === undefined) {
 				// New file
 				newFiles.push(filePath);
-			} else {
-				// Check if modified
-				const indexedFile = indexedMap.get(relativePath)!;
+				continue;
+			}
 
-				try {
-					const stat = statSync(filePath);
-					const currentMtime = stat.mtimeMs;
+			try {
+				const stat = statSync(filePath);
+				const currentMtime = stat.mtimeMs;
 
-					// Fast path: check mtime first
-					if (currentMtime !== indexedFile.mtime) {
-						// Mtime changed, verify with hash
-						const currentHash = this.computeFileHash(filePath);
+				// Fast path: check mtime first
+				if (currentMtime !== indexedFile.mtime) {
+					// Mtime changed, verify with hash
+					const currentHash = this.computeFileHash(filePath);
 
-						if (currentHash !== indexedFile.content_hash) {
-							modifiedFiles.push(filePath);
-						} else {
-							// Hash same, just update mtime
-							mtimeRefreshes.push({ path: relativePath, mtime: currentMtime });
-							unchangedFiles.push(filePath);
-						}
+					if (currentHash !== indexedFile.content_hash) {
+						modifiedFiles.push(filePath);
 					} else {
-						// Mtime unchanged, assume file unchanged
+						// Hash same, just update mtime
+						mtimeRefreshes.push({
+							branchId: indexedFile.branch_id,
+							path: storedPath,
+							mtime: currentMtime,
+						});
 						unchangedFiles.push(filePath);
 					}
-				} catch {
-					// File might have been deleted between listing and checking
-					modifiedFiles.push(filePath);
+				} else {
+					// Mtime unchanged, assume file unchanged
+					unchangedFiles.push(filePath);
 				}
+			} catch {
+				// File might have been deleted between listing and checking
+				modifiedFiles.push(filePath);
 			}
 		}
 
@@ -1172,22 +1365,18 @@ export class FileTracker implements IFileTracker {
 		if (mtimeRefreshes.length > 0) {
 			this.withRegion(TRACKER_REGIONS.txn, () => {
 				const stmt = this.db.prepare(
-					"UPDATE files SET mtime = ? WHERE path = ?",
+					"UPDATE files SET mtime = ? WHERE branch_id = ? AND path = ?",
 				);
 				for (const refresh of mtimeRefreshes) {
-					stmt.run(refresh.mtime, refresh.path);
+					stmt.run(refresh.mtime, refresh.branchId, refresh.path);
 				}
 			});
 		}
 
 		// Find deleted files
-		const currentSet = new Set(
-			currentFiles.map((f) => relative(this.projectRoot, f)),
-		);
 		const deletedFiles: string[] = [];
-
-		for (const indexedPath of indexedFiles) {
-			if (!currentSet.has(indexedPath)) {
+		for (const indexedPath of indexedMap.keys()) {
+			if (!currentStored.has(indexedPath)) {
 				deletedFiles.push(indexedPath);
 			}
 		}
@@ -1196,14 +1385,29 @@ export class FileTracker implements IFileTracker {
 	}
 
 	/**
-	 * Mark a file as indexed
+	 * Mark a file as indexed, under `branchId`: the registry's REAL id for the
+	 * HEAD this run indexed, or `BRANCH_ID_SHARED` in a store with no git layout.
+	 * Never a placeholder (decision I-10).
 	 */
-	markIndexed(filePath: string, contentHash: string, chunkIds: string[]): void {
-		const relativePath = relative(this.projectRoot, filePath);
+	markIndexed(
+		branchId: number,
+		filePath: string,
+		contentHash: string,
+		chunkIds: string[],
+	): void {
+		assertBranchId(branchId);
+		const storedPath = this.storedPath(filePath);
+		if (storedPath === null) {
+			throw new RangeError(
+				`tracker: ${filePath} is outside ${this.pathRoot}, so it has no stored path`,
+			);
+		}
 
 		let mtime: number;
 		try {
-			const stat = statSync(filePath);
+			const stat = statSync(
+				isAbsolute(filePath) ? filePath : join(this.pathRoot, storedPath),
+			);
 			mtime = stat.mtimeMs;
 		} catch {
 			mtime = Date.now();
@@ -1211,12 +1415,13 @@ export class FileTracker implements IFileTracker {
 
 		this.withRegion(TRACKER_REGIONS.write, () => {
 			const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO files (path, content_hash, mtime, chunk_ids, indexed_at, indexed_at_commit)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO files (branch_id, path, content_hash, mtime, chunk_ids, indexed_at, indexed_at_commit)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
 			stmt.run(
-				relativePath,
+				branchId,
+				storedPath,
 				contentHash,
 				mtime,
 				JSON.stringify(chunkIds),
@@ -1230,7 +1435,7 @@ export class FileTracker implements IFileTracker {
 	 * Get chunk IDs for a file
 	 */
 	getChunkIds(filePath: string): string[] {
-		const relativePath = relative(this.projectRoot, filePath);
+		const relativePath = this.storedPath(filePath);
 
 		const row = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
@@ -1253,10 +1458,8 @@ export class FileTracker implements IFileTracker {
 	 * Remove a file from the index
 	 */
 	removeFile(filePath: string): void {
-		// Handle both absolute and relative paths
-		const relativePath = filePath.startsWith(this.projectRoot)
-			? relative(this.projectRoot, filePath)
-			: filePath;
+		// Absolute or already stored: see `storedPath`.
+		const relativePath = this.storedPath(filePath);
 
 		this.withRegion(TRACKER_REGIONS.write, () => {
 			this.db.prepare("DELETE FROM files WHERE path = ?").run(relativePath);
@@ -1267,7 +1470,7 @@ export class FileTracker implements IFileTracker {
 	 * Get file state
 	 */
 	getFileState(filePath: string): FileState | null {
-		const relativePath = relative(this.projectRoot, filePath);
+		const relativePath = this.storedPath(filePath);
 
 		const row = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
@@ -1377,6 +1580,82 @@ export class FileTracker implements IFileTracker {
 	// ========================================================================
 
 	/**
+	 * §6.1's third upgrade signal, and the only one that sees the SQLite half:
+	 * `files` exists and has no `branch_id`. False for a database with no `files`
+	 * table at all, which is fresh, not outdated.
+	 */
+	trackerNeedsV4Schema(): boolean {
+		const columns = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db.prepare(BRANCH_ID_PROBES.files.columns).all(),
+		) as Array<{ name?: unknown }>;
+		return (
+			columns.length > 0 &&
+			!columns.some((column) => column.name === "branch_id")
+		);
+	}
+
+	/**
+	 * The highest branch id any row carries in `BRANCH_ID_TABLES`, or null. The
+	 * branch registry raises `nextId` above it on its lock-held open (C1,
+	 * mechanism 2), so an id whose allocation was lost cannot be issued to a
+	 * second label while a row still carries it. A table without the column (a
+	 * pre-v4 `files`) carries no branch id, which is its answer, not an error.
+	 */
+	highestBranchId(): number | null {
+		return this.withRegion(reads(2 * BRANCH_ID_TABLES.length), () => {
+			let highest: number | null = null;
+			for (const table of BRANCH_ID_TABLES) {
+				const probe = BRANCH_ID_PROBES[table];
+				const columns = this.db.prepare(probe.columns).all() as Array<{
+					name?: unknown;
+				}>;
+				if (!columns.some((column) => column.name === "branch_id")) continue;
+				const row = this.db.prepare(probe.highest).get() as
+					| { highest?: unknown }
+					| undefined;
+				const value = row?.highest;
+				if (
+					typeof value === "number" &&
+					(highest === null || value > highest)
+				) {
+					highest = value;
+				}
+			}
+			return highest;
+		});
+	}
+
+	/**
+	 * §3.5.1: DROP the six tree-scoped tables and re-issue their CREATEs INLINE,
+	 * in ONE immediate transaction (R7's shape; `TRACKER_REGIONS.txn` is the one
+	 * transactional region), then forget this database's schema memo before the
+	 * COMMIT.
+	 *
+	 * Why DROP: `CREATE TABLE IF NOT EXISTS` against the old `files` does
+	 * nothing, SQLite cannot change a primary key with `ALTER`, and `clear()`'s
+	 * `DELETE FROM` keeps the old shape. Adding the column instead leaves the
+	 * key at `(path)`, where a second branch's row REPLACES the first's.
+	 *
+	 * Why the CREATEs are INLINE (N30): the ordinary pass is memoized per
+	 * process and, in a real run, has already run against the old tables before
+	 * this is called. Relying on it leaves this connection with no `files` table.
+	 *
+	 * Rows are not copied. Their paths are absolute and their chunk ids are about
+	 * to change, and the rebuild that calls this re-indexes them. The
+	 * repo-scoped tables (`commits`, `metadata`, `activity_log`) are untouched.
+	 */
+	rebuildTreeScopedSchemaForV4(): void {
+		this.withRegion(TRACKER_REGIONS.txn, () => {
+			for (const statement of TREE_SCOPED_DROP_DDL) this.db.exec(statement);
+			for (const statement of TREE_SCOPED_CREATE_DDL) this.db.exec(statement);
+			const databaseList = this.db
+				.prepare("PRAGMA database_list")
+				.all() as DatabaseListRow[];
+			forgetTrackerSchema(schemaMemoKey(databaseList));
+		});
+	}
+
+	/**
 	 * Record a tool activity in the activity_log table.
 	 * Returns the inserted row ID.
 	 */
@@ -1447,7 +1726,7 @@ export class FileTracker implements IFileTracker {
 	 * Get enrichment state for a file
 	 */
 	getEnrichmentState(filePath: string): EnrichmentStateMap {
-		const relativePath = relative(this.projectRoot, filePath);
+		const relativePath = this.storedPath(filePath);
 
 		const row = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
@@ -1474,7 +1753,7 @@ export class FileTracker implements IFileTracker {
 		documentType: DocumentType,
 		state: EnrichmentState,
 	): void {
-		const relativePath = relative(this.projectRoot, filePath);
+		const relativePath = this.storedPath(filePath);
 
 		// Read-modify-write in ONE immediate transaction. Two processes that each
 		// read the map and wrote their own key back would lose one of the keys;
@@ -1509,7 +1788,7 @@ export class FileTracker implements IFileTracker {
 	 * Set all enrichment states for a file at once
 	 */
 	setAllEnrichmentStates(filePath: string, states: EnrichmentStateMap): void {
-		const relativePath = relative(this.projectRoot, filePath);
+		const relativePath = this.storedPath(filePath);
 
 		const hasComplete = Object.values(states).some((s) => s === "complete");
 
@@ -1530,7 +1809,7 @@ export class FileTracker implements IFileTracker {
 	 * Reset enrichment state for a file (e.g., when file is modified)
 	 */
 	resetEnrichmentState(filePath: string): void {
-		const relativePath = relative(this.projectRoot, filePath);
+		const relativePath = this.storedPath(filePath);
 
 		this.withRegion(TRACKER_REGIONS.write, () => {
 			this.db
@@ -1635,7 +1914,7 @@ export class FileTracker implements IFileTracker {
 	 * Get all tracked documents for a file
 	 */
 	getDocumentsForFile(filePath: string): TrackedDocument[] {
-		const relativePath = relative(this.projectRoot, filePath);
+		const relativePath = this.storedPath(filePath);
 
 		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
@@ -1695,7 +1974,7 @@ export class FileTracker implements IFileTracker {
 	 * Delete all documents for a file
 	 */
 	deleteDocumentsForFile(filePath: string): void {
-		const relativePath = relative(this.projectRoot, filePath);
+		const relativePath = this.storedPath(filePath);
 
 		this.withRegion(TRACKER_REGIONS.write, () => {
 			this.db
@@ -1780,7 +2059,7 @@ export class FileTracker implements IFileTracker {
 	 * or git fails. Callers must treat that as normal.
 	 */
 	async recordHeadCommit(): Promise<CommitProvenance | null> {
-		const head = await resolveHeadCommit(this.projectRoot);
+		const head = await resolveHeadCommit(this.pathRoot);
 		if (!head) {
 			this.currentCommitSha = null;
 			return null;
@@ -1809,9 +2088,7 @@ export class FileTracker implements IFileTracker {
 	 * No-op when the file is not tracked.
 	 */
 	setFileIndexedCommit(filePath: string, sha: string | null): void {
-		const relativePath = filePath.startsWith(this.projectRoot)
-			? relative(this.projectRoot, filePath)
-			: filePath;
+		const relativePath = this.storedPath(filePath);
 
 		this.withRegion(TRACKER_REGIONS.write, () => {
 			this.db
@@ -1827,9 +2104,7 @@ export class FileTracker implements IFileTracker {
 	 * reason to hide the file.
 	 */
 	getFileIndexedCommit(filePath: string): string | null {
-		const relativePath = filePath.startsWith(this.projectRoot)
-			? relative(this.projectRoot, filePath)
-			: filePath;
+		const relativePath = this.storedPath(filePath);
 
 		const row = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
@@ -1925,9 +2200,15 @@ export class FileTracker implements IFileTracker {
 			if (!filePath) continue;
 			variants.add(filePath);
 			if (isAbsolute(filePath)) {
-				variants.add(relative(this.projectRoot, filePath));
+				const storedPath = toRepoRelative(this.pathRoot, filePath);
+				if (storedPath !== null) variants.add(storedPath);
 			} else {
-				variants.add(join(this.projectRoot, filePath));
+				variants.add(join(this.pathRoot, filePath));
+				// ALSO the spelling this tracker was opened with. `pathRoot` is the
+				// seam's realpath, and a writer that stored an absolute path stored the
+				// caller's spelling (`/tmp/x` against `/private/tmp/x`), so one variant
+				// alone would miss it. The Set drops the duplicate when they agree.
+				variants.add(join(this.startPath, filePath));
 			}
 		}
 
@@ -2513,9 +2794,7 @@ export class FileTracker implements IFileTracker {
 	 * Get all symbols for a file
 	 */
 	getSymbolsByFile(filePath: string): SymbolDefinition[] {
-		const relativePath = filePath.startsWith(this.projectRoot)
-			? relative(this.projectRoot, filePath)
-			: filePath;
+		const relativePath = this.storedPath(filePath);
 
 		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
@@ -2578,9 +2857,7 @@ export class FileTracker implements IFileTracker {
 	 * Delete all symbols for a file
 	 */
 	deleteSymbolsByFile(filePath: string): void {
-		const relativePath = filePath.startsWith(this.projectRoot)
-			? relative(this.projectRoot, filePath)
-			: filePath;
+		const relativePath = this.storedPath(filePath);
 
 		this.withRegion(TRACKER_REGIONS.txn, () => {
 			// Delete references first (cascade would handle this, but be explicit)
@@ -2784,9 +3061,7 @@ export class FileTracker implements IFileTracker {
 	 * Delete all references for a file
 	 */
 	deleteReferencesByFile(filePath: string): void {
-		const relativePath = filePath.startsWith(this.projectRoot)
-			? relative(this.projectRoot, filePath)
-			: filePath;
+		const relativePath = this.storedPath(filePath);
 
 		this.withRegion(TRACKER_REGIONS.write, () => {
 			this.db
@@ -2984,11 +3259,12 @@ export function computeFileHash(filePath: string): string {
 // ============================================================================
 
 /**
- * Create a file tracker for a project
+ * Create a file tracker for a project. `startPath` is resolved through the
+ * store-location seam to the path root every stored path is relative to.
  */
 export function createFileTracker(
 	dbPath: string,
-	projectRoot: string,
+	startPath: string,
 ): IFileTracker {
-	return new FileTracker(dbPath, projectRoot);
+	return new FileTracker(dbPath, startPath);
 }

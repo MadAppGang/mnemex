@@ -17,6 +17,7 @@
 
 import { getVectorStorePath } from "../config.js";
 import type { DocumentWithEmbedding } from "../types.js";
+import { BRANCH_ID_SHARED } from "./branch-registry.js";
 import { createVectorStore } from "./store.js";
 import { resolveStoreLocation } from "./store-location.js";
 import {
@@ -50,7 +51,11 @@ export async function appendObservation(
 				pathRoot: storeLocation.pathRoot,
 			});
 			try {
-				await store.addDocuments([doc]);
+				// A session observation is a function of no tree: shared (§3.2.1).
+				await store.addDocuments([doc], {
+					pathKind: "synthetic",
+					branchId: BRANCH_ID_SHARED,
+				});
 				lock.recordProgress();
 			} finally {
 				await store.close();

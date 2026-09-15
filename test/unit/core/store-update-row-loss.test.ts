@@ -133,7 +133,7 @@ function chunk(
 		id: `chunk-${marker}`,
 		contentHash: `hash-${marker}`,
 		content: `function ${marker}() {}`,
-		filePath: `/p/${marker}.ts`,
+		filePath: `p/${marker}.ts`,
 		startLine: 1,
 		endLine: 3,
 		language: "typescript",
@@ -228,7 +228,9 @@ async function captureThrow(
 
 describe("updateUnitSummary", () => {
 	test("a forced add failure leaves the row COUNT unchanged, and throws", async () => {
-		await withFreshStore((s) => s.addCodeUnits([unit("a"), unit("b")]));
+		await withFreshStore((s) =>
+			s.addCodeUnits([unit("a"), unit("b")], { pathKind: "repo", branchId: 0 }),
+		);
 		expect(await rowIds()).toEqual(["unit-a", "unit-b"]);
 
 		let thrown: ThrownUpdateError | null = null;
@@ -259,7 +261,9 @@ describe("updateUnitSummary", () => {
 	});
 
 	test("when the restore ALSO fails the caller is told the row is gone", async () => {
-		await withFreshStore((s) => s.addCodeUnits([unit("a"), unit("b")]));
+		await withFreshStore((s) =>
+			s.addCodeUnits([unit("a"), unit("b")], { pathKind: "repo", branchId: 0 }),
+		);
 
 		let thrown: ThrownUpdateError | null = null;
 		await withFailingAdd("all", async (s) => {
@@ -279,7 +283,9 @@ describe("updateUnitSummary", () => {
 	});
 
 	test("a real update keeps every row and writes the summary", async () => {
-		await withFreshStore((s) => s.addCodeUnits([unit("a"), unit("b")]));
+		await withFreshStore((s) =>
+			s.addCodeUnits([unit("a"), unit("b")], { pathKind: "repo", branchId: 0 }),
+		);
 
 		await withFreshStore((s) => s.updateUnitSummary("unit-a", "a summary"));
 
@@ -288,7 +294,9 @@ describe("updateUnitSummary", () => {
 	});
 
 	test("an unknown id is a no-op, not a throw", async () => {
-		await withFreshStore((s) => s.addCodeUnits([unit("a")]));
+		await withFreshStore((s) =>
+			s.addCodeUnits([unit("a")], { pathKind: "repo", branchId: 0 }),
+		);
 
 		await withFreshStore((s) => s.updateUnitSummary("unit-nope", "x"));
 
@@ -301,7 +309,10 @@ describe("updateUnitSummary", () => {
 	// would turn every enrichment write-back on such an index into a throw.
 	test("a placeholder [0] vector is not mistaken for an empty one", async () => {
 		await withFreshStore((s) =>
-			s.addCodeUnits([unit("bm25", { vector: [0] })]),
+			s.addCodeUnits([unit("bm25", { vector: [0] })], {
+				pathKind: "repo",
+				branchId: 0,
+			}),
 		);
 
 		await withFreshStore((s) => s.updateUnitSummary("unit-bm25", "keyword"));
@@ -315,7 +326,12 @@ describe("updateUnitSummary", () => {
 	// the row vanished whatever the predicate did — and `rowToCodeUnit` does not
 	// map `summary`, so the raw reader here is what makes it checkable.
 	test("an underscored id round-trips", async () => {
-		await withFreshStore((s) => s.addCodeUnits([unit("a", { id: "unit_a" })]));
+		await withFreshStore((s) =>
+			s.addCodeUnits([unit("a", { id: "unit_a" })], {
+				pathKind: "repo",
+				branchId: 0,
+			}),
+		);
 
 		await withFreshStore((s) => s.updateUnitSummary("unit_a", "underscored"));
 
@@ -330,7 +346,9 @@ describe("updateUnitSummary", () => {
 
 describe("updateDocumentContent", () => {
 	test("a forced add failure leaves the row COUNT unchanged, and throws", async () => {
-		await withFreshStore((s) => s.addDocuments([doc("a"), doc("b")]));
+		await withFreshStore((s) =>
+			s.addDocuments([doc("a"), doc("b")], { pathKind: "repo", branchId: 0 }),
+		);
 		expect(await rowIds()).toEqual(["doc-a", "doc-b"]);
 
 		let thrown: ThrownUpdateError | null = null;
@@ -354,7 +372,9 @@ describe("updateDocumentContent", () => {
 	});
 
 	test("when the restore ALSO fails the caller is told the row is gone", async () => {
-		await withFreshStore((s) => s.addDocuments([doc("a"), doc("b")]));
+		await withFreshStore((s) =>
+			s.addDocuments([doc("a"), doc("b")], { pathKind: "repo", branchId: 0 }),
+		);
 
 		let thrown: ThrownUpdateError | null = null;
 		await withFailingAdd("all", async (s) => {
@@ -368,7 +388,9 @@ describe("updateDocumentContent", () => {
 	});
 
 	test("a real update keeps every row and writes the content", async () => {
-		await withFreshStore((s) => s.addDocuments([doc("a"), doc("b")]));
+		await withFreshStore((s) =>
+			s.addDocuments([doc("a"), doc("b")], { pathKind: "repo", branchId: 0 }),
+		);
 
 		const updated = await withFreshStore((s) =>
 			s.updateDocumentContent("doc-a", "new content", vec(7)),
@@ -383,7 +405,9 @@ describe("updateDocumentContent", () => {
 	// write throws. Before the fix both outcomes returned `false`, which is why
 	// the one caller could not act on it.
 	test("an unknown id returns false and destroys nothing", async () => {
-		await withFreshStore((s) => s.addDocuments([doc("a")]));
+		await withFreshStore((s) =>
+			s.addDocuments([doc("a")], { pathKind: "repo", branchId: 0 }),
+		);
 
 		const updated = await withFreshStore((s) =>
 			s.updateDocumentContent("doc-nope", "x", vec(7)),
@@ -397,7 +421,9 @@ describe("updateDocumentContent", () => {
 	// vector cannot be written (CLAUDE.md #15) and the row would be destroyed
 	// for nothing. Fail before the delete, not after it.
 	test("an empty replacement vector is refused BEFORE the delete", async () => {
-		await withFreshStore((s) => s.addDocuments([doc("a")]));
+		await withFreshStore((s) =>
+			s.addDocuments([doc("a")], { pathKind: "repo", branchId: 0 }),
+		);
 
 		const thrown = await captureThrow(() =>
 			withFreshStore((s) => s.updateDocumentContent("doc-a", "new", [])),
@@ -420,10 +446,12 @@ describe("vector round-trip", () => {
 	// `Vector`, and the re-add threw "Found field not in schema: vector.isValid"
 	// — the exit-1 seen when a modified file meets a degraded embedding cache.
 	test("getChunksWithVectors returns a plain array, not an Arrow Vector", async () => {
-		await withFreshStore((s) => s.addChunks([chunk("a")]));
+		await withFreshStore((s) =>
+			s.addChunks([chunk("a")], { pathKind: "repo", branchId: 0 }),
+		);
 
 		const chunks = await withFreshStore((s) =>
-			s.getChunksWithVectors("/p/a.ts"),
+			s.getChunksWithVectors("p/a.ts"),
 		);
 
 		expect(chunks).toHaveLength(1);
@@ -431,20 +459,25 @@ describe("vector round-trip", () => {
 	});
 
 	test("a vector read back can be written back — and keeps its bits", async () => {
-		await withFreshStore((s) => s.addChunks([chunk("a")]));
+		await withFreshStore((s) =>
+			s.addChunks([chunk("a")], { pathKind: "repo", branchId: 0 }),
+		);
 		const chunks = await withFreshStore((s) =>
-			s.getChunksWithVectors("/p/a.ts"),
+			s.getChunksWithVectors("p/a.ts"),
 		);
 		const reused = chunks[0].vector;
 
 		await withFreshStore((s) =>
-			s.addChunks([
-				chunk("a", {
-					id: "chunk-reused",
-					contentHash: "hash-a",
-					vector: reused,
-				}),
-			]),
+			s.addChunks(
+				[
+					chunk("a", {
+						id: "chunk-reused",
+						contentHash: "hash-a",
+						vector: reused,
+					}),
+				],
+				{ pathKind: "repo", branchId: 0 },
+			),
 		);
 
 		expect(await rowIds()).toEqual(["chunk-a", "chunk-reused"]);
@@ -464,7 +497,9 @@ describe("vector round-trip", () => {
 
 	// Same shape through the other read that hands a vector back out.
 	test("getAllSummaries returns plain arrays", async () => {
-		await withFreshStore((s) => s.addDocuments([doc("a")]));
+		await withFreshStore((s) =>
+			s.addDocuments([doc("a")], { pathKind: "repo", branchId: 0 }),
+		);
 
 		const summaries = await withFreshStore((s) => s.getAllSummaries());
 

@@ -108,7 +108,7 @@ function checkIndexReason(projectPath: string): "missing" | "outdated" | null {
 	} catch {
 		return "missing";
 	}
-	if (needsUpgrade(projectPath)) return "outdated";
+	if (needsUpgrade(resolveStoreLocation(projectPath))) return "outdated";
 	return null;
 }
 
@@ -135,7 +135,7 @@ export function AppProvider({
 	const [showHelp, setShowHelp] = useState(false);
 	const [inputFocused, setInputFocused] = useState(false);
 	const [indexVersion, setIndexVersion] = useState(() =>
-		getIndexVersion(projectPath),
+		getIndexVersion(resolveStoreLocation(projectPath)),
 	);
 	const [lastActivity, setLastActivity] = useState<ActivityRecord | null>(null);
 	const [indexReason, setIndexReason] = useState(() =>
@@ -204,7 +204,7 @@ export function AppProvider({
 			.then(() => {
 				store.finish();
 				// Re-read the version from config after indexing completes
-				setIndexVersion(getIndexVersion(projectPath));
+				setIndexVersion(getIndexVersion(resolveStoreLocation(projectPath)));
 				setIndexReason(null);
 				setIndexing(false);
 			})

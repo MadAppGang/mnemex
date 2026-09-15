@@ -5,7 +5,7 @@
  * embedding generation, and storage.
  */
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join, relative } from "node:path";
 import {
 	ensureProjectDir,
@@ -51,6 +51,11 @@ import {
 	createCodeUnitExtractor,
 } from "./ast/code-unit-extractor.js";
 import {
+	BRANCH_ID_SHARED,
+	type BranchRegistry,
+	openRegistry,
+} from "./branch-registry.js";
+import {
 	CachingEmbeddingsClient,
 	createCachingEmbeddingsClient,
 } from "./caching-embeddings-client.js";
@@ -71,11 +76,8 @@ import {
 	type Enricher,
 	type FileToEnrich,
 } from "./enrichment/index.js";
-import {
-	CURRENT_INDEX_VERSION,
-	getIndexVersion,
-	setIndexVersion,
-} from "./index-version.js";
+import { readCurrentHead } from "./git-layout.js";
+import { CURRENT_INDEX_VERSION, setIndexVersion } from "./index-version.js";
 import {
 	formatInvalidationCounts,
 	invalidateForCommit,
@@ -84,12 +86,19 @@ import {
 	createGlobalIndexLock,
 	createStoreLock,
 	type IIndexLock,
+	type IndexLock,
 	type LockOptions,
 } from "./lock.js";
 import { createReferenceGraphManager } from "./reference-graph.js";
 import { createRepoMapGenerator } from "./repo-map.js";
-import { createVectorStore, type IVectorStore } from "./store.js";
-import { resolveStoreLocation } from "./store-location.js";
+import { toRepoRelative } from "./repo-path.js";
+import {
+	createVectorStore,
+	type IVectorStore,
+	type RowMembership,
+} from "./store.js";
+import { resolveStoreLocation, type StoreLocation } from "./store-location.js";
+import { probeOldStore } from "./store-meta.js";
 import { createSymbolExtractor } from "./symbol-extractor.js";
 import { yieldToEventLoop } from "./sync-region.js";
 import {
@@ -99,6 +108,36 @@ import {
 	type FileChanges,
 	type IFileTracker,
 } from "./tracker.js";
+
+// ============================================================================
+// Index version 4 helpers
+// ============================================================================
+
+/**
+ * §6.1's probe of the store being replaced: the store directory first, then
+ * the per-worktree directory. Until Phase 3c they are the same directory
+ * unless indexing starts below the worktree root. From 3c on the store moves
+ * under the git common dir, and the per-worktree directory is the store being
+ * replaced. `null` means fresh, with nothing to upgrade and nothing to report.
+ */
+function probeStoreBeingReplaced(
+	loc: StoreLocation,
+): { readonly dir: string; readonly recordedVersion: number | null } | null {
+	for (const dir of [loc.storeDir, loc.worktreeDir]) {
+		const probe = probeOldStore(dir);
+		if (probe.exists) return { dir, recordedVersion: probe.recordedVersion };
+	}
+	return null;
+}
+
+/** `realpathSync.native(path)`, or `path` itself when that fails. */
+function realpathOrSelf(path: string): string {
+	try {
+		return realpathSync.native(path);
+	} catch {
+		return path;
+	}
+}
 
 // ============================================================================
 // Errors
@@ -394,15 +433,16 @@ export class Indexer {
 	 */
 	private embedCacheConfigEnabled: boolean | undefined;
 	/**
-	 * Set by the v2 -> v3 rebuild branch to the version being upgraded FROM, and
-	 * surfaced on `IndexResult.upgradedFromIndexVersion`.
+	 * Set by the index-v4 rebuild branch to the version being upgraded FROM, and
+	 * surfaced on `IndexResult.upgradedFromIndexVersion`. `undefined` when the old
+	 * store recorded no version (V4.8). Reset at the start of every run.
 	 */
 	private upgradedFromIndexVersion: number | undefined;
 	private vectorStore: IVectorStore | null = null;
 	private fileTracker: IFileTracker | null = null;
 	private llmClient: ILLMClient | null = null;
 	private enricher: Enricher | null = null;
-	private indexLock: IIndexLock | null = null;
+	private indexLock: IndexLock | null = null;
 	private globalLock: IIndexLock | null = null;
 	private docsFetcher: DocsFetcher | null = null;
 	/**
@@ -925,7 +965,38 @@ export class Indexer {
 		// not be read as one, which is why this is captured first.
 		const forceRequested = force;
 
+		// Per run: one Indexer can serve more than one run (the MCP auto-reindex
+		// reuses one), and one run's upgrade report must not leak into the next.
+		this.upgradedFromIndexVersion = undefined;
+
+		// §6.1's probe of the store being replaced, taken BEFORE initialize()
+		// creates `index.db`. After it, every fresh store would find a database
+		// and look like an upgrade.
+		const loc = resolveStoreLocation(this.projectPath);
+		const pathRoot = loc.pathRoot;
+		const oldStore = probeStoreBeingReplaced(loc);
+
 		await this.initialize();
+
+		// ── Branch identity (architecture §3.4), before ANY row of this run exists ──
+		// A store with no git layout has no registry: every row is shared (0).
+		// Inside a repository the id is the registry's REAL id for the current
+		// HEAD. A NEW label is allocated AND renamed to disk before resolveId
+		// returns (W-R1), so no row can carry an id `branches.json` does not hold.
+		// Opened here, under the store lock index() took, and nowhere else (REG-1).
+		let registry: BranchRegistry | null = null;
+		let branchId = BRANCH_ID_SHARED;
+		if (loc.gitLayout !== null) {
+			if (this.indexLock === null || this.fileTracker === null) {
+				throw new Error(
+					"indexInternal: the store lock is not held, or the store is not open",
+				);
+			}
+			registry = openRegistry(loc, this.indexLock, this.fileTracker);
+			branchId = registry.resolveId(readCurrentHead(loc.gitLayout));
+		}
+		/** Every repo row this run writes: a repo path, under this run's branch. */
+		const repoRows: RowMembership = { pathKind: "repo", branchId };
 
 		// Resolve the commit anchor ONCE for the whole run. Everything written
 		// below (files via markIndexed, documents via the enricher) is stamped
@@ -976,6 +1047,25 @@ export class Indexer {
 		// asking, unlike a model change — there the stored vectors are valid, just
 		// built by another model, so the rebuild is a real cost trade.
 		const wasCorrupt = await this.vectorStore!.isUnqueryable();
+
+		// ── Index v4 detection (§6.1): three independent signals, all read
+		// before any mutation below can clear the evidence. `=== false`, never
+		// falsiness: the LanceDB probe's `null` means "no table", which is a fresh
+		// index. The tracker probe is the only one that sees the SQLite half. It
+		// decides even when something else already forces a rebuild, because
+		// `clear()` keeps a v3 `files` table, and the first v4 write into it fails.
+		const lanceHasBranchIds =
+			wasCorrupt || this.vectorStore === null
+				? null
+				: await this.vectorStore.hasBranchIdsColumn();
+		const trackerNeedsV4 =
+			this.fileTracker !== null && this.fileTracker.trackerNeedsV4Schema();
+		const upgradeToV4 =
+			trackerNeedsV4 ||
+			(oldStore !== null &&
+				((oldStore.recordedVersion !== null &&
+					oldStore.recordedVersion < CURRENT_INDEX_VERSION) ||
+					lanceHasBranchIds === false));
 
 		// The index records the model that built it (read above). When that is not
 		// the model this run would use, `onModelMismatch` decides which one gives
@@ -1100,42 +1190,54 @@ export class Indexer {
 			);
 		}
 
-		// ── Index v2 -> v3: the table predates the embedKey column ────────────
+		// ── Index v4: the store predates repo-relative paths and branch ids ───
 		//
-		// A v3 batch carries 23 fields; a live v2 table has 22 columns and LanceDB
-		// 0.38 rejects the whole `add` with "Found field not in schema: embedKey".
-		// So the table has to be rebuilt once. There is no seeding pass and no
-		// in-place migration: this run re-embeds, and every run after it is served
-		// from the cache the rebuild fills.
+		// A plain rebuild, once. No seeding pass and no in-place migration
+		// (CLAUDE.md #31). Both halves go through `rebuildStore()`. LanceDB's table
+		// is dropped: a v4 batch carries 25 fields and a live v3 table has 23. The
+		// tracker's six tree-scoped tables are DROPPED and re-created (§3.5.1),
+		// because no ALTER can change the primary key of `files`. Re-chunking is
+		// served from the embedding cache, which is keyed on text, not on path
+		// (§6.2).
 		//
-		// Guarded by `!force` because everything above has already decided whether
-		// the table survives — the corruption repair and the force-model rebuild
-		// both set `force` AND `alreadyCleared`, and asking a cleared store about
-		// its schema would answer for a table that no longer exists.
-		if (!force) {
-			const shape = await this.vectorStore!.hasEmbedKeyColumn();
-			// `=== false`, never falsy: `null` means "no table to ask", which is a
-			// fresh index and needs no migration.
-			if (shape === false) {
-				this.upgradedFromIndexVersion = getIndexVersion(this.projectPath);
-				// onProgress, not console.log: the MCP search tool runs this same
-				// index() in-process and stdout there is the JSON-RPC stream. It
-				// reaches at most two of the four entry points, which is why
-				// `upgradedFromIndexVersion` on the result is the authoritative
-				// channel.
-				this.onProgress?.(
-					0,
-					0,
-					"[migrating] this index predates the embedding-cache key column. " +
-						"Rebuilding it once — this run re-embeds; every run after it is served from the cache.",
-				);
-				force = true;
-			}
+		// Reported in DATA (`upgradedFromIndexVersion`): two of the four entry
+		// points pass no onProgress, so the notice below reaches at most two. The
+		// version comes from `probeOldStore`, which says `null`, never 1, when the
+		// old store recorded none (V4.8).
+		if (upgradeToV4) {
+			this.upgradedFromIndexVersion = oldStore?.recordedVersion ?? undefined;
+			// onProgress, not console.log: the MCP search tool runs this same
+			// index() in-process and stdout there is the JSON-RPC stream.
+			this.onProgress?.(
+				0,
+				0,
+				"[migrating] this index predates repo-relative paths and branch membership. " +
+					"Rebuilding it once; chunks the embedding cache already holds are not re-embedded.",
+			);
+			await this.rebuildStore();
+			alreadyCleared = true;
+			force = true;
 		}
 
 		// Discover files
 		this.reportPhase("discovering");
-		const allFiles = this.discoverFiles();
+		// Walked from the project's REAL path, so every discovered path has the
+		// spelling the seam gives `pathRoot` (decision I-3) and `toRepoRelative`
+		// stays a lexical `relative()`, with no realpath per file.
+		const projectRealPath = realpathOrSelf(this.projectPath);
+		const discovered = this.discoverFiles(projectRealPath);
+		// §3.1: a file with no stored path under pathRoot is SKIPPED and reported
+		// as `outside-path-root`, never written under a `..` path. It is filtered
+		// before getChanges, so it can be neither compared nor a deletion
+		// candidate.
+		const storedPathOf = new Map<string, string>();
+		const outsidePathRoot: string[] = [];
+		for (const file of discovered) {
+			const storedPath = toRepoRelative(pathRoot, file);
+			if (storedPath === null) outsidePathRoot.push(file);
+			else storedPathOf.set(file, storedPath);
+		}
+		const allFiles = [...storedPathOf.keys()];
 
 		// Get changes
 		let filesToIndex: string[];
@@ -1217,7 +1319,7 @@ export class Indexer {
 			const reuseFromLance = this.embedCacheTier() !== "sqlite";
 			for (const modifiedFile of changes.modifiedFiles) {
 				if (reuseFromLance) {
-					// Chunks are stored with absolute paths, so use absolute path for lookups
+					// An absolute path: the store converts it to the stored form.
 					const oldChunks =
 						await this.vectorStore!.getChunksWithVectors(modifiedFile);
 					if (oldChunks.length > 0) {
@@ -1233,7 +1335,7 @@ export class Indexer {
 						this.oldChunksCache.set(modifiedFile, oldChunksMap);
 					}
 				}
-				// Now delete old data (use absolute path to match stored chunks).
+				// Now delete old data (the store converts the path to its stored form).
 				// NEVER GATED — see above.
 				await this.vectorStore!.deleteByFile(modifiedFile);
 				this.fileTracker!.resetEnrichmentState(modifiedFile);
@@ -1245,7 +1347,12 @@ export class Indexer {
 		// Process files in batches to limit memory usage
 		// Each batch: parse → embed → store → release memory
 		const skippedFiles: string[] = [];
-		const errors: Array<{ file: string; error: string }> = [];
+		const errors: Array<{ file: string; error: string }> = outsidePathRoot.map(
+			(file) => ({
+				file: relative(projectRealPath, file),
+				error: "outside-path-root",
+			}),
+		);
 		/**
 		 * Files whose tracker stamp was deferred and whose rows were removed
 		 * again, so the next run redoes them. Relative paths, for the report.
@@ -1290,7 +1397,9 @@ export class Indexer {
 
 			for (let i = 0; i < batchFiles.length; i++) {
 				const filePath = batchFiles[i];
-				const relativePath = relative(this.projectPath, filePath);
+				const relativePath = relative(projectRealPath, filePath);
+				const storedPath =
+					storedPathOf.get(filePath) ?? toRepoRelative(pathRoot, filePath);
 				const globalIndex = batchStart + i + 1;
 
 				// Report progress (parsing phase) - show "X/Y" with filename, or just "X/Y files" at completion
@@ -1308,10 +1417,17 @@ export class Indexer {
 					);
 				}
 
+				if (storedPath === null) {
+					errors.push({ file: relativePath, error: "outside-path-root" });
+					continue;
+				}
+
 				try {
 					const content = readFileSync(filePath, "utf-8");
 					const fileHash = computeFileHash(filePath);
-					const chunks = await chunkFileByPath(content, filePath, fileHash);
+					// The STORED path, so the chunk id hashes it (§3.1): one relative path
+					// gives one id in every worktree.
+					const chunks = await chunkFileByPath(content, storedPath, fileHash);
 
 					if (chunks.length === 0) {
 						skippedFiles.push(relativePath);
@@ -1563,7 +1679,7 @@ export class Indexer {
 			// Phase marker placed IMMEDIATELY before the (un-cancellable) LanceDB
 			// write so a hang here is attributable to "writing:lance" in the report.
 			this.reportPhase("writing:lance");
-			await this.vectorStore!.addChunks(chunksWithEmbeddings);
+			await this.vectorStore!.addChunks(chunksWithEmbeddings, repoRows);
 
 			// THE DEFERRAL MUST COVER THE WRITE, NOT ONLY THE TRACKER.
 			//
@@ -1631,9 +1747,13 @@ export class Indexer {
 
 					try {
 						const content = readFileSync(filePath, "utf-8");
+						const unitPath =
+							storedPathOf.get(filePath) ?? toRepoRelative(pathRoot, filePath);
+						if (unitPath === null) continue;
+						// The STORED path: unit ids hash it, as chunk ids do.
 						const units = await this.codeUnitExtractor.extractUnits(
 							content,
-							filePath,
+							unitPath,
 							language,
 							fileHash,
 						);
@@ -1642,7 +1762,7 @@ export class Indexer {
 						}
 					} catch (error) {
 						// Code unit extraction failure is non-fatal
-						const relativePath = relative(this.projectPath, filePath);
+						const relativePath = relative(projectRealPath, filePath);
 						console.warn(
 							`Warning: Code unit extraction failed for ${relativePath}: ` +
 								`${error instanceof Error ? error.message : String(error)}`,
@@ -1725,7 +1845,10 @@ export class Indexer {
 
 						if (unitsWithEmbeddings.length > 0) {
 							this.reportPhase("writing:lance");
-							await this.vectorStore!.addCodeUnits(unitsWithEmbeddings);
+							await this.vectorStore!.addCodeUnits(
+								unitsWithEmbeddings,
+								repoRows,
+							);
 							totalCodeUnitsCreated += unitsWithEmbeddings.length;
 
 							// Forward progress: code units were written to the vector store.
@@ -1749,7 +1872,7 @@ export class Indexer {
 							embedKey: "",
 						}));
 					this.reportPhase("writing:lance");
-					await this.vectorStore!.addCodeUnits(unitsWithPlaceholder);
+					await this.vectorStore!.addCodeUnits(unitsWithPlaceholder, repoRows);
 					totalCodeUnitsCreated += unitsWithPlaceholder.length;
 
 					// Forward progress: BM25-only code units were written.
@@ -1776,11 +1899,11 @@ export class Indexer {
 				// makes the next run redo it. Stamping it at its current hash would
 				// drop those chunks from the index for good.
 				if (filesWithMissingVectors.has(filePath)) {
-					deferredFiles.add(relative(this.projectPath, filePath));
+					deferredFiles.add(relative(projectRealPath, filePath));
 					deferredInBatch++;
 					continue;
 				}
-				this.fileTracker!.markIndexed(filePath, fileHash, chunkIds);
+				this.fileTracker!.markIndexed(branchId, filePath, fileHash, chunkIds);
 				// SR-2: one R-write per file, back to back for the whole batch
 				// without this.
 				await yieldToEventLoop();
@@ -1814,8 +1937,11 @@ export class Indexer {
 				}
 
 				for (const [filePath, { content, chunks, language }] of fileChunksMap) {
+					const storedPath =
+						storedPathOf.get(filePath) ?? toRepoRelative(pathRoot, filePath);
+					if (storedPath === null) continue;
 					fileChunksForEnrichment.push({
-						filePath: relative(this.projectPath, filePath),
+						filePath: storedPath,
 						fileContent: content,
 						codeChunks: chunks,
 						language,
@@ -1828,7 +1954,8 @@ export class Indexer {
 
 		// Set index version after successful chunk + code unit indexing
 		// Placed before enrichment so a partial enrichment failure doesn't prevent version write
-		setIndexVersion(this.projectPath, CURRENT_INDEX_VERSION);
+		// In store.json, beside the data it describes, under the store lock.
+		setIndexVersion(loc, CURRENT_INDEX_VERSION);
 
 		// Collect previously-indexed files that still need enrichment
 		if (this.enableEnrichment && this.enricher && this.fileTracker) {
@@ -1840,13 +1967,14 @@ export class Indexer {
 
 			for (const relPath of unenrichedPaths) {
 				if (alreadyQueued.has(relPath)) continue;
-				const absPath = join(this.projectPath, relPath);
+				// A stored path, made absolute under THIS worktree's root (§3.6).
+				const absPath = join(pathRoot, relPath);
 				if (!existsSync(absPath)) continue;
 
 				try {
 					const content = readFileSync(absPath, "utf-8");
 					const fileHash = computeFileHash(absPath);
-					const chunks = await chunkFileByPath(content, absPath, fileHash);
+					const chunks = await chunkFileByPath(content, relPath, fileHash);
 					if (chunks.length === 0) continue;
 
 					fileChunksForEnrichment.push({
@@ -1878,6 +2006,8 @@ export class Indexer {
 					fileChunksForEnrichment,
 					{
 						concurrency: this.enrichmentConcurrency,
+						// Summaries are a function of the tree: this run's branch (§3.2.1).
+						membership: repoRows,
 						onProgress: (completed, total, phase, status, inProgress) => {
 							// Stamp the lock as well as the UI. Without this the whole
 							// enrichment phase advances `heartbeat` but never
@@ -1907,7 +2037,7 @@ export class Indexer {
 
 		const runASTExtraction = async (): Promise<void> => {
 			if (filesToIndex.length > 0) {
-				await this.extractSymbolGraph(filesToIndex, force);
+				await this.extractSymbolGraph(filesToIndex, force, pathRoot);
 			}
 		};
 
@@ -1997,6 +2127,11 @@ export class Indexer {
 				);
 			}
 		}
+
+		// The registry's end-of-run rename: `lastSeen` for a label this store
+		// already knew. A NEW label's allocation is not waiting for it, because
+		// W-R1 renamed that before any row carried the id.
+		registry?.flush();
 
 		const durationMs = Date.now() - startTime;
 
@@ -2134,6 +2269,34 @@ export class Indexer {
 	}
 
 	/**
+	 * Drop BOTH halves of the store for a whole-store rebuild (architecture
+	 * §4.5, §3.5.1): LanceDB's table, and the tracker's six tree-scoped tables,
+	 * which are DROPPED and re-created in their current shape. `clear()`'s
+	 * `DELETE FROM` alone would keep an old schema alive, which is how a zombie
+	 * schema survives a rebuild. The repo-scoped `metadata` is then emptied, as
+	 * every other whole-store rebuild empties it, and the run re-stamps it.
+	 *
+	 * The branch registry is NOT touched. Ids are never reused, and the rows this
+	 * run writes carry the id it already resolved.
+	 */
+	private async rebuildStore(): Promise<void> {
+		const store = this.vectorStore;
+		const tracker = this.fileTracker;
+		if (store === null || tracker === null) {
+			throw new Error(
+				"rebuildStore: the store is not open; initialize() first",
+			);
+		}
+		await store.clear();
+		tracker.rebuildTreeScopedSchemaForV4();
+		// Two tracker regions back to back, and NO yield between them. This is not
+		// a loop, so it is two regions' worth of blocking, never N: the reasoning
+		// `getChanges` documents. SR-2 is a rule about loops, and the loop sweep's
+		// mutation test rejects a yield whose removal it could not detect.
+		tracker.clear();
+	}
+
+	/**
 	 * Clear the index
 	 */
 	async clear(): Promise<void> {
@@ -2184,9 +2347,12 @@ export class Indexer {
 	}
 
 	/**
-	 * Discover files to index
+	 * Discover files to index, as absolute paths under `root`: the project's
+	 * real path, so they share `pathRoot`'s spelling. Symlinks are not followed
+	 * (a `Dirent` for one is neither a file nor a directory), so a symlink out of
+	 * the tree is never discovered.
 	 */
-	private discoverFiles(): string[] {
+	private discoverFiles(root: string): string[] {
 		const files: string[] = [];
 		const parserManager = getParserManager();
 		const supportedExtensions = new Set(parserManager.getSupportedExtensions());
@@ -2196,7 +2362,7 @@ export class Indexer {
 
 			for (const entry of entries) {
 				const fullPath = join(dir, entry.name);
-				const relativePath = relative(this.projectPath, fullPath);
+				const relativePath = relative(root, fullPath);
 
 				// Check exclude patterns
 				if (
@@ -2229,7 +2395,7 @@ export class Indexer {
 			}
 		};
 
-		walk(this.projectPath);
+		walk(root);
 		return files;
 	}
 
@@ -2284,6 +2450,7 @@ export class Indexer {
 	private async extractSymbolGraph(
 		filesToIndex: string[],
 		force: boolean,
+		pathRoot: string,
 	): Promise<void> {
 		const symbolExtractor = createSymbolExtractor();
 		const graphManager = createReferenceGraphManager(this.fileTracker!);
@@ -2319,7 +2486,13 @@ export class Indexer {
 
 			try {
 				const content = readFileSync(filePath, "utf-8");
-				const relativePath = relative(this.projectPath, filePath);
+				// The symbol's STORED path, repo-relative like every other one (§3.1).
+				const relativePath = toRepoRelative(pathRoot, filePath);
+				if (relativePath === null) {
+					throw new Error(
+						`outside-path-root: ${filePath} is not under ${pathRoot}`,
+					);
+				}
 
 				// Extract symbols
 				const symbols = await symbolExtractor.extractSymbols(
@@ -2578,7 +2751,11 @@ export class Indexer {
 					}));
 
 				this.reportPhase("writing:lance");
-				await this.vectorStore!.addChunks(chunksWithEmbeddings);
+				// External docs are the repository's, not a tree's: shared (§3.2.1).
+				await this.vectorStore!.addChunks(chunksWithEmbeddings, {
+					pathKind: "synthetic",
+					branchId: BRANCH_ID_SHARED,
+				});
 
 				// Forward progress: docs chunks were written to the vector store.
 				this.reportProgress();

@@ -98,13 +98,16 @@ const OTHER = "src/other.ts";
 
 async function seedFiveRows(): Promise<void> {
 	await withStore((store) =>
-		store.addChunks([
-			chunk(MULTI, 1),
-			chunk(MULTI, 2),
-			chunk(MULTI, 3),
-			chunk(OTHER, 4),
-			chunk(OTHER, 5),
-		]),
+		store.addChunks(
+			[
+				chunk(MULTI, 1),
+				chunk(MULTI, 2),
+				chunk(MULTI, 3),
+				chunk(OTHER, 4),
+				chunk(OTHER, 5),
+			],
+			{ pathKind: "repo", branchId: 0 },
+		),
 	);
 }
 

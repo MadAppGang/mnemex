@@ -20,7 +20,8 @@
  *   <bun|node> tracker-contention-child.cjs <module> <mode> <dbPath> <root> <beatFile> [goFile]
  *
  * Modes:
- *   seed             construct; setMetadata seed; markIndexed each extra argv path;
+ *   seed             construct; setMetadata seed; markIndexed each extra argv path
+ *                    under branch id 0 (the fixture has no git layout);
  *                    close; exit. A PROCESS EXIT, because bun's `close()` with
  *                    unfinalized statements leaves a zombie connection that still
  *                    holds the WAL's shared memory — measured: it blocks
@@ -96,7 +97,11 @@ async function main() {
 	} else if (mode === "seed") {
 		tracker.setMetadata("seed", "committed");
 		for (const file of process.argv.slice(8)) {
-			tracker.markIndexed(`${root}/${file}`, `hash-${file}`, [`chunk-${file}`]);
+			// Branch id 0 (BRANCH_ID_SHARED): the fixture has no git layout, so 0 is
+			// what the indexer itself would write here (index version 4).
+			tracker.markIndexed(0, `${root}/${file}`, `hash-${file}`, [
+				`chunk-${file}`,
+			]);
 		}
 		result = {
 			constructed: true,

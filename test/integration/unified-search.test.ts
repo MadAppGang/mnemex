@@ -146,7 +146,7 @@ describe("Unified Search", () => {
 				seed: 5,
 			}),
 		];
-		await store.addChunks(chunks);
+		await store.addChunks(chunks, { pathKind: "repo", branchId: 0 });
 
 		// Add symbol_summary documents linked to code chunks
 		const docs: DocumentWithEmbedding[] = [
@@ -196,7 +196,7 @@ describe("Unified Search", () => {
 				seed: 4.1,
 			}),
 		];
-		await store.addDocuments(docs);
+		await store.addDocuments(docs, { pathKind: "repo", branchId: 0 });
 	});
 
 	afterAll(() => {
@@ -243,7 +243,8 @@ describe("Unified Search", () => {
 
 		// At least one auth chunk should have a summary (from either symbol or file summary)
 		const authChunks = results.filter(
-			(r) => r.chunk.filePath === "src/auth/service.ts",
+			// Returned absolute under pathRoot (decision D4).
+			(r) => r.chunk.filePath === join(TEST_DIR, "src/auth/service.ts"),
 		);
 
 		// The auth chunks should benefit from the file_summary and symbol_summary

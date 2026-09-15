@@ -6,8 +6,16 @@
  */
 
 import { existsSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, isAbsolute } from "node:path";
 import * as lancedb from "@lancedb/lancedb";
+import {
+	Field,
+	FixedSizeList,
+	Float32,
+	Float64,
+	Schema,
+	Utf8,
+} from "apache-arrow";
 import { getTestFileMode, type TestFileMode } from "../config.js";
 import type {
 	BaseDocument,
@@ -26,6 +34,12 @@ import {
 	createTestFileDetector,
 	type TestFileDetector,
 } from "./analysis/test-detector.js";
+import {
+	fromStoredPath,
+	isStoredRepoPath,
+	type PathKind,
+	toRepoRelative,
+} from "./repo-path.js";
 
 // ============================================================================
 // Constants
@@ -43,6 +57,16 @@ const FTS_COLUMN = "content";
  * one; see `VectorStore.hasEmbedKeyColumn`.
  */
 export const EMBED_KEY_COLUMN = "embedKey";
+
+/**
+ * Index version 4's two columns (architecture §3.2). `branchIds` is `Utf8`
+ * with a comma on BOTH ends (`,1,4,7,`), so `LIKE '%,4,%'` cannot match 14 or
+ * 41 (decision I-6: no mask column, no list type). `pathKind` is the closed
+ * union `"repo" | "synthetic"` (§3.1). Their presence is what distinguishes a
+ * v4 table from a v3 one; see `VectorStore.hasBranchIdsColumn`.
+ */
+export const BRANCH_IDS_COLUMN = "branchIds";
+export const PATH_KIND_COLUMN = "pathKind";
 
 /** `IndexConfig.indexType` for a full-text index, upper-cased for comparison. */
 const FTS_INDEX_TYPE = "FTS";
@@ -298,6 +322,78 @@ export function withTimeout<T>(
 }
 
 // ============================================================================
+// Row membership (index version 4)
+// ============================================================================
+
+/**
+ * Which branch a write's rows belong to, and what kind of path they carry
+ * (architecture §3.2.1). EVERY write names it, and there is no default: the
+ * only value a store could default to, `,0,`, is the one §3.2.1 forbids for a
+ * repository's own rows (every such row would be visible from every branch).
+ */
+export interface RowMembership {
+	readonly pathKind: PathKind;
+	/**
+	 * The branch registry's REAL id for the current HEAD, or `BRANCH_ID_SHARED`
+	 * (0) for docs, session observations, and every row of a store with no git
+	 * layout.
+	 */
+	readonly branchId: number;
+}
+
+/** The canonical `branchIds` value for one branch: `,<id>,`. */
+export function encodeBranchIds(branchId: number): string {
+	if (!Number.isSafeInteger(branchId) || branchId < 0) {
+		throw new RangeError(`not a branch id: ${String(branchId)}`);
+	}
+	return `,${branchId},`;
+}
+
+/**
+ * A `"repo"` row whose `filePath` breaks the stored-path convention (§3.1):
+ * absolute, empty, or with a `..` segment. Refused at the write, because an
+ * absolute path in a relative column matches no delete and no lookup ever
+ * again. That is the ghost-chunk defect, made permanent.
+ */
+export class StoredPathConventionError extends Error {
+	constructor(
+		readonly label: string,
+		readonly filePath: string,
+	) {
+		super(
+			`Refusing to write '${label}': '${filePath}' is not a repo-relative path. ` +
+				"Stored repo paths are relative to the worktree root (architecture §3.1); " +
+				"convert with toRepoRelative before the write.",
+		);
+		this.name = "StoredPathConventionError";
+	}
+}
+
+/** The two v4 columns for one write, after checking every row obeys the convention. */
+function membershipColumns(
+	membership: RowMembership,
+	filePaths: readonly string[],
+	label: string,
+): { branchIds: string; pathKind: PathKind } {
+	if (typeof membership !== "object" || membership === null) {
+		throw new TypeError(`${label}: a RowMembership is required`);
+	}
+	const branchIds = encodeBranchIds(membership.branchId);
+	if (membership.pathKind === "repo") {
+		for (const filePath of filePaths) {
+			if (!isStoredRepoPath(filePath)) {
+				throw new StoredPathConventionError(label, filePath);
+			}
+		}
+	} else if (membership.pathKind !== "synthetic") {
+		throw new RangeError(
+			`${label}: pathKind must be "repo" or "synthetic", not ${String(membership.pathKind)}`,
+		);
+	}
+	return { branchIds, pathKind: membership.pathKind };
+}
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
@@ -425,6 +521,64 @@ interface StoredChunk {
 	unitType: string; // "file" | "class" | "interface" | "function" | "method" | "type" | "enum"
 	depth: number; // Depth in hierarchy (0=file, 1=class/function, 2=method)
 	summary: string; // LLM-generated summary of this unit
+	/** Index v4: `,<id>,` membership, from the write's `RowMembership`. */
+	branchIds: string;
+	/** Index v4: `"repo"` | `"synthetic"` (§3.1). */
+	pathKind: string;
+}
+
+/**
+ * The DECLARED Arrow schema of `code_chunks` (architecture §3.2), passed at
+ * all three `createTable` sites. Field for field it is what LanceDB 0.38
+ * INFERRED from a v3 row (measured: every string `Utf8`, every number
+ * `Float64`, the vector `FixedSizeList[dim]<Float32>`, all nullable), plus
+ * the two v4 columns. It is declared rather than inferred for two reasons:
+ *
+ *   - A writer whose keys disagree with it fails AT WRITE TIME, with the
+ *     field named, instead of deciding the schema by being first.
+ *   - The vector width comes from the validated dimension, not from whatever
+ *     the first batch held. That retires the `FixedSizeList[0]` hazard for
+ *     NEW tables. The four CLAUDE.md #15 guards stay, because tables written
+ *     by older builds still exist.
+ *
+ * It is a function of the dimension, not one constant, because the vector
+ * width belongs to the embedding model.
+ */
+export function codeChunksSchema(dimension: number): Schema {
+	const width = assertVectorDimension(dimension, "codeChunksSchema");
+	const text = (name: string) => new Field(name, new Utf8(), true);
+	const number = (name: string) => new Field(name, new Float64(), true);
+	return new Schema([
+		text("id"),
+		text("contentHash"),
+		text("content"),
+		text("filePath"),
+		number("startLine"),
+		number("endLine"),
+		text("language"),
+		text("chunkType"),
+		text("name"),
+		text("parentName"),
+		text("signature"),
+		text("fileHash"),
+		new Field(
+			"vector",
+			new FixedSizeList(width, new Field("item", new Float32(), true)),
+			true,
+		),
+		text(EMBED_KEY_COLUMN),
+		text("documentType"),
+		text("sourceIds"),
+		text("metadata"),
+		text("createdAt"),
+		text("enrichedAt"),
+		text("parentId"),
+		text("unitType"),
+		number("depth"),
+		text("summary"),
+		text(BRANCH_IDS_COLUMN),
+		text(PATH_KIND_COLUMN),
+	]);
 }
 
 export interface SearchOptions {
@@ -454,7 +608,13 @@ export interface IVectorStore {
 	 * See `VectorStore.hasEmbedKeyColumn` for why it is not memoised.
 	 */
 	hasEmbedKeyColumn(): Promise<boolean | null>;
-	addChunks(chunks: ChunkWithEmbedding[]): Promise<void>;
+	/** Tri-state live schema read for index v4's `branchIds` column (§6.1). */
+	hasBranchIdsColumn(): Promise<boolean | null>;
+	/** `membership` is required: see `RowMembership`. */
+	addChunks(
+		chunks: ChunkWithEmbedding[],
+		membership: RowMembership,
+	): Promise<void>;
 	search(
 		queryText: string,
 		queryVector: number[] | undefined,
@@ -471,7 +631,10 @@ export interface IVectorStore {
 		uniqueFiles: number;
 		languages: string[];
 	}>;
-	addDocuments(documents: DocumentWithEmbedding[]): Promise<void>;
+	addDocuments(
+		documents: DocumentWithEmbedding[],
+		membership: RowMembership,
+	): Promise<void>;
 	deleteByDocumentType(documentType: DocumentType): Promise<number>;
 	deleteAllByFile(filePath: string): Promise<number>;
 	getDocumentsByFile(
@@ -485,7 +648,10 @@ export interface IVectorStore {
 	): Promise<EnrichedSearchResult[]>;
 	getDocumentTypeStats(): Promise<Record<DocumentType, number>>;
 	close(): Promise<void>;
-	addCodeUnits(units: CodeUnitWithEmbedding[]): Promise<void>;
+	addCodeUnits(
+		units: CodeUnitWithEmbedding[],
+		membership: RowMembership,
+	): Promise<void>;
 	/**
 	 * No-op when there is no such unit; THROWS `VectorStoreUpdateError` when the
 	 * write fails. The error's `rowRestored` says whether the row survived.
@@ -589,6 +755,38 @@ export class VectorStore implements IVectorStore {
 		}
 
 		this.db = await lancedb.connect(this.dbPath);
+	}
+
+	/**
+	 * THE read seam (architecture §3.1, decision D4): a stored row's path as a
+	 * caller sees it. Every row-to-result hydration in this class goes through
+	 * here, and nothing above the store converts a path.
+	 */
+	private outputPath(row: { filePath: string; pathKind?: unknown }): string {
+		return fromStoredPath(this.pathRoot, row);
+	}
+
+	/**
+	 * A caller's path argument in stored form, for an EQUALITY predicate.
+	 * Absolute: repo-relative under `pathRoot`, or null when outside it (and the
+	 * caller then matches nothing). Relative: already stored, e.g. a
+	 * `docs:<pkg>` id or a path the tracker handed back.
+	 */
+	private storedPathArg(filePath: string): string | null {
+		return isAbsolute(filePath)
+			? toRepoRelative(this.pathRoot, filePath)
+			: filePath;
+	}
+
+	/**
+	 * A `LIKE` substring argument: an absolute path under `pathRoot` is matched
+	 * in stored form, anything else as written. Every use still escapes it with
+	 * `escapeFilterValue` (CLAUDE.md #22).
+	 */
+	private likePatternArg(pattern: string): string {
+		return isAbsolute(pattern)
+			? (toRepoRelative(this.pathRoot, pattern) ?? pattern)
+			: pattern;
 	}
 
 	/**
@@ -724,6 +922,27 @@ export class VectorStore implements IVectorStore {
 	}
 
 	/**
+	 * Does the table on disk carry index version 4's `branchIds` column?
+	 * `true` / `false` / `null` exactly as `hasEmbedKeyColumn`, and NOT memoised
+	 * for the same reasons. `false` is the upgrade signal. `null` (no table) is a
+	 * fresh index and needs no migration, which is why the caller compares
+	 * `=== false`, never falsiness (architecture §6.1).
+	 */
+	async hasBranchIdsColumn(): Promise<boolean | null> {
+		const table = await this.ensureTableOpen();
+		if (!table) return null;
+
+		try {
+			const schema = await table.schema();
+			return schema.fields.some(
+				(f: { name: string }) => f.name === BRANCH_IDS_COLUMN,
+			);
+		} catch {
+			return null;
+		}
+	}
+
+	/**
 	 * Build the BM25 full-text index on `content` if, and only if, the one on
 	 * disk does not already cover the current corpus.
 	 *
@@ -781,7 +1000,17 @@ export class VectorStore implements IVectorStore {
 	/**
 	 * Add chunks with embeddings to the store
 	 */
-	async addChunks(chunks: ChunkWithEmbedding[]): Promise<void> {
+	async addChunks(
+		chunks: ChunkWithEmbedding[],
+		membership: RowMembership,
+	): Promise<void> {
+		// Checked before the empty-batch return, so a caller that forgot the
+		// membership fails on its first call, not on its first non-empty one.
+		const columns = membershipColumns(
+			membership,
+			chunks.map((chunk) => chunk.filePath),
+			"addChunks",
+		);
 		if (chunks.length === 0) {
 			return;
 		}
@@ -817,6 +1046,8 @@ export class VectorStore implements IVectorStore {
 			unitType: "",
 			depth: -1,
 			summary: "",
+			branchIds: columns.branchIds,
+			pathKind: columns.pathKind,
 		}));
 
 		// Try to open existing table
@@ -860,7 +1091,11 @@ export class VectorStore implements IVectorStore {
 				await this.initialize();
 			}
 			this.table = await withTimeout(
-				this.db!.createTable(CHUNKS_TABLE, data, { mode: "create" }),
+				this.db!.createTable(CHUNKS_TABLE, data, {
+					mode: "create",
+					// DECLARED, not inferred: see `codeChunksSchema`.
+					schema: codeChunksSchema(incomingDimension),
+				}),
 				LANCEDB_WRITE_TIMEOUT_MS,
 				"addChunks:createTable",
 			);
@@ -912,10 +1147,14 @@ export class VectorStore implements IVectorStore {
 			filters.push(`language = '${escapeSqlLiteral(language)}'`);
 		}
 		if (filePath) {
-			filters.push(`filePath LIKE '%${escapeFilterValue(filePath)}%'`);
+			filters.push(
+				`filePath LIKE '%${escapeFilterValue(this.likePatternArg(filePath))}%'`,
+			);
 		}
 		if (pathPattern) {
-			filters.push(`filePath LIKE '%${escapeFilterValue(pathPattern)}%'`);
+			filters.push(
+				`filePath LIKE '%${escapeFilterValue(this.likePatternArg(pathPattern))}%'`,
+			);
 		}
 		const filterStr = filters.length > 0 ? filters.join(" AND ") : undefined;
 
@@ -1021,7 +1260,7 @@ export class VectorStore implements IVectorStore {
 					id: r.id,
 					contentHash: r.contentHash || "",
 					content: r.content,
-					filePath: r.filePath,
+					filePath: this.outputPath(r),
 					startLine: r.startLine,
 					endLine: r.endLine,
 					language: r.language,
@@ -1087,6 +1326,10 @@ export class VectorStore implements IVectorStore {
 			if (!table) {
 				return 0;
 			}
+			const storedPath = this.storedPathArg(filePath);
+			if (storedPath === null) {
+				return 0;
+			}
 
 			// The REAL count. LanceDB 0.38 returns `DeleteResult { numDeletedRows,
 			// version }`; this returned a hardcoded 1 under the stale comment "LanceDB
@@ -1094,7 +1337,7 @@ export class VectorStore implements IVectorStore {
 			// ghost-chunk defect: a relative path against absolute stored paths)
 			// reported success and its caller could not tell.
 			const { numDeletedRows } = await table.delete(
-				`filePath = '${escapeSqlLiteral(filePath)}'`,
+				`filePath = '${escapeSqlLiteral(storedPath)}'`,
 			);
 			return numDeletedRows;
 		} catch {
@@ -1132,6 +1375,10 @@ export class VectorStore implements IVectorStore {
 		if (!table) {
 			return [];
 		}
+		const storedPath = this.storedPathArg(filePath);
+		if (storedPath === null) {
+			return [];
+		}
 
 		try {
 			// Equality, so `escapeSqlLiteral`. This used the LIKE escaper, which
@@ -1143,7 +1390,7 @@ export class VectorStore implements IVectorStore {
 			const results = await table
 				.query()
 				.where(
-					`filePath = '${escapeSqlLiteral(filePath)}' AND documentType = 'code_chunk'`,
+					`filePath = '${escapeSqlLiteral(storedPath)}' AND documentType = 'code_chunk'`,
 				)
 				.toArray();
 
@@ -1151,7 +1398,7 @@ export class VectorStore implements IVectorStore {
 				id: row.id,
 				contentHash: row.contentHash || "",
 				content: row.content,
-				filePath: row.filePath,
+				filePath: this.outputPath(row),
 				startLine: row.startLine,
 				endLine: row.endLine,
 				language: row.language,
@@ -1252,7 +1499,17 @@ export class VectorStore implements IVectorStore {
 	/**
 	 * Add enriched documents with embeddings to the store
 	 */
-	async addDocuments(documents: DocumentWithEmbedding[]): Promise<void> {
+	async addDocuments(
+		documents: DocumentWithEmbedding[],
+		membership: RowMembership,
+	): Promise<void> {
+		// Checked before the empty-batch return, so a caller that forgot the
+		// membership fails on its first call, not on its first non-empty one.
+		const columns = membershipColumns(
+			membership,
+			documents.map((doc) => doc.filePath || ""),
+			"addDocuments",
+		);
 		if (documents.length === 0) {
 			return;
 		}
@@ -1290,6 +1547,8 @@ export class VectorStore implements IVectorStore {
 			unitType: "",
 			depth: -1,
 			summary: "",
+			branchIds: columns.branchIds,
+			pathKind: columns.pathKind,
 		}));
 
 		// Try to open existing table
@@ -1328,7 +1587,11 @@ export class VectorStore implements IVectorStore {
 				await this.initialize();
 			}
 			this.table = await withTimeout(
-				this.db!.createTable(CHUNKS_TABLE, data, { mode: "create" }),
+				this.db!.createTable(CHUNKS_TABLE, data, {
+					mode: "create",
+					// DECLARED, not inferred: see `codeChunksSchema`.
+					schema: codeChunksSchema(incomingDimension),
+				}),
 				LANCEDB_WRITE_TIMEOUT_MS,
 				"addDocuments:createTable",
 			);
@@ -1379,6 +1642,10 @@ export class VectorStore implements IVectorStore {
 			if (!table) {
 				return 0;
 			}
+			const storedPath = this.storedPathArg(filePath);
+			if (storedPath === null) {
+				return 0;
+			}
 
 			// The value was interpolated raw. That is data loss, not a syntax
 			// hazard: `x' OR filePath LIKE '%` renders the well-formed predicate
@@ -1386,7 +1653,7 @@ export class VectorStore implements IVectorStore {
 			// so a delete aimed at one file empties the table. Equality, so the
 			// escape is quote doubling only (`escapeSqlLiteral`); the LIKE
 			// escaper would break ordinary `my_file.ts` paths instead.
-			await table.delete(`filePath = '${escapeSqlLiteral(filePath)}'`);
+			await table.delete(`filePath = '${escapeSqlLiteral(storedPath)}'`);
 			return 1;
 		} catch {
 			return 0;
@@ -1404,13 +1671,17 @@ export class VectorStore implements IVectorStore {
 		if (!table) {
 			return [];
 		}
+		const storedPath = this.storedPathArg(filePath);
+		if (storedPath === null) {
+			return [];
+		}
 
 		try {
 			// Same raw interpolation as `deleteAllByFile` had: a quote in the
 			// path made LanceDB reject the statement (caught below, reported as
 			// "no documents"), and a crafted path widened the predicate to every
 			// row. Equality, so quote doubling only.
-			let filter = `filePath = '${escapeSqlLiteral(filePath)}'`;
+			let filter = `filePath = '${escapeSqlLiteral(storedPath)}'`;
 			if (documentTypes && documentTypes.length > 0) {
 				// `documentTypes` is the closed `DocumentType` union — no quotes
 				// to escape, and no `%`/`_` handling wanted either, since IN
@@ -1425,7 +1696,7 @@ export class VectorStore implements IVectorStore {
 				id: row.id,
 				content: row.content,
 				documentType: row.documentType as DocumentType,
-				filePath: row.filePath || undefined,
+				filePath: row.filePath ? this.outputPath(row) : undefined,
 				fileHash: row.fileHash || undefined,
 				createdAt: row.createdAt,
 				enrichedAt: row.enrichedAt || undefined,
@@ -1467,7 +1738,9 @@ export class VectorStore implements IVectorStore {
 			filters.push(`language = '${escapeSqlLiteral(language)}'`);
 		}
 		if (pathPattern) {
-			filters.push(`filePath LIKE '%${escapeFilterValue(pathPattern)}%'`);
+			filters.push(
+				`filePath LIKE '%${escapeFilterValue(this.likePatternArg(pathPattern))}%'`,
+			);
 		}
 
 		// Filter by document types (these are enum values, but escape anyway for safety)
@@ -1544,7 +1817,7 @@ export class VectorStore implements IVectorStore {
 				id: r.id,
 				content: r.content,
 				documentType: r.documentType as DocumentType,
-				filePath: r.filePath || undefined,
+				filePath: r.filePath ? this.outputPath(r) : undefined,
 				fileHash: r.fileHash || undefined,
 				createdAt: r.createdAt,
 				enrichedAt: r.enrichedAt || undefined,
@@ -1598,7 +1871,17 @@ export class VectorStore implements IVectorStore {
 	/**
 	 * Add code units with embeddings to the store
 	 */
-	async addCodeUnits(units: CodeUnitWithEmbedding[]): Promise<void> {
+	async addCodeUnits(
+		units: CodeUnitWithEmbedding[],
+		membership: RowMembership,
+	): Promise<void> {
+		// Checked before the empty-batch return, so a caller that forgot the
+		// membership fails on its first call, not on its first non-empty one.
+		const columns = membershipColumns(
+			membership,
+			units.map((unit) => unit.filePath),
+			"addCodeUnits",
+		);
 		if (units.length === 0) {
 			return;
 		}
@@ -1631,6 +1914,8 @@ export class VectorStore implements IVectorStore {
 			unitType: unit.unitType,
 			depth: unit.depth,
 			summary: "", // Will be populated by summarization phase
+			branchIds: columns.branchIds,
+			pathKind: columns.pathKind,
 		}));
 
 		let table = await this.ensureTableOpen();
@@ -1668,7 +1953,11 @@ export class VectorStore implements IVectorStore {
 				await this.initialize();
 			}
 			this.table = await withTimeout(
-				this.db!.createTable(CHUNKS_TABLE, data, { mode: "create" }),
+				this.db!.createTable(CHUNKS_TABLE, data, {
+					mode: "create",
+					// DECLARED, not inferred: see `codeChunksSchema`.
+					schema: codeChunksSchema(incomingDimension),
+				}),
 				LANCEDB_WRITE_TIMEOUT_MS,
 				"addCodeUnits:createTable",
 			);
@@ -1874,7 +2163,7 @@ export class VectorStore implements IVectorStore {
 				id: row.id,
 				content: row.content,
 				documentType: row.documentType as DocumentType,
-				filePath: row.filePath || undefined,
+				filePath: row.filePath ? this.outputPath(row) : undefined,
 				fileHash: row.fileHash || undefined,
 				createdAt: row.createdAt,
 				enrichedAt: row.enrichedAt || undefined,
@@ -1898,9 +2187,13 @@ export class VectorStore implements IVectorStore {
 	): Promise<CodeUnit[]> {
 		const table = await this.ensureTableOpen();
 		if (!table) return [];
+		const storedPath = this.storedPathArg(filePath);
+		if (storedPath === null) {
+			return [];
+		}
 
 		try {
-			let filter = `filePath = '${escapeSqlLiteral(filePath)}' AND documentType = 'code_unit'`;
+			let filter = `filePath = '${escapeSqlLiteral(storedPath)}' AND documentType = 'code_unit'`;
 			if (unitTypes && unitTypes.length > 0) {
 				// IN compares by equality, so this takes `escapeSqlLiteral`.
 				const types = unitTypes
@@ -1930,7 +2223,9 @@ export class VectorStore implements IVectorStore {
 		try {
 			let filter = `depth = ${depth} AND documentType = 'code_unit'`;
 			if (filePath) {
-				filter += ` AND filePath = '${escapeSqlLiteral(filePath)}'`;
+				const storedPath = this.storedPathArg(filePath);
+				if (storedPath === null) return [];
+				filter += ` AND filePath = '${escapeSqlLiteral(storedPath)}'`;
 			}
 
 			const results = await table.query().where(filter).toArray();
@@ -2018,7 +2313,9 @@ export class VectorStore implements IVectorStore {
 			filters.push(`depth <= ${maxDepth}`);
 		}
 		if (filePath) {
-			filters.push(`filePath LIKE '%${escapeFilterValue(filePath)}%'`);
+			filters.push(
+				`filePath LIKE '%${escapeFilterValue(this.likePatternArg(filePath))}%'`,
+			);
 		}
 
 		const filterStr = filters.join(" AND ");
@@ -2069,7 +2366,9 @@ export class VectorStore implements IVectorStore {
 		try {
 			let filter = "documentType = 'code_unit'";
 			if (filePath) {
-				filter += ` AND filePath = '${escapeSqlLiteral(filePath)}'`;
+				const storedPath = this.storedPathArg(filePath);
+				if (storedPath === null) return 0;
+				filter += ` AND filePath = '${escapeSqlLiteral(storedPath)}'`;
 			}
 
 			const results = await table.query().where(filter).toArray();
@@ -2089,7 +2388,7 @@ export class VectorStore implements IVectorStore {
 			id: row.id,
 			parentId: row.parentId || null,
 			unitType: (row.unitType || "function") as UnitType,
-			filePath: row.filePath,
+			filePath: this.outputPath(row),
 			startLine: row.startLine,
 			endLine: row.endLine,
 			language: row.language,

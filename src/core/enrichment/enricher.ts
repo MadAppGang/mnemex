@@ -15,7 +15,7 @@ import type {
 	IEmbeddingsClient,
 	ILLMClient,
 } from "../../types.js";
-import type { IVectorStore } from "../store.js";
+import type { IVectorStore, RowMembership } from "../store.js";
 import type { IFileTracker } from "../tracker.js";
 import {
 	createDefaultExtractors,
@@ -47,6 +47,13 @@ export interface EnricherOptions {
 	skipEmbedding?: boolean;
 	/** Maximum concurrent file enrichments (default: 3) */
 	concurrency?: number;
+	/**
+	 * The membership of every document written (architecture §3.2.1). Summaries
+	 * are a function of the tree, so the caller passes `"repo"` under its run's
+	 * branch id. Required, with no default: a default would have to be `,0,`,
+	 * which makes a branch's summaries visible from every branch.
+	 */
+	membership: RowMembership;
 }
 
 export interface FileToEnrich {
@@ -151,7 +158,7 @@ export class Enricher {
 	 */
 	async enrichFile(
 		file: FileToEnrich,
-		options: EnricherOptions = {},
+		options: EnricherOptions,
 	): Promise<EnrichmentResult> {
 		const startTime = Date.now();
 		let documentsCreated = 0;
@@ -213,7 +220,10 @@ export class Enricher {
 			}
 
 			// Store documents
-			await this.vectorStore.addDocuments(documentsWithEmbeddings);
+			await this.vectorStore.addDocuments(
+				documentsWithEmbeddings,
+				options.membership,
+			);
 
 			// Track documents
 			const trackedDocs = documentsWithEmbeddings.map((doc) => ({
@@ -260,7 +270,7 @@ export class Enricher {
 	 */
 	async enrichFiles(
 		files: FileToEnrich[],
-		options: EnricherOptions = {},
+		options: EnricherOptions,
 	): Promise<EnrichmentResult> {
 		const startTime = Date.now();
 		const total = files.length;
@@ -523,7 +533,10 @@ export class Enricher {
 				`${docCount} documents...`,
 				docCount,
 			);
-			await this.vectorStore.addDocuments(documentsWithEmbeddings);
+			await this.vectorStore.addDocuments(
+				documentsWithEmbeddings,
+				options.membership,
+			);
 
 			// Track all documents
 			const trackedDocs = documentsWithEmbeddings.map((doc) => ({

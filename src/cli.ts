@@ -50,6 +50,7 @@ import {
 	truncateForModel,
 } from "./core/embeddings.js";
 import { parseIndexLockFlags } from "./core/index-lock-flags.js";
+import { FIRST_EMBED_CACHE_INDEX_VERSION } from "./core/index-version.js";
 import { createReferenceGraphManager } from "./core/reference-graph.js";
 // Note: createVectorStore is imported lazily to avoid loading LanceDB on startup
 // Use: const { createVectorStore } = await import("./core/store.js");
@@ -223,7 +224,8 @@ function assertValidEmbeddingCredentials(): void {
 async function printVersionWarning(projectPath: string): Promise<void> {
 	try {
 		const { checkIndexVersion } = await import("./core/index-version.js");
-		const warning = checkIndexVersion(projectPath);
+		const { resolveStoreLocation } = await import("./core/store-location.js");
+		const warning = checkIndexVersion(resolveStoreLocation(projectPath));
 		if (warning) {
 			process.stderr.write(`${warning}\n`);
 		}
@@ -842,10 +844,15 @@ export function formatIndexUpgradeLine(
 	upgradedFromIndexVersion: number | undefined,
 ): string | null {
 	if (upgradedFromIndexVersion === undefined) return null;
-	return (
-		`  Index upgraded: rebuilt from index version ${upgradedFromIndexVersion} ` +
-		"(a one-time full re-embed)"
-	);
+	// The cost depends on where the store came from. From index version 3 on it
+	// was built through the embedding cache, which is keyed on text, not path,
+	// so the rebuild is served from it. An older store never filled the cache,
+	// so it did re-embed.
+	const cost =
+		upgradedFromIndexVersion >= FIRST_EMBED_CACHE_INDEX_VERSION
+			? "(one rebuild, served from the embedding cache)"
+			: "(a one-time full re-embed)";
+	return `  Index upgraded: rebuilt from index version ${upgradedFromIndexVersion} ${cost}`;
 }
 
 /**
@@ -3875,6 +3882,7 @@ async function handleBenchmark(args: string[]): Promise<void> {
 
 			const { createVectorStore } = await import("./core/store.js");
 			const { resolveStoreLocation } = await import("./core/store-location.js");
+			const { BRANCH_ID_SHARED } = await import("./core/branch-registry.js");
 			const store = createVectorStore({
 				vectorsDir: tempDbPath,
 				pathRoot: resolveStoreLocation(projectPath).pathRoot,
@@ -3906,7 +3914,13 @@ async function handleBenchmark(args: string[]): Promise<void> {
 						: "All chunks failed to embed",
 				);
 			}
-			await store.addChunks(chunksForStore);
+			// A throwaway benchmark store. Its `filePath` is a bare file name, not a
+			// path under any root, and no branch reads it. `synthetic` rows come back
+			// exactly as written, and `,0,` is the shared marker.
+			await store.addChunks(chunksForStore, {
+				pathKind: "synthetic",
+				branchId: BRANCH_ID_SHARED,
+			});
 
 			// Run quality queries
 			let mrrSum = 0;
@@ -6157,6 +6171,7 @@ async function handleDocsFetch(
 	const { resolveStoreLocation } = await import("./core/store-location.js");
 	const { describeStoreLockRefusal, STORE_WRITER_LOCK_WAIT_MS, withStoreLock } =
 		await import("./core/store-lock-policy.js");
+	const { BRANCH_ID_SHARED } = await import("./core/branch-registry.js");
 	const storeLocation = resolveStoreLocation(projectPath);
 
 	let libraries: Array<{ name: string; majorVersion?: string }>;
@@ -6233,7 +6248,11 @@ async function handleDocsFetch(
 						await vectorStore.initialize();
 						// Replace this library's old docs
 						await vectorStore.deleteByFile(docsPath);
-						await vectorStore.addChunks(chunksWithEmbeddings);
+						// External docs are the repository's, not a tree's: shared (§3.2.1).
+						await vectorStore.addChunks(chunksWithEmbeddings, {
+							pathKind: "synthetic",
+							branchId: BRANCH_ID_SHARED,
+						});
 						tracker.markDocsIndexed(
 							lib.name,
 							lib.majorVersion || null,

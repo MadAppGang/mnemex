@@ -204,7 +204,7 @@ describe("derived documents", () => {
 		const tracker = newTracker();
 
 		const filePath = "src/a.ts";
-		tracker.markIndexed(join(workDir, filePath), "hash-a", ["c1"]);
+		tracker.markIndexed(0, join(workDir, filePath), "hash-a", ["c1"]);
 		tracker.setEnrichmentState(
 			join(workDir, filePath),
 			"file_summary",

@@ -454,8 +454,13 @@ describe("index v2 -> v3", () => {
 		await runIndex(projectPath);
 		expect(await storedChunkCount(projectPath, filePath)).toBe(3);
 
-		// Put a v2-shaped table where the v3 one was, and declare the index v2.
+		// Put a v2-shaped table where the current one was, and declare the index
+		// v2 the way a pre-v4 build did it: in the legacy config.json stamp, with
+		// NO store.json. Index version 4 moved the version into store.json, and
+		// store.json wins when it exists (§3.6). Leaving the first run's store.json
+		// in place would describe a store no build ever wrote: "v4" over a v2 table.
 		await replaceWithV2Table(projectPath);
+		rmSync(join(projectPath, ".mnemex", "store.json"), { force: true });
 		writeProjectConfig(projectPath, { indexVersion: 2 });
 
 		// A second file, so the run has something to write. Without the rebuild,

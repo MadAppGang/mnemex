@@ -242,7 +242,7 @@ function seedTracker(files: string[] = []): void {
 	const tracker = new FileTracker(dbPath, root);
 	tracker.setMetadata("seed", "committed");
 	for (const file of files) {
-		tracker.markIndexed(join(root, file), `hash-${file}`, [`chunk-${file}`]);
+		tracker.markIndexed(0, join(root, file), `hash-${file}`, [`chunk-${file}`]);
 	}
 	tracker.close();
 }

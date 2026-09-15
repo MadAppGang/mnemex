@@ -256,22 +256,30 @@ describe("the created Arrow schema carries embedKey", () => {
 	// it would create a 22-column table and the other two would then fail
 	// against it — the same shape as the dimension guards of CLAUDE.md #15.
 	test("addChunks creates it", async () => {
-		await withFreshStore((s) => s.addChunks([chunk("a")]));
+		await withFreshStore((s) =>
+			s.addChunks([chunk("a")], { pathKind: "repo", branchId: 0 }),
+		);
 		expect(await schemaFieldNames()).toContain(EMBED_KEY_COLUMN);
 	});
 
 	test("addCodeUnits creates it", async () => {
-		await withFreshStore((s) => s.addCodeUnits([unit("b")]));
+		await withFreshStore((s) =>
+			s.addCodeUnits([unit("b")], { pathKind: "repo", branchId: 0 }),
+		);
 		expect(await schemaFieldNames()).toContain(EMBED_KEY_COLUMN);
 	});
 
 	test("addDocuments creates it", async () => {
-		await withFreshStore((s) => s.addDocuments([doc("c")]));
+		await withFreshStore((s) =>
+			s.addDocuments([doc("c")], { pathKind: "repo", branchId: 0 }),
+		);
 		expect(await schemaFieldNames()).toContain(EMBED_KEY_COLUMN);
 	});
 
 	test("the column is Utf8, not a null-typed column", async () => {
-		await withFreshStore((s) => s.addChunks([chunk("a")]));
+		await withFreshStore((s) =>
+			s.addChunks([chunk("a")], { pathKind: "repo", branchId: 0 }),
+		);
 		const db = await lancedb.connect(dbPath);
 		const table = await db.openTable(CHUNKS_TABLE);
 		const schema = await table.schema();
@@ -289,7 +297,10 @@ describe("the created Arrow schema carries embedKey", () => {
 describe("embedKey values", () => {
 	test("a chunk's key round-trips to the row beside its vector", async () => {
 		await withFreshStore((s) =>
-			s.addChunks([chunk("keyed", { embedKey: "deadbeefcafe" })]),
+			s.addChunks([chunk("keyed", { embedKey: "deadbeefcafe" })], {
+				pathKind: "repo",
+				branchId: 0,
+			}),
 		);
 		const row = await readRow("chunk-keyed");
 		expect(row[EMBED_KEY_COLUMN]).toBe("deadbeefcafe");
@@ -300,7 +311,9 @@ describe("embedKey values", () => {
 	// first batch it saw and a null there is the same class of hazard as the
 	// zero-dimension vector column.
 	test("a chunk with no key stores the empty string, never null", async () => {
-		await withFreshStore((s) => s.addChunks([chunk("bare")]));
+		await withFreshStore((s) =>
+			s.addChunks([chunk("bare")], { pathKind: "repo", branchId: 0 }),
+		);
 		const row = await readRow("chunk-bare");
 		expect(row[EMBED_KEY_COLUMN]).toBe("");
 		expect(row[EMBED_KEY_COLUMN]).not.toBeNull();
@@ -308,7 +321,10 @@ describe("embedKey values", () => {
 
 	test("a code unit's key round-trips", async () => {
 		await withFreshStore((s) =>
-			s.addCodeUnits([unit("keyed", { embedKey: "unitkey123" })]),
+			s.addCodeUnits([unit("keyed", { embedKey: "unitkey123" })], {
+				pathKind: "repo",
+				branchId: 0,
+			}),
 		);
 		const row = await readRow("unit-keyed");
 		expect(row[EMBED_KEY_COLUMN]).toBe("unitkey123");
@@ -317,7 +333,9 @@ describe("embedKey values", () => {
 	// Enrichment summaries are embedded with the RAW client, deliberately
 	// outside the caching seam, so there is never a key to record for them.
 	test("an enriched document always stores the empty string", async () => {
-		await withFreshStore((s) => s.addDocuments([doc("summary")]));
+		await withFreshStore((s) =>
+			s.addDocuments([doc("summary")], { pathKind: "repo", branchId: 0 }),
+		);
 		const row = await readRow("doc-summary");
 		expect(row[EMBED_KEY_COLUMN]).toBe("");
 	});
@@ -333,7 +351,10 @@ describe("round-tripping writes", () => {
 	// introduce the column nor create the table, so it cannot define the schema.
 	test("updateUnitSummary INHERITS the key — the vector did not change", async () => {
 		await withFreshStore((s) =>
-			s.addCodeUnits([unit("sum", { embedKey: "survives-me" })]),
+			s.addCodeUnits([unit("sum", { embedKey: "survives-me" })], {
+				pathKind: "repo",
+				branchId: 0,
+			}),
 		);
 
 		// The bytes first: a real write, read back through an independent
@@ -364,7 +385,10 @@ describe("round-tripping writes", () => {
 		// `updateDocumentContent` matches on `id` alone, so the row's
 		// documentType is irrelevant to it.
 		await withFreshStore((s) =>
-			s.addChunks([chunk("upd", { id: "doc-upd", embedKey: "stale-key" })]),
+			s.addChunks([chunk("upd", { id: "doc-upd", embedKey: "stale-key" })], {
+				pathKind: "repo",
+				branchId: 0,
+			}),
 		);
 		expect((await readRow("doc-upd"))[EMBED_KEY_COLUMN]).toBe("stale-key");
 
@@ -382,7 +406,10 @@ describe("round-tripping writes", () => {
 		// whose key the first pass had already reset could not tell a reset from
 		// an inherit.
 		await withFreshStore((s) =>
-			s.addChunks([chunk("upd", { id: "doc-upd2", embedKey: "stale-key" })]),
+			s.addChunks([chunk("upd", { id: "doc-upd2", embedKey: "stale-key" })], {
+				pathKind: "repo",
+				branchId: 0,
+			}),
 		);
 		await withFreshStore((s) =>
 			s.updateDocumentContent("doc-upd2", "on disk", vec(9)),
@@ -403,7 +430,9 @@ describe("hasEmbedKeyColumn", () => {
 	});
 
 	test("true against a table this build created", async () => {
-		await withFreshStore((s) => s.addChunks([chunk("a")]));
+		await withFreshStore((s) =>
+			s.addChunks([chunk("a")], { pathKind: "repo", branchId: 0 }),
+		);
 		expect(await withFreshStore((s) => s.hasEmbedKeyColumn())).toBe(true);
 	});
 
@@ -428,13 +457,16 @@ describe("hasEmbedKeyColumn", () => {
 		try {
 			expect(await store.hasEmbedKeyColumn()).toBeNull();
 
-			await store.addChunks([chunk("live")]); // createTable, direct assign
+			await store.addChunks([chunk("live")], { pathKind: "repo", branchId: 0 }); // createTable, direct assign
 			expect(await store.hasEmbedKeyColumn()).toBe(true);
 
 			await store.clear(); // nulls this.table, leaves derived state
 			expect(await store.hasEmbedKeyColumn()).toBeNull();
 
-			await store.addChunks([chunk("again")]);
+			await store.addChunks([chunk("again")], {
+				pathKind: "repo",
+				branchId: 0,
+			});
 			expect(await store.hasEmbedKeyColumn()).toBe(true);
 		} finally {
 			await store.close();
@@ -459,7 +491,10 @@ describe("a v3 batch against a v2 table", () => {
 		let caught: Error | undefined;
 		try {
 			await withFreshStore((s) =>
-				s.addChunks([chunk("v3", { embedKey: "abc" })]),
+				s.addChunks([chunk("v3", { embedKey: "abc" })], {
+					pathKind: "repo",
+					branchId: 0,
+				}),
 			);
 		} catch (err) {
 			caught = err as Error;
@@ -478,9 +513,14 @@ describe("a v3 batch against a v2 table", () => {
 	// and cache-off runs writing a v3-shaped table.
 	test("a v3 table accepts an empty key, so BM25 mode still writes v3", async () => {
 		await withFreshStore((s) =>
-			s.addChunks([chunk("first", { embedKey: "k" })]),
+			s.addChunks([chunk("first", { embedKey: "k" })], {
+				pathKind: "repo",
+				branchId: 0,
+			}),
 		);
-		await withFreshStore((s) => s.addChunks([chunk("second")]));
+		await withFreshStore((s) =>
+			s.addChunks([chunk("second")], { pathKind: "repo", branchId: 0 }),
+		);
 		expect((await readRow("chunk-second"))[EMBED_KEY_COLUMN]).toBe("");
 	});
 });
@@ -493,7 +533,10 @@ describe("the zero-dimension guards still fire with the new column present", () 
 	test("addChunks rejects a 0-dimension batch even when it carries a key", async () => {
 		await expect(
 			withFreshStore((s) =>
-				s.addChunks([chunk("z", { vector: [], embedKey: "k" })]),
+				s.addChunks([chunk("z", { vector: [], embedKey: "k" })], {
+					pathKind: "repo",
+					branchId: 0,
+				}),
 			),
 		).rejects.toThrow(ZeroDimensionVectorError);
 		// Nothing was created: the guard runs before any write.
@@ -502,10 +545,20 @@ describe("the zero-dimension guards still fire with the new column present", () 
 
 	test("addCodeUnits and addDocuments reject one too", async () => {
 		await expect(
-			withFreshStore((s) => s.addCodeUnits([unit("z", { vector: [] })])),
+			withFreshStore((s) =>
+				s.addCodeUnits([unit("z", { vector: [] })], {
+					pathKind: "repo",
+					branchId: 0,
+				}),
+			),
 		).rejects.toThrow(ZeroDimensionVectorError);
 		await expect(
-			withFreshStore((s) => s.addDocuments([doc("z", { vector: [] })])),
+			withFreshStore((s) =>
+				s.addDocuments([doc("z", { vector: [] })], {
+					pathKind: "repo",
+					branchId: 0,
+				}),
+			),
 		).rejects.toThrow(ZeroDimensionVectorError);
 	});
 });

@@ -278,7 +278,7 @@ export class TestWorkspace {
 
 			// Record file state for TOCTOU hash check in SymbolEditor
 			const hash = createHash("sha256").update(content).digest("hex");
-			tracker.markIndexed(relPath, hash, []);
+			tracker.markIndexed(0, relPath, hash, []);
 		}
 	}
 }

@@ -148,7 +148,7 @@ async function makeStore() {
 /** Seed a corpus, then forget the index calls that seeding caused. */
 async function seed(chunks: ChunkWithEmbedding[]): Promise<void> {
 	await withFreshStore(async (store) => {
-		await store.addChunks(chunks);
+		await store.addChunks(chunks, { pathKind: "repo", branchId: 0 });
 	});
 }
 

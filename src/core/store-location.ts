@@ -63,6 +63,7 @@ import {
 	loadProjectConfig,
 	onProjectConfigSaved,
 	PROJECT_CONFIG_DIR,
+	PROJECT_CONFIG_FILE,
 	VECTORS_DIR,
 } from "./project-config.js";
 
@@ -335,6 +336,25 @@ export function getStoreMetaPathFor(loc: StoreLocation): string {
 /** `<storeDir>/branches.json` */
 export function getBranchRegistryPathFor(loc: StoreLocation): string {
 	return join(loc.storeDir, BRANCH_REGISTRY_FILE);
+}
+
+/**
+ * The files `probeOldStore` (store-meta.ts) looks for inside a DIRECTORY it was
+ * handed, not a resolved location (architecture §6.1). The store being replaced
+ * may be one the seam no longer resolves to, so there is no `StoreLocation` to
+ * derive it from. Built here, not by the caller, so the path rule has one copy.
+ */
+export function storeFilesIn(dir: string): {
+	readonly indexDb: string;
+	readonly storeMeta: string;
+	/** The pre-v4 `config.json`, whose `indexVersion` only `probeOldStore` may read. */
+	readonly legacyConfig: string;
+} {
+	return {
+		indexDb: join(dir, INDEX_DB_FILE),
+		storeMeta: join(dir, STORE_META_FILE),
+		legacyConfig: join(dir, PROJECT_CONFIG_FILE),
+	};
 }
 
 /** Drop every memoized location. Tests only. */

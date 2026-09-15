@@ -3,9 +3,15 @@
  *
  * Single source of truth for index version semantics.
  * Maps version numbers to feature sets and provides upgrade detection.
+ *
+ * Since index version 4 the version lives in the store's own `store.json`,
+ * not in the per-worktree `config.json` (architecture §3.6). Two worktrees
+ * that share one store must agree about its version. Per-worktree stamps
+ * would have each worktree force-rebuild the other forever.
  */
 
-import { loadProjectConfig, saveProjectConfig } from "../config.js";
+import type { StoreLocation } from "./store-location.js";
+import { probeOldStore, writeStoreMeta } from "./store-meta.js";
 
 // ============================================================================
 // Version Registry
@@ -52,21 +58,47 @@ export const INDEX_VERSIONS: readonly VersionEntry[] = [
 			"embedding_cache_audit",
 		],
 	},
+	{
+		version: 4,
+		name: "repo_stable_branch_membership",
+		description:
+			"Repo-relative paths and per-row branch membership; one store per repository",
+		features: [
+			"vector_search",
+			"bm25_search",
+			"symbol_graph",
+			"ast_metadata",
+			"hierarchical_units",
+			"code_unit_search",
+			"embedding_cache_audit",
+			"repo_relative_paths",
+			"branch_membership",
+			"shared_repo_store",
+		],
+	},
 ] as const;
 
 /**
- * v2 -> v3 is a SCHEMA change, not just a feature flag.
+ * v3 -> v4 is a SCHEMA change, on both halves of the store.
  *
- * LanceDB infers the Arrow schema from the first batch written to a table and
- * never declares it, so a v2 index has a 22-column schema on disk and a v3
- * write carries 23 fields (`StoredChunk.embedKey`). Those cannot be mixed: the
- * version is what lets the indexer notice the difference and rebuild once,
- * rather than letting a v3 batch reach a live v2 table.
+ * LanceDB: a v4 batch carries 25 fields (`branchIds`, `pathKind`) and a live v3
+ * table has 23 columns, and 0.38 rejects the whole `add` with
+ * `Found field not in schema`. SQLite: `files` changes its primary key to
+ * `(branch_id, path)`, which no `ALTER TABLE` can do. And every stored path
+ * changes meaning, from absolute to repo-relative, which changes every chunk id.
  *
- * The cost of that rebuild is one full re-embed, per repository, once — which
- * is why `getUpgradeMessage` says so out loud.
+ * So the upgrade is a plain rebuild, once (CLAUDE.md #31: no seeding pass). The
+ * embedding cache is keyed on text, not on path, so re-chunking a tree that
+ * was indexed with the cache on is served from it.
  */
-export const CURRENT_INDEX_VERSION = 3;
+export const CURRENT_INDEX_VERSION = 4;
+
+/**
+ * The first index version built through the embedding cache (it added the
+ * `embedKey` column). A store at least this new rebuilds out of the cache; an
+ * older one re-embeds.
+ */
+export const FIRST_EMBED_CACHE_INDEX_VERSION = 3;
 
 /** Human-readable labels for feature identifiers */
 const FEATURE_DESCRIPTIONS: Record<string, string> = {
@@ -76,6 +108,10 @@ const FEATURE_DESCRIPTIONS: Record<string, string> = {
 	code_unit_search: "AST-aware search results",
 	embedding_cache_audit:
 		"Embedding-cache key on each row (cache hit-rate audit)",
+	repo_relative_paths:
+		"Paths stored relative to the repository, so any worktree can read them",
+	branch_membership: "Per-row branch membership",
+	shared_repo_store: "One index per repository, shared by its worktrees",
 };
 
 // ============================================================================
@@ -83,32 +119,36 @@ const FEATURE_DESCRIPTIONS: Record<string, string> = {
 // ============================================================================
 
 /**
- * Read the index version from .mnemex/config.json.
- * Returns 1 (implicit) when no version is stored (old index).
+ * The version the store at `loc` was built with.
+ *
+ * Reads `store.json`. A store written before v4 has none, and for it this falls
+ * back to the legacy `config.json` stamp through `probeOldStore`, the one
+ * sanctioned reader of that stamp. Returns 1 when neither records a version:
+ * the implicit version of an index older than versioning, which every warning
+ * surface compared against before v4.
+ *
+ * The UPGRADE REPORT does not use this. `upgradedFromIndexVersion` comes from
+ * `probeOldStore`, where "unrecorded" is `null` and never 1 (§6.1, V4.8).
  */
-export function getIndexVersion(projectPath: string): number {
-	try {
-		const config = loadProjectConfig(projectPath);
-		return config?.indexVersion ?? 1;
-	} catch {
-		return 1;
-	}
+export function getIndexVersion(loc: StoreLocation): number {
+	const probe = probeOldStore(loc.storeDir);
+	return probe.exists ? (probe.recordedVersion ?? 1) : 1;
 }
 
 /**
- * Write the index version to .mnemex/config.json.
- * Merges with existing config (non-destructive).
+ * Record the version in `store.json`, beside the data it describes. Call only
+ * while holding the store lock.
  */
-export function setIndexVersion(projectPath: string, version: number): void {
-	saveProjectConfig(projectPath, { indexVersion: version });
+export function setIndexVersion(loc: StoreLocation, version: number): void {
+	writeStoreMeta(loc, { indexVersion: version });
 }
 
 /**
  * Returns true when the stored version is older than CURRENT_INDEX_VERSION.
- * Fast: reads config.json only, no DB access.
+ * Fast: reads two small JSON files, no DB access.
  */
-export function needsUpgrade(projectPath: string): boolean {
-	return getIndexVersion(projectPath) < CURRENT_INDEX_VERSION;
+export function needsUpgrade(loc: StoreLocation): boolean {
+	return getIndexVersion(loc) < CURRENT_INDEX_VERSION;
 }
 
 /**
@@ -132,13 +172,15 @@ export function getMissingFeatures(currentVersion: number): string[] {
  * Returns a formatted multi-line upgrade warning string, or null if up to date.
  * Callers should print this to stderr.
  *
- * Example output:
- *   Index outdated (v2 -> v3). Missing features:
- *     - Embedding-cache key on each row (cache hit-rate audit)
- *   Run 'mnemex index' to upgrade (the next index run rebuilds automatically, re-embedding once).
+ * Example output (from a v3 store):
+ *   Index outdated (v3 -> v4). Missing features:
+ *     - Paths stored relative to the repository, so any worktree can read them
+ *     - Per-row branch membership
+ *     - One index per repository, shared by its worktrees
+ *   Run 'mnemex index' to upgrade (the next index run rebuilds once, served from the embedding cache).
  */
-export function getUpgradeMessage(projectPath: string): string | null {
-	const currentVersion = getIndexVersion(projectPath);
+export function getUpgradeMessage(loc: StoreLocation): string | null {
+	const currentVersion = getIndexVersion(loc);
 	if (currentVersion >= CURRENT_INDEX_VERSION) return null;
 
 	const missingFeatures = getMissingFeatures(currentVersion);
@@ -153,13 +195,18 @@ export function getUpgradeMessage(projectPath: string): string | null {
 		lines.push(`  - ${description}`);
 	}
 
-	// NOT "--force". From v3 onwards the indexer detects an out-of-shape table
-	// itself (a live `hasEmbedKeyColumn()` read) and sets force for that run, so
-	// asking the user for the flag would be telling them to do something the run
-	// already does. The re-embed is named because the user pays for it: on a
-	// paid provider this line is the only warning before money is spent.
+	// NOT "--force". The indexer detects an out-of-shape store itself (a live
+	// schema read on each half) and rebuilds for that run, so asking the user
+	// for the flag would tell them to do something the run already does.
+	//
+	// The cost is named because the user pays it. A store built through the
+	// embedding cache (v3+) rebuilds out of it, since the cache is keyed on
+	// text, not path. An older one never filled the cache, so it re-embeds, and
+	// on a paid provider this line is the only warning before money is spent.
 	lines.push(
-		"Run 'mnemex index' to upgrade (the next index run rebuilds automatically, re-embedding once).",
+		currentVersion >= FIRST_EMBED_CACHE_INDEX_VERSION
+			? "Run 'mnemex index' to upgrade (the next index run rebuilds once, served from the embedding cache)."
+			: "Run 'mnemex index' to upgrade (the next index run rebuilds automatically, re-embedding once).",
 	);
 
 	return lines.join("\n");
@@ -169,8 +216,8 @@ export function getUpgradeMessage(projectPath: string): string | null {
  * Convenience: call getUpgradeMessage and print to stderr if non-null.
  * Used at the start of read-only commands.
  */
-export function warnIfOutdated(projectPath: string): void {
-	const message = getUpgradeMessage(projectPath);
+export function warnIfOutdated(loc: StoreLocation): void {
+	const message = getUpgradeMessage(loc);
 	if (message) {
 		process.stderr.write(`${message}\n`);
 	}
@@ -180,6 +227,6 @@ export function warnIfOutdated(projectPath: string): void {
  * Returns an upgrade warning string if the index is outdated, null otherwise.
  * Exported for use in CLI handlers.
  */
-export function checkIndexVersion(projectPath: string): string | null {
-	return getUpgradeMessage(projectPath);
+export function checkIndexVersion(loc: StoreLocation): string | null {
+	return getUpgradeMessage(loc);
 }

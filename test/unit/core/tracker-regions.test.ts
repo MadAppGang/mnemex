@@ -579,8 +579,8 @@ describe("observed at the driver seam", () => {
 			}) as SymbolReference;
 
 		// Files and metadata
-		tracker.markIndexed(join(root, "src/a.ts"), "h1", ["c1"]);
-		tracker.markIndexed(real, "stale-mtime", ["c2"]);
+		tracker.markIndexed(0, join(root, "src/a.ts"), "h1", ["c1"]);
+		tracker.markIndexed(0, real, "stale-mtime", ["c2"]);
 		expect(tracker.getChunkIds(join(root, "src/a.ts"))).toEqual(["c1"]);
 		expect(tracker.getFileState(join(root, "src/a.ts"))?.chunkIds).toEqual([
 			"c1",
@@ -596,7 +596,7 @@ describe("observed at the driver seam", () => {
 		const realHash = createHash("sha256")
 			.update(readFileSync(real))
 			.digest("hex");
-		tracker.markIndexed(real, realHash, ["c2"]);
+		tracker.markIndexed(0, real, realHash, ["c2"]);
 		utimesSync(real, new Date(2001, 0, 1), new Date(2001, 0, 1));
 		const changes = tracker.getChanges([real, join(root, "src/new.ts")]);
 		expect(changes.unchangedFiles).toEqual([real]);

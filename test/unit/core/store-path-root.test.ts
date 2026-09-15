@@ -21,7 +21,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { createVectorStore } from "../../../src/core/store.js";
 import type { ChunkWithEmbedding } from "../../../src/types.js";
 
@@ -80,10 +80,10 @@ async function seed(): Promise<void> {
 	const store = createVectorStore({ vectorsDir, pathRoot: project });
 	await store.initialize();
 	try {
-		await store.addChunks([
-			chunk("parse", SOURCE, 1),
-			chunk("parseSpec", TEST_FILE, 2),
-		]);
+		await store.addChunks(
+			[chunk("parse", SOURCE, 1), chunk("parseSpec", TEST_FILE, 2)],
+			{ pathKind: "repo", branchId: 0 },
+		);
 	} finally {
 		await store.close();
 	}
@@ -97,7 +97,9 @@ async function searchedPaths(pathRoot: string): Promise<string[]> {
 			limit: 10,
 			keywordOnly: true,
 		});
-		return results.map((r) => r.chunk.filePath).sort();
+		// The read seam returns repo paths absolute under pathRoot (decision
+		// D4); mapped back to the stored form so the two cases compare alike.
+		return results.map((r) => relative(pathRoot, r.chunk.filePath)).sort();
 	} finally {
 		await store.close();
 	}

@@ -125,6 +125,20 @@ describe("the upgrade summary line", () => {
 		expect(line).toContain("re-embed");
 	});
 
+	/**
+	 * From index version 3 on, a store was built through the embedding cache,
+	 * which is keyed on text, not path, so the v4 rebuild is served from it and
+	 * makes no embedding requests (V4.3 counts them at the provider). Telling
+	 * that user "full re-embed" names a cost that is not paid.
+	 */
+	test("from a cache-era store (v3+), the line says the rebuild is served from the cache", () => {
+		const line = formatIndexUpgradeLine(3);
+
+		expect(line).toContain("index version 3");
+		expect(line).toContain("served from the embedding cache");
+		expect(line).not.toContain("re-embed");
+	});
+
 	test("an ordinary run says nothing about upgrading", () => {
 		expect(formatIndexUpgradeLine(undefined)).toBeNull();
 	});

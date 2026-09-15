@@ -141,15 +141,21 @@ async function withFreshStore<T>(
 }
 
 async function seedChunks(chunks: ChunkWithEmbedding[]): Promise<void> {
-	await withFreshStore((store) => store.addChunks(chunks));
+	await withFreshStore((store) =>
+		store.addChunks(chunks, { pathKind: "repo", branchId: 0 }),
+	);
 }
 
 async function seedDocs(docs: DocumentWithEmbedding[]): Promise<void> {
-	await withFreshStore((store) => store.addDocuments(docs));
+	await withFreshStore((store) =>
+		store.addDocuments(docs, { pathKind: "repo", branchId: 0 }),
+	);
 }
 
 async function seedUnits(units: CodeUnitWithEmbedding[]): Promise<void> {
-	await withFreshStore((store) => store.addCodeUnits(units));
+	await withFreshStore((store) =>
+		store.addCodeUnits(units, { pathKind: "repo", branchId: 0 }),
+	);
 }
 
 /** Markers still in the store, read with NO predicate at all. */
@@ -187,7 +193,8 @@ describe("getChunksWithVectors (filePath equality)", () => {
 			store.getChunksWithVectors(target),
 		);
 
-		expect(found.map((c) => c.filePath)).toEqual([target]);
+		// Returned absolute under pathRoot (decision D4); matched by its stored form.
+		expect(found.map((c) => c.filePath)).toEqual([join(dir, target)]);
 		expect(found[0].vector.length).toBe(DIM);
 	});
 
@@ -216,7 +223,9 @@ describe("search language filter (equality)", () => {
 			store.search("parseConfig", vec(1), { limit: 10, language: "c_sharp" }),
 		);
 
-		expect(results.map((r) => r.chunk.filePath)).toEqual(["src/a.cs"]);
+		expect(results.map((r) => r.chunk.filePath)).toEqual([
+			join(dir, "src/a.cs"),
+		]);
 	});
 
 	test("searchDocuments matches the same language identifier", async () => {
@@ -233,7 +242,9 @@ describe("search language filter (equality)", () => {
 		);
 
 		expect(results.length).toBeGreaterThan(0);
-		expect(results.every((r) => r.document.filePath === "src/a.cs")).toBe(true);
+		expect(
+			results.every((r) => r.document.filePath === join(dir, "src/a.cs")),
+		).toBe(true);
 	});
 });
 
@@ -367,7 +378,7 @@ describe("deleteAllByFile", () => {
 		target: string,
 	): Promise<void> {
 		await withFreshStore(async (store) => {
-			await store.addChunks(chunks);
+			await store.addChunks(chunks, { pathKind: "repo", branchId: 0 });
 			await store.deleteAllByFile(target);
 		});
 	}
@@ -482,7 +493,9 @@ describe("LIKE patterns keep their wildcard escaping", () => {
 			}),
 		);
 
-		expect(results.map((r) => r.chunk.filePath)).toEqual(["src/my_file.ts"]);
+		expect(results.map((r) => r.chunk.filePath)).toEqual([
+			join(dir, "src/my_file.ts"),
+		]);
 	});
 
 	test("search filePath option treats `%` as a literal", async () => {
@@ -498,7 +511,9 @@ describe("LIKE patterns keep their wildcard escaping", () => {
 			}),
 		);
 
-		expect(results.map((r) => r.chunk.filePath)).toEqual(["src/100%report.ts"]);
+		expect(results.map((r) => r.chunk.filePath)).toEqual([
+			join(dir, "src/100%report.ts"),
+		]);
 	});
 
 	test("searchDocuments pathPattern treats `_` as a literal", async () => {
@@ -515,9 +530,9 @@ describe("LIKE patterns keep their wildcard escaping", () => {
 		);
 
 		expect(results.length).toBeGreaterThan(0);
-		expect(results.every((r) => r.document.filePath === "src/my_file.ts")).toBe(
-			true,
-		);
+		expect(
+			results.every((r) => r.document.filePath === join(dir, "src/my_file.ts")),
+		).toBe(true);
 	});
 
 	test("searchCodeUnits filePath treats `_` as a literal", async () => {
@@ -534,7 +549,9 @@ describe("LIKE patterns keep their wildcard escaping", () => {
 		);
 
 		expect(results.length).toBeGreaterThan(0);
-		expect(results.every((r) => r.filePath === "src/my_file.ts")).toBe(true);
+		expect(
+			results.every((r) => r.filePath === join(dir, "src/my_file.ts")),
+		).toBe(true);
 	});
 });
 

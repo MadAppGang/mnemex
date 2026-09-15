@@ -109,7 +109,9 @@ async function withFreshStore<T>(
 
 /** Seed a corpus on its own instance so nothing is left open for the next one. */
 async function seed(chunks: ChunkWithEmbedding[]): Promise<void> {
-	await withFreshStore((store) => store.addChunks(chunks));
+	await withFreshStore((store) =>
+		store.addChunks(chunks, { pathKind: "repo", branchId: 0 }),
+	);
 }
 
 /** Chunk ids still in the store, read on a fresh instance. */
@@ -263,7 +265,9 @@ describe("deletes on a store whose table is already open", () => {
 
 /** Seed enriched documents on their own instance, as `seed` does for chunks. */
 async function seedDocs(docs: DocumentWithEmbedding[]): Promise<void> {
-	await withFreshStore((store) => store.addDocuments(docs));
+	await withFreshStore((store) =>
+		store.addDocuments(docs, { pathKind: "repo", branchId: 0 }),
+	);
 }
 
 /**

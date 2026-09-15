@@ -96,7 +96,9 @@ async function withFreshStore<T>(
 }
 
 async function seed(chunks: ChunkWithEmbedding[]): Promise<void> {
-	await withFreshStore((store) => store.addChunks(chunks));
+	await withFreshStore((store) =>
+		store.addChunks(chunks, { pathKind: "repo", branchId: 0 }),
+	);
 }
 
 /** Markers still in the store, read with no predicate at all. */

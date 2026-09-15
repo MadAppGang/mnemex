@@ -288,7 +288,7 @@ describe("provenance stamping", () => {
 		const tracker = new FileTracker(dbPath, workDir);
 
 		const filePath = join(workDir, "src", "c.ts");
-		tracker.markIndexed(filePath, "hash-c", ["c1"]);
+		tracker.markIndexed(0, filePath, "hash-c", ["c1"]);
 		expect(tracker.getFileIndexedCommit(filePath)).toBeNull();
 
 		const sha = "2".repeat(40);
@@ -305,8 +305,8 @@ describe("provenance stamping", () => {
 		const sha = "3".repeat(40);
 		tracker.setCurrentCommit(sha);
 
-		tracker.markIndexed(join(workDir, "src", "d.ts"), "hash-d", ["c1"]);
-		tracker.markIndexed(join(workDir, "src", "e.ts"), "hash-e", ["c2"]);
+		tracker.markIndexed(0, join(workDir, "src", "d.ts"), "hash-d", ["c1"]);
+		tracker.markIndexed(0, join(workDir, "src", "e.ts"), "hash-e", ["c2"]);
 
 		expect(tracker.getFileIndexedCommit(join(workDir, "src", "d.ts"))).toBe(
 			sha,
@@ -350,7 +350,9 @@ describe("HEAD resolution outside a git repository", () => {
 
 		// The write path still works; it just records unknown provenance.
 		const filePath = join(workDir, "src", "f.ts");
-		expect(() => tracker.markIndexed(filePath, "hash-f", ["c1"])).not.toThrow();
+		expect(() =>
+			tracker.markIndexed(0, filePath, "hash-f", ["c1"]),
+		).not.toThrow();
 		expect(tracker.getFileIndexedCommit(filePath)).toBeNull();
 
 		tracker.trackDocument({

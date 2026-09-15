@@ -20,6 +20,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { BRANCH_ID_SHARED } from "../core/branch-registry.js";
 import { chunkFileByPath } from "../core/chunker.js";
 import { VectorStore } from "../core/store.js";
 import { resolveStoreLocation } from "../core/store-location.js";
@@ -165,7 +166,15 @@ export class OverlayIndex implements IOverlayIndex {
 		}));
 
 		// Write to LanceDB
-		await this.vectorStore.addChunks(chunksWithEmbedding);
+		// Outside §3.2.1: this is the cloud overlay's OWN scratch store of dirty
+		// files, rebuilt from a fingerprint and merged with cloud results that
+		// carry the chunker's relative paths. It has no branch registry, so its
+		// rows are shared (`,0,`), and `synthetic` returns their paths exactly as
+		// written, which is the shape that merge already expects.
+		await this.vectorStore.addChunks(chunksWithEmbedding, {
+			pathKind: "synthetic",
+			branchId: BRANCH_ID_SHARED,
+		});
 
 		// Persist fingerprint
 		this.writeFingerprint(dirtyFiles);
