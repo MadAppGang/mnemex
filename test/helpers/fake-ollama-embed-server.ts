@@ -24,6 +24,14 @@ export interface FakeEmbedServer {
 	requests(): number;
 	/** Embed requests received, EXCLUDING the warm-up probe: these are the ones parked. */
 	embedRequests(): number;
+	/**
+	 * TEXTS embedded, excluding the warm-up probe — the external per-ITEM
+	 * counter §4.1.2's measurement needs. A request count cannot answer "how
+	 * many chunks reached the provider", because one request carries a batch.
+	 */
+	embedInputs(): number;
+	/** Reset both counters, so a second run can be measured on its own. */
+	resetCounts(): void;
 	/** Answer every parked request and stop parking. */
 	release(): void;
 	stop(): void;
@@ -53,6 +61,7 @@ export function startFakeOllamaEmbedServer(
 	let holding = options.hold ?? false;
 	let total = 0;
 	let embeds = 0;
+	let embedded = 0;
 	let openGate: () => void = () => {};
 	const gate = new Promise<void>((resolve) => {
 		openGate = resolve;
@@ -85,6 +94,7 @@ export function startFakeOllamaEmbedServer(
 			const isWarmup = inputs.length === 1 && inputs[0] === WARMUP_INPUT;
 			if (!isWarmup) {
 				embeds++;
+				embedded += inputs.length;
 				if (holding) await gate;
 			}
 			if (pathname === "/api/embeddings") {
@@ -102,6 +112,12 @@ export function startFakeOllamaEmbedServer(
 		url: `http://127.0.0.1:${server.port}`,
 		requests: () => total,
 		embedRequests: () => embeds,
+		embedInputs: () => embedded,
+		resetCounts: () => {
+			total = 0;
+			embeds = 0;
+			embedded = 0;
+		},
 		release: () => {
 			holding = false;
 			openGate();

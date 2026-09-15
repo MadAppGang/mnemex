@@ -79,9 +79,19 @@ describe("the caller-side SR-2 sweep over src/core/indexer.ts", () => {
 			INDEXER_LOOP_ALLOWANCES,
 		);
 		// Residue items 1-5, plus the modified-files loop and the docs loops.
+		//
+		// TWO NAMES CHANGED IN PHASE 3b-2, and neither loop went away.
+		// `markIndexed` is no longer called per file: the `files` stamp rides in
+		// R5b's transaction with the batch's membership (§4.1.4), so the loop's
+		// tracker call is `commitAddBatch`. `getChunkIds` is no longer the
+		// deleted-file work list: that list now comes from `chunk_index` through
+		// `removeFileFromBranch`, because `files.chunk_ids` holds code chunks
+		// only and a `chunk_ids`-driven removal leaves every code unit and every
+		// enriched summary behind (N4). Both successors are asserted below, so
+		// this list still fails if the loops stop being recognised.
 		for (const callee of [
-			"markIndexed",
-			"getChunkIds",
+			"commitAddBatch",
+			"removeFileFromBranch",
 			"removeFile",
 			"deleteSymbolsByFile",
 			"insertSymbols",
@@ -90,6 +100,12 @@ describe("the caller-side SR-2 sweep over src/core/indexer.ts", () => {
 			"resetEnrichmentState",
 			"needsDocsRefresh",
 			"markDocsIndexed",
+			// 3b-2's own loops: the two-tier hit test, the narrow steps and the
+			// tier-2 vector lookups.
+			"knownChunkRows",
+			"chunkIdsForPath",
+			"narrowIds",
+			"findByContentKey",
 		]) {
 			expect(census.calleesInLoops).toContain(callee);
 		}

@@ -91,6 +91,40 @@ function indexComplete(result: EnrichedIndexResult): void {
 			console.log(`deferred_file=${file}`);
 		}
 	}
+	// Branch membership (architecture §4.1). DATA, for the same reason the
+	// upgrade report is data: the post-commit hook and the MCP auto-reindex pass
+	// no progress callback, so a rendered notice reaches neither.
+	//
+	// `branch_widen_remaining` is the one a consumer must act on: non-zero means
+	// this branch sees a SUBSET of the store until another `mnemex index` runs.
+	// It is emitted whenever the store has a branch model, including as 0, so a
+	// consumer can rely on the key rather than on its absence.
+	if (result.branch) {
+		console.log(`branch_id=${result.branch.branchId}`);
+		if (result.branch.label !== null) {
+			console.log(`branch=${result.branch.label}`);
+		}
+		console.log(`branch_ids_widened=${result.branch.idsWidened}`);
+		console.log(`branch_rows_widened=${result.branch.rowsWidened}`);
+		console.log(`branch_widen_remaining=${result.branch.widenRemaining}`);
+		if (result.branch.recoveredCrashResidue) {
+			console.log(
+				`recovered_crash_residue_added=${result.branch.recoveredCrashResidue.added}`,
+			);
+			console.log(
+				`recovered_crash_residue_removed=${result.branch.recoveredCrashResidue.removed}`,
+			);
+		}
+		if (result.branch.duplicateRows !== undefined) {
+			console.log(`branch_duplicate_rows=${result.branch.duplicateRows}`);
+		}
+		if (result.branch.idsDemoted !== undefined) {
+			console.log(`branch_ids_demoted=${result.branch.idsDemoted}`);
+		}
+		if (result.branch.headChangedDuringRun) {
+			console.log("head_changed_during_run=1");
+		}
+	}
 	if (result.errors.length > 0) {
 		console.log(`errors=${result.errors.length}`);
 	}

@@ -66,6 +66,11 @@ if (mode === "index") {
 				// Present-or-absent is the property (V4.8), so it is reported as both.
 				hasUpgradedField: result.upgradedFromIndexVersion !== undefined,
 				upgradedFromIndexVersion: result.upgradedFromIndexVersion ?? null,
+				// Phase 3b-2's branch accounting, verbatim. Reported and never
+				// judged: the parent asserts on rows through its own connections,
+				// and uses these only for the facts no connection can show — what
+				// this RUN decided (§4.1).
+				branch: result.branch ?? null,
 			})}`,
 		);
 	} finally {

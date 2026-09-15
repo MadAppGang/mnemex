@@ -6,7 +6,7 @@
  * does the work and reports what it did (row counts), never how long it
  * blocked. That is the parent's job, from outside (CLAUDE.md #24, #31).
  *
- * argv: <projectDir> <files> <functionsPerFile> <exportedFiles> <delete> <modify> <add> <phantom>
+ * argv: <projectDir> <files> <functionsPerFile> <exportedFiles> <delete> <modify> <add> <phantom> <residue>
  *
  * Only the first <exportedFiles> files export their functions. The parent
  * passes all of them (its WORKLOAD comment says why): `resolveReferencesByName()`
@@ -68,16 +68,16 @@ if (!process.env.MNEMEX_GLOBAL_LOCK_PATH?.startsWith(tmpdir())) {
 }
 
 const [projectDir, ...rest] = process.argv.slice(2);
-const [files, fns, exportedFiles, toDelete, toModify, toAdd, phantom] =
+const [files, fns, exportedFiles, toDelete, toModify, toAdd, phantom, residue] =
 	rest.map(Number);
 if (
 	!projectDir ||
-	[files, fns, exportedFiles, toDelete, toModify, toAdd, phantom].some(
+	[files, fns, exportedFiles, toDelete, toModify, toAdd, phantom, residue].some(
 		(n) => n === undefined || !Number.isInteger(n) || n < 0,
 	)
 ) {
 	console.error(
-		"usage: indexer-heartbeat-child <projectDir> <files> <functionsPerFile> <exportedFiles> <delete> <modify> <add> <phantom>",
+		"usage: indexer-heartbeat-child <projectDir> <files> <functionsPerFile> <exportedFiles> <delete> <modify> <add> <phantom> <residue>",
 	);
 	process.exit(64);
 }
@@ -172,6 +172,29 @@ for (let i = 0; i < toAdd; i++) {
 			`phantom-${i}`,
 			[],
 		);
+	}
+	// CRASH RESIDUE, for V2.4's re-run over R-recovery (`phase-3b-inputs.md`
+	// section 4). V2.4 in Phase 2 covered only the regions that existed then;
+	// recovery is a region of its own, and its work is bounded by
+	// RECOVERY_CHUNK per pass but UNBOUNDED in passes, so a large residue is
+	// exactly the shape that must not starve the heartbeat.
+	//
+	// The `'add'` ids name rows that do not exist, so recovery's LanceDB delete
+	// is a no-op per batch and what is measured is the journal loop itself. The
+	// `'remove'` ids are REAL rows of run 1, so recovery re-drives a genuine
+	// narrow over them — M2, M3 and M4 included.
+	if (residue > 0) {
+		const realIds = seed
+			.getAllFiles(0)
+			.flatMap((f) => f.chunkIds)
+			.slice(0, residue);
+		seed.beginAddIntents(
+			0,
+			Array.from({ length: residue }, (_, i) =>
+				i.toString(16).padStart(64, "0"),
+			),
+		);
+		seed.beginRemoveIntents(0, realIds);
 	}
 	seed.close();
 }

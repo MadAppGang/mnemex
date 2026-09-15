@@ -116,6 +116,17 @@ mock.module("../../../../src/core/tracker.js", () => ({
 				unchangedFiles: [],
 			}),
 			getFilesNeedingEnrichment: () => [],
+			// Phase 3b-2's membership members. `noopExcept` answers every other
+			// call with `undefined`, which is right for a void member and wrong
+			// for one whose result is read: the recovery pass reads
+			// `pendingIntents(...).length` on the first line of every run.
+			pendingIntents: () => [],
+			knownChunkIds: () => new Set<string>(),
+			findByContentKey: () => new Map<string, string>(),
+			chunkIdsForPath: () => [],
+			membershipsOf: () => new Map<string, number[]>(),
+			takeWidenIntents: () => [],
+			countWidenIntents: () => 0,
 			close: () => {},
 		}),
 }));

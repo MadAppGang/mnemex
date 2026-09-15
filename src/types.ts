@@ -356,6 +356,65 @@ export interface IndexResult {
 	upgradedFromIndexVersion?: number;
 	/** What the embedding cache did this run. Absent when it never ran. */
 	embedCache?: IndexEmbedCacheStats;
+	/** Branch membership, when the store has a branch model (architecture §4.1). */
+	branch?: IndexBranchResult;
+}
+
+/**
+ * What one run did to branch membership.
+ *
+ * DATA, not a progress line, for the reason `upgradedFromIndexVersion` is: two
+ * of the four entry points that call `index()` pass no `onProgress` at all
+ * (the git post-commit hook and the MCP search tool's auto-reindex), so a
+ * notice reaches at most two of them.
+ */
+export interface IndexBranchResult {
+	/** The registry id this run's rows were written under. */
+	branchId: number;
+	/** The HEAD label that id belongs to, as read at the start of the run. */
+	label: string | null;
+	/**
+	 * Ids this branch gained by MEMBERSHIP alone — a tier-1 hit test hit: no
+	 * embedding request, no new row, one `chunk_branches` row and one drain
+	 * intent. On a second worktree of an indexed tree this is nearly every id.
+	 */
+	idsWidened: number;
+	/**
+	 * LanceDB rows whose `branchIds` mirror the drain actually rewrote. Lower
+	 * than `idsWidened` when a row's mirror was already exact (the conditional
+	 * merge skips it) and higher when it drains an EARLIER run's backlog.
+	 */
+	rowsWidened: number;
+	/**
+	 * `'widen'` intents still outstanding when the run finished. Non-zero means
+	 * the per-run budget was exhausted and another `mnemex index` is needed;
+	 * searches from this branch see a subset of the store until then.
+	 */
+	widenRemaining: number;
+	/**
+	 * What a crashed previous run left, and this run re-drove (§4.1.4).
+	 * `added` rows were deleted (an interrupted append refers to nothing);
+	 * `removed` removals were FINISHED (the decision to remove had been made).
+	 */
+	recoveredCrashResidue?: { added: number; removed: number };
+	/**
+	 * M2 (decision I-7): rows read beyond the distinct ids read. Non-zero means
+	 * a crash left a DUPLICATE row for some id. It is reported, never repaired
+	 * inline — recovery owns cleanup, and a delete-then-add repair here is the
+	 * non-atomic shape that lost rows in `updateUnitSummary`.
+	 */
+	duplicateRows?: number;
+	/**
+	 * Ids the tracker had registered that LanceDB did not hold, demoted from
+	 * WIDEN to INSERT by the existence projection. Non-zero means P1 had been
+	 * broken and this run repaired it.
+	 */
+	idsDemoted?: number;
+	/**
+	 * §4.1.5: HEAD moved while this run was reading the tree, so the branch was
+	 * NOT stamped as indexed and the registry entry carries `needsReindex`.
+	 */
+	headChangedDuringRun?: boolean;
 }
 
 /** Embedding-cache accounting for one index run, as rendered by the CLI. */

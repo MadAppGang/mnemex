@@ -443,6 +443,155 @@ export function escapeSqlLiteral(value: string): string {
 }
 
 /**
+ * A chunk id as this codebase generates them: lowercase hex, and one of the two
+ * widths the tree actually produces.
+ *
+ * ── A DEVIATION FROM §3.7 ROW 2, recorded rather than quietly widened ──────
+ * The design writes the guard as `/^[0-9a-f]{64}$/`, "sha256 hex". That is true
+ * of CODE CHUNK ids (`chunker.ts` uses the full digest) and false of the other
+ * two row classes this phase has to address by id: code units
+ * (`code-unit-extractor.ts`) and enriched documents (`extractors/base.ts`) both
+ * `.slice(0, 16)`. A 64-only guard would reject every `code_unit` and every
+ * `document` id — the two classes §4.1.1's N4 exists for. The PROPERTY the
+ * design's rule is about is unchanged: a closed alphabet this module produces,
+ * with nothing to quote-double and nothing to neutralise.
+ */
+const CHUNK_ID_PATTERN = /^(?:[0-9a-f]{16}|[0-9a-f]{64})$/;
+
+/** A chunk id that did not come out of this codebase's id generators. */
+export class ChunkIdConventionError extends Error {
+	constructor(readonly id: string) {
+		super(
+			`Refusing to build an id predicate from ${JSON.stringify(id)}: chunk ids are 16 or 64 lowercase hex characters. ` +
+				"This predicate is interpolated with no escaper precisely because its alphabet is closed (architecture §3.7 row 2, CLAUDE.md #22).",
+		);
+		this.name = "ChunkIdConventionError";
+	}
+}
+
+/**
+ * `id IN ('…','…')` — §3.7 row 2's renderer, and the ONLY way this file builds
+ * an id predicate.
+ *
+ * NO ESCAPER, and the assertion is the mechanism rather than decoration: every
+ * id is checked against a closed alphabet, so there is nothing to quote-double
+ * (`escapeSqlLiteral`) and nothing to neutralise (`escapeFilterValue`, whose
+ * backslashes would make an equality or `IN` literal match ZERO rows —
+ * CLAUDE.md #22's headline failure). It runs on every call and is not gated on
+ * a debug flag.
+ */
+export function hexIdList(ids: readonly string[]): string {
+	const quoted: string[] = [];
+	for (const id of ids) {
+		if (!CHUNK_ID_PATTERN.test(id)) throw new ChunkIdConventionError(id);
+		quoted.push(`'${id}'`);
+	}
+	return `id IN (${quoted.join(", ")})`;
+}
+
+/** How many ids go into one `id IN (…)` predicate. `WRITE_CHUNK` (§4.1.1). */
+const ID_PREDICATE_BATCH = 256;
+
+function chunkIds(ids: readonly string[]): string[][] {
+	const batches: string[][] = [];
+	for (let i = 0; i < ids.length; i += ID_PREDICATE_BATCH) {
+		batches.push([...ids.slice(i, i + ID_PREDICATE_BATCH)]);
+	}
+	return batches;
+}
+
+/**
+ * The stored row's column names, taken from the DECLARED schema so a round trip
+ * cannot silently drop a column added later. The width is irrelevant — only the
+ * field names are read.
+ */
+let storedChunkColumnNames: string[] | null = null;
+function storedChunkColumns(): string[] {
+	storedChunkColumnNames ??= codeChunksSchema(1).fields.map(
+		(field) => field.name,
+	);
+	return storedChunkColumnNames;
+}
+
+/**
+ * The ids in one stored `branchIds` cell (`,1,2,`).
+ *
+ * Deliberately NOT imported from `branch-scope.ts`: that module is a LEAF the
+ * tracker and the MCP tools depend on, and it must not gain an edge to this
+ * file (which pulls in LanceDB). Six lines, one direction of the same encoding.
+ */
+function decodeBranchIdCell(cell: unknown): number[] {
+	if (typeof cell !== "string" || cell.length === 0) return [];
+	const ids: number[] = [];
+	for (const part of cell.split(",")) {
+		if (part === "") continue;
+		const id = Number(part);
+		if (Number.isSafeInteger(id) && id >= 0) ids.push(id);
+	}
+	return ids;
+}
+
+/**
+ * `StoredChunk` rows for code units. ONE definition, shared by the append path
+ * (`addCodeUnits`) and the in-place refresh (`refreshCodeUnits`): a refresh that
+ * built its rows separately would drift from the append's column set, and the
+ * declared schema would then reject one of them at write time.
+ *
+ * `branchIds` is per ROW rather than per batch, because a refresh writes each
+ * row's RECOMPUTED mirror (the row may be held by several branches) while an
+ * append writes one branch's `,<id>,`.
+ */
+function storedRowsForUnits(
+	units: CodeUnitWithEmbedding[],
+	branchIds: string | ReadonlyMap<string, string>,
+	pathKind: PathKind,
+): StoredChunk[] {
+	const now = new Date().toISOString();
+	return units.map((unit) => ({
+		id: unit.id,
+		contentHash: "", // CodeUnits don't use contentHash (for incremental diffing)
+		content: unit.content,
+		filePath: unit.filePath,
+		startLine: unit.startLine,
+		endLine: unit.endLine,
+		language: unit.language,
+		chunkType: unit.unitType, // Map unitType to chunkType for compatibility
+		name: unit.name || "",
+		parentName: "", // Not used in new model
+		signature: unit.signature || "",
+		fileHash: unit.fileHash,
+		vector: unit.vector,
+		// Index v3.
+		embedKey: unit.embedKey ?? "",
+		// Document fields for unified storage
+		documentType: "code_unit",
+		sourceIds: "[]",
+		metadata: JSON.stringify(unit.metadata || {}),
+		createdAt: now,
+		enrichedAt: "",
+		// Hierarchical fields
+		parentId: unit.parentId || "",
+		unitType: unit.unitType,
+		depth: unit.depth,
+		summary: "", // Will be populated by summarization phase
+		branchIds:
+			typeof branchIds === "string"
+				? branchIds
+				: (branchIds.get(unit.id) ?? ""),
+		pathKind,
+	}));
+}
+
+/**
+ * One row of a widening merge's SOURCE: every declared column, with `vector`
+ * already normalised to a plain array.
+ */
+export type WidenSourceRow = Record<string, unknown> & {
+	id: string;
+	branchIds: string;
+};
+
+/**
  * True when the table's BM25 index on `FTS_COLUMN` exists AND already covers
  * every live row, so rebuilding it would be pure cost.
  *
@@ -615,6 +764,8 @@ export interface IVectorStore {
 	hasEmbedKeyColumn(): Promise<boolean | null>;
 	/** Tri-state live schema read for index v4's `branchIds` column (§6.1). */
 	hasBranchIdsColumn(): Promise<boolean | null>;
+	/** The declared width of the vector column; `1` is BM25-only. See the method. */
+	vectorWidth(): Promise<number | null>;
 	/** `membership` is required: see `RowMembership`. */
 	addChunks(
 		chunks: ChunkWithEmbedding[],
@@ -637,6 +788,25 @@ export interface IVectorStore {
 	deleteByFile(filePath: string): Promise<number>;
 	deleteByFileHash(fileHash: string): Promise<number>;
 	getChunksWithVectors(filePath: string): Promise<ChunkWithEmbedding[]>;
+	/**
+	 * Membership by id (§4.1). These take NO `BranchScope`: they are write-path
+	 * operations addressed by primary key, and the branch they act for is the
+	 * caller's `branchId`, not HEAD's. See each method for its contract.
+	 */
+	existingIds(ids: string[]): Promise<Set<string>>;
+	rowsForWidening(ids: string[]): Promise<WidenSourceRow[]>;
+	/** Rewrite existing code-unit rows in place; see the method for WHY. */
+	refreshCodeUnits(
+		units: CodeUnitWithEmbedding[],
+		mirrorById: ReadonlyMap<string, string>,
+		pathKind: PathKind,
+	): Promise<number>;
+	writeBranchIdsMirror(rows: WidenSourceRow[]): Promise<number>;
+	deleteByIds(ids: string[]): Promise<number>;
+	optimize(): Promise<void>;
+	/** The highest branch id any ROW carries, or null (3a-2 finding 4). */
+	highestBranchId(): Promise<number | null>;
+	getVectorsByIds(ids: string[]): Promise<Map<string, number[]>>;
 	clear(): Promise<void>;
 	getChunkContents(limit?: number): Promise<string[]>;
 	getStats(): Promise<{
@@ -871,6 +1041,31 @@ export class VectorStore implements IVectorStore {
 		}
 
 		return null;
+	}
+
+	/**
+	 * The DECLARED width of the stored vector column, or `null` when there is no
+	 * table (or it cannot be read).
+	 *
+	 * `1` means the store was written in BM25-only mode: every row carries the
+	 * `[0]` placeholder, and no row can answer a vector query. That is a
+	 * whole-store fact rather than a per-row one, because `addChunks` clears the
+	 * table the moment an incoming width disagrees — so a table never holds two
+	 * widths at once.
+	 *
+	 * The indexer reads it BEFORE deciding anything: under the branch model the
+	 * tier-1 hit test would otherwise WIDEN placeholder rows into this run,
+	 * because they exist and are registered, and the mismatch clear that follows
+	 * would then drop them (see `indexInternal`).
+	 */
+	async vectorWidth(): Promise<number | null> {
+		try {
+			const table = await this.ensureTableOpen();
+			if (!table) return null;
+			return this.tableDimension;
+		} catch {
+			return null;
+		}
 	}
 
 	/**
@@ -1463,6 +1658,279 @@ export class VectorStore implements IVectorStore {
 		}
 	}
 
+	// ========================================================================
+	// Membership by id — the LanceDB half of the id algebra (§4.1).
+	//
+	// Every predicate here is §3.7 row 2: `id IN (…)` over ids THIS CODEBASE
+	// generated, rendered by `hexIdList`, which asserts the alphabet per id and
+	// therefore applies no escaper. Nothing here takes user path text.
+	// ========================================================================
+
+	/**
+	 * P1's belt (§4.1.1): which of `ids` have a LIVE row right now.
+	 *
+	 * A PROJECTION, never `countRows`. A count says how many of 256 ids are
+	 * missing and never WHICH, and both ways to act on a short count are wrong:
+	 * demote the batch and 255 live rows are appended a second time; widen them
+	 * all and the missing one stays invisible. The caller demotes exactly the
+	 * ids this did not return, from WIDEN to INSERT.
+	 */
+	async existingIds(ids: string[]): Promise<Set<string>> {
+		const present = new Set<string>();
+		if (ids.length === 0) return present;
+		const table = await this.ensureTableOpen();
+		if (!table) return present;
+		for (const batch of chunkIds(ids)) {
+			const rows = await table
+				.query()
+				.where(hexIdList(batch))
+				.select(["id"])
+				.toArray();
+			for (const row of rows) present.add(row.id as string);
+		}
+		return present;
+	}
+
+	/**
+	 * The widening drain's SOURCE (§4.1.3b): every column of the rows behind
+	 * `ids`, as plain JS values LanceDB will accept back.
+	 *
+	 * `vector` goes through `toPlainVector` here and nowhere later: writing back
+	 * a raw Arrow `Vector` fails the whole batch with `Found field not in
+	 * schema: vector.isValid` and writes nothing (measured, I-7 FINAL). Columns
+	 * are taken from the DECLARED schema rather than from the row's own keys, so
+	 * a column added to `codeChunksSchema` later cannot be silently dropped by
+	 * the round trip.
+	 *
+	 * It returns one entry per ROW, not per id: a crash duplicate gives two, and
+	 * the caller's M2 is what notices.
+	 */
+	async rowsForWidening(ids: string[]): Promise<WidenSourceRow[]> {
+		if (ids.length === 0) return [];
+		const table = await this.ensureTableOpen();
+		if (!table) return [];
+		const columns = storedChunkColumns();
+		const out: WidenSourceRow[] = [];
+		for (const batch of chunkIds(ids)) {
+			const rows = await table.query().where(hexIdList(batch)).toArray();
+			for (const row of rows) {
+				const copy: Record<string, unknown> = {};
+				for (const column of columns) {
+					copy[column] =
+						column === "vector" ? toPlainVector(row.vector) : row[column];
+				}
+				out.push(copy as WidenSourceRow);
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * Rewrite the `branchIds` mirror of `rows`, through UPDATE-ONLY
+	 * `mergeInsert` (decision I-7 FINAL). Returns `numUpdatedRows`.
+	 *
+	 * Named for what it does, not for one of its two callers: the widening drain
+	 * (§4.1.3b) and `narrowIds`' survivor step (§4.1.1 M3) both RECOMPUTE the
+	 * mirror from `chunk_branches` and write the result, and §4.1.3a makes that
+	 * one rule for both directions. The design writes the narrow half as a
+	 * grouped `table.update`; that mechanism is what I-7 FINAL rejected, and
+	 * the cliff it rejected it for — one call, one version and one fragment per
+	 * distinct membership — is reached by exactly the same input here.
+	 *
+	 * `whenMatchedUpdateAll` with NO insert clause, which is what makes P1 hold
+	 * forwards: measured over 153 cases x 5 repetitions on LanceDB 0.38, an id
+	 * absent from the table, two absent ids, a duplicated absent id and a target
+	 * deleted just before the merge all insert NOTHING. It also never changes
+	 * how many rows an id has — a crash duplicate is carried, neither multiplied
+	 * nor collapsed.
+	 *
+	 * THE CONDITION is `target.branchIds <> source.branchIds`. The value written
+	 * is recomputed from `chunk_branches` either way (U3), so this only skips
+	 * the WRITE where the mirror is already exact — it never patches. Measured:
+	 * a redo of a half-applied 256-id batch rewrites 128 rows instead of 256,
+	 * which halves both write amplification and the FTS tail the drain's
+	 * `optimize()` then has to fold back in.
+	 *
+	 * THE CALLER MUST DEDUPLICATE `rows` BY ID (M1). Two source rows for one id
+	 * throw `Ambiguous merge inserts are prohibited` and write nothing — and
+	 * they would throw identically on every retry, so a single crash duplicate
+	 * would livelock the backlog.
+	 */
+	async writeBranchIdsMirror(rows: WidenSourceRow[]): Promise<number> {
+		if (rows.length === 0) return 0;
+		const table = await this.ensureTableOpen();
+		if (!table) return 0;
+		const result = await withTimeout(
+			table
+				.mergeInsert("id")
+				.whenMatchedUpdateAll({
+					where: "target.branchIds <> source.branchIds",
+				})
+				.execute(rows as Array<Record<string, unknown>>),
+			LANCEDB_WRITE_TIMEOUT_MS,
+			"writeBranchIdsMirror:mergeInsert",
+		);
+		return result.numUpdatedRows;
+	}
+
+	/**
+	 * Replace the CONTENT of code-unit rows that already exist, in place.
+	 *
+	 * ── WHY THIS EXISTS, AND WHAT IT WORKS AROUND ─────────────────────────────
+	 * §4.1.1 justifies widening on the id alone by asserting that "chunk ids are
+	 * content+position addressed". A CODE UNIT's is not: it is
+	 * `sha256(filePath:unitType:name:startRow)` (`code-unit-extractor.ts`), with
+	 * no content in it. Measured — editing a function body without moving its
+	 * first line leaves the id at `edc328f7f7d95751` while the body differs. So
+	 * two revisions of one function, on one branch or on two, CANNOT have
+	 * distinct rows: they collide on the id.
+	 *
+	 * Given that, the only outcomes available are a stale row, a duplicate id,
+	 * or one row holding the latest content. This writes the last one: an
+	 * UPDATE-ONLY `mergeInsert` over the whole row, atomic, never inserting, and
+	 * leaving the id with exactly the number of rows it already had. `branchIds`
+	 * is the caller's RECOMPUTED mirror per row, so a row several branches hold
+	 * does not lose them.
+	 *
+	 * THE WART IS REAL AND IS REPORTED, not papered over: the branch that
+	 * indexed LAST decides the body every branch sees for that unit. The durable
+	 * fix is to put the content into the unit id, which is a stored-id change
+	 * and therefore a version bump.
+	 */
+	async refreshCodeUnits(
+		units: CodeUnitWithEmbedding[],
+		mirrorById: ReadonlyMap<string, string>,
+		pathKind: PathKind,
+	): Promise<number> {
+		if (units.length === 0) return 0;
+		const table = await this.ensureTableOpen();
+		if (!table) return 0;
+		const rows = storedRowsForUnits(units, mirrorById, pathKind);
+		const result = await withTimeout(
+			table
+				.mergeInsert("id")
+				.whenMatchedUpdateAll()
+				.execute(rows as unknown as Array<Record<string, unknown>>),
+			LANCEDB_WRITE_TIMEOUT_MS,
+			"refreshCodeUnits:mergeInsert",
+		);
+		return result.numUpdatedRows;
+	}
+
+	/**
+	 * W1's LanceDB half, by id: the orphan delete of `narrowIds` and recovery's
+	 * add-undo (§4.1.1 M3, §4.1.4). Returns the real `numDeletedRows`.
+	 *
+	 * Deleting ids that are not there is a no-op (`numDeletedRows` 0), which is
+	 * what makes both callers idempotent under a repeated crash.
+	 */
+	async deleteByIds(ids: string[]): Promise<number> {
+		if (ids.length === 0) return 0;
+		const table = await this.ensureTableOpen();
+		if (!table) return 0;
+		let deleted = 0;
+		for (const batch of chunkIds(ids)) {
+			const result = await withTimeout(
+				table.delete(hexIdList(batch)),
+				LANCEDB_WRITE_TIMEOUT_MS,
+				"deleteByIds:table.delete",
+			);
+			deleted += result.numDeletedRows;
+		}
+		return deleted;
+	}
+
+	/**
+	 * M5 (I-7 FINAL): ONE `optimize()` at the end of the widening drain.
+	 *
+	 * Every row a merge rewrites leaves the FTS index — measured, 19 026 of
+	 * 20 000 after a second worktree's first run. Recall is NOT lost
+	 * (`fullTextSearch` scans the unindexed tail and returned 982/982), so this
+	 * is a latency and a SCORING step, not a correctness one: filtered FTS goes
+	 * from 0.7 ms to 60-72 ms, and rewritten rows' BM25 scores shift by up to
+	 * 5 %. Fusion is rank-only, so a 5 % shift can reorder results. `optimize()`
+	 * folds the tail back in, restores scores exactly, and compacts to two
+	 * fragments; 180-580 ms at 20 000 rows.
+	 *
+	 * Never per batch: the cost is in the fold, not in the number of rows.
+	 */
+	async optimize(): Promise<void> {
+		const table = await this.ensureTableOpen();
+		if (!table) return;
+		await withTimeout(
+			table.optimize(),
+			LANCEDB_WRITE_TIMEOUT_MS,
+			"optimize:table.optimize",
+		);
+	}
+
+	/**
+	 * The highest branch id any ROW of this store carries, or null (3a-2's
+	 * finding 4; C1 mechanism 2 in `branch-registry.ts`).
+	 *
+	 * Read from the rows themselves, not from SQLite. The residue finding 4
+	 * describes needs `branches.json` to have lost an allocation the rows still
+	 * carry; `index.db` covers that through `chunk_branches` and the journal,
+	 * but a store whose `index.db` was replaced or hand-deleted has no such
+	 * record, and the registry would then re-issue an id that live rows already
+	 * use. One projection of one small Utf8 column, once per index run.
+	 */
+	async highestBranchId(): Promise<number | null> {
+		let rows: Array<Record<string, unknown>>;
+		try {
+			const table = await this.ensureTableOpen();
+			if (!table) return null;
+			rows = await table.query().select([BRANCH_IDS_COLUMN]).toArray();
+		} catch {
+			// `null`, not a throw. This runs BEFORE the corruption and upgrade
+			// branches, so the table it is asked about may be the 0-dimension one
+			// `ensureTableOpen` refuses (CLAUDE.md #15) or a pre-v4 one with no
+			// `branchIds` column at all. Both are about to be rebuilt, so no row
+			// that could carry an id survives to collide with one — and refusing
+			// to open the run over it would make the repair path unreachable.
+			return null;
+		}
+		let highest: number | null = null;
+		for (const row of rows) {
+			for (const id of decodeBranchIdCell(row[BRANCH_IDS_COLUMN])) {
+				if (highest === null || id > highest) highest = id;
+			}
+		}
+		return highest;
+	}
+
+	/**
+	 * TIER 2's vectors (§4.1.2): the stored vector for each of `ids`.
+	 *
+	 * The embedding is a function of the chunk TEXT alone, so a row holding the
+	 * same content at the same path can lend its vector to a new row with a new
+	 * id and a new line range: zero embedding requests, one new row. This is
+	 * `oldChunksCache` lifted off `documentType = 'code_chunk'`, which is why
+	 * code units — whose stored `contentHash` is empty — could never reuse
+	 * anything before.
+	 */
+	async getVectorsByIds(ids: string[]): Promise<Map<string, number[]>> {
+		const byId = new Map<string, number[]>();
+		if (ids.length === 0) return byId;
+		const table = await this.ensureTableOpen();
+		if (!table) return byId;
+		for (const batch of chunkIds(ids)) {
+			const rows = await table
+				.query()
+				.where(hexIdList(batch))
+				.select(["id", "vector"])
+				.toArray();
+			for (const row of rows) {
+				const vector = toPlainVector(row.vector);
+				// `> 1` excludes the BM25-mode placeholder `[0]`, exactly as the
+				// same-branch reuse path does. A placeholder lent to a new row
+				// would silently make it unsearchable by vector.
+				if (vector.length > 1) byId.set(row.id as string, vector);
+			}
+		}
+		return byId;
+	}
+
 	/**
 	 * Delete all chunks
 	 */
@@ -1936,37 +2404,7 @@ export class VectorStore implements IVectorStore {
 			return;
 		}
 
-		const now = new Date().toISOString();
-		const data: StoredChunk[] = units.map((unit) => ({
-			id: unit.id,
-			contentHash: "", // CodeUnits don't use contentHash (for incremental diffing)
-			content: unit.content,
-			filePath: unit.filePath,
-			startLine: unit.startLine,
-			endLine: unit.endLine,
-			language: unit.language,
-			chunkType: unit.unitType, // Map unitType to chunkType for compatibility
-			name: unit.name || "",
-			parentName: "", // Not used in new model
-			signature: unit.signature || "",
-			fileHash: unit.fileHash,
-			vector: unit.vector,
-			// Index v3.
-			embedKey: unit.embedKey ?? "",
-			// Document fields for unified storage
-			documentType: "code_unit",
-			sourceIds: "[]",
-			metadata: JSON.stringify(unit.metadata || {}),
-			createdAt: now,
-			enrichedAt: "",
-			// Hierarchical fields
-			parentId: unit.parentId || "",
-			unitType: unit.unitType,
-			depth: unit.depth,
-			summary: "", // Will be populated by summarization phase
-			branchIds: columns.branchIds,
-			pathKind: columns.pathKind,
-		}));
+		const data = storedRowsForUnits(units, columns.branchIds, columns.pathKind);
 
 		let table = await this.ensureTableOpen();
 

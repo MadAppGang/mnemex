@@ -15,9 +15,11 @@ import type {
 	IEmbeddingsClient,
 	ILLMClient,
 } from "../../types.js";
+import { narrowIds } from "../branch-membership.js";
 import { scopeForBranchId } from "../branch-scope.js";
 import type { IVectorStore, RowMembership } from "../store.js";
-import type { IFileTracker } from "../tracker.js";
+import { yieldToEventLoop } from "../sync-region.js";
+import { computeHash, type IFileTracker } from "../tracker.js";
 import {
 	createDefaultExtractors,
 	createExtractorRegistry,
@@ -104,6 +106,25 @@ export interface RefinementResult {
 		success: boolean;
 		refinementScore: number;
 	}>;
+}
+
+/**
+ * `newIds` per file for NARROW_SUMMARIES. A document with no `filePath` is a
+ * project-level one and is not tree-scoped by path, so it is left out — its
+ * narrow would have no work list to derive.
+ */
+function summaryIdsByFile(
+	documents: ReadonlyArray<{ id: string; filePath?: string }>,
+): Map<string, Set<string>> {
+	const byFile = new Map<string, Set<string>>();
+	for (const doc of documents) {
+		const filePath = doc.filePath ?? "";
+		if (filePath === "") continue;
+		const ids = byFile.get(filePath);
+		if (ids === undefined) byFile.set(filePath, new Set([doc.id]));
+		else ids.add(doc.id);
+	}
+	return byFile;
 }
 
 // ============================================================================
@@ -224,10 +245,18 @@ export class Enricher {
 				);
 			}
 
-			// Store documents
-			await this.vectorStore.addDocuments(
-				documentsWithEmbeddings,
+			// Store documents, under the branch model's journal (§4.1.4).
+			await this.persistDocuments(documentsWithEmbeddings, options.membership);
+			// NARROW_SUMMARIES for THIS file: its previous revision's summary ids
+			// still point at this branch, and nothing else will ever collect them.
+			await this.narrowSummaries(
 				options.membership,
+				new Map([
+					[
+						file.filePath,
+						new Set(documentsWithEmbeddings.map((doc) => doc.id)),
+					],
+				]),
 			);
 
 			// Track documents
@@ -544,9 +573,10 @@ export class Enricher {
 				`${docCount} documents...`,
 				docCount,
 			);
-			await this.vectorStore.addDocuments(
-				documentsWithEmbeddings,
+			await this.persistDocuments(documentsWithEmbeddings, options.membership);
+			await this.narrowSummaries(
 				options.membership,
+				summaryIdsByFile(documentsWithEmbeddings),
 			);
 
 			// Track all documents
@@ -599,6 +629,101 @@ export class Enricher {
 						}
 					: undefined,
 		};
+	}
+
+	/**
+	 * Write a batch of enriched documents, under the branch model (§4.1).
+	 *
+	 * THE ONLY PLACE summaries reach LanceDB, so the journal and the
+	 * registration are here rather than at each of the two call sites that used
+	 * to call `addDocuments` directly.
+	 *
+	 * A summary id incorporates the summary's own text
+	 * (`sha256(documentType::filePath::content)`), so re-enriching a file whose
+	 * LLM output came back identical produces the SAME id — and `addDocuments`
+	 * is a bare append. The tier-1 hit test is what turns that into a widen
+	 * instead of a second row.
+	 *
+	 * NARROW_SUMMARIES is the caller's, and runs per file after this returns:
+	 * this method does not know which files the caller considers finished, and
+	 * narrowing a class whose producer did not run deletes every summary the
+	 * branch has (§4.1.1's "never run early" guard).
+	 */
+	private async persistDocuments(
+		documents: DocumentWithEmbedding[],
+		membership: RowMembership,
+	): Promise<void> {
+		if (documents.length === 0) return;
+
+		const ids = documents.map((doc) => doc.id);
+		// A summary id incorporates the summary TEXT, so a registered id whose
+		// content hash still matches really is the same row — the code-unit
+		// collision `refreshCodeUnits` exists for cannot happen here.
+		const registered = this.tracker.knownChunkRows(ids);
+		const live = await this.vectorStore.existingIds([...registered.keys()]);
+		const toInsert = documents.filter((doc) => !live.has(doc.id));
+		const toWiden = documents.filter((doc) => live.has(doc.id));
+
+		const insertedIds = toInsert.map((doc) => doc.id);
+		// R5a (§4.1.4): the append is bracketed, so a crash before the
+		// registration below leaves intents naming exactly the appended ids and
+		// the next run's recovery deletes them.
+		this.tracker.beginAddIntents(membership.branchId, insertedIds);
+		await yieldToEventLoop();
+		if (toInsert.length > 0) {
+			await this.vectorStore.addDocuments(toInsert, membership);
+		}
+		// R5b: register, commit membership for inserted AND widened ids, record
+		// the widen work, clear the intents. No `files` stamp — the chunk pass
+		// wrote it, and a summary is not what makes a file indexed.
+		this.tracker.commitAddBatch(membership.branchId, {
+			registered: toInsert.map((doc) => ({
+				chunkId: doc.id,
+				pathKind: membership.pathKind,
+				path: doc.filePath || "",
+				contentHash: computeHash(doc.content),
+				rowClass: "document" as const,
+			})),
+			memberIds: [...insertedIds, ...toWiden.map((doc) => doc.id)],
+			widenIds: toWiden.map((doc) => doc.id),
+			files: [],
+			clearAddIntentIds: insertedIds,
+		});
+		await yieldToEventLoop();
+	}
+
+	/**
+	 * NARROW_SUMMARIES (§4.1.1) for the files this pass enriched.
+	 *
+	 * Runs AFTER the producer of its own class and only over files the producer
+	 * actually finished: a summary id incorporates the source content, so the
+	 * previous revision's summary keeps pointing at this branch forever unless
+	 * it is narrowed — a ghost summary that grows per edit and that the orphan
+	 * sweep cannot collect, because its membership is not empty.
+	 */
+	private async narrowSummaries(
+		membership: RowMembership,
+		newIdsByFile: ReadonlyMap<string, Set<string>>,
+	): Promise<void> {
+		for (const [filePath, newIds] of newIdsByFile) {
+			if (filePath === "") continue;
+			const oldIds = this.tracker
+				.chunkIdsForPath(
+					membership.branchId,
+					membership.pathKind,
+					filePath,
+					"document",
+				)
+				.map((row) => row.chunkId);
+			await yieldToEventLoop();
+			await narrowIds(
+				this.tracker,
+				this.vectorStore,
+				membership.branchId,
+				oldIds.filter((id) => !newIds.has(id)),
+			);
+			await yieldToEventLoop();
+		}
 	}
 
 	/**

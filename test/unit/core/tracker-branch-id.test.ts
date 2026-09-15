@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
 	mkdirSync,
 	mkdtempSync,
+	readFileSync,
 	rmSync,
 	statSync,
 	utimesSync,
@@ -130,6 +131,36 @@ describe("files at index version 4", () => {
 			.filter((t) => columnsOf(t).some((c) => c.name === "branch_id"))
 			.sort();
 		expect(carrying).toEqual([...BRANCH_ID_TABLES].sort());
+	});
+
+	/**
+	 * 3a-2's FINDING 4: the raise covered `files` and nothing else, while
+	 * LANCEDB ROWS carry branch ids too. A table sweep cannot see that — the
+	 * other store is not in `sqlite_master` — so the second half is asserted on
+	 * the ONE place that builds the raise's input.
+	 *
+	 * The behavioural half is in `branch-write-path.test.ts`: with `index.db`
+	 * and `branches.json` both deleted and only the rows left, a new label is
+	 * still issued an id above every id the rows carry.
+	 */
+	test("the raise's input names BOTH stores, not only the tracker", () => {
+		const source = readFileSync(
+			join(import.meta.dir, "..", "..", "..", "src", "core", "indexer.ts"),
+			"utf8",
+		);
+		// The registry is opened exactly once in `src/`, and this is that call.
+		const open = /openRegistry\(\s*loc,\s*this\.indexLock,\s*(\w+)\s*\)/.exec(
+			source,
+		);
+		expect(open).not.toBeNull();
+		const rowSources = new RegExp(
+			`const ${open?.[1]} = combineBranchIdSources\\(([\\s\\S]*?)\\);`,
+		).exec(source);
+		expect(rowSources).not.toBeNull();
+		const argumentText = rowSources?.[1] ?? "";
+		expect(argumentText).toContain("this.fileTracker");
+		expect(argumentText).toContain("this.vectorStore");
+		expect(argumentText).toContain("highestBranchId()");
 	});
 });
 

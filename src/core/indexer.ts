@@ -5,7 +5,13 @@
  * embedding generation, and storage.
  */
 
-import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import {
+	existsSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	statSync,
+} from "node:fs";
 import { join, relative } from "node:path";
 import {
 	ensureProjectDir,
@@ -51,8 +57,17 @@ import {
 	createCodeUnitExtractor,
 } from "./ast/code-unit-extractor.js";
 import {
+	canonicalBranchIds,
+	describeRemoval,
+	drainWidenIntents,
+	narrowIds,
+	recoverCrashResidue,
+	removeFileFromBranch,
+} from "./branch-membership.js";
+import {
 	BRANCH_ID_SHARED,
 	type BranchRegistry,
+	combineBranchIdSources,
 	openRegistry,
 } from "./branch-registry.js";
 import {
@@ -107,10 +122,12 @@ import { probeOldStore } from "./store-meta.js";
 import { createSymbolExtractor } from "./symbol-extractor.js";
 import { yieldToEventLoop } from "./sync-region.js";
 import {
+	type ChunkIndexRow,
 	computeFileHash,
 	computeHash,
 	createFileTracker,
 	type FileChanges,
+	type FileStamp,
 	type IFileTracker,
 } from "./tracker.js";
 
@@ -142,6 +159,96 @@ function realpathOrSelf(path: string): string {
 	} catch {
 		return path;
 	}
+}
+
+// ============================================================================
+// The id algebra's bookkeeping (architecture §4.1.1)
+// ============================================================================
+
+/** One `chunk_index` registration. `path` is already in STORED form (§3.1). */
+function chunkIndexRowFor(
+	chunkId: string,
+	path: string,
+	contentHash: string,
+	rowClass: ChunkIndexRow["rowClass"],
+): ChunkIndexRow {
+	return { chunkId, pathKind: "repo", path, contentHash, rowClass };
+}
+
+/** `newIds` per file, for NARROW_CHUNKS. Every chunk, widened or inserted. */
+function chunkIdsByFile(
+	chunks: ReadonlyArray<{ chunk: { id: string }; filePath: string }>,
+): Map<string, Set<string>> {
+	const byFile = new Map<string, Set<string>>();
+	for (const { chunk, filePath } of chunks) {
+		const ids = byFile.get(filePath);
+		if (ids === undefined) byFile.set(filePath, new Set([chunk.id]));
+		else ids.add(chunk.id);
+	}
+	return byFile;
+}
+
+/** `newIds` per file, for NARROW_UNITS. */
+function unitIdsByFile(
+	units: ReadonlyArray<{ unit: { id: string }; filePath: string }>,
+): Map<string, Set<string>> {
+	const byFile = new Map<string, Set<string>>();
+	for (const { unit, filePath } of units) {
+		const ids = byFile.get(filePath);
+		if (ids === undefined) byFile.set(filePath, new Set([unit.id]));
+		else ids.add(unit.id);
+	}
+	return byFile;
+}
+
+/**
+ * The `files` stamps R5b commits for one batch: one per file that was NOT
+ * deferred, carrying the file's WHOLE chunk id set (widened and inserted).
+ *
+ * `mtime` is read here, outside every region — a `statSync` inside one would be
+ * blocking that the region's clamp does not bound. A file that vanished between
+ * the chunking and this call stamps `Date.now()`, which makes the next run's
+ * mtime comparison miss and fall through to the content-hash compare: extra
+ * hashing, never a wrong answer (§3.5).
+ */
+function fileStampsFor(
+	chunks: ReadonlyArray<{
+		chunk: { id: string };
+		filePath: string;
+		fileHash: string;
+	}>,
+	deferred: ReadonlySet<string>,
+	storedPathOf: ReadonlyMap<string, string>,
+	pathRoot: string,
+): FileStamp[] {
+	const stamps: FileStamp[] = [];
+	const seen = new Map<string, FileStamp>();
+	for (const { chunk, filePath, fileHash } of chunks) {
+		if (deferred.has(filePath)) continue;
+		const existing = seen.get(filePath);
+		if (existing !== undefined) {
+			existing.chunkIds.push(chunk.id);
+			continue;
+		}
+		const storedPath =
+			storedPathOf.get(filePath) ?? toRepoRelative(pathRoot, filePath);
+		if (storedPath === null) continue;
+		let mtime: number;
+		try {
+			mtime = statSync(filePath).mtimeMs;
+		} catch {
+			mtime = Date.now();
+		}
+		const stamp: FileStamp = {
+			storedPath,
+			contentHash: fileHash,
+			mtime,
+			chunkIds: [chunk.id],
+		};
+		seen.set(filePath, stamp);
+		stamps.push(stamp);
+	}
+	return stamps;
 }
 
 // ============================================================================
@@ -1006,14 +1113,30 @@ export class Indexer {
 		// Opened here, under the store lock index() took, and nowhere else (REG-1).
 		let registry: BranchRegistry | null = null;
 		let branchId = BRANCH_ID_SHARED;
+		/** §4.1.5's comparison point: the label this run's rows are stamped with. */
+		let headLabelAtStart: string | null = null;
 		if (loc.gitLayout !== null) {
-			if (this.indexLock === null || this.fileTracker === null) {
+			if (
+				this.indexLock === null ||
+				this.fileTracker === null ||
+				this.vectorStore === null
+			) {
 				throw new Error(
 					"indexInternal: the store lock is not held, or the store is not open",
 				);
 			}
-			registry = openRegistry(loc, this.indexLock, this.fileTracker);
-			branchId = registry.resolveId(readCurrentHead(loc.gitLayout));
+			// C1 mechanism 2, over EVERY store that carries a branch id (3a-2's
+			// finding 4). Read here, before `openRegistry`, because reading
+			// LanceDB is asynchronous and the raise happens synchronously on the
+			// lock-held open.
+			const rowSources = combineBranchIdSources(
+				this.fileTracker,
+				await this.vectorStore.highestBranchId(),
+			);
+			registry = openRegistry(loc, this.indexLock, rowSources);
+			const head = readCurrentHead(loc.gitLayout);
+			headLabelAtStart = head.label;
+			branchId = registry.resolveId(head);
 		}
 		/** Every repo row this run writes: a repo path, under this run's branch. */
 		const repoRows: RowMembership = { pathKind: "repo", branchId };
@@ -1068,6 +1191,21 @@ export class Indexer {
 		// asking, unlike a model change — there the stored vectors are valid, just
 		// built by another model, so the rebuild is a real cost trade.
 		const wasCorrupt = await this.vectorStore!.isUnqueryable();
+
+		// A store written in BM25-ONLY mode holds the `[0]` placeholder in every
+		// row, and this run produces real vectors. Detected HERE, with the other
+		// two rebuild signals, and for the same reason: `addChunks` already
+		// clears the table when an incoming width disagrees with the stored one,
+		// but by then the tier-1 hit test has decided. Under the branch model
+		// that decision is load-bearing — every unchanged chunk would be WIDENED
+		// into this run (the rows exist, and are registered), the mismatch clear
+		// would then drop them, and the run would end holding only the chunks it
+		// happened to embed. Deciding before mutating is what the corruption and
+		// model-mismatch branches below already do.
+		const placeholderStore =
+			!wasCorrupt &&
+			this.vectorEnabled &&
+			(await this.vectorStore!.vectorWidth()) === 1;
 
 		// ── Index v4 detection (§6.1): three independent signals, all read
 		// before any mutation below can clear the evidence. `=== false`, never
@@ -1131,6 +1269,18 @@ export class Indexer {
 		// a `--force` run that skipped its clear would re-index into a non-empty
 		// table.
 		let alreadyCleared = false;
+
+		if (placeholderStore) {
+			this.onProgress?.(
+				0,
+				0,
+				"[repairing] this index was built with vectors disabled, so every row holds a placeholder — rebuilding it with embeddings now",
+			);
+			await this.vectorStore!.clear();
+			this.fileTracker!.clear();
+			alreadyCleared = true;
+			force = true;
+		}
 
 		if (wasCorrupt) {
 			// onProgress, not console.log: the MCP search tool runs this same
@@ -1240,6 +1390,35 @@ export class Indexer {
 			force = true;
 		}
 
+		// ── R-recovery (§4.1.4): re-drive whatever a crashed run left ─────────
+		//
+		// Inside the store lock, BEFORE any write of this run. `'add'` residue is
+		// UNDONE (nothing refers to those rows) and `'remove'` residue is
+		// COMPLETED (the file's new id set was already authoritative, so undoing
+		// would resurrect the ghost chunks the removal existed to delete).
+		//
+		// PLACED AFTER the corruption, model-change and upgrade branches, where
+		// §4.1's diagram puts it before them. The requirement is "before any
+		// write of this run", which this satisfies; running it EARLIER would ask
+		// it to delete rows out of the 0-dimension table `ensureTableOpen`
+		// refuses to open (CLAUDE.md #15), making the repair path unreachable.
+		// Every one of those branches clears the journal with the store it
+		// clears, so recovery after them is a no-op rather than lost work.
+		this.reportPhase("recovering");
+		const crashResidue = await recoverCrashResidue(
+			this.fileTracker!,
+			this.vectorStore!,
+		);
+		if (crashResidue.added > 0 || crashResidue.removed > 0) {
+			this.reportProgress();
+			this.onProgress?.(
+				0,
+				0,
+				`[recovering] a previous run was interrupted: ${crashResidue.added} appended row(s) removed, ` +
+					`${crashResidue.removed} removal(s) completed`,
+			);
+		}
+
 		// Discover files
 		this.reportPhase("discovering");
 		// Walked from the project's REAL path, so every discovered path has the
@@ -1289,47 +1468,56 @@ export class Indexer {
 				}
 			}
 
-			// Remove deleted files from index.
+			// Remove deleted files from THIS BRANCH (§4.2).
 			//
-			// ORDER IS LOAD-BEARING: LanceDB first, the tracker row second. Once the
-			// row is gone getChanges never offers this file again, so the opposite
-			// order would leave its chunks behind for good if the second step failed.
+			// `removeFileFromBranch` narrows all three row classes to the empty
+			// set: a row another branch still points at keeps its row and loses
+			// one id from its mirror, and only a row nobody points at any more is
+			// deleted. A file deleted on branch B must not remove branch A's rows.
 			//
-			// SR-2: two tracker regions per turn, a yield after EACH. The LanceDB
-			// await between them does not count — it is skipped for a file with no
-			// chunk ids, and even when it runs it is not a guaranteed macrotask.
+			// ORDER IS LOAD-BEARING (W1): the rows go first, the tracker row
+			// second. Once the tracker row is gone `getChanges` never offers this
+			// file again, so residue left by the opposite order is permanent
+			// rather than self-healing.
+			//
+			// THE WARNING NOW COUNTS PER ROW CLASS (3a-2's finding 2). A total is
+			// not enough: with only `addChunks` broken, the code-unit rows still
+			// deleted, so the total was non-zero, the zero-row warning stayed
+			// silent, and 6 chunk rows survived. A class that removed NOTHING
+			// while another removed something is the partial-ghost signal.
 			for (const deletedFile of deletedFiles) {
-				const chunkIds = this.fileTracker!.getChunkIds(branchId, deletedFile);
-				if (chunkIds.length > 0) {
-					const rowsDeleted = await this.vectorStore!.deleteByFile(deletedFile);
-					// The tracker says this file has chunks, so a delete that removed
-					// none left them behind: they stay searchable once the tracker row
-					// below is gone, and nothing revisits them. Visible only because
-					// deleteByFile now returns LanceDB's real count, not a constant.
-					if (rowsDeleted === 0) {
-						console.warn(
-							`Warning: deleting ${deletedFile} removed 0 of its ${chunkIds.length} ` +
-								"chunk(s) from the vector store; they remain searchable.",
-						);
-					}
+				const removal = await removeFileFromBranch(
+					this.fileTracker!,
+					this.vectorStore!,
+					branchId,
+					"repo",
+					deletedFile,
+				);
+				// SR-2: the yield comes FIRST. `removeFileFromBranch` ran regions,
+				// and the warning path reads a value derived from them.
+				await yieldToEventLoop();
+				if (removal.partialGhost) {
+					console.warn(
+						`Warning: removing ${describeRemoval(deletedFile, removal)} — one row class removed ` +
+							"nothing while another removed rows. The survivors stay searchable and nothing revisits them.",
+					);
 				}
 				await yieldToEventLoop();
 				this.fileTracker!.removeFile(branchId, deletedFile);
 				await yieldToEventLoop();
 			}
 
-			// SMART INCREMENTAL: Collect old chunks for modified files BEFORE deleting
-			// This allows us to reuse embeddings for unchanged content
+			// SMART INCREMENTAL: collect old chunks for modified files, for vector
+			// reuse by contentHash.
 			//
-			// ONLY THE POPULATION IS GATED. This loop does TWO things and the
-			// second is a mutation: `deleteByFile` below is the only place in the
-			// tree where a MODIFIED file's previous chunks are removed from
-			// LanceDB (the deleted-files loop above covers a disjoint set), and
-			// `addChunks` appends — no upsert, no primary key. Gating the whole
-			// loop on the tier therefore skips the delete on the healthy path and
-			// leaves every past edit's chunks in the table alongside the new ones:
-			// unbounded duplicate accumulation, with retrieval returning ghost
-			// chunks from every previous version of the file.
+			// THE DELETE THAT USED TO BE HERE IS GONE (§4.1.1). It was
+			// `deleteByFile(modifiedFile)` — an unscoped delete by path, which in
+			// a shared store removes every OTHER branch's rows for that path too.
+			// Its job is now `NARROW_CHUNKS`, which runs per file AFTER this
+			// batch's chunks are stored and removes exactly `oldIds \ newIds` for
+			// THIS branch. Deleting first is also what made the append safe
+			// before; now the tier-1 hit test does, by never appending an id the
+			// store already holds.
 			//
 			// Reused from LanceDB only when the persistent cache is NOT serving
 			// this run. On the healthy path the cache covers the same reuse
@@ -1356,9 +1544,6 @@ export class Indexer {
 						this.oldChunksCache.set(modifiedFile, oldChunksMap);
 					}
 				}
-				// Now delete old data (the store converts the path to its stored form).
-				// NEVER GATED — see above.
-				await this.vectorStore!.deleteByFile(modifiedFile);
 				this.fileTracker!.resetEnrichmentState(branchId, modifiedFile);
 				// SR-2: the next turn's region must not follow this one unyielded.
 				await yieldToEventLoop();
@@ -1384,6 +1569,28 @@ export class Indexer {
 		let totalCodeUnitsCreated = 0;
 		let totalCost = 0;
 		let totalTokens = 0;
+		/** Tier-1 hits this branch gained without a row or an embedding (§4.1.1). */
+		let totalChunksWidened = 0;
+		let totalUnitsWidened = 0;
+		/**
+		 * Code units whose id was already registered but whose CONTENT had
+		 * changed, so the row was rewritten in place rather than widened. The
+		 * count exists because the cause is a design defect worth seeing in the
+		 * data: a code-unit id carries no content (§4.1.1 assumes it does).
+		 */
+		let totalUnitsRefreshed = 0;
+		/**
+		 * Ids `chunk_index` named that LanceDB did not have, DEMOTED from WIDEN
+		 * to INSERT by the existence projection. Non-zero means P1 was broken and
+		 * this run repaired it; reported, never silent.
+		 */
+		let totalIdsDemoted = 0;
+		/**
+		 * M2 (I-7 FINAL): rows read beyond the distinct ids read — a duplicate id
+		 * left by a crash. Recorded in DATA and NOT repaired inline with
+		 * delete-then-add; recovery owns cleanup.
+		 */
+		let duplicateChunkRows = 0;
 
 		// Track files for enrichment (file -> chunks mapping)
 		const fileChunksForEnrichment: FileToEnrich[] = [];
@@ -1469,6 +1676,55 @@ export class Indexer {
 				continue;
 			}
 
+			// ── Phase 1b: the two-tier hit test (§4.1.1, §4.1.2) ──────────────
+			//
+			// TIER 1 — the store already holds this exact row (same path, same
+			// lines, same content), so this branch WIDENS: no embedding, no new
+			// row, one membership row and one drain intent. Two questions, not
+			// one: `chunk_index` says whether the id is registered, and an id
+			// PROJECTION over LanceDB says whether the row is really there. The
+			// second is P1's belt (§4.1.4): a `chunk_index` row with no row
+			// behind it is permanently unsearchable content that every probe in
+			// this design reports as healthy, and each id that fails it is
+			// DEMOTED to INSERT, which self-heals it.
+			//
+			// TIER 2 — the store holds this exact CONTENT at this path under a
+			// different id (a line shifted above it). The embedding is a function
+			// of the text alone, so the vector is copied and a NEW row is written
+			// with the new id and the new line range: zero embedding requests,
+			// one new row. Tier 2 does NOT widen, because a contentHash match at
+			// a different id means the stored row's startLine/endLine describe
+			// the other revision's line numbers.
+			const hitTestIds = batchChunks.map((c) => c.chunk.id);
+			// SR-2: the batch loop wraps around, so the previous turn's last region
+			// is still pending when this one's first is reached.
+			await yieldToEventLoop();
+			const registeredIds = this.fileTracker!.knownChunkRows(hitTestIds);
+			const liveIds = await this.vectorStore!.existingIds([
+				...registeredIds.keys(),
+			]);
+			totalIdsDemoted += [...registeredIds.keys()].filter(
+				(id) => !liveIds.has(id),
+			).length;
+			// A code CHUNK's id hashes `filePath:startLine:endLine:content`, so an
+			// id match IS a content match and the stored hash can only agree. The
+			// check is written anyway, in one shape with the code-unit pass below,
+			// so a future id scheme cannot quietly turn a widen into a stale row.
+			const isChunkHit = (c: (typeof batchChunks)[number]): boolean =>
+				liveIds.has(c.chunk.id) &&
+				registeredIds.get(c.chunk.id) === (c.chunk.contentHash || "");
+			/** Chunks this branch only has to point AT. */
+			const widenChunks = batchChunks.filter(isChunkHit);
+			/** Chunks that need a row, and therefore a vector. */
+			const insertChunks = batchChunks.filter((c) => !isChunkHit(c));
+			totalChunksWidened += widenChunks.length;
+
+			// Tier 2's vectors, merged into the SAME per-file reuse map the
+			// same-branch path uses (`oldChunksCache`, keyed by contentHash), so
+			// there is one reuse channel below rather than two.
+			await yieldToEventLoop();
+			await this.seedTierTwoVectors(pathRoot, storedPathOf, insertChunks);
+
 			// Phase 2: Embed batch chunks (skip if vector mode disabled)
 			// SMART INCREMENTAL: Reuse vectors from cache for unchanged chunks
 			const batchInfo =
@@ -1510,8 +1766,8 @@ export class Indexer {
 					embedKey: string;
 				}> = [];
 
-				for (let i = 0; i < batchChunks.length; i++) {
-					const { chunk, filePath, fileHash } = batchChunks[i];
+				for (let i = 0; i < insertChunks.length; i++) {
+					const { chunk, filePath, fileHash } = insertChunks[i];
 					// Cache is keyed by absolute path (filePath is already absolute)
 					const cachedVectors = this.oldChunksCache.get(filePath);
 
@@ -1554,7 +1810,7 @@ export class Indexer {
 					const reuseInfo = reusedCount > 0 ? ` (${reusedCount} reused)` : "";
 					this.onProgress(
 						0,
-						batchChunks.length,
+						insertChunks.length,
 						`[embedding]${batchInfo} ${newCount} new${reuseInfo}...`,
 					);
 				}
@@ -1669,7 +1925,7 @@ export class Indexer {
 			} else {
 				// Vector mode disabled - store chunks with placeholder vector (BM25 only)
 				// LanceDB requires non-empty vectors, so we use a single-element placeholder
-				validChunks = batchChunks.map((c) => ({
+				validChunks = insertChunks.map((c) => ({
 					...c,
 					vector: [0], // Placeholder - BM25 search only (vector search disabled)
 					// Nothing was embedded, so there is no key. The placeholder never
@@ -1679,8 +1935,20 @@ export class Indexer {
 				}));
 			}
 
-			// Phase 3: Store batch chunks
-			const chunksWithEmbeddings: ChunkWithEmbedding[] = validChunks.map(
+			// Phase 3: Store batch chunks.
+			//
+			// A DEFERRED FILE IS DROPPED FROM THE BATCH BEFORE R5a, not deleted
+			// after the append (§4.1.4, round 3). The loop that used to
+			// `deleteByFile` those files afterwards is gone, and it was wrong both
+			// ways under the journal: R5b would register ids whose rows it had
+			// just deleted (a P1 break), and a crash-recovery would undo the good
+			// files that shared its intent batch. Dropped here they stay
+			// NEW/MODIFIED, with no row, no membership and no `files` stamp, and
+			// the next run redoes them.
+			const storableChunks = validChunks.filter(
+				(c) => !filesWithMissingVectors.has(c.filePath),
+			);
+			const chunksWithEmbeddings: ChunkWithEmbedding[] = storableChunks.map(
 				(c) => ({
 					...c.chunk,
 					vector: c.vector,
@@ -1697,32 +1965,98 @@ export class Indexer {
 					`[storing]${batchInfo} ${chunksWithEmbeddings.length} chunks...`,
 				);
 			}
+
+			// R5a (§4.1.4): the append is BRACKETED. A crash between here and R5b
+			// leaves intents naming exactly the ids that may have been appended,
+			// and the next run's recovery deletes them — which is what makes
+			// `table.add` being a bare append harmless rather than load-bearing.
+			const insertedChunkIds = chunksWithEmbeddings.map((c) => c.id);
+			await yieldToEventLoop();
+			this.fileTracker!.beginAddIntents(branchId, insertedChunkIds);
+			await yieldToEventLoop();
+
 			// Phase marker placed IMMEDIATELY before the (un-cancellable) LanceDB
 			// write so a hang here is attributable to "writing:lance" in the report.
 			this.reportPhase("writing:lance");
 			await this.vectorStore!.addChunks(chunksWithEmbeddings, repoRows);
 
-			// THE DEFERRAL MUST COVER THE WRITE, NOT ONLY THE TRACKER.
-			//
-			// `addChunks` above ran over `validChunks`, which still holds the
-			// SUCCESSFUL chunks of a file that lost one. Skipping only
-			// `markIndexed` further down would leave rows in LanceDB and no row in
-			// the tracker: `getChanges` then classifies the file as NEW, new files
-			// never enter the modified-files loop that deletes a file's previous
-			// rows, and `addChunks` is a bare append with no upsert and no primary
-			// key. Every subsequent run would append another copy, permanently.
-			//
-			// Deleting here leaves the file with no rows and no tracker entry — a
-			// consistent state the next run redoes from scratch. Safe because
-			// files are batched, not chunks, so a file's chunks are all in this
-			// batch; and a previously-indexed file's prior rows were already
-			// deleted by the modified-files loop.
-			for (const deferredFile of filesWithMissingVectors) {
-				await this.vectorStore!.deleteByFile(deferredFile);
-			}
+			// R5b (§4.1.4): ONE transaction — register the appended ids, commit
+			// this branch's membership for the INSERT *and* the WIDEN ids, record
+			// the WIDEN ids' drain work, stamp the `files` rows, clear the 'add'
+			// intents. A WIDEN-ONLY file gets its `files` row here too, which is
+			// what stops the next run classifying it NEW forever.
+			const widenedChunkIds = widenChunks
+				.filter((c) => !filesWithMissingVectors.has(c.filePath))
+				.map((c) => c.chunk.id);
+			// A DEMOTED id needs the drain too, and this is not obvious. It was
+			// registered, so OTHER branches may hold it in `chunk_branches`; its
+			// row was missing, so it is being re-INSERTED — with this branch's
+			// `,<id>,` and nothing else. Without a `'widen'` intent the mirror
+			// would then omit every other holder, and each of them would lose
+			// sight of a chunk it still holds. Caught by V3.6's belt row, which
+			// compares the mirror against the membership in both directions.
+			const mirrorNeededFor = insertedChunkIds.filter((id) =>
+				registeredIds.has(id),
+			);
+			this.fileTracker!.commitAddBatch(branchId, {
+				registered: storableChunks.map((c) =>
+					chunkIndexRowFor(
+						c.chunk.id,
+						storedPathOf.get(c.filePath) ??
+							toRepoRelative(pathRoot, c.filePath) ??
+							c.chunk.filePath,
+						c.chunk.contentHash || computeHash(c.chunk.content),
+						"code_chunk",
+					),
+				),
+				memberIds: [...insertedChunkIds, ...widenedChunkIds],
+				widenIds: [...widenedChunkIds, ...mirrorNeededFor],
+				files: fileStampsFor(
+					batchChunks,
+					filesWithMissingVectors,
+					storedPathOf,
+					pathRoot,
+				),
+				clearAddIntentIds: insertedChunkIds,
+			});
+			await yieldToEventLoop();
 
 			// Forward progress: a batch of chunks was written to the vector store.
 			this.reportProgress();
+
+			// NARROW_CHUNKS (§4.1.1) — the step revision 0 of the design did not
+			// have, and whose absence was a CRITICAL. Chunk ids are content AND
+			// position addressed, so the second edit of a file on one branch
+			// produces new ids while the previous revision's ids keep pointing at
+			// this branch FOREVER. The orphan sweep cannot collect them: its test
+			// is "membership is empty" and those rows have non-empty membership.
+			// The result is ghost chunks on the SAME branch, growing per edit.
+			//
+			// It runs HERE, after this batch's chunks are stored, and it is never
+			// gated on a "nothing changed" short-circuit — the property the old
+			// `deleteByFile(modifiedFile)` comment protected, transferred verbatim.
+			for (const [filePath, newIds] of chunkIdsByFile(batchChunks)) {
+				if (filesWithMissingVectors.has(filePath)) continue;
+				const storedPath =
+					storedPathOf.get(filePath) ?? toRepoRelative(pathRoot, filePath);
+				if (storedPath === null) continue;
+				const oldIds = this.fileTracker!.chunkIdsForPath(
+					branchId,
+					"repo",
+					storedPath,
+					"code_chunk",
+				).map((row) => row.chunkId);
+				await yieldToEventLoop();
+				const stale = oldIds.filter((id) => !newIds.has(id));
+				const narrowed = await narrowIds(
+					this.fileTracker!,
+					this.vectorStore!,
+					branchId,
+					stale,
+				);
+				duplicateChunkRows += narrowed.duplicateRows;
+				await yieldToEventLoop();
+			}
 
 			// Report storing completion
 			if (this.onProgress) {
@@ -1734,8 +2068,6 @@ export class Indexer {
 			// If so, we need to also clear file tracker for consistency
 			if (this.vectorStore!.dimensionMismatchCleared) {
 				this.fileTracker!.clear();
-				// SR-2: this batch's markIndexed loop is the next region.
-				await yieldToEventLoop();
 			}
 
 			// Phase 2b: Extract code units with AST metadata (once per file, not per chunk)
@@ -1746,17 +2078,25 @@ export class Indexer {
 				// above, which misattributed stalls here to the LanceDB write path.
 				this.reportPhase("code-units");
 				const filesProcessedForUnits = new Set<string>();
+				/** Files whose extraction finished, so their unit id set is final. */
+				const filesWithUnitsExtracted = new Set<string>();
 				const batchUnitsToEmbed: Array<{
 					unit: CodeUnit;
 					filePath: string;
 					fileHash: string;
 				}> = [];
 
-				for (const { filePath, fileHash } of validChunks) {
+				// EVERY file of the batch, not only the ones that got new rows.
+				// On a second worktree almost every file is a tier-1 hit, so
+				// `validChunks` is nearly empty while every one of those files
+				// still has code units whose membership this branch has to gain.
+				// Iterating `validChunks` here would leave the second branch with
+				// chunks and no units for its whole tree.
+				for (const { filePath, fileHash } of batchChunks) {
 					if (filesProcessedForUnits.has(filePath)) continue;
-					// A deferred file's rows were just deleted and it will be redone
-					// from scratch next run, so writing code units for it now would
-					// re-create exactly the orphan rows the delete above removed —
+					// A deferred file was dropped from the batch before R5a and will
+					// be redone from scratch next run, so writing code units for it
+					// now would create rows whose file has no tracker stamp —
 					// `addCodeUnits` appends the same way `addChunks` does.
 					if (filesWithMissingVectors.has(filePath)) continue;
 					filesProcessedForUnits.add(filePath);
@@ -1781,6 +2121,14 @@ export class Indexer {
 						for (const unit of units) {
 							batchUnitsToEmbed.push({ unit, filePath, fileHash });
 						}
+						// Extraction SUCCEEDED, so this file's unit id set is
+						// authoritative and NARROW_UNITS may run for it — even when
+						// it produced zero units, which is the file that lost its
+						// last function. A file whose extraction threw, or that has
+						// no parser, is deliberately absent: `newIds` there is not a
+						// statement about the file, and narrowing against it would
+						// delete every unit the branch has for it.
+						filesWithUnitsExtracted.add(filePath);
 					} catch (error) {
 						// Code unit extraction failure is non-fatal
 						const relativePath = relative(projectRealPath, filePath);
@@ -1791,9 +2139,65 @@ export class Indexer {
 					}
 				}
 
+				// The SAME two-tier hit test as the chunk pass (§3.2.1: code-unit
+				// ids go through it too, because they are registered in the same
+				// `chunk_index`). Before this phase, code units were never reused
+				// from LanceDB at all: `getChunksWithVectors` filters
+				// `documentType = 'code_chunk'`, so a unit whose content had not
+				// changed was re-embedded on every incremental run and re-appended
+				// on every second branch.
+				const unitIds = batchUnitsToEmbed.map((u) => u.unit.id);
+				await yieldToEventLoop();
+				const registeredUnitIds = this.fileTracker!.knownChunkRows(unitIds);
+				const liveUnitIds = await this.vectorStore!.existingIds([
+					...registeredUnitIds.keys(),
+				]);
+				totalIdsDemoted += [...registeredUnitIds.keys()].filter(
+					(id) => !liveUnitIds.has(id),
+				).length;
+				/** Every unit's own content hash, computed once for three uses. */
+				const unitContentHash = new Map(
+					batchUnitsToEmbed.map((u) => [
+						u.unit.id,
+						computeHash(u.unit.content),
+					]),
+				);
+				// THREE outcomes here, not two, and the third is the one §4.1.1 did
+				// not foresee. A code-unit id is `filePath:unitType:name:startRow`
+				// with NO content in it, so an id match does NOT imply a content
+				// match: editing a body without moving its first line keeps the id
+				// (measured) and changes the text. Widening such a row would serve
+				// this branch the other revision's body, so it is REFRESHED in
+				// place instead — see `VectorStore.refreshCodeUnits` for why that
+				// is the only outcome available without changing the id scheme.
+				const unitsToWiden = batchUnitsToEmbed.filter(
+					(u) =>
+						liveUnitIds.has(u.unit.id) &&
+						registeredUnitIds.get(u.unit.id) === unitContentHash.get(u.unit.id),
+				);
+				const unitsToRefresh = batchUnitsToEmbed.filter(
+					(u) =>
+						liveUnitIds.has(u.unit.id) &&
+						registeredUnitIds.get(u.unit.id) !== unitContentHash.get(u.unit.id),
+				);
+				const unitsToInsert = batchUnitsToEmbed.filter(
+					(u) => !liveUnitIds.has(u.unit.id),
+				);
+				totalUnitsWidened += unitsToWiden.length;
+				totalUnitsRefreshed += unitsToRefresh.length;
+				/** Insert AND refresh both need a vector for their new content. */
+				const unitsNeedingRows = [...unitsToInsert, ...unitsToRefresh];
+				/** Tier 2: a vector the store already holds for this exact text. */
+				await yieldToEventLoop();
+				const unitVectorReuse = await this.tierTwoUnitVectors(unitsNeedingRows);
+				await yieldToEventLoop();
+
+				/** What actually reached LanceDB, for the R5b registration below. */
+				let unitsToStore: CodeUnitWithEmbedding[] = [];
+
 				// Embed code units if any were extracted and vector mode is enabled
 				if (
-					batchUnitsToEmbed.length > 0 &&
+					unitsNeedingRows.length > 0 &&
 					this.vectorEnabled &&
 					this.embeddingsClient
 				) {
@@ -1802,12 +2206,17 @@ export class Indexer {
 					if (this.onProgress) {
 						this.onProgress(
 							0,
-							batchUnitsToEmbed.length,
-							`[units]${unitBatchInfo} embedding ${batchUnitsToEmbed.length} code units...`,
+							unitsNeedingRows.length,
+							`[units]${unitBatchInfo} embedding ${unitsNeedingRows.length} code units...`,
 						);
 					}
 
-					const unitItems = batchUnitsToEmbed.map(({ unit }) => unit);
+					// Tier 2 first: a unit whose text the store already holds at this
+					// path lends its vector and reaches no provider at all.
+					const unitsNeedingEmbedding = unitsNeedingRows.filter(
+						({ unit }) => !unitVectorReuse.has(unit.id),
+					);
+					const unitItems = unitsNeedingEmbedding.map(({ unit }) => unit);
 					let unitEmbedResult: EmbedResult;
 
 					try {
@@ -1851,89 +2260,187 @@ export class Indexer {
 						// Forward progress: a unit embed batch completed.
 						this.reportProgress();
 
-						const unitsWithEmbeddings: CodeUnitWithEmbedding[] =
-							batchUnitsToEmbed
-								.map(({ unit }, idx) => ({
+						const embeddedById = new Map<string, number[]>();
+						const keyById = new Map<string, string>();
+						unitsNeedingEmbedding.forEach(({ unit }, idx) => {
+							embeddedById.set(unit.id, unitEmbedResult.embeddings[idx]);
+							keyById.set(unit.id, unitEmbedResult.keys?.[idx] ?? "");
+						});
+
+						unitsToStore = unitsNeedingRows
+							.map(({ unit }) => {
+								const reused = unitVectorReuse.get(unit.id);
+								return {
 									...unit,
-									vector: unitEmbedResult.embeddings[idx],
-									embedKey: unitEmbedResult.keys?.[idx] ?? "",
-								}))
-								// `> 0`, i.e. `=== 0` inverted: a unit with no vector is
-								// dropped as before. Unit embedding is already non-fatal
-								// (its failure is caught above), so there is nothing to
-								// defer — the chunks for the file are stored either way.
-								.filter((u) => u.vector.length > 0);
+									vector: reused ?? embeddedById.get(unit.id) ?? [],
+									// FR-2: a reused vector carries the key the seam WOULD
+									// have computed for it, from the seam's own formula, at
+									// the reused vector's actual width.
+									embedKey: reused
+										? this.cachingSeam().keyFor(unit.content, reused.length)
+										: (keyById.get(unit.id) ?? ""),
+								};
+							})
+							// `> 0`, i.e. `=== 0` inverted: a unit with no vector is
+							// dropped as before. Unit embedding is already non-fatal
+							// (its failure is caught above), so there is nothing to
+							// defer — the chunks for the file are stored either way.
+							.filter((u) => u.vector.length > 0);
+					}
+				} else if (unitsNeedingRows.length > 0 && !this.vectorEnabled) {
+					// BM25-only mode: store units with placeholder vector
+					unitsToStore = unitsNeedingRows.map(({ unit }) => ({
+						...unit,
+						vector: [0],
+						embedKey: "",
+					}));
+				}
 
-						if (unitsWithEmbeddings.length > 0) {
-							this.reportPhase("writing:lance");
-							await this.vectorStore!.addCodeUnits(
-								unitsWithEmbeddings,
-								repoRows,
+				// R5a / the append / R5b, once for both modes (§4.1.4). The
+				// WIDEN ids ride in the same R5b as the INSERT ids, exactly as the
+				// chunk pass does, so a unit this branch merely points at gets its
+				// membership and its drain intent in one transaction.
+				const refreshIds = new Set(unitsToRefresh.map((u) => u.unit.id));
+				const unitsAppended = unitsToStore.filter((u) => !refreshIds.has(u.id));
+				const unitsRewritten = unitsToStore.filter((u) => refreshIds.has(u.id));
+				const insertedUnitIds = unitsAppended.map((u) => u.id);
+				const widenedUnitIds = unitsToWiden.map((u) => u.unit.id);
+				// As above: a demoted unit id may be held by other branches.
+				const unitMirrorNeededFor = insertedUnitIds.filter((id) =>
+					registeredUnitIds.has(id),
+				);
+				if (
+					insertedUnitIds.length > 0 ||
+					widenedUnitIds.length > 0 ||
+					unitsRewritten.length > 0
+				) {
+					this.fileTracker!.beginAddIntents(branchId, insertedUnitIds);
+					await yieldToEventLoop();
+					if (unitsAppended.length > 0) {
+						this.reportPhase("writing:lance");
+						await this.vectorStore!.addCodeUnits(unitsAppended, repoRows);
+						totalCodeUnitsCreated += unitsAppended.length;
+						this.reportProgress();
+						if (this.onProgress) {
+							this.onProgress(
+								unitsAppended.length,
+								unitsAppended.length,
+								`[units] ${unitsAppended.length} units stored`,
 							);
-							totalCodeUnitsCreated += unitsWithEmbeddings.length;
-
-							// Forward progress: code units were written to the vector store.
-							this.reportProgress();
-
-							if (this.onProgress) {
-								this.onProgress(
-									unitsWithEmbeddings.length,
-									unitsWithEmbeddings.length,
-									`[units]${unitBatchInfo} ${unitsWithEmbeddings.length} units stored`,
-								);
-							}
 						}
 					}
-				} else if (batchUnitsToEmbed.length > 0 && !this.vectorEnabled) {
-					// BM25-only mode: store units with placeholder vector
-					const unitsWithPlaceholder: CodeUnitWithEmbedding[] =
-						batchUnitsToEmbed.map(({ unit }) => ({
-							...unit,
-							vector: [0],
-							embedKey: "",
-						}));
-					this.reportPhase("writing:lance");
-					await this.vectorStore!.addCodeUnits(unitsWithPlaceholder, repoRows);
-					totalCodeUnitsCreated += unitsWithPlaceholder.length;
+					this.fileTracker!.commitAddBatch(branchId, {
+						registered: unitsAppended.map((unit) =>
+							chunkIndexRowFor(
+								unit.id,
+								unit.filePath,
+								computeHash(unit.content),
+								"code_unit",
+							),
+						),
+						memberIds: [...insertedUnitIds, ...widenedUnitIds],
+						widenIds: [...widenedUnitIds, ...unitMirrorNeededFor],
+						// No `files` stamp: the chunk pass already wrote it for every
+						// file of this batch, in the transaction that committed its
+						// chunk membership.
+						files: [],
+						clearAddIntentIds: insertedUnitIds,
+					});
+					await yieldToEventLoop();
 
-					// Forward progress: BM25-only code units were written.
-					this.reportProgress();
+					// THE REFRESH, registered SECOND on purpose. A crash between the
+					// rewrite and the registration leaves the row holding the NEW
+					// content under the OLD hash, which the next run reads as a
+					// content mismatch and rewrites again — idempotent. Registering
+					// first would leave the opposite: the new hash over the old
+					// content, which every later run would read as a tier-1 hit.
+					if (unitsRewritten.length > 0) {
+						const rewrittenIds = unitsRewritten.map((u) => u.id);
+						const holders = this.fileTracker!.membershipsOf(rewrittenIds);
+						await yieldToEventLoop();
+						const mirror = new Map<string, string>();
+						for (const id of rewrittenIds) {
+							// The row may be held by OTHER branches; the mirror it is
+							// written with must keep every one of them.
+							mirror.set(
+								id,
+								canonicalBranchIds([...(holders.get(id) ?? []), branchId]),
+							);
+						}
+						this.reportPhase("writing:lance");
+						await this.vectorStore!.refreshCodeUnits(
+							unitsRewritten,
+							mirror,
+							"repo",
+						);
+						this.reportProgress();
+						this.fileTracker!.commitAddBatch(branchId, {
+							registered: unitsRewritten.map((unit) =>
+								chunkIndexRowFor(
+									unit.id,
+									unit.filePath,
+									computeHash(unit.content),
+									"code_unit",
+								),
+							),
+							memberIds: rewrittenIds,
+							widenIds: rewrittenIds,
+							files: [],
+							clearAddIntentIds: [],
+						});
+						await yieldToEventLoop();
+					}
+				}
+
+				// NARROW_UNITS (§4.1.1) — AFTER the producer of this class, never
+				// before. Run earlier it would delete every code unit of the file,
+				// because `newIds` for the class is still empty at that point (N4).
+				const newUnitIdsByFile = unitIdsByFile(batchUnitsToEmbed);
+				for (const filePath of filesWithUnitsExtracted) {
+					const unitIds = newUnitIdsByFile.get(filePath) ?? new Set<string>();
+					const storedPath =
+						storedPathOf.get(filePath) ?? toRepoRelative(pathRoot, filePath);
+					if (storedPath === null) continue;
+					const oldUnitIds = this.fileTracker!.chunkIdsForPath(
+						branchId,
+						"repo",
+						storedPath,
+						"code_unit",
+					).map((row) => row.chunkId);
+					await yieldToEventLoop();
+					const narrowed = await narrowIds(
+						this.fileTracker!,
+						this.vectorStore!,
+						branchId,
+						oldUnitIds.filter((id) => !unitIds.has(id)),
+					);
+					duplicateChunkRows += narrowed.duplicateRows;
+					await yieldToEventLoop();
 				}
 			}
 
-			// Phase 4: Update file tracker for this batch (only for successfully stored chunks)
-			const fileChunkMap = new Map<
-				string,
-				{ fileHash: string; chunkIds: string[] }
-			>();
-			for (const { chunk, filePath, fileHash } of validChunks) {
-				if (!fileChunkMap.has(filePath)) {
-					fileChunkMap.set(filePath, { fileHash, chunkIds: [] });
-				}
-				fileChunkMap.get(filePath)!.chunkIds.push(chunk.id);
-			}
-
+			// Phase 4: account for this batch.
+			//
+			// THE `files` STAMP IS NOT HERE ANY MORE. It rides in R5b above, in
+			// the transaction that commits this batch's membership (§4.1.4): the
+			// stamp may precede the mirror only because the `'widen'` intent
+			// committed beside it is what guarantees the mirror. It is also what
+			// gives a WIDEN-ONLY file a `files` row at all — without one, the next
+			// run classifies it NEW forever, and it never has new chunks to store.
 			let deferredInBatch = 0;
-			for (const [filePath, { fileHash, chunkIds }] of fileChunkMap) {
+			for (const filePath of filesWithMissingVectors) {
 				// DEFERRED: at least one chunk of this file came back with an empty
-				// vector. Its rows were deleted above; leaving it unstamped is what
-				// makes the next run redo it. Stamping it at its current hash would
-				// drop those chunks from the index for good.
-				if (filesWithMissingVectors.has(filePath)) {
-					deferredFiles.add(relative(projectRealPath, filePath));
-					deferredInBatch++;
-					continue;
-				}
-				this.fileTracker!.markIndexed(branchId, filePath, fileHash, chunkIds);
-				// SR-2: one R-write per file, back to back for the whole batch
-				// without this.
-				await yieldToEventLoop();
+				// vector, so it was dropped from the batch before R5a and has no
+				// row, no membership and no stamp. The next run redoes it.
+				deferredFiles.add(relative(projectRealPath, filePath));
+				deferredInBatch++;
 			}
 
-			totalFilesIndexed += fileChunkMap.size - deferredInBatch;
-			// A deferred file's rows were deleted again, so counting its chunks
-			// here would report an index the store does not hold.
-			totalChunksCreated += validChunks.filter(
+			totalFilesIndexed += chunkIdsByFile(batchChunks).size - deferredInBatch;
+			// A deferred file was never stored, so counting its chunks here would
+			// report an index the store does not hold. Widened chunks ARE counted:
+			// the branch now points at them, which is what the number is about.
+			totalChunksCreated += batchChunks.filter(
 				(c) => !filesWithMissingVectors.has(c.filePath),
 			).length;
 
@@ -1945,7 +2452,12 @@ export class Indexer {
 					{ content: string; chunks: CodeChunk[]; language: string }
 				>();
 
-				for (const { chunk, filePath } of validChunks) {
+				// EVERY chunk of the batch, widened as well as inserted: enrichment
+				// is a property of the FILE, and on a second worktree almost every
+				// file is a tier-1 hit, so `validChunks` would be nearly empty and
+				// the branch would get no summaries at all.
+				for (const { chunk, filePath } of batchChunks) {
+					if (filesWithMissingVectors.has(filePath)) continue;
 					if (!fileChunksMap.has(filePath)) {
 						const content = readFileSync(filePath, "utf-8");
 						fileChunksMap.set(filePath, {
@@ -2106,6 +2618,61 @@ export class Indexer {
 			}
 		}
 
+		// ── WIDEN DRAIN (§4.1.3b) ─────────────────────────────────────────────
+		//
+		// It runs WHETHER OR NOT anything changed. Nothing gates it on a
+		// non-empty change set: the first run in a second worktree finds every
+		// file unchanged for its branch and every row needing a widen, so a
+		// change-gated pass would leave that worktree seeing a permanent subset
+		// of the store. Gating it IS V3.18's falsifier.
+		//
+		// LAST of the writers, so this run's own intents — chunks, units and
+		// enriched summaries — are drained inside the same run rather than one
+		// run later.
+		this.reportPhase("branch-membership");
+		const widenDrain = await drainWidenIntents(
+			this.fileTracker!,
+			this.vectorStore!,
+			{
+				// CLAUDE.md #20: `reportProgress` advances `lastProgressAt`, which is
+				// the SOLE input to the hung/stale decision. A pass that stamps only
+				// at the end is the 351-363 s silent-but-healthy run #20 was written
+				// about, and this one can rewrite 20 000 rows.
+				onBatch: (rowsWidened) => {
+					this.reportProgress();
+					// No total: computing one would cost a `count(*)` region per
+					// batch, which is exactly the kind of work a progress line must
+					// not add to the loop it is reporting on.
+					this.onProgress?.(
+						rowsWidened,
+						rowsWidened,
+						`[branch-membership] ${rowsWidened} row(s) widened`,
+					);
+				},
+			},
+		);
+		duplicateChunkRows += widenDrain.duplicateRows;
+		totalIdsDemoted += widenDrain.missingRows;
+
+		// M5 (I-7 FINAL) — ONE optimize() at the END of the drain, never per
+		// batch. Every row a merge rewrites leaves the FTS index; recall is NOT
+		// lost (`fullTextSearch` scans the unindexed tail, 982/982 measured), but
+		// filtered FTS goes from 0.7 ms to 60-72 ms and rewritten rows' BM25
+		// scores shift by up to 5 %. Fusion is rank-only, so a 5 % shift can
+		// reorder results — an NFR-5 exposure closed inside the same run.
+		if (widenDrain.rowsWidened > 0) {
+			this.reportPhase("branch-membership:optimize");
+			await this.vectorStore!.optimize();
+			this.reportProgress();
+		}
+		if (widenDrain.budgetExhausted) {
+			this.onProgress?.(
+				0,
+				0,
+				`[branch-membership] membership widening incomplete (${widenDrain.remaining} rows) — run \`mnemex index\` again`,
+			);
+		}
+
 		// Save metadata
 		this.reportPhase("finalizing");
 		this.fileTracker!.setMetadata("embeddingModel", this.model);
@@ -2151,9 +2718,38 @@ export class Indexer {
 			}
 		}
 
+		// ── §4.1.5: HEAD is RE-READ before the stamp ──────────────────────────
+		//
+		// The branch id and the head sha were resolved before the write loop, and
+		// the loop then discovered, chunked and embedded for minutes. A checkout
+		// mid-run leaves this run stamping branch A's id over files read from
+		// branch B's tree. One <256 B read is what stops it claiming so.
+		//
+		// NOTHING IS ROLLED BACK, and nothing needs to be: the tracker rows record
+		// the content hash of what was actually READ, so the next run's ordinary
+		// diff re-indexes exactly the files that came from the wrong tree. What
+		// the flag adds is that this happens on the NEXT run rather than whenever
+		// someone notices.
+		let headChangedDuringRun = false;
+		if (registry !== null && loc.gitLayout !== null) {
+			const headNow = readCurrentHead(loc.gitLayout);
+			if (headNow.label !== headLabelAtStart) {
+				headChangedDuringRun = true;
+				registry.markNeedsReindex(branchId);
+				this.onProgress?.(
+					0,
+					0,
+					`[branch] HEAD moved from ${headLabelAtStart} to ${headNow.label} during this run; ` +
+						"the branch was NOT stamped as indexed and the next run will redo the files that were read from the other tree",
+				);
+			} else {
+				registry.stamp(branchId, head?.sha ?? null, new Date().toISOString());
+			}
+		}
+
 		// The registry's end-of-run rename: `lastSeen` for a label this store
-		// already knew. A NEW label's allocation is not waiting for it, because
-		// W-R1 renamed that before any row carried the id.
+		// already knew, plus W-R3's stamp. A NEW label's allocation is not waiting
+		// for it, because W-R1 renamed that before any row carried the id.
 		registry?.flush();
 
 		const durationMs = Date.now() - startTime;
@@ -2177,6 +2773,20 @@ export class Indexer {
 			filesDeferred: deferredFiles.size > 0 ? [...deferredFiles] : undefined,
 			upgradedFromIndexVersion: this.upgradedFromIndexVersion,
 			embedCache: this.embedCacheResultStats(),
+			branch: {
+				branchId,
+				label: headLabelAtStart,
+				idsWidened: totalChunksWidened + totalUnitsWidened,
+				rowsWidened: widenDrain.rowsWidened,
+				widenRemaining: widenDrain.remaining,
+				recoveredCrashResidue:
+					crashResidue.added > 0 || crashResidue.removed > 0
+						? crashResidue
+						: undefined,
+				duplicateRows: duplicateChunkRows > 0 ? duplicateChunkRows : undefined,
+				idsDemoted: totalIdsDemoted > 0 ? totalIdsDemoted : undefined,
+				headChangedDuringRun: headChangedDuringRun ? true : undefined,
+			},
 			cost: totalCost > 0 ? totalCost : undefined,
 			totalTokens: totalTokens > 0 ? totalTokens : undefined,
 			enrichment: enrichmentResult,
@@ -2352,6 +2962,104 @@ export class Indexer {
 	 * The branch registry is NOT touched. Ids are never reused, and the rows this
 	 * run writes carry the id it already resolved.
 	 */
+	/**
+	 * TIER 2 for code chunks (§4.1.2): for every chunk that needs a row, find a
+	 * stored row with the SAME content at the SAME path and lend its vector.
+	 *
+	 * Merged into `oldChunksCache` — the map the same-branch reuse path already
+	 * consults, keyed by absolute file path then by contentHash — so the
+	 * embedding phase below has ONE reuse channel to read rather than two. The
+	 * same-branch population wins where both have an entry, which is the same
+	 * vector either way.
+	 *
+	 * Tier 2 never widens. A contentHash match at a different id means the
+	 * stored row's `startLine`/`endLine` describe the OTHER revision's line
+	 * numbers, so reusing the ROW would serve a result pointing at the wrong
+	 * lines; only the vector is reused, into a new row with the new range.
+	 */
+	private async seedTierTwoVectors(
+		pathRoot: string,
+		storedPathOf: ReadonlyMap<string, string>,
+		insertChunks: ReadonlyArray<{ chunk: CodeChunk; filePath: string }>,
+	): Promise<void> {
+		const byFile = new Map<string, Map<string, string>>();
+		for (const { chunk, filePath } of insertChunks) {
+			if (!chunk.contentHash) continue;
+			const forFile = byFile.get(filePath);
+			if (forFile === undefined) {
+				byFile.set(filePath, new Map([[chunk.contentHash, chunk.id]]));
+			} else {
+				forFile.set(chunk.contentHash, chunk.id);
+			}
+		}
+		for (const [filePath, wanted] of byFile) {
+			const storedPath =
+				storedPathOf.get(filePath) ?? toRepoRelative(pathRoot, filePath);
+			if (storedPath === null) continue;
+			const hits = this.fileTracker!.findByContentKey("repo", storedPath, [
+				...wanted.keys(),
+			]);
+			await yieldToEventLoop();
+			if (hits.size === 0) continue;
+			const vectors = await this.vectorStore!.getVectorsByIds([
+				...hits.values(),
+			]);
+			if (vectors.size === 0) continue;
+			const cache = this.oldChunksCache.get(filePath) ?? new Map();
+			for (const [contentHash, storedId] of hits) {
+				const vector = vectors.get(storedId);
+				if (vector !== undefined && !cache.has(contentHash)) {
+					cache.set(contentHash, vector);
+				}
+			}
+			this.oldChunksCache.set(filePath, cache);
+		}
+	}
+
+	/**
+	 * TIER 2 for code units, by unit id.
+	 *
+	 * This is the gap `phase-3b-inputs.md` §4 names: `getChunksWithVectors`
+	 * filters `documentType = 'code_chunk'`, so a code unit could never be
+	 * reused from LanceDB at all — not across branches, and not across two
+	 * revisions of one file. `chunk_index.content_hash` carries the unit's own
+	 * text hash, so the same lookup that serves chunks serves units.
+	 */
+	private async tierTwoUnitVectors(
+		units: ReadonlyArray<{ unit: CodeUnit }>,
+	): Promise<Map<string, number[]>> {
+		const reuse = new Map<string, number[]>();
+		if (units.length === 0) return reuse;
+		const byPath = new Map<string, Map<string, string>>();
+		for (const { unit } of units) {
+			const hash = computeHash(unit.content);
+			const forPath = byPath.get(unit.filePath);
+			if (forPath === undefined) {
+				byPath.set(unit.filePath, new Map([[hash, unit.id]]));
+			} else if (!forPath.has(hash)) {
+				forPath.set(hash, unit.id);
+			}
+		}
+		for (const [storedPath, wanted] of byPath) {
+			const hits = this.fileTracker!.findByContentKey("repo", storedPath, [
+				...wanted.keys(),
+			]);
+			await yieldToEventLoop();
+			if (hits.size === 0) continue;
+			const vectors = await this.vectorStore!.getVectorsByIds([
+				...hits.values(),
+			]);
+			for (const [hash, storedId] of hits) {
+				const vector = vectors.get(storedId);
+				const unitId = wanted.get(hash);
+				if (vector !== undefined && unitId !== undefined) {
+					reuse.set(unitId, vector);
+				}
+			}
+		}
+		return reuse;
+	}
+
 	private async rebuildStore(): Promise<void> {
 		const store = this.vectorStore;
 		const tracker = this.fileTracker;

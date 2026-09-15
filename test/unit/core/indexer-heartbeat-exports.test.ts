@@ -85,6 +85,12 @@ const WORKLOAD = {
 	modify: 20,
 	add: 20,
 	phantom: 200,
+	/**
+	 * Crash residue for run 2's R-recovery pass. Smaller than the sibling
+	 * suite's: this test exists for `resolveReferencesByName`'s plan, and the
+	 * residue is here so the child's argv stays one shape.
+	 */
+	residue: 200,
 } as const;
 
 /** Finding C's floor for "the hazard is really exercised". */
@@ -179,6 +185,7 @@ async function measure(): Promise<Report> {
 				String(WORKLOAD.modify),
 				String(WORKLOAD.add),
 				String(WORKLOAD.phantom),
+				String(WORKLOAD.residue),
 			],
 			{
 				// Not the repo: bun auto-loads a `.env` from the cwd (CLAUDE.md #23).

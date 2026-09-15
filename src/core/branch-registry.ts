@@ -121,6 +121,40 @@ export interface BranchIdRowSource {
 	highestBranchId(): number | null;
 }
 
+/**
+ * Every store that carries branch ids, as one source.
+ *
+ * 3a-2's finding 4 was that the raise read `files` and nothing else, while
+ * LANCEDB rows carry branch ids too. The raise's input is therefore assembled
+ * from a LIST rather than from one handle, and
+ * `test/unit/core/tracker-branch-id.test.ts` enforces that the list names every
+ * store that can carry one. A store whose value is `null` contributes nothing,
+ * which is what a fresh or unreadable store honestly reports.
+ *
+ * The LanceDB side is a NUMBER rather than a source, because reading it is
+ * asynchronous and `openRegistry` is called with the store lock already held
+ * and must not await inside it. The caller reads it first and passes it in.
+ */
+export function combineBranchIdSources(
+	...sources: ReadonlyArray<BranchIdRowSource | number | null>
+): BranchIdRowSource {
+	return {
+		highestBranchId(): number | null {
+			let highest: number | null = null;
+			for (const source of sources) {
+				const value =
+					typeof source === "number" || source === null
+						? source
+						: source.highestBranchId();
+				if (value !== null && (highest === null || value > highest)) {
+					highest = value;
+				}
+			}
+			return highest;
+		},
+	};
+}
+
 /** A registry opened, or mutated, without the store lock it was opened under (REG-1). */
 export class RegistryNotLockedError extends Error {
 	constructor(
@@ -179,6 +213,25 @@ export interface BranchRegistry {
 	 * which waits for `flush()`.
 	 */
 	resolveId(head: GitHead): number;
+	/**
+	 * W-R3: record that this branch was indexed at `headSha`, at `indexedAt`.
+	 *
+	 * Called ONLY when §4.1.5's re-read of HEAD still names the label this run
+	 * resolved. A run whose HEAD moved must not claim to have indexed the branch
+	 * it started on — the tree it read was somebody else's.
+	 *
+	 * Waits for `flush()`: the stamp is the run's conclusion, and losing it to a
+	 * crash costs one re-index, never a wrong id.
+	 */
+	stamp(branchId: number, headSha: string | null, indexedAt: string): void;
+	/**
+	 * W-R4 (§4.1.5): HEAD moved during the run, so this branch's rows describe a
+	 * mixture of two trees. Nothing is rolled back and nothing needs to be — the
+	 * tracker rows record the content hash of what was actually read, so the
+	 * next run's ordinary diff re-indexes exactly those files. The flag is what
+	 * makes that happen on the NEXT run rather than whenever someone notices.
+	 */
+	markNeedsReindex(branchId: number): void;
 	/** End of run: rename the file if anything changed since the last rename. */
 	flush(): void;
 }
@@ -308,11 +361,38 @@ export function openRegistry(
 			return id;
 		},
 
+		stamp(branchId: number, headSha: string | null, indexedAt: string): void {
+			assertHeld("stamp");
+			const entry = entryById(file, branchId);
+			entry.headSha = headSha;
+			entry.lastIndexedAt = indexedAt;
+			// A completed run is the only thing that clears it: the re-index the
+			// flag asked for has now happened.
+			entry.needsReindex = false;
+			dirty = true;
+		},
+
+		markNeedsReindex(branchId: number): void {
+			assertHeld("markNeedsReindex");
+			entryById(file, branchId).needsReindex = true;
+			dirty = true;
+		},
+
 		flush(): void {
 			assertHeld("flush");
 			if (dirty) persist();
 		},
 	};
+}
+
+function entryById(file: BranchRegistryFile, branchId: number): BranchEntry {
+	const entry = file.branches.find((b) => b.id === branchId);
+	if (entry === undefined) {
+		throw new RangeError(
+			`branch registry: no entry for id ${String(branchId)}. Only an id this registry issued can be stamped.`,
+		);
+	}
+	return entry;
 }
 
 /**

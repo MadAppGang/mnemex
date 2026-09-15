@@ -20,7 +20,7 @@ import type {
 	SymbolKind,
 	SymbolReference,
 } from "../types.js";
-import { toRepoRelative } from "./repo-path.js";
+import { type PathKind, toRepoRelative } from "./repo-path.js";
 import { createDatabaseSync, type SQLiteDatabase } from "./sqlite.js";
 import { resolveStoreLocation } from "./store-location.js";
 import {
@@ -54,6 +54,49 @@ export interface FileChanges {
 
 /** Enrichment state per document type for a file */
 export type EnrichmentStateMap = Partial<Record<DocumentType, EnrichmentState>>;
+
+/**
+ * Which producer wrote a stored row (architecture §3.2.1, §4.1.1's table).
+ *
+ * The narrow step runs ONCE PER CLASS, each immediately after that class's
+ * producer: a class whose producer did not run this pass is not narrowed at
+ * all, because narrowing against an empty `newIds` deletes every row the branch
+ * has of that class.
+ */
+export type ChunkRowClass = "code_chunk" | "code_unit" | "document";
+
+/** One `chunk_index` row: what the store holds, independent of branch. */
+export interface ChunkIndexRow {
+	chunkId: string;
+	pathKind: PathKind;
+	/** Repo-relative with POSIX separators, or a `docs:<pkg>` synthetic path. */
+	path: string;
+	/** sha256 of the text that was EMBEDDED for this row (tier 2, §4.1.2). */
+	contentHash: string;
+	rowClass: ChunkRowClass;
+}
+
+/** One `files` stamp, committed inside R5b rather than on its own (§4.1.4). */
+export interface FileStamp {
+	storedPath: string;
+	contentHash: string;
+	mtime: number;
+	chunkIds: string[];
+}
+
+/** R5b's whole payload — see `FileTracker.commitAddBatch`. */
+export interface AddBatchCommit {
+	/** INSERT ids, with the `chunk_index` row each one registers. */
+	registered: ChunkIndexRow[];
+	/** INSERT + WIDEN ids: everything this branch now points at. */
+	memberIds: string[];
+	/** WIDEN ids only: the drain's work (§4.1.3b). */
+	widenIds: string[];
+	/** The `files` rows this batch stamps. May be empty (a docs or units batch). */
+	files: FileStamp[];
+	/** The `'add'` intents this batch opened, cleared in the same transaction. */
+	clearAddIntentIds: string[];
+}
 
 /** Document tracking info */
 export interface TrackedDocument {
@@ -192,6 +235,45 @@ export interface IFileTracker {
 	highestBranchId(): number | null;
 	/** §3.5.1's DROP + inline CREATE pass, for the v4 upgrade. */
 	rebuildTreeScopedSchemaForV4(): void;
+	/**
+	 * The chunk-membership half of the id algebra (§4.1). `chunk_index` is
+	 * branch-INDEPENDENT, so `knownChunkIds` and `findByContentKey` take no
+	 * branch id — the row exists once for the store and `chunk_branches` decides
+	 * who sees it. Every member that reads or writes membership does take one,
+	 * first and positionally.
+	 */
+	knownChunkRows(chunkIds: string[]): Map<string, string>;
+	findByContentKey(
+		pathKind: PathKind,
+		path: string,
+		contentHashes: string[],
+	): Map<string, string>;
+	chunkIdsForPath(
+		branchId: number,
+		pathKind: PathKind,
+		path: string,
+		rowClass?: ChunkRowClass,
+	): Array<{ chunkId: string; rowClass: ChunkRowClass }>;
+	beginAddIntents(branchId: number, chunkIds: string[]): void;
+	commitAddBatch(branchId: number, batch: AddBatchCommit): void;
+	membershipsOf(
+		chunkIds: string[],
+		excludeBranchId?: number,
+	): Map<string, number[]>;
+	beginRemoveIntents(branchId: number, chunkIds: string[]): void;
+	finishNarrowBatch(
+		branchId: number,
+		chunkIds: string[],
+		orphanIds: string[],
+	): void;
+	takeWidenIntents(limit: number): string[];
+	clearWidenIntents(chunkIds: string[]): void;
+	countWidenIntents(): number;
+	pendingIntents(
+		kind: "add" | "remove",
+		limit: number,
+	): Array<{ chunkId: string; branchId: number }>;
+	clearAddIntents(chunkIds: string[]): void;
 	recordActivity(type: string, metadata: Record<string, unknown>): number;
 	getActivity(sinceId?: number, limit?: number): ActivityRow[];
 	pruneActivity(keepCount?: number): void;
@@ -615,6 +697,73 @@ const COMMITS_TABLE_DDL = `CREATE TABLE IF NOT EXISTS commits (
 	committed_at TEXT
 )`;
 
+/**
+ * AUTHORITATIVE branch membership, per stored row (architecture §3.5). The
+ * LanceDB `branchIds` string is a DERIVED MIRROR of this table and is always
+ * recomputed from it, never patched (U3, §4.1.3a).
+ */
+const CHUNK_BRANCHES_TABLE_DDL = `CREATE TABLE IF NOT EXISTS chunk_branches (
+	chunk_id TEXT NOT NULL,
+	branch_id INTEGER NOT NULL,
+	PRIMARY KEY (chunk_id, branch_id)
+) WITHOUT ROWID`;
+
+/**
+ * What the store already holds, INDEPENDENT of branch (architecture §3.5).
+ *
+ * It carries NO `branch_id`, and that is the design, not an omission: the row
+ * it describes exists once for the whole store, and which branches can see it
+ * is `chunk_branches`' business. This is why `chunk_index` is not in
+ * `BRANCH_ID_TABLES` and not in V3.11b's table lists.
+ *
+ * `row_class` is what makes code units and enriched summaries go through the
+ * same hit test and the same narrow step as code chunks (§3.2.1, §4.1.1 N4);
+ * `content_hash` is what makes tier-2 vector reuse possible (§4.1.2).
+ */
+const CHUNK_INDEX_TABLE_DDL = `CREATE TABLE IF NOT EXISTS chunk_index (
+	chunk_id TEXT PRIMARY KEY,
+	path_kind TEXT NOT NULL,
+	path TEXT NOT NULL,
+	content_hash TEXT NOT NULL,
+	row_class TEXT NOT NULL
+) WITHOUT ROWID`;
+
+/**
+ * The crash-recovery journal and the widening backlog (architecture §4.1.4,
+ * §4.1.3b).
+ *
+ * `'add'` and `'remove'` rows exist only between a batch's regions: recovery
+ * UNDOES adds and COMPLETES removes. `'widen'` rows are the drain's backlog —
+ * committed in the same transaction as the membership they mirror, deleted
+ * once the mirror is written, consumed by the drain and never by recovery.
+ */
+const CHUNK_WRITE_INTENT_TABLE_DDL = `CREATE TABLE IF NOT EXISTS chunk_write_intent (
+	chunk_id TEXT NOT NULL,
+	branch_id INTEGER NOT NULL,
+	kind TEXT NOT NULL CHECK (kind IN ('add','remove','widen')),
+	started_at TEXT NOT NULL,
+	PRIMARY KEY (chunk_id, kind)
+) WITHOUT ROWID`;
+
+const CHUNK_MEMBERSHIP_INDEX_DDL: readonly string[] = [
+	"CREATE INDEX IF NOT EXISTS idx_chunk_branches_branch ON chunk_branches(branch_id)",
+	"CREATE INDEX IF NOT EXISTS idx_chunk_index_content ON chunk_index(content_hash, path_kind, path)",
+	// The NARROW step's work list is derived from THIS index (§4.1.1), never
+	// from `files.chunk_ids`, which holds code chunks only.
+	"CREATE INDEX IF NOT EXISTS idx_chunk_index_path ON chunk_index(path_kind, path, row_class)",
+	/**
+	 * NOT in the architecture's DDL, and added deliberately rather than
+	 * inherited. The primary key is `(chunk_id, kind)`, so the drain's
+	 * `WHERE kind = 'widen' LIMIT 256` (§4.1.3b) is a SCAN of the intent table.
+	 * The backlog is the whole repository on a second worktree's first run —
+	 * `WIDEN_BUDGET` is 20 000 rows — so that scan would be re-walked once per
+	 * 256-id batch, inside a bounded region. One leading-equality index makes
+	 * each batch a range read instead. It adds no statement and changes no
+	 * semantics.
+	 */
+	"CREATE INDEX IF NOT EXISTS idx_chunk_write_intent_kind ON chunk_write_intent(kind, chunk_id)",
+];
+
 const FILES_INDEX_DDL: readonly string[] = [
 	"CREATE INDEX IF NOT EXISTS idx_files_content_hash ON files(content_hash)",
 	/**
@@ -721,17 +870,30 @@ const INDEXED_DOCS_INDEX_DDL: readonly string[] = [
 	"CREATE INDEX IF NOT EXISTS idx_indexed_docs_fetched ON indexed_docs(fetched_at)",
 ];
 
-/** The core tables and their indexes: 5 CREATE TABLE + 6 CREATE INDEX. */
+/**
+ * The core tables and their indexes: 8 CREATE TABLE + 10 CREATE INDEX.
+ *
+ * The three membership tables are NEW in index version 4 and are therefore
+ * created by this ordinary pass, as §3.5.1 says ("`chunk_branches` /
+ * `chunk_index` / `chunk_write_intent` / `enrichment_by_content` are new
+ * tables, so the ordinary constructor pass creates them"). They are not in the
+ * §3.5.1 DROP list: no pre-v4 database has them, and dropping them on an
+ * upgrade would throw away a journal a crashed run may have left.
+ */
 const CORE_SCHEMA_DDL: readonly string[] = [
 	FILES_TABLE_DDL,
 	METADATA_TABLE_DDL,
 	DOCUMENTS_TABLE_DDL,
 	INDEXED_DOCS_TABLE_DDL,
 	COMMITS_TABLE_DDL,
+	CHUNK_BRANCHES_TABLE_DDL,
+	CHUNK_INDEX_TABLE_DDL,
+	CHUNK_WRITE_INTENT_TABLE_DDL,
 	"CREATE INDEX IF NOT EXISTS idx_commits_ordinal ON commits(ordinal)",
 	...FILES_INDEX_DDL,
 	...DOCUMENTS_INDEX_DDL,
 	...INDEXED_DOCS_INDEX_DDL,
+	...CHUNK_MEMBERSHIP_INDEX_DDL,
 ];
 
 /**
@@ -903,11 +1065,18 @@ const MIGRATION_INDEXES = [
  * add. Every statement on these tables now names `branch_id` (swept: V3.11b).
  *
  * `commits`, `metadata` and `activity_log` describe the REPOSITORY, not a tree,
- * and carry no branch id (§3.5).
+ * and carry no branch id (§3.5). Neither does `chunk_index`: it records which
+ * rows the STORE holds, and which branches can see one is `chunk_branches`'
+ * business.
  *
- * Finding 4 (3a-2) is still open and still belongs to 3b-2: LanceDB rows carry
- * branch ids too, and the raise does not read them. The journal is what makes
- * that reachable.
+ * 3b-2 CLOSES 3a-2's finding 4 — "the raise covers `files` only; LanceDB rows
+ * carry branch ids too". It is closed here rather than by reading LanceDB,
+ * because these two tables cover every LanceDB row that carries a branch id:
+ * `chunk_branches` holds the membership of every REGISTERED row (P1), and
+ * `chunk_write_intent` holds the branch of a batch that was appended but not
+ * yet registered — which is exactly the window finding 4 describes (the W-R1
+ * rename lost AND the run dead between the append and R5b). The store's own
+ * `highestBranchId()` is read too; see `Indexer.indexInternal`.
  */
 export const BRANCH_ID_TABLES = [
 	"files",
@@ -916,6 +1085,8 @@ export const BRANCH_ID_TABLES = [
 	"symbols",
 	"symbol_references",
 	"graph_metadata",
+	"chunk_branches",
+	"chunk_write_intent",
 ] as const;
 
 /** Each listed table's two probes, written as literals: no interpolated SQL. */
@@ -948,6 +1119,14 @@ const BRANCH_ID_PROBES: Readonly<
 	graph_metadata: {
 		columns: "PRAGMA table_info(graph_metadata)",
 		highest: "SELECT MAX(branch_id) AS highest FROM graph_metadata",
+	},
+	chunk_branches: {
+		columns: "PRAGMA table_info(chunk_branches)",
+		highest: "SELECT MAX(branch_id) AS highest FROM chunk_branches",
+	},
+	chunk_write_intent: {
+		columns: "PRAGMA table_info(chunk_write_intent)",
+		highest: "SELECT MAX(branch_id) AS highest FROM chunk_write_intent",
 	},
 };
 
@@ -1082,9 +1261,9 @@ export interface TrackerRegion extends SyncRegion {
  *
  *    2   PRAGMA journal_mode = WAL, and its read-back when the switch is contended
  *    1   PRAGMA database_list — the memo key; measured lock-free, counted anyway
- *    9   CORE_SCHEMA_DDL.length: 5 CREATE TABLE + 4 CREATE INDEX. It gained
- *          `idx_files_path` (I-12 Ruling 2) and lost three to the conditional
- *          list below (both `documents` indexes and `idx_indexed_docs_library`)
+ *   16   CORE_SCHEMA_DDL.length: 8 CREATE TABLE + 8 CREATE INDEX. 3b-2 added the
+ *          three membership tables (`chunk_branches`, `chunk_index`,
+ *          `chunk_write_intent`) and their four indexes; 3b-1 had 9 here
  *    3   SYMBOL_GRAPH_DDL.length — the 3 CREATE TABLEs
  *    2   ACTIVITY_LOG_DDL.length
  *    4   PRAGMA table_info — BRANCH_INDEXED_TABLES
@@ -1095,7 +1274,7 @@ export interface TrackerRegion extends SyncRegion {
  *    6   ALTER TABLE, at most — COLUMN_MIGRATIONS
  *    2   MIGRATION_INDEXES
  *   --
- *   45   → floor(250 / 45) = 5 ms per statement; 45 × 5 = 225 ms ≤ BUSY_TIMEOUT_MS
+ *   52   → floor(250 / 52) = 4 ms per statement; 52 × 4 = 208 ms ≤ BUSY_TIMEOUT_MS
  *
  * The architecture's table says 15 ("the 14 constructor DDL execs + the
  * pragma"). That counted `exec` CALLS; the DDL was then three batched execs
@@ -1834,11 +2013,22 @@ export class FileTracker implements IFileTracker {
 	clear(): void {
 		// One transaction: a clear another process can observe half-done is a
 		// `files` table that no longer agrees with `metadata`.
+		//
+		// The three membership tables go WITH it. Every caller of `clear()` has
+		// just dropped (or is about to drop) the LanceDB table, and a `chunk_index`
+		// that survives a cleared dataset breaks P1 for every row in it: the
+		// tier-1 hit test would WIDEN ids whose rows no longer exist, so their
+		// content would be permanently unsearchable while every probe reported
+		// health. A surviving journal would likewise ask recovery to finish a
+		// removal against a dataset that no longer has the rows.
 		this.withRegion(TRACKER_REGIONS.txn, () => {
 			this.db.exec("DELETE FROM files");
 			this.db.exec("DELETE FROM metadata");
 			this.db.exec("DELETE FROM documents");
 			this.db.exec("DELETE FROM indexed_docs");
+			this.db.exec("DELETE FROM chunk_branches");
+			this.db.exec("DELETE FROM chunk_index");
+			this.db.exec("DELETE FROM chunk_write_intent");
 		});
 	}
 
@@ -1929,6 +2119,447 @@ export class FileTracker implements IFileTracker {
 				.prepare("PRAGMA database_list")
 				.all() as DatabaseListRow[];
 			forgetTrackerSchema(schemaMemoKey(databaseList));
+		});
+	}
+
+	// ========================================================================
+	// Chunk membership — the SQLite half of the id algebra (§4.1, §4.1.3b,
+	// §4.1.4). Every method here is ONE region; the LanceDB half and the
+	// ordering between the two stores (W1) live in `branch-membership.ts`.
+	// ========================================================================
+
+	/**
+	 * TIER 1 of the hit test (§4.1.1): for each of `chunkIds` the store already
+	 * holds, the CONTENT HASH it holds it at. `chunk_index` is branch-independent
+	 * by design — the row exists once and membership decides who sees it — so
+	 * this asks nothing about a branch.
+	 *
+	 * A projection, never a count: a count says how many of 256 ids are present
+	 * and never WHICH, and both ways to act on a short count are wrong (§4.1.1).
+	 *
+	 * THE CONTENT HASH IS RETURNED, NOT JUST THE ID, and that is load-bearing.
+	 * §4.1.1 defines a tier-1 hit as "the store already holds this exact row
+	 * (same path, same LINES, same CONTENT)", and it justifies widening on the
+	 * id alone by asserting that "chunk ids are content+position addressed".
+	 * That is true of CODE CHUNKS (`chunker.ts` hashes
+	 * `filePath:startLine:endLine:content`) and FALSE of CODE UNITS, whose id is
+	 * `sha256(filePath:unitType:name:startRow)` — no content at all
+	 * (`code-unit-extractor.ts`). Measured: editing a function body without
+	 * moving its first line leaves the unit id identical
+	 * (`edc328f7f7d95751` before and after) while the content differs. Widening
+	 * on the id alone would therefore hand a branch the OTHER revision's body.
+	 * The caller compares this hash and refreshes the row instead.
+	 */
+	knownChunkRows(chunkIds: string[]): Map<string, string> {
+		if (chunkIds.length === 0) return new Map();
+		const batches = FileTracker.chunk(chunkIds, FileTracker.ID_BATCH_SIZE);
+		return this.withRegion(reads(batches.length), () => {
+			const known = new Map<string, string>();
+			for (const batch of batches) {
+				const rows = this.db
+					.prepare(
+						`SELECT chunk_id, content_hash FROM chunk_index WHERE chunk_id IN (${FileTracker.placeholders(batch.length)})`,
+					)
+					.all(...batch) as Array<{
+					chunk_id: string;
+					content_hash: string;
+				}>;
+				for (const row of rows) known.set(row.chunk_id, row.content_hash);
+			}
+			return known;
+		});
+	}
+
+	/**
+	 * TIER 2 of the hit test (§4.1.2): one stored id per content hash, for rows
+	 * at this exact path. Serves `idx_chunk_index_content`.
+	 *
+	 * The path is part of the key deliberately. A content match at a DIFFERENT
+	 * path is not a vector this row may reuse without also inheriting that
+	 * path's line numbers, which is the correctness cost §4.1.2 refuses.
+	 */
+	findByContentKey(
+		pathKind: PathKind,
+		path: string,
+		contentHashes: string[],
+	): Map<string, string> {
+		if (contentHashes.length === 0) return new Map();
+		const batches = FileTracker.chunk(
+			[...new Set(contentHashes)],
+			FileTracker.ID_BATCH_SIZE,
+		);
+		return this.withRegion(reads(batches.length), () => {
+			const byHash = new Map<string, string>();
+			for (const batch of batches) {
+				const rows = this.db
+					.prepare(
+						`SELECT chunk_id, content_hash FROM chunk_index
+						 WHERE path_kind = ? AND path = ?
+						   AND content_hash IN (${FileTracker.placeholders(batch.length)})`,
+					)
+					.all(pathKind, path, ...batch) as Array<{
+					chunk_id: string;
+					content_hash: string;
+				}>;
+				for (const row of rows) {
+					if (!byHash.has(row.content_hash)) {
+						byHash.set(row.content_hash, row.chunk_id);
+					}
+				}
+			}
+			return byHash;
+		});
+	}
+
+	/**
+	 * The NARROW step's work list (§4.1.1): the ids THIS BRANCH points at for
+	 * one path, per row class. Derived from `chunk_index` joined to
+	 * `chunk_branches`, never from `files.chunk_ids` — that column holds code
+	 * chunks only, so a `chunk_ids`-driven narrow leaves every code unit and
+	 * every enriched summary behind forever (N4). It is DIAGNOSTIC now (§3.5).
+	 *
+	 * `rowClass` null means every class, which is what `removeFileFromBranch`
+	 * needs and what lets it report PER CLASS (3a-2 finding 2).
+	 */
+	chunkIdsForPath(
+		branchId: number,
+		pathKind: PathKind,
+		path: string,
+		rowClass?: ChunkRowClass,
+	): Array<{ chunkId: string; rowClass: ChunkRowClass }> {
+		assertBranchId(branchId);
+		return this.withRegion(TRACKER_REGIONS.read, () => {
+			const rows =
+				rowClass === undefined
+					? (this.db
+							.prepare(
+								`SELECT ci.chunk_id AS chunk_id, ci.row_class AS row_class
+								   FROM chunk_index ci
+								   JOIN chunk_branches cb ON cb.chunk_id = ci.chunk_id
+								  WHERE cb.branch_id = ? AND ci.path_kind = ? AND ci.path = ?`,
+							)
+							.all(branchId, pathKind, path) as Array<{
+							chunk_id: string;
+							row_class: string;
+						}>)
+					: (this.db
+							.prepare(
+								`SELECT ci.chunk_id AS chunk_id, ci.row_class AS row_class
+								   FROM chunk_index ci
+								   JOIN chunk_branches cb ON cb.chunk_id = ci.chunk_id
+								  WHERE cb.branch_id = ? AND ci.path_kind = ? AND ci.path = ?
+								    AND ci.row_class = ?`,
+							)
+							.all(branchId, pathKind, path, rowClass) as Array<{
+							chunk_id: string;
+							row_class: string;
+						}>);
+			return rows.map((row) => ({
+				chunkId: row.chunk_id,
+				rowClass: row.row_class as ChunkRowClass,
+			}));
+		});
+	}
+
+	/**
+	 * R5a (§4.1.4): the `'add'` intents that bracket an append. Written BEFORE
+	 * `table.add`, so a crash anywhere after this leaves a journal row naming
+	 * exactly the ids that may have been appended, and the next run's recovery
+	 * deletes them.
+	 */
+	beginAddIntents(branchId: number, chunkIds: string[]): void {
+		assertBranchId(branchId);
+		if (chunkIds.length === 0) return;
+		const startedAt = new Date().toISOString();
+		this.withRegion(TRACKER_REGIONS.txn, () => {
+			const stmt = this.db.prepare(
+				"INSERT OR REPLACE INTO chunk_write_intent (chunk_id, branch_id, kind, started_at) VALUES (?, ?, 'add', ?)",
+			);
+			for (const chunkId of chunkIds) stmt.run(chunkId, branchId, startedAt);
+		});
+	}
+
+	/**
+	 * R5b (§4.1.4): ONE transaction that registers the appended ids, commits
+	 * this branch's membership for the INSERT *and* WIDEN ids, records the
+	 * WIDEN ids' drain work, stamps the `files` rows and clears the `'add'`
+	 * intents.
+	 *
+	 * All five in one transaction, and each part is load-bearing:
+	 *   - `INSERT OR REPLACE` on `chunk_index` — a DEMOTED id (one the tier-1
+	 *     existence check found missing from LanceDB) already has a row, and a
+	 *     plain INSERT would abort the run on the primary key, every run
+	 *     (§4.1.1);
+	 *   - `INSERT OR IGNORE` on `chunk_branches` — a WIDEN id may already be in
+	 *     this branch;
+	 *   - `INSERT OR IGNORE` on the `'widen'` intents — the mirror is recomputed
+	 *     from the chunk's WHOLE membership, so one pending row per chunk is
+	 *     enough (§4.1.3b);
+	 *   - the `files` stamp rides HERE rather than in `markIndexed`, because
+	 *     §4.1.4's W1 clause allows the stamp to precede the mirror only when
+	 *     the intent that guarantees the mirror commits beside it. A WIDEN-ONLY
+	 *     file still gets its row, which is what stops the next run classifying
+	 *     it NEW forever;
+	 *   - the `'add'` intents are cleared LAST, in the same transaction, so the
+	 *     window recovery has to cover is exactly "appended but not registered".
+	 */
+	commitAddBatch(branchId: number, batch: AddBatchCommit): void {
+		assertBranchId(branchId);
+		const startedAt = new Date().toISOString();
+		this.withRegion(TRACKER_REGIONS.txn, () => {
+			if (batch.registered.length > 0) {
+				const stmt = this.db.prepare(
+					"INSERT OR REPLACE INTO chunk_index (chunk_id, path_kind, path, content_hash, row_class) VALUES (?, ?, ?, ?, ?)",
+				);
+				for (const row of batch.registered) {
+					stmt.run(
+						row.chunkId,
+						row.pathKind,
+						row.path,
+						row.contentHash,
+						row.rowClass,
+					);
+				}
+			}
+			if (batch.memberIds.length > 0) {
+				const stmt = this.db.prepare(
+					"INSERT OR IGNORE INTO chunk_branches (chunk_id, branch_id) VALUES (?, ?)",
+				);
+				for (const chunkId of batch.memberIds) stmt.run(chunkId, branchId);
+			}
+			if (batch.widenIds.length > 0) {
+				const stmt = this.db.prepare(
+					"INSERT OR IGNORE INTO chunk_write_intent (chunk_id, branch_id, kind, started_at) VALUES (?, ?, 'widen', ?)",
+				);
+				for (const chunkId of batch.widenIds) {
+					stmt.run(chunkId, branchId, startedAt);
+				}
+			}
+			if (batch.files.length > 0) {
+				const stmt = this.db.prepare(
+					`INSERT OR REPLACE INTO files (branch_id, path, content_hash, mtime, chunk_ids, indexed_at, indexed_at_commit)
+					 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				);
+				const indexedAt = new Date().toISOString();
+				for (const file of batch.files) {
+					stmt.run(
+						branchId,
+						file.storedPath,
+						file.contentHash,
+						file.mtime,
+						JSON.stringify(file.chunkIds),
+						indexedAt,
+						this.currentCommitSha,
+					);
+				}
+			}
+			if (batch.clearAddIntentIds.length > 0) {
+				for (const idBatch of FileTracker.chunk(
+					batch.clearAddIntentIds,
+					FileTracker.ID_BATCH_SIZE,
+				)) {
+					this.db
+						.prepare(
+							`DELETE FROM chunk_write_intent WHERE kind = 'add' AND chunk_id IN (${FileTracker.placeholders(idBatch.length)})`,
+						)
+						.run(...idBatch);
+				}
+			}
+		});
+	}
+
+	/**
+	 * Each id's CURRENT membership, as branch ids. The input to every mirror
+	 * recomputation (§4.1.3a) and to `narrowIds`' survivor test (§4.1.1 M2).
+	 *
+	 * `excludeBranchId` answers "who else still points at this row", which is
+	 * what decides orphan-vs-narrow. The raw ids are returned rather than a
+	 * rendered string: `group_concat` has no defined order and its text
+	 * concatenation would sort 10 before 2 (N11), so the ONE renderer
+	 * (`canonicalBranchIds`) is applied by the caller, never here.
+	 */
+	membershipsOf(
+		chunkIds: string[],
+		excludeBranchId?: number,
+	): Map<string, number[]> {
+		if (excludeBranchId !== undefined) assertBranchId(excludeBranchId);
+		if (chunkIds.length === 0) return new Map();
+		const batches = FileTracker.chunk(chunkIds, FileTracker.ID_BATCH_SIZE);
+		return this.withRegion(reads(batches.length), () => {
+			const byId = new Map<string, number[]>();
+			for (const batch of batches) {
+				const rows = (
+					excludeBranchId === undefined
+						? this.db
+								.prepare(
+									`SELECT chunk_id, branch_id FROM chunk_branches
+									  WHERE chunk_id IN (${FileTracker.placeholders(batch.length)})`,
+								)
+								.all(...batch)
+						: this.db
+								.prepare(
+									`SELECT chunk_id, branch_id FROM chunk_branches
+									  WHERE branch_id <> ? AND chunk_id IN (${FileTracker.placeholders(batch.length)})`,
+								)
+								.all(excludeBranchId, ...batch)
+				) as Array<{ chunk_id: string; branch_id: number }>;
+				for (const row of rows) {
+					const ids = byId.get(row.chunk_id);
+					if (ids === undefined) byId.set(row.chunk_id, [row.branch_id]);
+					else ids.push(row.branch_id);
+				}
+			}
+			return byId;
+		});
+	}
+
+	/**
+	 * R7 (§4.1.1 M4): ONE transaction that drops this branch's membership for
+	 * `chunkIds`, deletes the `chunk_index` rows of the ids that became orphans
+	 * (their LanceDB rows are already gone — W1), and clears the `'remove'`
+	 * intents.
+	 *
+	 * The ONLY `DELETE FROM chunk_index` in `src/` (§3.5, W1's allowlist).
+	 */
+	finishNarrowBatch(
+		branchId: number,
+		chunkIds: string[],
+		orphanIds: string[],
+	): void {
+		assertBranchId(branchId);
+		if (chunkIds.length === 0) return;
+		this.withRegion(TRACKER_REGIONS.txn, () => {
+			for (const batch of FileTracker.chunk(
+				chunkIds,
+				FileTracker.ID_BATCH_SIZE,
+			)) {
+				this.db
+					.prepare(
+						`DELETE FROM chunk_branches WHERE branch_id = ? AND chunk_id IN (${FileTracker.placeholders(batch.length)})`,
+					)
+					.run(branchId, ...batch);
+			}
+			for (const batch of FileTracker.chunk(
+				orphanIds,
+				FileTracker.ID_BATCH_SIZE,
+			)) {
+				this.db
+					.prepare(
+						`DELETE FROM chunk_index WHERE chunk_id IN (${FileTracker.placeholders(batch.length)})`,
+					)
+					.run(...batch);
+			}
+			for (const batch of FileTracker.chunk(
+				chunkIds,
+				FileTracker.ID_BATCH_SIZE,
+			)) {
+				this.db
+					.prepare(
+						`DELETE FROM chunk_write_intent WHERE kind = 'remove' AND chunk_id IN (${FileTracker.placeholders(batch.length)})`,
+					)
+					.run(...batch);
+			}
+		});
+	}
+
+	/** M1 (§4.1.1): the `'remove'` intents that bracket a narrow batch. */
+	beginRemoveIntents(branchId: number, chunkIds: string[]): void {
+		assertBranchId(branchId);
+		if (chunkIds.length === 0) return;
+		const startedAt = new Date().toISOString();
+		this.withRegion(TRACKER_REGIONS.txn, () => {
+			const stmt = this.db.prepare(
+				"INSERT OR REPLACE INTO chunk_write_intent (chunk_id, branch_id, kind, started_at) VALUES (?, ?, 'remove', ?)",
+			);
+			for (const chunkId of chunkIds) stmt.run(chunkId, branchId, startedAt);
+		});
+	}
+
+	/**
+	 * The widening drain's input (§4.1.3b): a bounded slice of the `'widen'`
+	 * backlog. A SET of committed rows, not a cursor — an id widened below where
+	 * an earlier batch stopped is still a row in the set, so nothing can be
+	 * stranded by hash order.
+	 */
+	takeWidenIntents(limit: number): string[] {
+		return this.withRegion(TRACKER_REGIONS.read, () => {
+			const rows = this.db
+				.prepare(
+					"SELECT chunk_id FROM chunk_write_intent WHERE kind = 'widen' ORDER BY chunk_id LIMIT ?",
+				)
+				.all(limit) as Array<{ chunk_id: string }>;
+			return rows.map((row) => row.chunk_id);
+		});
+	}
+
+	/** The drain's LAST step per batch (§4.1.3b), after the mirror is written. */
+	clearWidenIntents(chunkIds: string[]): void {
+		if (chunkIds.length === 0) return;
+		this.withRegion(TRACKER_REGIONS.txn, () => {
+			for (const batch of FileTracker.chunk(
+				chunkIds,
+				FileTracker.ID_BATCH_SIZE,
+			)) {
+				this.db
+					.prepare(
+						`DELETE FROM chunk_write_intent WHERE kind = 'widen' AND chunk_id IN (${FileTracker.placeholders(batch.length)})`,
+					)
+					.run(...batch);
+			}
+		});
+	}
+
+	/**
+	 * `IndexResult.membershipWidenRemaining` (§4.1.3b) — store-wide, because a
+	 * search is flagged conservatively while ANOTHER branch's backlog drains.
+	 */
+	countWidenIntents(): number {
+		return this.withRegion(TRACKER_REGIONS.read, () => {
+			const row = this.db
+				.prepare(
+					"SELECT COUNT(*) AS n FROM chunk_write_intent WHERE kind = 'widen'",
+				)
+				.get() as { n: number };
+			return row.n;
+		});
+	}
+
+	/**
+	 * Recovery's input (§4.1.4): a bounded slice of the `'add'` or `'remove'`
+	 * residue. `'widen'` rows are NOT recovery's — they are the drain's backlog,
+	 * and draining them there would bypass the budget.
+	 */
+	pendingIntents(
+		kind: "add" | "remove",
+		limit: number,
+	): Array<{ chunkId: string; branchId: number }> {
+		return this.withRegion(TRACKER_REGIONS.read, () => {
+			const rows = this.db
+				.prepare(
+					"SELECT chunk_id, branch_id FROM chunk_write_intent WHERE kind = ? ORDER BY chunk_id LIMIT ?",
+				)
+				.all(kind, limit) as Array<{ chunk_id: string; branch_id: number }>;
+			return rows.map((row) => ({
+				chunkId: row.chunk_id,
+				branchId: row.branch_id,
+			}));
+		});
+	}
+
+	/** Recovery's add-undo second half (§4.1.4), after the LanceDB delete. */
+	clearAddIntents(chunkIds: string[]): void {
+		if (chunkIds.length === 0) return;
+		this.withRegion(TRACKER_REGIONS.txn, () => {
+			for (const batch of FileTracker.chunk(
+				chunkIds,
+				FileTracker.ID_BATCH_SIZE,
+			)) {
+				this.db
+					.prepare(
+						`DELETE FROM chunk_write_intent WHERE kind = 'add' AND chunk_id IN (${FileTracker.placeholders(batch.length)})`,
+					)
+					.run(...batch);
+			}
 		});
 	}
 
@@ -2524,6 +3155,16 @@ export class FileTracker implements IFileTracker {
 	 * UPDATE statements.
 	 */
 	private static readonly PATH_BATCH_SIZE = 400;
+
+	/**
+	 * How many chunk ids go into a single batched membership statement.
+	 *
+	 * One bound parameter each, plus at most two leading ones, so 256 is well
+	 * under the 999-parameter limit of the oldest SQLite builds either backend
+	 * might link against. It is also `WRITE_CHUNK` (§4.1.1), so a caller that
+	 * batches at the design's size issues exactly one statement per region.
+	 */
+	private static readonly ID_BATCH_SIZE = 256;
 
 	/**
 	 * Both spellings of every path, deduped.

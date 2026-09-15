@@ -93,6 +93,14 @@ const WORKLOAD = {
 	modify: 100,
 	add: 100,
 	phantom: 2000,
+	/**
+	 * V2.4 RE-RUN OVER R-RECOVERY (`phase-3b-inputs.md` section 4): journal rows
+	 * for run 2 to recover before it writes anything. 2 000 of each kind is
+	 * about eight `RECOVERY_CHUNK` passes of `'add'` and eight of `'remove'`,
+	 * each a LanceDB call plus two tracker regions — a region shape V2.4 could
+	 * not cover when it was written, because recovery did not exist.
+	 */
+	residue: 2000,
 } as const;
 
 interface Sample {
@@ -143,6 +151,7 @@ async function measure(): Promise<Report> {
 				String(WORKLOAD.modify),
 				String(WORKLOAD.add),
 				String(WORKLOAD.phantom),
+				String(WORKLOAD.residue),
 			],
 			{
 				// Not the repo: bun auto-loads a `.env` from the cwd (CLAUDE.md #23).
@@ -309,6 +318,14 @@ describe("V2.4 — heartbeat age while the indexer's regions run under the store
 		expect(report.state?.trackedFiles).toBe(
 			WORKLOAD.files - WORKLOAD.delete + WORKLOAD.add,
 		);
+
+		// ── Not vacuous: the RECOVERY and DRAIN regions really ran. ────────
+		// V2.4 in Phase 2 could cover neither: neither existed. A run that
+		// skipped them would show no sample in the phase, so this is what stops
+		// the re-run being the old test under a new name.
+		const phases = new Set(store.map((s) => s.phase));
+		expect([...phases]).toContain("recovering");
+		expect([...phases]).toContain("branch-membership");
 
 		// ── Not vacuous: this process really watched both runs. ────────────
 		// Two holds of the store lock, each with its own ownership token.

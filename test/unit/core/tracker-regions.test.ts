@@ -410,12 +410,14 @@ describe("V2.9 — src/core/sqlite.ts sets no pragma", () => {
 
 describe("the clamp, as the tracker's regions apply it", () => {
 	test("per-statement busy_timeout: the shared clamp, DIVIDED — literal values", () => {
-		// R0: 45 statements → floor(250 / 45). It gained `idx_files_path`
+		// R0: 52 statements → floor(250 / 52). It gained `idx_files_path`
 		// (I-12 Ruling 2), the four `PRAGMA table_info` probes that decide
-		// whether a branch-leading index can be created at all, and the 14
-		// branch-leading indexes themselves.
-		expect(TRACKER_REGIONS.open.blockingStatements).toBe(45);
-		expect(trackerBusyTimeoutMs(TRACKER_REGIONS.open, 0)).toBe(5);
+		// whether a branch-leading index can be created at all, the 14
+		// branch-leading indexes themselves, and — in Phase 3b-2 — the three
+		// membership tables (`chunk_branches`, `chunk_index`,
+		// `chunk_write_intent`) with their four indexes.
+		expect(TRACKER_REGIONS.open.blockingStatements).toBe(52);
+		expect(trackerBusyTimeoutMs(TRACKER_REGIONS.open, 0)).toBe(4);
 		// Reads retry once, so 1 statement is 2 chances to wait → floor(250 / 2)
 		expect(trackerBusyTimeoutMs(TRACKER_REGIONS.changes, 0)).toBe(125);
 		expect(trackerBusyTimeoutMs(TRACKER_REGIONS.read, 0)).toBe(125);
@@ -473,7 +475,9 @@ describe("observed at the driver seam", () => {
 
 		// R0 is everything between its clamp and the first rest.
 		const start = issued.findIndex(
-			(e) => e.sql.trim() === "PRAGMA busy_timeout = 5",
+			(e) =>
+				e.sql.trim() ===
+				`PRAGMA busy_timeout = ${trackerBusyTimeoutMs(TRACKER_REGIONS.open, 0)}`,
 		);
 		const end = issued.findIndex(
 			(e, i) => i > start && e.sql.trim() === "PRAGMA busy_timeout = 0",

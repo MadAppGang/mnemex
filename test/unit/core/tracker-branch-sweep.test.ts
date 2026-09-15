@@ -64,6 +64,16 @@ const TRACKER = join(
 const TABLE_GROUPS = {
 	"symbol graph": ["symbols", "symbol_references", "graph_metadata"],
 	"files / documents / indexed_docs": ["files", "documents", "indexed_docs"],
+	/**
+	 * Phase 3b-2's membership tables. `chunk_branches` IS the branch dimension,
+	 * and `chunk_write_intent` carries the branch that opened each intent.
+	 *
+	 * `chunk_index` is DELIBERATELY ABSENT, and that is not a gap: it records
+	 * which rows the STORE holds, independent of branch (§3.5), so it carries no
+	 * `branch_id` column at all and there is nothing for a statement on it to
+	 * name. Adding it here would demand a `branch_id` that does not exist.
+	 */
+	"chunk membership": ["chunk_branches", "chunk_write_intent"],
 } as const;
 
 /**
@@ -113,6 +123,39 @@ const EXEMPT: readonly Exemption[] = [
 	{
 		exactly: "DELETE FROM indexed_docs",
 		why: "`clear()`, as above. `clearAllIndexedDocs` is the SCOPED one and carries `branch_id = 0`.",
+	},
+	{
+		exactly: "DELETE FROM chunk_branches",
+		why: "`clear()` — the WHOLE store, beside the three above. Pinned to ONE occurrence.",
+	},
+	{
+		exactly: "DELETE FROM chunk_write_intent",
+		why: "`clear()`, as above: a journal that survived a cleared store would ask recovery to finish work against rows that no longer exist.",
+	},
+	{
+		exactly:
+			"SELECT chunk_id FROM chunk_write_intent WHERE kind = 'widen' ORDER BY chunk_id LIMIT ?",
+		why: "a `'widen'` intent is BRANCH-AGNOSTIC WORK (§4.1.3b). The drain recomputes the mirror from the chunk's WHOLE membership, so an intent left by branch B is completed correctly by a run on any branch, a tombstoned branch's intents cannot strand, and two branches that widened one chunk need one row. A branch predicate here would strand exactly those.",
+	},
+	{
+		exactly:
+			"SELECT COUNT(*) AS n FROM chunk_write_intent WHERE kind = 'widen'",
+		why: "`membershipWidenRemaining` is STORE-WIDE by design (§4.1.3b): a search is flagged conservatively while ANOTHER branch's backlog drains.",
+	},
+	{
+		startsWith:
+			"DELETE FROM chunk_write_intent WHERE kind = 'widen' AND chunk_id IN",
+		why: "the drain's last step, over the same branch-agnostic set it just took.",
+	},
+	{
+		startsWith:
+			"DELETE FROM chunk_write_intent WHERE kind = 'add' AND chunk_id IN",
+		why: "recovery's add-undo and R5b both clear the intents they opened, by ID. The branch is on the row and is diagnostic; predicating on it would leave another branch's residue behind for a run that already deleted its rows.",
+	},
+	{
+		startsWith:
+			"DELETE FROM chunk_write_intent WHERE kind = 'remove' AND chunk_id IN",
+		why: "the intent's primary key is `(chunk_id, kind)`, so this delete is already exact — there is at most ONE 'remove' row per chunk (§3.5). Its `branch_id` is DIAGNOSTIC, and a predicate on it would leave the intent behind whenever the run that FINISHES a removal is not the one that started it, which is precisely what a re-drivable journal exists to allow.",
 	},
 ];
 
@@ -267,6 +310,13 @@ describe("V3.11b — every tree-scoped statement names branch_id", () => {
 			["DELETE FROM files", 1],
 			["DELETE FROM documents", 1],
 			["DELETE FROM indexed_docs", 1],
+			["DELETE FROM chunk_branches", 1],
+			["DELETE FROM chunk_write_intent", 1],
+			[
+				"SELECT chunk_id FROM chunk_write_intent WHERE kind = 'widen' ORDER BY chunk_id LIMIT ?",
+				1,
+			],
+			["SELECT COUNT(*) AS n FROM chunk_write_intent WHERE kind = 'widen'", 1],
 		]);
 	});
 });
@@ -280,6 +330,8 @@ describe("V3.11b — the v4 DDL declares what the predicates rely on", () => {
 			"symbols",
 			"symbol_references",
 			"graph_metadata",
+			"chunk_branches",
+			"chunk_write_intent",
 		]) {
 			const ddl = sqlStatements(SOURCE).find((s) =>
 				s.sql.trim().startsWith(`CREATE TABLE IF NOT EXISTS ${table} (`),
@@ -327,6 +379,14 @@ describe("V3.11b — the v4 DDL declares what the predicates rely on", () => {
 				"`commits` is REPOSITORY-scoped (§3.5) and carries no branch id.",
 			idx_activity_log_id:
 				"`activity_log` is repository-scoped (§3.5) and carries no branch id.",
+			idx_chunk_branches_branch:
+				"it IS the branch index: `chunk_branches(branch_id)` is the orphan sweep's and the drain's enumeration path, and a leading `branch_id` is the whole column list.",
+			idx_chunk_index_content:
+				"tier 2 of the hit test (§4.1.2) asks 'does the STORE hold this content at this path', which is a question about the store and not about a branch — `chunk_index` carries no branch id at all (§3.5).",
+			idx_chunk_index_path:
+				"the NARROW step's work list is `chunk_index` joined to `chunk_branches` (§4.1.1); the branch predicate is on the JOINED table, and `chunk_index` carries no branch id.",
+			idx_chunk_write_intent_kind:
+				"a `'widen'` intent is BRANCH-AGNOSTIC work (§4.1.3b): the drain recomputes the mirror from the chunk's whole membership, so an intent left by one branch is completed correctly by a run on any other. Leading with `branch_id` would index the one column the drain must not filter on.",
 		};
 		const offenders: string[] = [];
 		for (const { sql } of indexes) {
