@@ -16,6 +16,7 @@ import type {
 	ILLMClient,
 	LLMMessage,
 } from "../../types.js";
+import { codeUnitParentKeyOf } from "../ast/code-unit-extractor.js";
 import type { BranchScope } from "../branch-scope.js";
 import type { VectorStore } from "../store.js";
 import {
@@ -282,8 +283,10 @@ export class BottomUpSummarizer {
 		allUnits: CodeUnit[],
 		metadata: ASTMetadata,
 	): string {
-		// Get child method summaries
-		const children = allUnits.filter((u) => u.parentId === unit.id);
+		// Get child method summaries. The link is the parent's POSITION KEY since
+		// I-14, never its row id — `unit.id` here would match nothing.
+		const parentKey = codeUnitParentKeyOf(unit);
+		const children = allUnits.filter((u) => u.parentId === parentKey);
 		const methodSummaries = children
 			.filter((c) => c.unitType === "method" || c.unitType === "function")
 			.map((c) => ({
@@ -318,8 +321,11 @@ export class BottomUpSummarizer {
 		allUnits: CodeUnit[],
 		metadata: ASTMetadata,
 	): string {
-		// Get top-level children (classes, functions, exports)
-		const children = allUnits.filter((u) => u.parentId === unit.id);
+		// Get top-level children (classes, functions, exports). By POSITION KEY
+		// (I-14): the file unit's row id hashes the file hash and moves on every
+		// edit, so a row id would be the one value guaranteed not to match.
+		const parentKey = codeUnitParentKeyOf(unit);
+		const children = allUnits.filter((u) => u.parentId === parentKey);
 
 		// Build exports list from exported children
 		const exports = children

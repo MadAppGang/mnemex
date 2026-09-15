@@ -95,11 +95,19 @@ describe("INDEX_VERSIONS registry", () => {
 		expect(v3?.name).toBe("embed_key_column");
 	});
 
+	/** I-14: the code-unit id carries the unit's content since v5. */
+	test("carries the v5 entry that names content-addressed code units", () => {
+		const v5 = INDEX_VERSIONS.find((v) => v.version === 5);
+		expect(v5).toBeDefined();
+		expect(v5?.name).toBe("content_addressed_code_units");
+		expect(v5?.features).toContain("content_addressed_code_units");
+	});
+
 	/** Catches the bump and the entry going in separately, in EITHER order. */
-	test("CURRENT_INDEX_VERSION is 4 and the highest version in the registry", () => {
+	test("CURRENT_INDEX_VERSION is 5 and the highest version in the registry", () => {
 		const highest = Math.max(...INDEX_VERSIONS.map((v) => v.version));
 		expect(CURRENT_INDEX_VERSION).toBe(highest);
-		expect(CURRENT_INDEX_VERSION).toBe(4);
+		expect(CURRENT_INDEX_VERSION).toBe(5);
 	});
 
 	test("versions are contiguous from 1, so no upgrade step is skippable", () => {
@@ -145,18 +153,20 @@ describe("a v3 store is detected as needing an upgrade", () => {
 		expect(needsUpgrade(loc)).toBe(true);
 	});
 
-	test("the missing features are exactly v4's three", () => {
+	/** v4's three plus v5's one (I-14) — every step between 3 and today. */
+	test("the missing features are exactly v4's three and v5's one", () => {
 		expect(getMissingFeatures(3)).toEqual([
 			"repo_relative_paths",
 			"branch_membership",
 			"shared_repo_store",
+			"content_addressed_code_units",
 		]);
 	});
 
 	test("the message names the step, and a v3 store's cost: a rebuild out of the embedding cache", () => {
 		stampLegacyVersion(3);
 		const message = getUpgradeMessage(loc) ?? "";
-		expect(message).toContain("Index outdated (v3 -> v4)");
+		expect(message).toContain("Index outdated (v3 -> v5)");
 		expect(message).toContain("relative to the repository");
 		expect(message).toContain("served from the embedding cache");
 		expect(message).not.toContain("re-embedding");
@@ -170,7 +180,7 @@ describe("a v3 store is detected as needing an upgrade", () => {
 	test("a v2 store's message still states the re-embed", () => {
 		stampLegacyVersion(2);
 		const message = getUpgradeMessage(loc) ?? "";
-		expect(message).toContain("Index outdated (v2 -> v4)");
+		expect(message).toContain("Index outdated (v2 -> v5)");
 		expect(message).toContain("re-embedding once");
 		expect(message).not.toContain("served from the embedding cache");
 	});
@@ -193,12 +203,12 @@ describe("a v3 store is detected as needing an upgrade", () => {
 // ============================================================================
 
 describe("setIndexVersion writes store.json, never config.json", () => {
-	test("a v4 stamp clears the upgrade, and lands in store.json", () => {
+	test("a current stamp clears the upgrade, and lands in store.json", () => {
 		setIndexVersion(loc, CURRENT_INDEX_VERSION);
-		expect(getIndexVersion(loc)).toBe(4);
+		expect(getIndexVersion(loc)).toBe(5);
 		expect(needsUpgrade(loc)).toBe(false);
 		expect(getUpgradeMessage(loc)).toBeNull();
-		expect(storeJson().indexVersion).toBe(4);
+		expect(storeJson().indexVersion).toBe(5);
 		expect(existsSync(join(loc.storeDir, "config.json"))).toBe(false);
 	});
 
@@ -211,14 +221,14 @@ describe("setIndexVersion writes store.json, never config.json", () => {
 		expect(readFileSync(join(loc.storeDir, "config.json"), "utf-8")).toBe(
 			legacy,
 		);
-		expect(getIndexVersion(loc)).toBe(4);
+		expect(getIndexVersion(loc)).toBe(5);
 	});
 
 	test("store.json carries §3.6's fields, and no pathRoot", () => {
 		setIndexVersion(loc, CURRENT_INDEX_VERSION);
 		const meta = storeJson();
 		expect(meta.formatVersion).toBe(1);
-		expect(meta.indexVersion).toBe(4);
+		expect(meta.indexVersion).toBe(5);
 		// No git layout here, so there is no clone identity to record.
 		expect(meta.gitCommonDir).toBeNull();
 		expect(meta.firstIndexedFrom).toBe(loc.pathRoot);

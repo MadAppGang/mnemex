@@ -126,10 +126,12 @@ async function assertUpgradedStore(project: string): Promise<void> {
 	expect(
 		rows.every((r) => r.pathKind === "repo" && r.branchIds === ",0,"),
 	).toBe(true);
+	// The store lands on the CURRENT version, which is 5 since I-14 — the v3
+	// fixture's upgrade is one rebuild to today, not a stop at 4.
 	expect(
 		JSON.parse(readFileSync(join(project, ".mnemex", "store.json"), "utf8"))
 			.indexVersion,
-	).toBe(4);
+	).toBe(5);
 }
 
 describe("V4.1: the upgrade is reported by `index --agent`, once", () => {

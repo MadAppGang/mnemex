@@ -1207,19 +1207,24 @@ export class Indexer {
 			this.vectorEnabled &&
 			(await this.vectorStore!.vectorWidth()) === 1;
 
-		// ── Index v4 detection (§6.1): three independent signals, all read
-		// before any mutation below can clear the evidence. `=== false`, never
-		// falsiness: the LanceDB probe's `null` means "no table", which is a fresh
-		// index. The tracker probe is the only one that sees the SQLite half. It
-		// decides even when something else already forces a rebuild, because
+		// ── Out-of-date store detection (§6.1): three independent signals, all
+		// read before any mutation below can clear the evidence. `=== false`,
+		// never falsiness: the LanceDB probe's `null` means "no table", which is a
+		// fresh index. The tracker probe is the only one that sees the SQLite half.
+		// It decides even when something else already forces a rebuild, because
 		// `clear()` keeps a v3 `files` table, and the first v4 write into it fails.
+		//
+		// The two SHAPE probes answer "is this store pre-v4"; the VERSION
+		// comparison is generic and is what carries every later bump — v5 (I-14,
+		// the content-addressed code-unit id) rides on it with no branch of its
+		// own, because it changes stored ids rather than the schema.
 		const lanceHasBranchIds =
 			wasCorrupt || this.vectorStore === null
 				? null
 				: await this.vectorStore.hasBranchIdsColumn();
 		const trackerNeedsV4 =
 			this.fileTracker !== null && this.fileTracker.trackerNeedsV4Schema();
-		const upgradeToV4 =
+		const upgradeStore =
 			trackerNeedsV4 ||
 			(oldStore !== null &&
 				((oldStore.recordedVersion !== null &&
@@ -1361,7 +1366,7 @@ export class Indexer {
 			);
 		}
 
-		// ── Index v4: the store predates repo-relative paths and branch ids ───
+		// ── The store was built by an older index version ─────────────────────
 		//
 		// A plain rebuild, once. No seeding pass and no in-place migration
 		// (CLAUDE.md #31). Both halves go through `rebuildStore()`. LanceDB's table
@@ -1375,14 +1380,25 @@ export class Indexer {
 		// points pass no onProgress, so the notice below reaches at most two. The
 		// version comes from `probeOldStore`, which says `null`, never 1, when the
 		// old store recorded none (V4.8).
-		if (upgradeToV4) {
+		//
+		// THE NOTICE NAMES NO FEATURE. It used to say "predates repo-relative
+		// paths and branch membership", which was true of the one upgrade that
+		// existed and became false the moment a second one did (v4 -> v5 is a
+		// stored-id change and nothing to do with paths). A line that names the
+		// versions is true of every bump, and the version is the fact a user can
+		// act on.
+		if (upgradeStore) {
 			this.upgradedFromIndexVersion = oldStore?.recordedVersion ?? undefined;
+			const fromVersion =
+				this.upgradedFromIndexVersion !== undefined
+					? `index version ${this.upgradedFromIndexVersion}`
+					: "an older version of mnemex";
 			// onProgress, not console.log: the MCP search tool runs this same
 			// index() in-process and stdout there is the JSON-RPC stream.
 			this.onProgress?.(
 				0,
 				0,
-				"[migrating] this index predates repo-relative paths and branch membership. " +
+				`[migrating] this index was built by ${fromVersion}; the current one is ${CURRENT_INDEX_VERSION}. ` +
 					"Rebuilding it once; chunks the embedding cache already holds are not re-embedded.",
 			);
 			await this.rebuildStore();
@@ -1574,9 +1590,13 @@ export class Indexer {
 		let totalUnitsWidened = 0;
 		/**
 		 * Code units whose id was already registered but whose CONTENT had
-		 * changed, so the row was rewritten in place rather than widened. The
-		 * count exists because the cause is a design defect worth seeing in the
-		 * data: a code-unit id carries no content (§4.1.1 assumes it does).
+		 * changed, so the row was rewritten in place rather than widened.
+		 *
+		 * Before I-14 this counted a design defect: a code-unit id carried no
+		 * content, so two revisions collided. Since I-14 it counts the belt
+		 * firing, and its expected value is 0 — a non-zero reading means either a
+		 * 64-bit id collision or a crash between a refresh and its registration.
+		 * It is not surfaced on `IndexResult` yet (I-15's "two small ones").
 		 */
 		let totalUnitsRefreshed = 0;
 		/**
@@ -2162,14 +2182,15 @@ export class Indexer {
 						computeHash(u.unit.content),
 					]),
 				);
-				// THREE outcomes here, not two, and the third is the one §4.1.1 did
-				// not foresee. A code-unit id is `filePath:unitType:name:startRow`
-				// with NO content in it, so an id match does NOT imply a content
-				// match: editing a body without moving its first line keeps the id
-				// (measured) and changes the text. Widening such a row would serve
-				// this branch the other revision's body, so it is REFRESHED in
-				// place instead — see `VectorStore.refreshCodeUnits` for why that
-				// is the only outcome available without changing the id scheme.
+				// THREE outcomes, and since I-14 the third is a BELT that should
+				// never fire. `codeUnitRowId` hashes the unit's content, so an id
+				// match implies a content match and two revisions of one function
+				// are two rows — which is what lets each branch point at its own.
+				// The comparison is kept because a 16-hex id is 64 bits and because
+				// the refresh's own registration is a second transaction (below);
+				// either can produce a known id whose stored hash disagrees, and
+				// refreshing in place is the safe reading of that. Zero is the
+				// expected value of `totalUnitsRefreshed` on every ordinary run.
 				const unitsToWiden = batchUnitsToEmbed.filter(
 					(u) =>
 						liveUnitIds.has(u.unit.id) &&

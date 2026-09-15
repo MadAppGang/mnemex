@@ -10,7 +10,9 @@
  * THE SHAPE THAT ISOLATES IT. Insert one line at the TOP of a file. Every chunk
  * and every code unit below it shifts down a line, so:
  *   - every CHUNK id changes (`filePath:startLine:endLine:content`);
- *   - every function UNIT id changes (`filePath:unitType:name:startRow`);
+ *   - every function UNIT id changes (`filePath:unitType:name:startRow` plus
+ *     the unit's content hash since I-14 — the start row moves, so the id does
+ *     either way, which is what keeps this a TIER-2 measurement);
  *   - and NOT ONE of their texts changes.
  * Tier 1 therefore misses everything and tier 2 must catch everything. §4.1.2's
  * honest prediction for this case is "N new rows and 0 embedding requests".

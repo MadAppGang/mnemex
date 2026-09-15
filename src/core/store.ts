@@ -864,12 +864,22 @@ export interface IVectorStore {
 		filePath?: string,
 	): Promise<CodeUnit[]>;
 	/**
-	 * `parentId` is CONTENT-derived, so two branches holding the same file
-	 * produce the same parent and an unscoped read returns both branches'
-	 * children. Scoped for that reason, although §4.4's site list names only the
-	 * six above.
+	 * `parentKey` is a `codeUnitParentKey` — path, unit type, name and start row,
+	 * and deliberately NO content (I-14). It is NOT a row id, and a row id passed
+	 * here matches nothing; `codeUnitParentKeyOf(parent)` renders it, over the
+	 * parent's STORED path (this class's own `storedPathArg`, not the path
+	 * `rowToCodeUnit` hands back).
+	 *
+	 * THE SCOPE IS REQUIRED, and the reason stated here before I-14 was wrong:
+	 * the link is not and never was content-derived. The correct reason is
+	 * stronger. Being positional, the key is identical on every branch that holds
+	 * that file at that position, so an unscoped read returns EVERY branch's
+	 * children of it — including revisions that exist only on another branch.
+	 * Scoped, it answers with this branch's current children, because
+	 * NARROW_UNITS has already removed the branch's superseded ones.
+	 * (§4.4's site list names only the six above; this one is scoped anyway.)
 	 */
-	getChildUnits(scope: BranchScope, parentId: string): Promise<CodeUnit[]>;
+	getChildUnits(scope: BranchScope, parentKey: string): Promise<CodeUnit[]>;
 	getCodeUnit(unitId: string): Promise<CodeUnit | null>;
 	searchCodeUnits(
 		queryText: string,
@@ -1776,26 +1786,33 @@ export class VectorStore implements IVectorStore {
 	/**
 	 * Replace the CONTENT of code-unit rows that already exist, in place.
 	 *
-	 * ── WHY THIS EXISTS, AND WHAT IT WORKS AROUND ─────────────────────────────
-	 * §4.1.1 justifies widening on the id alone by asserting that "chunk ids are
-	 * content+position addressed". A CODE UNIT's is not: it is
-	 * `sha256(filePath:unitType:name:startRow)` (`code-unit-extractor.ts`), with
-	 * no content in it. Measured — editing a function body without moving its
-	 * first line leaves the id at `edc328f7f7d95751` while the body differs. So
-	 * two revisions of one function, on one branch or on two, CANNOT have
-	 * distinct rows: they collide on the id.
+	 * ── A BELT SINCE I-14, AND IT SHOULD NEVER FIRE ───────────────────────────
+	 * It was built because a code-unit id hashed `filePath:unitType:name:startRow`
+	 * and no content, so two revisions of one function collided on ONE row and
+	 * the branch that indexed LAST decided the body every branch saw. `codeUnitRowId`
+	 * now hashes the content too, so an id match implies a content match and the
+	 * collision this method answers cannot arise from the id scheme any more.
 	 *
-	 * Given that, the only outcomes available are a stale row, a duplicate id,
-	 * or one row holding the latest content. This writes the last one: an
-	 * UPDATE-ONLY `mergeInsert` over the whole row, atomic, never inserting, and
-	 * leaving the id with exactly the number of rows it already had. `branchIds`
-	 * is the caller's RECOMPUTED mirror per row, so a row several branches hold
-	 * does not lose them.
+	 * IT IS KEPT, NOT DELETED, for two reasons, and both are cheap:
 	 *
-	 * THE WART IS REAL AND IS REPORTED, not papered over: the branch that
-	 * indexed LAST decides the body every branch sees for that unit. The durable
-	 * fix is to put the content into the unit id, which is a stored-id change
-	 * and therefore a version bump.
+	 *   1. A row id is `sha256(...).slice(0, 16)` — 64 bits. Two DIFFERENT bodies
+	 *      at one path, type, name and start row colliding is not something to
+	 *      rely on never happening, and a belt turns "serve the wrong body"
+	 *      (silent, cross-branch) into "rewrite in place" (the pre-I-14
+	 *      behaviour: degraded, never corrupt).
+	 *   2. `chunk_index.content_hash` is registered in a SECOND transaction after
+	 *      this rewrite on purpose, so a crash between them leaves the new
+	 *      content under the old hash. The comparison in the caller is what reads
+	 *      that as a mismatch and repeats the rewrite, idempotently.
+	 *
+	 * The caller's count of these (`totalUnitsRefreshed`) is therefore the
+	 * cheapest live check that I-14 works: it reads 0 on every ordinary run,
+	 * including a second branch that changed the same function.
+	 *
+	 * The mechanism: an UPDATE-ONLY `mergeInsert` over the whole row, atomic,
+	 * never inserting, leaving the id with exactly the number of rows it already
+	 * had. `branchIds` is the caller's RECOMPUTED mirror per row, so a row
+	 * several branches hold does not lose them.
 	 */
 	async refreshCodeUnits(
 		units: CodeUnitWithEmbedding[],
@@ -2731,17 +2748,20 @@ export class VectorStore implements IVectorStore {
 	}
 
 	/**
-	 * Get children of a code unit
+	 * Get children of a code unit, by the parent's POSITION KEY (see the
+	 * interface declaration; `codeUnitParentKeyOf` renders it). The stored column
+	 * is still called `parentId`, which is the name of the link, not a claim that
+	 * it holds a row id.
 	 */
 	async getChildUnits(
 		scope: BranchScope,
-		parentId: string,
+		parentKey: string,
 	): Promise<CodeUnit[]> {
 		const table = await this.ensureTableOpen();
 		if (!table) return [];
 
 		try {
-			let filter = `parentId = '${escapeSqlLiteral(parentId)}' AND documentType = 'code_unit'`;
+			let filter = `parentId = '${escapeSqlLiteral(parentKey)}' AND documentType = 'code_unit'`;
 			const branchFilter = branchMembershipFilter(scope);
 			if (branchFilter !== null) filter += ` AND ${branchFilter}`;
 			const results = await table.query().where(filter).toArray();

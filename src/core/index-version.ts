@@ -76,6 +76,25 @@ export const INDEX_VERSIONS: readonly VersionEntry[] = [
 			"shared_repo_store",
 		],
 	},
+	{
+		version: 5,
+		name: "content_addressed_code_units",
+		description:
+			"Code-unit ids hash the unit's content, so two branches' revisions of one unit are two rows",
+		features: [
+			"vector_search",
+			"bm25_search",
+			"symbol_graph",
+			"ast_metadata",
+			"hierarchical_units",
+			"code_unit_search",
+			"embedding_cache_audit",
+			"repo_relative_paths",
+			"branch_membership",
+			"shared_repo_store",
+			"content_addressed_code_units",
+		],
+	},
 ] as const;
 
 /**
@@ -90,8 +109,19 @@ export const INDEX_VERSIONS: readonly VersionEntry[] = [
  * So the upgrade is a plain rebuild, once (CLAUDE.md #31: no seeding pass). The
  * embedding cache is keyed on text, not on path, so re-chunking a tree that
  * was indexed with the cache on is served from it.
+ *
+ * v4 -> v5 is a STORED-ID change, not a schema change (I-14). `codeUnitRowId`
+ * now hashes the unit's content, so every `code_unit` id in a v4 store names a
+ * row the new code would never produce. Nothing rejects those rows — that is
+ * the danger: they would be tier-1 MISSES, the run would insert the new ids
+ * beside them, and the old rows would be stranded with live membership, which
+ * is stale code-unit results with `store.json` reading "current". The rebuild
+ * is what removes them, and it needs no new migration branch: the trigger is
+ * `oldStore.recordedVersion < CURRENT_INDEX_VERSION` (`indexer.ts`), a generic
+ * comparison. v4 is unreleased, so the only stores this moves belong to whoever
+ * is working on this build, and everyone upgrading rebuilds once either way.
  */
-export const CURRENT_INDEX_VERSION = 4;
+export const CURRENT_INDEX_VERSION = 5;
 
 /**
  * The first index version built through the embedding cache (it added the
@@ -112,6 +142,8 @@ const FEATURE_DESCRIPTIONS: Record<string, string> = {
 		"Paths stored relative to the repository, so any worktree can read them",
 	branch_membership: "Per-row branch membership",
 	shared_repo_store: "One index per repository, shared by its worktrees",
+	content_addressed_code_units:
+		"Code-unit ids carry the unit's content, so branches do not share one body",
 };
 
 // ============================================================================

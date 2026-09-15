@@ -23,6 +23,9 @@ import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { codeUnitParentKey } from "../../../src/core/ast/code-unit-extractor.js";
+import { branchScope } from "../../../src/core/branch-scope.js";
+import { createVectorStore } from "../../../src/core/store.js";
 import { createFileTracker } from "../../../src/core/tracker.js";
 import { createGitSandbox } from "../../helpers/git-sandbox.js";
 import {
@@ -287,33 +290,97 @@ describe("branch switching: a second worktree WIDENS instead of duplicating", ()
 				expect(chunkMemberships).toContain(",2,");
 				expect(chunkMemberships).not.toContain(",1,2,");
 
-				// `code_unit` — a FUNCTION unit's id is
-				// `sha256(filePath:unitType:name:startRow)`, with NO content in it
-				// (measured: `edc328f7f7d95751` before and after a body edit), so
-				// two revisions of one function CANNOT have distinct rows. There is
-				// one row, held by both branches, carrying the content of whichever
-				// branch indexed LAST. Asserted rather than hidden: this is the
-				// wart §4.1.1's "chunk ids are content+position addressed" does not
-				// cover, and the durable fix is an id-scheme change.
-				const sharedUnits = changedRows.filter(
-					(r) => r.documentType === "code_unit" && r.branchIds === ",1,2,",
+				// `code_unit` — THE I-14 FALSIFIER, and this assertion is the
+				// INVERSION of the one that pinned the wart before phase 3b-2b.
+				//
+				// A unit id used to hash `filePath:unitType:name:startRow` and no
+				// content (measured: `edc328f7f7d95751` before and after a body
+				// edit), so two revisions of one function at one start line could
+				// not have distinct rows. There was ONE row, held by both branches,
+				// carrying whichever body indexed LAST — a V3.3 violation: a search
+				// on branch 1 returned branch 2's code. `codeUnitRowId` now hashes
+				// the content, so the same fixture produces TWO rows and each
+				// branch's membership points at its own.
+				//
+				// Run against the old id scheme this assertion goes red with
+				// `Expected: [] / Received: [",1,2,", …]` — the shared rows are
+				// exactly what it forbids.
+				const unitRows = changedRows.filter(
+					(r) => r.documentType === "code_unit",
 				);
-				expect(sharedUnits.length).toBeGreaterThan(0);
-				// The LAST writer's content, not a stale body: `refreshCodeUnits`
-				// rewrote the row in place. Without it the shared rows would still
-				// hold `+ 1`, and branch 2 would be served revision 1's source.
-				for (const unit of sharedUnits) {
-					expect(String(unit.content)).toContain("+ 2;");
-					expect(String(unit.content)).not.toContain("+ 1;");
-				}
-				// A FILE unit's id hashes the file hash, so it does not collide.
-				const fileUnits = changedRows.filter(
-					(r) => r.documentType === "code_unit" && r.unitType === "file",
-				);
+				const sharedUnits = unitRows.filter((r) => r.branchIds === ",1,2,");
+				expect(sharedUnits.map((r) => String(r.branchIds))).toEqual([]);
+				// Both revisions coexist, one per branch, each holding its own body.
+				// Asserted over EVERY unit class (file and function alike), because
+				// a scheme that fixed only one of them would pass a narrower test.
+				const bodiesOf = (mirror: string) =>
+					unitRows
+						.filter((r) => r.branchIds === mirror)
+						.map((r) => String(r.content));
+				const mainBodies = bodiesOf(",1,");
+				const featBodies = bodiesOf(",2,");
+				expect(mainBodies.length).toBe(featBodies.length);
+				expect(mainBodies.length).toBeGreaterThan(1);
+				expect(mainBodies.some((c) => c.includes("+ 1;"))).toBe(true);
+				expect(mainBodies.every((c) => !c.includes("+ 2;"))).toBe(true);
+				expect(featBodies.some((c) => c.includes("+ 2;"))).toBe(true);
+				expect(featBodies.every((c) => !c.includes("+ 1;"))).toBe(true);
+				// The FILE unit, whose id has always hashed the file hash, behaves
+				// the same way — it always did, which is why it was the control.
+				const fileUnits = unitRows.filter((r) => r.unitType === "file");
 				expect(fileUnits.map((r) => String(r.branchIds)).sort()).toEqual([
 					",1,",
 					",2,",
 				]);
+				// …and the SCOPED READ every search goes through answers with that
+				// branch's body and no other. This is V3.3 for the `code_unit` row
+				// class, through `branchMembershipFilter`, not through the mirror
+				// string the assertions above read directly.
+				const scopedStore = createVectorStore({
+					vectorsDir: vectors,
+					pathRoot: main,
+				});
+				try {
+					const onMain = await scopedStore.getCodeUnitsByFile(
+						branchScope(1),
+						"src-a.ts",
+					);
+					const onFeat = await scopedStore.getCodeUnitsByFile(
+						branchScope(2),
+						"src-a.ts",
+					);
+					expect(onMain.length).toBeGreaterThan(1);
+					expect(onMain.length).toBe(onFeat.length);
+					expect(onMain.every((u) => !u.content.includes("+ 2;"))).toBe(true);
+					expect(onFeat.every((u) => !u.content.includes("+ 1;"))).toBe(true);
+				} finally {
+					await scopedStore.close();
+				}
+
+				// The parent links resolve WITHIN the branch that owns them: a
+				// non-empty `parentId` is the POSITION KEY of a unit that branch
+				// holds (I-14), never a row id. Zero dangling, on both branches —
+				// one in-place edit used to leave 2 of 6 pointing at a row that had
+				// been narrowed away. Computed from the RAW rows, because those
+				// carry the STORED path the key hashes; `rowToCodeUnit` hands back
+				// the absolute path a caller sees (D4) and would not match.
+				for (const mirror of [",1,", ",2,"]) {
+					const mine = unitRows.filter((r) => r.branchIds === mirror);
+					const keys = new Set(
+						mine.map((r) =>
+							codeUnitParentKey(
+								String(r.filePath),
+								String(r.unitType),
+								String(r.name) || undefined,
+								Number(r.startLine) - 1,
+							),
+						),
+					);
+					const dangling = mine.filter(
+						(r) => String(r.parentId) !== "" && !keys.has(String(r.parentId)),
+					);
+					expect(dangling.map((r) => `${r.unitType}:${r.name}`)).toEqual([]);
+				}
 
 				// Growth is the CHANGED file's NEW rows only — the shared units add
 				// nothing, because they were rewritten rather than appended.

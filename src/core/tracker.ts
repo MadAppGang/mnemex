@@ -2137,18 +2137,22 @@ export class FileTracker implements IFileTracker {
 	 * A projection, never a count: a count says how many of 256 ids are present
 	 * and never WHICH, and both ways to act on a short count are wrong (§4.1.1).
 	 *
-	 * THE CONTENT HASH IS RETURNED, NOT JUST THE ID, and that is load-bearing.
-	 * §4.1.1 defines a tier-1 hit as "the store already holds this exact row
-	 * (same path, same LINES, same CONTENT)", and it justifies widening on the
-	 * id alone by asserting that "chunk ids are content+position addressed".
-	 * That is true of CODE CHUNKS (`chunker.ts` hashes
-	 * `filePath:startLine:endLine:content`) and FALSE of CODE UNITS, whose id is
-	 * `sha256(filePath:unitType:name:startRow)` — no content at all
-	 * (`code-unit-extractor.ts`). Measured: editing a function body without
-	 * moving its first line leaves the unit id identical
-	 * (`edc328f7f7d95751` before and after) while the content differs. Widening
-	 * on the id alone would therefore hand a branch the OTHER revision's body.
-	 * The caller compares this hash and refreshes the row instead.
+	 * THE CONTENT HASH IS RETURNED, NOT JUST THE ID. §4.1.1 defines a tier-1 hit
+	 * as "the store already holds this exact row (same path, same LINES, same
+	 * CONTENT)", and justifies widening on the id alone by asserting that "chunk
+	 * ids are content+position addressed". Since I-14 that holds for BOTH row
+	 * classes: `chunker.ts` hashes `filePath:startLine:endLine:content` and
+	 * `codeUnitRowId` hashes `filePath:unitType:name:startRow` plus the unit's
+	 * content hash. Before I-14 the code-unit half was false — editing a body
+	 * without moving its first line left the id at `edc328f7f7d95751` while the
+	 * content differed — and this hash was what stopped a branch being handed the
+	 * other revision's body.
+	 *
+	 * It is still returned, as a BELT rather than as the mechanism: a 16-hex id
+	 * is 64 bits, and the registration of a rewritten unit is deliberately a
+	 * second transaction, so a caller that compares turns both of those into an
+	 * in-place refresh instead of a wrong answer. See
+	 * `VectorStore.refreshCodeUnits`.
 	 */
 	knownChunkRows(chunkIds: string[]): Map<string, string> {
 		if (chunkIds.length === 0) return new Map();

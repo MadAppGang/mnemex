@@ -373,13 +373,18 @@ export class EnhancedRetriever {
 	}
 
 	/**
-	 * Get children of a code unit
+	 * Get children of a code unit, by the parent's POSITION KEY.
+	 *
+	 * `parentKey` is `codeUnitParentKeyOf(parent)` over the parent's STORED path
+	 * — NOT a row id (I-14), and not the absolute path a `CodeUnit` read out of
+	 * the store carries. This method has no caller in `src/`; the contract is
+	 * spelled out here so the first one cannot get it wrong by passing `unit.id`.
 	 */
 	async getUnitChildren(
 		scope: BranchScope,
-		unitId: string,
+		parentKey: string,
 	): Promise<CodeUnit[]> {
-		return this.store.getChildUnits(scope, unitId);
+		return this.store.getChildUnits(scope, parentKey);
 	}
 
 	/**
