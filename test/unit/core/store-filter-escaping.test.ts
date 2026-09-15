@@ -32,6 +32,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { SCOPE_ALL } from "../../../src/core/branch-scope.js";
 import {
 	createVectorStore,
 	escapeFilterValue,
@@ -220,7 +221,10 @@ describe("search language filter (equality)", () => {
 		]);
 
 		const results = await withFreshStore((store) =>
-			store.search("parseConfig", vec(1), { limit: 10, language: "c_sharp" }),
+			store.search("parseConfig", vec(1), SCOPE_ALL, {
+				limit: 10,
+				language: "c_sharp",
+			}),
 		);
 
 		expect(results.map((r) => r.chunk.filePath)).toEqual([
@@ -235,7 +239,7 @@ describe("search language filter (equality)", () => {
 		]);
 
 		const results = await withFreshStore((store) =>
-			store.searchDocuments("parseConfig", vec(1), {
+			store.searchDocuments("parseConfig", vec(1), SCOPE_ALL, {
 				limit: 10,
 				language: "c_sharp",
 			}),
@@ -260,7 +264,7 @@ describe("searchDocuments documentType IN (equality semantics)", () => {
 		]);
 
 		const results = await withFreshStore((store) =>
-			store.searchDocuments("parseConfig", vec(1), {
+			store.searchDocuments("parseConfig", vec(1), SCOPE_ALL, {
 				limit: 10,
 				documentTypes: ["file_summary"],
 			}),
@@ -277,7 +281,7 @@ describe("searchDocuments documentType IN (equality semantics)", () => {
 		]);
 
 		const results = await withFreshStore((store) =>
-			store.searchDocuments("parseConfig", vec(1), {
+			store.searchDocuments("parseConfig", vec(1), SCOPE_ALL, {
 				limit: 10,
 				includeCodeChunks: false,
 			}),
@@ -294,7 +298,7 @@ describe("code unit lookups (equality)", () => {
 		await seedUnits([unit("target", path), unit("other", "src/other.ts")]);
 
 		const units = await withFreshStore((store) =>
-			store.getCodeUnitsByFile(path),
+			store.getCodeUnitsByFile(SCOPE_ALL, path),
 		);
 
 		expect(units.map((u) => u.id)).toEqual(["unit-target"]);
@@ -304,7 +308,7 @@ describe("code unit lookups (equality)", () => {
 		await seedUnits([unit("target", path), unit("other", "src/other.ts")]);
 
 		const units = await withFreshStore((store) =>
-			store.getCodeUnitsByDepth(1, path),
+			store.getCodeUnitsByDepth(SCOPE_ALL, 1, path),
 		);
 
 		expect(units.map((u) => u.id)).toEqual(["unit-target"]);
@@ -329,7 +333,7 @@ describe("code unit lookups (equality)", () => {
 
 		const { found, children } = await withFreshStore(async (store) => ({
 			found: await store.getCodeUnit("unit_parent"),
-			children: await store.getChildUnits("unit_parent"),
+			children: await store.getChildUnits(SCOPE_ALL, "unit_parent"),
 		}));
 
 		expect(found?.id).toBe("unit_parent");
@@ -355,7 +359,7 @@ describe("code unit lookups (equality)", () => {
 				"new body",
 				vec(5),
 			),
-			content: (await store.getDocumentsByFile(path))[0]?.content,
+			content: (await store.getDocumentsByFile(SCOPE_ALL, path))[0]?.content,
 		}));
 
 		expect(updated).toBe(true);
@@ -424,7 +428,7 @@ describe("getDocumentsByFile", () => {
 		]);
 
 		const found = await withFreshStore((store) =>
-			store.getDocumentsByFile("src/o'brien.ts"),
+			store.getDocumentsByFile(SCOPE_ALL, "src/o'brien.ts"),
 		);
 
 		expect(found.map((d) => d.id)).toEqual(["doc-quoted"]);
@@ -437,7 +441,7 @@ describe("getDocumentsByFile", () => {
 		]);
 
 		const found = await withFreshStore((store) =>
-			store.getDocumentsByFile(INJECTION),
+			store.getDocumentsByFile(SCOPE_ALL, INJECTION),
 		);
 
 		expect(found).toEqual([]);
@@ -453,7 +457,7 @@ describe("getDocumentsByFile", () => {
 		]);
 
 		const found = await withFreshStore((store) =>
-			store.getDocumentsByFile(target),
+			store.getDocumentsByFile(SCOPE_ALL, target),
 		);
 
 		expect(found.map((d) => d.id)).toEqual(["doc-target"]);
@@ -466,7 +470,7 @@ describe("getDocumentsByFile", () => {
 		]);
 
 		const found = await withFreshStore((store) =>
-			store.getDocumentsByFile("src/a.ts", ["file_summary"]),
+			store.getDocumentsByFile(SCOPE_ALL, "src/a.ts", ["file_summary"]),
 		);
 
 		expect(found.map((d) => d.id)).toEqual(["doc-summary"]);
@@ -487,7 +491,7 @@ describe("LIKE patterns keep their wildcard escaping", () => {
 		]);
 
 		const results = await withFreshStore((store) =>
-			store.search("parseConfig", vec(1), {
+			store.search("parseConfig", vec(1), SCOPE_ALL, {
 				limit: 10,
 				pathPattern: "my_file",
 			}),
@@ -505,7 +509,7 @@ describe("LIKE patterns keep their wildcard escaping", () => {
 		]);
 
 		const results = await withFreshStore((store) =>
-			store.search("parseConfig", vec(1), {
+			store.search("parseConfig", vec(1), SCOPE_ALL, {
 				limit: 10,
 				filePath: "100%report",
 			}),
@@ -523,7 +527,7 @@ describe("LIKE patterns keep their wildcard escaping", () => {
 		]);
 
 		const results = await withFreshStore((store) =>
-			store.searchDocuments("parseConfig", vec(1), {
+			store.searchDocuments("parseConfig", vec(1), SCOPE_ALL, {
 				limit: 10,
 				pathPattern: "my_file",
 			}),
@@ -542,7 +546,7 @@ describe("LIKE patterns keep their wildcard escaping", () => {
 		]);
 
 		const results = await withFreshStore((store) =>
-			store.searchCodeUnits("parseConfig", vec(2), {
+			store.searchCodeUnits("parseConfig", vec(2), SCOPE_ALL, {
 				limit: 10,
 				filePath: "my_file",
 			}),
@@ -627,7 +631,7 @@ describe("unitType filters still select the right rows end to end", () => {
 		]);
 
 		const units = await withFreshStore((store) =>
-			store.getCodeUnitsByFile("src/a.ts", ["class", "interface"]),
+			store.getCodeUnitsByFile(SCOPE_ALL, "src/a.ts", ["class", "interface"]),
 		);
 
 		expect(units.map((u) => u.id).sort()).toEqual(["unit-cls", "unit-iface"]);
@@ -640,7 +644,7 @@ describe("unitType filters still select the right rows end to end", () => {
 		]);
 
 		const results = await withFreshStore((store) =>
-			store.searchCodeUnits("parseConfig", vec(2), {
+			store.searchCodeUnits("parseConfig", vec(2), SCOPE_ALL, {
 				limit: 10,
 				unitTypes: ["class"],
 			}),

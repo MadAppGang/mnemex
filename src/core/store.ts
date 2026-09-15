@@ -35,6 +35,11 @@ import {
 	type TestFileDetector,
 } from "./analysis/test-detector.js";
 import {
+	type BranchScope,
+	branchMembershipFilter,
+	decodeBranchIds,
+} from "./branch-scope.js";
+import {
 	fromStoredPath,
 	isStoredRepoPath,
 	type PathKind,
@@ -615,9 +620,17 @@ export interface IVectorStore {
 		chunks: ChunkWithEmbedding[],
 		membership: RowMembership,
 	): Promise<void>;
+	/**
+	 * `scope` is a REQUIRED POSITIONAL parameter, never construction state
+	 * (§2.5, §4.4). The MCP server is long-lived and the user switches branches
+	 * underneath it, so a scope captured at construction answers the previous
+	 * branch for the rest of the process's life (V3.10). Positional, so a caller
+	 * that forgets it is a type error rather than a read that spans branches.
+	 */
 	search(
 		queryText: string,
 		queryVector: number[] | undefined,
+		scope: BranchScope,
 		options?: SearchOptions,
 	): Promise<SearchResult[]>;
 	/** Rows actually deleted (LanceDB's `numDeletedRows`); 0 on no match or failure. */
@@ -638,12 +651,14 @@ export interface IVectorStore {
 	deleteByDocumentType(documentType: DocumentType): Promise<number>;
 	deleteAllByFile(filePath: string): Promise<number>;
 	getDocumentsByFile(
+		scope: BranchScope,
 		filePath: string,
 		documentTypes?: DocumentType[],
 	): Promise<BaseDocument[]>;
 	searchDocuments(
 		queryText: string,
 		queryVector: number[],
+		scope: BranchScope,
 		options?: EnrichedSearchOptions,
 	): Promise<EnrichedSearchResult[]>;
 	getDocumentTypeStats(): Promise<Record<DocumentType, number>>;
@@ -669,15 +684,27 @@ export interface IVectorStore {
 	): Promise<boolean>;
 	getAllSummaries(): Promise<Array<BaseDocument & { vector: number[] }>>;
 	getCodeUnitsByFile(
+		scope: BranchScope,
 		filePath: string,
 		unitTypes?: UnitType[],
 	): Promise<CodeUnit[]>;
-	getCodeUnitsByDepth(depth: number, filePath?: string): Promise<CodeUnit[]>;
-	getChildUnits(parentId: string): Promise<CodeUnit[]>;
+	getCodeUnitsByDepth(
+		scope: BranchScope,
+		depth: number,
+		filePath?: string,
+	): Promise<CodeUnit[]>;
+	/**
+	 * `parentId` is CONTENT-derived, so two branches holding the same file
+	 * produce the same parent and an unscoped read returns both branches'
+	 * children. Scoped for that reason, although §4.4's site list names only the
+	 * six above.
+	 */
+	getChildUnits(scope: BranchScope, parentId: string): Promise<CodeUnit[]>;
 	getCodeUnit(unitId: string): Promise<CodeUnit | null>;
 	searchCodeUnits(
 		queryText: string,
 		queryVector: number[],
+		scope: BranchScope,
 		options?: {
 			limit?: number;
 			unitTypes?: UnitType[];
@@ -1121,6 +1148,7 @@ export class VectorStore implements IVectorStore {
 	async search(
 		queryText: string,
 		queryVector: number[] | undefined,
+		scope: BranchScope,
 		options: SearchOptions = {},
 	): Promise<SearchResult[]> {
 		const {
@@ -1143,6 +1171,16 @@ export class VectorStore implements IVectorStore {
 		// `%` / `_` wildcards). Swapping either way is a silent bug — see the
 		// comments on the two functions.
 		const filters: string[] = [];
+		// D6, part 1: the branch predicate is a PRE-filter, on BOTH retrievers.
+		// It goes in the same `filters` array the language and path predicates
+		// use, which is passed to `.where()` on the vectorSearch query AND on the
+		// fullTextSearch query below. A foreign row then never enters the
+		// candidate set, never consumes a `limit` slot and never displaces a
+		// visible row. A POST-filter would silently return fewer than `limit`
+		// results — a far larger NFR-5 break than any statistical drift — which is
+		// why `postfilter` must not appear in this file at all (swept).
+		const branchFilter = branchMembershipFilter(scope);
+		if (branchFilter !== null) filters.push(branchFilter);
 		if (language) {
 			filters.push(`language = '${escapeSqlLiteral(language)}'`);
 		}
@@ -1273,6 +1311,11 @@ export class VectorStore implements IVectorStore {
 				score: maxFused > 0 ? r.fusedScore / maxFused : 0,
 				vectorScore: r.vectorScore || 0,
 				keywordScore: r.keywordScore || 0,
+				// D1's per-row attribution, as IDS. The store has no registry, so
+				// it cannot name branches; `Indexer.searchScoped` resolves these to
+				// labels. Per-row attribution is what lets an agent discount a
+				// foreign row instead of discarding the whole response (§4.4.2).
+				branchIds: decodeBranchIds(r[BRANCH_IDS_COLUMN]),
 				summary:
 					r.summary ||
 					symbolSummaryById.get(r.id) ||
@@ -1664,6 +1707,7 @@ export class VectorStore implements IVectorStore {
 	 * Get all documents for a specific file
 	 */
 	async getDocumentsByFile(
+		scope: BranchScope,
 		filePath: string,
 		documentTypes?: DocumentType[],
 	): Promise<BaseDocument[]> {
@@ -1682,6 +1726,8 @@ export class VectorStore implements IVectorStore {
 			// "no documents"), and a crafted path widened the predicate to every
 			// row. Equality, so quote doubling only.
 			let filter = `filePath = '${escapeSqlLiteral(storedPath)}'`;
+			const branchFilter = branchMembershipFilter(scope);
+			if (branchFilter !== null) filter += ` AND ${branchFilter}`;
 			if (documentTypes && documentTypes.length > 0) {
 				// `documentTypes` is the closed `DocumentType` union — no quotes
 				// to escape, and no `%`/`_` handling wanted either, since IN
@@ -1714,6 +1760,7 @@ export class VectorStore implements IVectorStore {
 	async searchDocuments(
 		queryText: string,
 		queryVector: number[],
+		scope: BranchScope,
 		options: EnrichedSearchOptions = {},
 	): Promise<EnrichedSearchResult[]> {
 		const {
@@ -1734,6 +1781,9 @@ export class VectorStore implements IVectorStore {
 		// Build filter string with escaped values to prevent injection.
 		// Equality takes `escapeSqlLiteral`, LIKE takes `escapeFilterValue`.
 		const filters: string[] = [];
+		// D6, part 1: PRE-filter, both retrievers. See `search`.
+		const branchFilter = branchMembershipFilter(scope);
+		if (branchFilter !== null) filters.push(branchFilter);
 		if (language) {
 			filters.push(`language = '${escapeSqlLiteral(language)}'`);
 		}
@@ -2182,6 +2232,7 @@ export class VectorStore implements IVectorStore {
 	 * Get code units for a file, optionally filtered by unit type
 	 */
 	async getCodeUnitsByFile(
+		scope: BranchScope,
 		filePath: string,
 		unitTypes?: UnitType[],
 	): Promise<CodeUnit[]> {
@@ -2194,6 +2245,8 @@ export class VectorStore implements IVectorStore {
 
 		try {
 			let filter = `filePath = '${escapeSqlLiteral(storedPath)}' AND documentType = 'code_unit'`;
+			const branchFilter = branchMembershipFilter(scope);
+			if (branchFilter !== null) filter += ` AND ${branchFilter}`;
 			if (unitTypes && unitTypes.length > 0) {
 				// IN compares by equality, so this takes `escapeSqlLiteral`.
 				const types = unitTypes
@@ -2214,6 +2267,7 @@ export class VectorStore implements IVectorStore {
 	 * Get code units by depth level (for bottom-up processing)
 	 */
 	async getCodeUnitsByDepth(
+		scope: BranchScope,
 		depth: number,
 		filePath?: string,
 	): Promise<CodeUnit[]> {
@@ -2222,6 +2276,8 @@ export class VectorStore implements IVectorStore {
 
 		try {
 			let filter = `depth = ${depth} AND documentType = 'code_unit'`;
+			const branchFilter = branchMembershipFilter(scope);
+			if (branchFilter !== null) filter += ` AND ${branchFilter}`;
 			if (filePath) {
 				const storedPath = this.storedPathArg(filePath);
 				if (storedPath === null) return [];
@@ -2239,12 +2295,17 @@ export class VectorStore implements IVectorStore {
 	/**
 	 * Get children of a code unit
 	 */
-	async getChildUnits(parentId: string): Promise<CodeUnit[]> {
+	async getChildUnits(
+		scope: BranchScope,
+		parentId: string,
+	): Promise<CodeUnit[]> {
 		const table = await this.ensureTableOpen();
 		if (!table) return [];
 
 		try {
-			const filter = `parentId = '${escapeSqlLiteral(parentId)}' AND documentType = 'code_unit'`;
+			let filter = `parentId = '${escapeSqlLiteral(parentId)}' AND documentType = 'code_unit'`;
+			const branchFilter = branchMembershipFilter(scope);
+			if (branchFilter !== null) filter += ` AND ${branchFilter}`;
 			const results = await table.query().where(filter).toArray();
 
 			return results.map((row) => this.rowToCodeUnit(row));
@@ -2277,6 +2338,7 @@ export class VectorStore implements IVectorStore {
 	async searchCodeUnits(
 		queryText: string,
 		queryVector: number[],
+		scope: BranchScope,
 		options: {
 			limit?: number;
 			unitTypes?: UnitType[];
@@ -2300,6 +2362,9 @@ export class VectorStore implements IVectorStore {
 
 		// Build filter
 		const filters: string[] = ["documentType = 'code_unit'"];
+		// D6, part 1: PRE-filter, both retrievers. See `search`.
+		const unitBranchFilter = branchMembershipFilter(scope);
+		if (unitBranchFilter !== null) filters.push(unitBranchFilter);
 
 		if (unitTypes && unitTypes.length > 0) {
 			// IN compares by equality, so this takes `escapeSqlLiteral`.

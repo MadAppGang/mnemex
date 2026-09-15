@@ -364,7 +364,7 @@ export function ResultDetailView({
 	allResults,
 	onClose,
 }: ResultDetailViewProps) {
-	const { tracker, projectPath } = useAppContext();
+	const { tracker, branchId, projectPath } = useAppContext();
 	const { width } = useTerminalDimensions();
 
 	// Local override for navigating to parts not in search results
@@ -507,12 +507,12 @@ export function ResultDetailView({
 		let cancelled = false;
 		async function load() {
 			try {
-				const gm = createReferenceGraphManager(tracker);
+				const gm = createReferenceGraphManager(tracker, branchId);
 				await gm.buildGraph();
 				if (cancelled) return;
 
 				// Get symbol count for PageRank normalization
-				const allSyms = tracker.getAllSymbols();
+				const allSyms = tracker.graph(branchId).getAllSymbols();
 				if (!cancelled && allSyms.length > 0) {
 					setSymbolCount(allSyms.length);
 				}
@@ -538,7 +538,7 @@ export function ResultDetailView({
 		return () => {
 			cancelled = true;
 		};
-	}, [tracker, symbolName, chunk.filePath]);
+	}, [tracker, branchId, symbolName, chunk.filePath]);
 
 	// Navigate into a caller/callee symbol by loading its chunk from LanceDB
 	async function navigateToSymbol(sym: SymbolDefinition) {

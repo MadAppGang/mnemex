@@ -181,8 +181,11 @@ await run(2);
 // ── What the runs left behind: data, read after the fact. ──────────────────
 {
 	const tracker = createFileTracker(getIndexDbPath(projectDir), projectDir);
-	const stats = tracker.getSymbolGraphStats();
-	const tracked = tracker.getAllFiles();
+	// The child indexes a plain temp directory with no repository layout, so
+	// every row it writes carries `BRANCH_ID_SHARED` — the same id the phantom
+	// seed above uses.
+	const stats = tracker.graph(0).getSymbolGraphStats();
+	const tracked = tracker.getAllFiles(0);
 	console.log(
 		`STATE ${JSON.stringify({
 			symbols: stats.totalSymbols,

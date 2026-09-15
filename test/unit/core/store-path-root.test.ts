@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
+import { SCOPE_ALL } from "../../../src/core/branch-scope.js";
 import { createVectorStore } from "../../../src/core/store.js";
 import type { ChunkWithEmbedding } from "../../../src/types.js";
 
@@ -93,7 +94,7 @@ async function searchedPaths(pathRoot: string): Promise<string[]> {
 	const store = createVectorStore({ vectorsDir, pathRoot });
 	await store.initialize();
 	try {
-		const results = await store.search("parseConfig", undefined, {
+		const results = await store.search("parseConfig", undefined, SCOPE_ALL, {
 			limit: 10,
 			keywordOnly: true,
 		});

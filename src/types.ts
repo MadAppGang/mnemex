@@ -269,6 +269,21 @@ export interface SearchResult {
 	documentType?: DocumentType;
 	/** Observation metadata (only for session_observation results) */
 	observationMetadata?: Record<string, unknown>;
+	/**
+	 * D1's per-row attribution (architecture §4.4.2), as stored: the branch ids
+	 * this row is visible from. `0` is the shared marker (docs, observations).
+	 *
+	 * Set by `VectorStore.search`, which has no registry and so cannot name
+	 * branches. Absent from stores and code paths that predate the branch model.
+	 */
+	branchIds?: number[];
+	/**
+	 * The same attribution as LABELS, resolved through the branch registry by
+	 * `Indexer.searchScoped`. This is what D1 requires a caller to be able to
+	 * show: per-row attribution is what lets an agent discount a foreign row
+	 * instead of discarding the whole response.
+	 */
+	branches?: string[];
 }
 
 export interface SearchOptions {

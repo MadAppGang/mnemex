@@ -18,6 +18,10 @@ import {
 	useRef,
 	useState,
 } from "react";
+import {
+	graphBranchIdForRead,
+	resolveBranchScopeForProject,
+} from "../core/branch-scope.js";
 import { getIndexVersion, needsUpgrade } from "../core/index-version.js";
 import { Indexer } from "../core/indexer.js";
 import {
@@ -40,6 +44,18 @@ export type TabId = "search" | "map" | "graph" | "analysis" | "doctor";
 export interface AppContextValue {
 	/** FileTracker singleton for the current project */
 	tracker: FileTracker;
+	/**
+	 * The branch every symbol-graph and `files` read in the TUI is scoped to
+	 * (§4.4.1).
+	 *
+	 * DOCUMENTED LIMIT: it is resolved when this context value is rebuilt, not
+	 * on every keystroke — the same lifetime the memoized `tracker` already has.
+	 * A `git checkout` made in another terminal during a TUI session is picked
+	 * up the next time indexing runs or the view remounts, not immediately. The
+	 * per-CALL discipline §2.5 requires is enforced where it matters, on the
+	 * long-lived MCP server (`mcp/cache.ts`) and on every CLI invocation.
+	 */
+	branchId: number;
 	/** The project root path */
 	projectPath: string;
 	/** Currently active tab */
@@ -166,6 +182,11 @@ export function AppProvider({
 		return new FileTracker(getIndexDbPathFor(loc), projectPath);
 	});
 
+	// Re-resolved whenever the tracker is (see `AppContextValue.branchId`).
+	const branchId = graphBranchIdForRead(
+		resolveBranchScopeForProject(projectPath),
+	);
+
 	const pushNav = useCallback((symbolName: string) => {
 		setNavHistory((prev: string[]) => [...prev, symbolName]);
 	}, []);
@@ -225,6 +246,7 @@ export function AppProvider({
 
 	const value: AppContextValue = {
 		tracker,
+		branchId,
 		projectPath,
 		activeTab,
 		setActiveTab,

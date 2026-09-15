@@ -35,7 +35,10 @@ export interface UseGraphReturn {
 // Hook
 // ============================================================================
 
-export function useGraph(tracker: FileTracker): UseGraphReturn {
+export function useGraph(
+	tracker: FileTracker,
+	branchId: number,
+): UseGraphReturn {
 	const [navHistory, setNavHistory] = useState<SymbolDefinition[]>([]);
 	const [navIndex, setNavIndex] = useState(-1);
 	const [callers, setCallers] = useState<SymbolDefinition[]>([]);
@@ -48,7 +51,7 @@ export function useGraph(tracker: FileTracker): UseGraphReturn {
 			setLoading(true);
 			setError(null);
 			try {
-				const graphManager = createReferenceGraphManager(tracker);
+				const graphManager = createReferenceGraphManager(tracker, branchId);
 				await graphManager.buildGraph();
 
 				// Get callers and callees by symbol ID
@@ -74,7 +77,7 @@ export function useGraph(tracker: FileTracker): UseGraphReturn {
 			setError(null);
 
 			try {
-				const graphManager = createReferenceGraphManager(tracker);
+				const graphManager = createReferenceGraphManager(tracker, branchId);
 				await graphManager.buildGraph();
 				const found = graphManager.findSymbol(name);
 

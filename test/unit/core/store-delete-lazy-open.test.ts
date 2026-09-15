@@ -35,6 +35,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { SCOPE_ALL } from "../../../src/core/branch-scope.js";
 import { createVectorStore } from "../../../src/core/store.js";
 import type {
 	ChunkWithEmbedding,
@@ -214,7 +215,7 @@ describe("deletes on a store whose table is already open", () => {
 
 		const deleted = await withFreshStore(async (store) => {
 			// The search opens the table, which is what used to be required.
-			await store.search("parseConfig", undefined, {
+			await store.search("parseConfig", undefined, SCOPE_ALL, {
 				limit: 10,
 				keywordOnly: true,
 			});
@@ -229,7 +230,7 @@ describe("deletes on a store whose table is already open", () => {
 		await seed([chunk("alpha", 1), chunk("beta", 2)]);
 
 		const deleted = await withFreshStore(async (store) => {
-			await store.search("parseConfig", undefined, {
+			await store.search("parseConfig", undefined, SCOPE_ALL, {
 				limit: 10,
 				keywordOnly: true,
 			});
@@ -244,7 +245,7 @@ describe("deletes on a store whose table is already open", () => {
 		await seed([chunk("alpha", 1)]);
 
 		const deleted = await withFreshStore(async (store) => {
-			await store.search("parseConfig", undefined, {
+			await store.search("parseConfig", undefined, SCOPE_ALL, {
 				limit: 10,
 				keywordOnly: true,
 			});
@@ -335,7 +336,7 @@ describe("deleteByDocumentType — table not yet opened on this instance", () =>
 		]);
 
 		const deleted = await withFreshStore(async (store) => {
-			await store.search("parseConfig", undefined, {
+			await store.search("parseConfig", undefined, SCOPE_ALL, {
 				limit: 10,
 				keywordOnly: true,
 			});
@@ -390,7 +391,7 @@ describe("deleteAllByFile — table not yet opened on this instance", () => {
 		await seed([chunk("alpha", 1), chunk("beta", 2)]);
 
 		const deleted = await withFreshStore(async (store) => {
-			await store.search("parseConfig", undefined, {
+			await store.search("parseConfig", undefined, SCOPE_ALL, {
 				limit: 10,
 				keywordOnly: true,
 			});

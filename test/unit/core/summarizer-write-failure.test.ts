@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { SCOPE_ALL } from "../../../src/core/branch-scope.js";
 import {
 	type IVectorStore,
 	type VectorStore,
@@ -51,7 +52,9 @@ function storeWhoseUpdate(update: (id: string) => Promise<void>): VectorStore {
 }
 
 async function summarize(store: VectorStore): Promise<SummarizationResult> {
-	return new BottomUpSummarizer(llm, store).summarizeFile("src/a.ts");
+	return new BottomUpSummarizer(llm, store).summarizeFile("src/a.ts", {
+		scope: SCOPE_ALL,
+	});
 }
 
 describe("BottomUpSummarizer write-back", () => {

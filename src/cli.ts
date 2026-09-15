@@ -41,6 +41,11 @@ import {
 	loadGlobalConfig,
 	saveGlobalConfig,
 } from "./config.js";
+import {
+	graphBranchIdForRead,
+	resolveBranchScopeForProject,
+	SCOPE_ALL,
+} from "./core/branch-scope.js";
 import { canChunkFile, chunkFileByPath } from "./core/chunker.js";
 // Note: createIndexer imports store.js which loads LanceDB - made lazy to avoid startup errors
 // Use: const { createIndexer } = await import("./core/indexer.js");
@@ -1873,23 +1878,30 @@ async function handleSearch(args: string[]): Promise<void> {
 			);
 		}
 
-		const results = await indexer.search(query, {
+		// `searchScoped`, not `search`: D1's flag must reach `--agent` as well as
+		// the MCP response.
+		const scoped = await indexer.searchScoped(query, {
 			limit,
 			language,
 			useCase,
 			keywordOnly,
 		});
+		const results = scoped.results;
 
 		// A search adopts the index's model inside initialize(), without ever
 		// running index() — and in --agent mode the auto-reindex is skipped
 		// entirely, so this is the ONLY place the fact can surface there.
 		const effective = indexer.getEffectiveModel();
-		const searchMeta = effective.adopted
-			? {
-					embeddingModel: effective.model,
-					configuredModel: effective.configuredModel,
-				}
-			: undefined;
+		const searchMeta = {
+			...(effective.adopted
+				? {
+						embeddingModel: effective.model,
+						configuredModel: effective.configuredModel,
+					}
+				: {}),
+			branchUnknown: scoped.branchUnknown,
+			branch: scoped.branchLabel,
+		};
 		if (!agentMode && !adoptionReported) {
 			reportAdoptedModel(effective);
 			adoptionReported = effective.adopted;
@@ -1899,6 +1911,11 @@ async function handleSearch(args: string[]): Promise<void> {
 			if (agentMode) {
 				agentOutput.searchResults(query, [], searchMeta);
 			} else {
+				if (scoped.branchUnknown) {
+					console.log(
+						`\nBranch '${scoped.branchLabel ?? "?"}' is not in the index.`,
+					);
+				}
 				console.log("\nNo results found.");
 				console.log("Make sure the codebase is indexed: mnemex index");
 			}
@@ -1939,6 +1956,13 @@ async function handleSearch(args: string[]): Promise<void> {
 			return;
 		}
 
+		if (scoped.branchUnknown) {
+			// D1 chose the superset BECAUSE it fails visibly. A flag nobody renders
+			// is the invisible failure it exists to avoid.
+			console.log(
+				`Branch '${scoped.branchLabel ?? "?"}' is not in the index; showing results from every indexed branch.\n`,
+			);
+		}
 		console.log(`Found ${results.length} result(s):\n`);
 
 		// Collect result IDs for feedback hint
@@ -3933,9 +3957,15 @@ async function handleBenchmark(args: string[]): Promise<void> {
 
 				// Embed query and search
 				const queryVector = await client.embedOne(tq.query);
-				const searchResults = await store.search(tq.query, queryVector, {
-					limit: 5,
-				});
+				// The benchmark's temp store writes `synthetic` + `,0,` (D-h): every
+				// row carries the shared marker, so the scope that sees all of them
+				// is the one with no predicate.
+				const searchResults = await store.search(
+					tq.query,
+					queryVector,
+					SCOPE_ALL,
+					{ limit: 5 },
+				);
 
 				// Build relevance map
 				const relevanceMap = new Map<string, number>();
@@ -4757,6 +4787,18 @@ function formatSymbolRaw(symbol: {
  * the store the lock guards (decision I-8). It used to be a hardcoded
  * `<projectPath>/.mnemex/index.db`, which ignored both index-dir overrides.
  */
+/**
+ * The branch every symbol-graph and `files` read in this process is scoped to.
+ *
+ * Resolved PER COMMAND, which for the CLI is per process, so §2.5's "never
+ * construction state" holds trivially here. `graphBranchIdForRead` is the one
+ * place that decides what an UNKNOWN branch reads on the SQLite side; see its
+ * doc comment for the part of D1 that is reported rather than settled.
+ */
+function readBranchId(projectPath: string): number {
+	return graphBranchIdForRead(resolveBranchScopeForProject(projectPath));
+}
+
 function getFileTracker(projectPath: string): FileTracker | null {
 	const dbPath = getIndexDbPath(projectPath);
 
@@ -4868,7 +4910,10 @@ async function handleMap(args: string[]): Promise<void> {
 	}
 
 	try {
-		const repoMapGen = createRepoMapGenerator(tracker);
+		const repoMapGen = createRepoMapGenerator(
+			tracker,
+			readBranchId(projectPath),
+		);
 
 		if (agentMode) {
 			// Agent mode: structured key=value output
@@ -4929,7 +4974,10 @@ async function handleSymbol(args: string[]): Promise<void> {
 	}
 
 	try {
-		const graphManager = createReferenceGraphManager(tracker);
+		const graphManager = createReferenceGraphManager(
+			tracker,
+			readBranchId(projectPath),
+		);
 		const symbol = graphManager.findSymbol(symbolName, {
 			preferExported: true,
 			fileHint,
@@ -5074,7 +5122,10 @@ async function handleCallers(args: string[]): Promise<void> {
 	}
 
 	try {
-		const graphManager = createReferenceGraphManager(tracker);
+		const graphManager = createReferenceGraphManager(
+			tracker,
+			readBranchId(projectPath),
+		);
 		const symbol = graphManager.findSymbol(symbolName, {
 			preferExported: true,
 		});
@@ -5220,7 +5271,10 @@ async function handleCallees(args: string[]): Promise<void> {
 	}
 
 	try {
-		const graphManager = createReferenceGraphManager(tracker);
+		const graphManager = createReferenceGraphManager(
+			tracker,
+			readBranchId(projectPath),
+		);
 		const symbol = graphManager.findSymbol(symbolName, {
 			preferExported: true,
 		});
@@ -5301,7 +5355,10 @@ async function handleContext(args: string[]): Promise<void> {
 	}
 
 	try {
-		const graphManager = createReferenceGraphManager(tracker);
+		const graphManager = createReferenceGraphManager(
+			tracker,
+			readBranchId(projectPath),
+		);
 		const symbol = graphManager.findSymbol(symbolName, {
 			preferExported: true,
 		});
@@ -5409,7 +5466,7 @@ async function handleDeadCode(args: string[]): Promise<void> {
 
 	try {
 		const { createCodeAnalyzer } = await import("./core/analysis/index.js");
-		const analyzer = createCodeAnalyzer(tracker);
+		const analyzer = createCodeAnalyzer(tracker, readBranchId(projectPath));
 
 		const results = analyzer.findDeadCode({
 			maxPageRank,
@@ -5479,7 +5536,7 @@ async function handleTestGaps(args: string[]): Promise<void> {
 
 	try {
 		const { createCodeAnalyzer } = await import("./core/analysis/index.js");
-		const analyzer = createCodeAnalyzer(tracker);
+		const analyzer = createCodeAnalyzer(tracker, readBranchId(projectPath));
 
 		const results = analyzer.findTestGaps({
 			minPageRank,
@@ -5564,7 +5621,7 @@ async function handleImpact(args: string[]): Promise<void> {
 
 	try {
 		const { createCodeAnalyzer } = await import("./core/analysis/index.js");
-		const analyzer = createCodeAnalyzer(tracker);
+		const analyzer = createCodeAnalyzer(tracker, readBranchId(projectPath));
 
 		// Find the target symbol
 		const target = analyzer.findSymbolForImpact(symbolName, fileHint);

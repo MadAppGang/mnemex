@@ -21,6 +21,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { BRANCH_ID_SHARED } from "../core/branch-registry.js";
+import { SCOPE_ALL } from "../core/branch-scope.js";
 import { chunkFileByPath } from "../core/chunker.js";
 import { VectorStore } from "../core/store.js";
 import { resolveStoreLocation } from "../core/store-location.js";
@@ -191,7 +192,10 @@ export class OverlayIndex implements IOverlayIndex {
 		limit?: number,
 	): Promise<SearchResult[]> {
 		await this.ensureInitialized();
-		return this.vectorStore.search(queryText, queryVector, {
+		// The overlay is a SCRATCH store: every row it writes carries `,0,`
+		// (D-h), so "no predicate" and "every row" coincide and its ranking is
+		// unchanged by the branch model.
+		return this.vectorStore.search(queryText, queryVector, SCOPE_ALL, {
 			limit: limit ?? 10,
 		});
 	}

@@ -121,7 +121,9 @@ async function main() {
 		process.stdout.write(`READY ${tracker.journalMode}\n`);
 		await waitForGo();
 		try {
-			const rows = tracker.getAllFiles();
+			// Branch 0: the seed writes `markIndexed(0, …)`, which is what a plain
+			// directory with no repository layout stamps on every row.
+			const rows = tracker.getAllFiles(0);
 			for (const row of rows) process.stdout.write(`ROW ${row.path}\n`);
 			result = {
 				constructed: true,

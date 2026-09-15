@@ -14,6 +14,10 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import {
+	graphBranchIdForRead,
+	resolveBranchScopeForProject,
+} from "../core/branch-scope.js";
 import { readGitLayout } from "../core/git-layout.js";
 import {
 	formatInvalidationCounts,
@@ -295,7 +299,16 @@ export async function runPostCommitInvalidation(
 	tracker: IFileTracker,
 ): Promise<PostCommitInvalidation | null> {
 	try {
-		const counts = await invalidateForCommit(projectPath, tracker);
+		// The branch HEAD points at, resolved per call. The hook runs after a
+		// commit, and that commit may be the first on a branch the index has
+		// never seen — `graphBranchIdForRead` then yields the shared marker,
+		// which matches no `documents` row, so the pass invalidates nothing
+		// rather than invalidating another branch's summaries.
+		const counts = await invalidateForCommit(
+			projectPath,
+			tracker,
+			graphBranchIdForRead(resolveBranchScopeForProject(projectPath)),
+		);
 		if (!counts) return null;
 
 		return { counts, summary: formatInvalidationCounts(counts) };

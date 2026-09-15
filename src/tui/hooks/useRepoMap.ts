@@ -29,7 +29,10 @@ export interface UseRepoMapReturn {
 // Hook
 // ============================================================================
 
-export function useRepoMap(tracker: FileTracker): UseRepoMapReturn {
+export function useRepoMap(
+	tracker: FileTracker,
+	branchId: number,
+): UseRepoMapReturn {
 	const [entries, setEntries] = useState<RepoMapEntry[]>([]);
 	const [filter, setFilter] = useState("");
 	const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
@@ -42,7 +45,7 @@ export function useRepoMap(tracker: FileTracker): UseRepoMapReturn {
 		setError(null);
 
 		try {
-			const generator = createRepoMapGenerator(tracker);
+			const generator = createRepoMapGenerator(tracker, branchId);
 			const allEntries = generator.generateStructured({
 				pathPattern: filter || undefined,
 				topNByPagerank: 5000,

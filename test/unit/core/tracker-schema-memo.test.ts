@@ -380,7 +380,7 @@ describe("FileTracker schema memo", () => {
 		expect(migrated.trackerNeedsV4Schema()).toBe(false);
 		migrated.setCurrentCommit("a".repeat(40));
 		migrated.markIndexed(0, join(oldRoot, "src.ts"), "hash-1", ["chunk-1"]);
-		expect(migrated.getFileIndexedCommit("src.ts")).toBe("a".repeat(40));
+		expect(migrated.getFileIndexedCommit(0, "src.ts")).toBe("a".repeat(40));
 		migrated.close();
 	});
 

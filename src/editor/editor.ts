@@ -87,8 +87,13 @@ export class SymbolEditor {
 
 	private async ensureLocator(): Promise<SymbolLocator> {
 		if (this.locator) return this.locator;
-		const { graphManager, tracker } = await this.cache.get();
-		this.locator = new SymbolLocator(graphManager, tracker, this.lspManager);
+		const { graphManager, tracker, branchId } = await this.cache.get();
+		this.locator = new SymbolLocator(
+			graphManager,
+			tracker,
+			branchId,
+			this.lspManager,
+		);
 		return this.locator;
 	}
 
@@ -164,8 +169,8 @@ export class SymbolEditor {
 			}
 
 			// TOCTOU guard: verify hash inside lock
-			const { tracker } = await this.cache.get();
-			const state = tracker.getFileState(filePath);
+			const { tracker, branchId } = await this.cache.get();
+			const state = tracker.getFileState(branchId, filePath);
 			if (state) {
 				const { createHash } = await import("node:crypto");
 				const currentHash = createHash("sha256")

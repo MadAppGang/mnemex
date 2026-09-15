@@ -7,6 +7,10 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+	graphBranchIdForRead,
+	resolveBranchScopeForProject,
+} from "../../core/branch-scope.js";
 import { chunkFileByPath } from "../../core/chunker.js";
 import { FileTracker } from "../../core/tracker.js";
 import type { CodeChunk } from "../../types.js";
@@ -48,7 +52,13 @@ export class TestCaseSelector {
 		options: TestCaseSelectionOptions,
 	): Promise<TestCase[]> {
 		// Get all indexed files
-		const fileStates = this.tracker.getAllFiles();
+		// The branch HEAD points at, resolved per call. This selector is one of
+		// the four files still on `MNEMEX_STORE_PATH_ALLOWLIST` (it builds the
+		// store path by hand); that is 3c's precondition to clear, not this
+		// phase's. The branch scope, however, is this phase's.
+		const fileStates = this.tracker.getAllFiles(
+			graphBranchIdForRead(resolveBranchScopeForProject(this.projectPath)),
+		);
 		if (fileStates.length === 0) {
 			throw new Error("No indexed files found. Run 'mnemex index' first.");
 		}

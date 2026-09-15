@@ -34,7 +34,10 @@ const INDEXER_SOURCE = join(REPO, "src", "core", "indexer.ts");
  */
 export const INDEXER_LOOP_ALLOWANCES: readonly LoopAllowance[] = [
 	{
-		method: "search",
+		// Renamed in Phase 3b-1: the dead-code penalty moved into
+		// `searchScoped`, which `search` now delegates to. Same loop, same
+		// reason.
+		method: "searchScoped",
 		callee: "getSymbolByName",
 		reason:
 			"the dead-code penalty loop: search() never runs inside index(), is bounded by the result limit, and a per-result yield would add ~1 ms of setTimeout(0) per result to every query. The durable fix is one batched tracker read (residue, tracker.ts).",

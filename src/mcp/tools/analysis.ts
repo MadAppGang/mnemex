@@ -44,8 +44,8 @@ export function registerAnalysisTools(server: McpServer, deps: ToolDeps): void {
 			const startTime = Date.now();
 
 			try {
-				const { tracker } = await cache.get();
-				const analyzer = createCodeAnalyzer(tracker);
+				const { tracker, branchId } = await cache.get();
+				const analyzer = createCodeAnalyzer(tracker, branchId);
 
 				const results = analyzer.findDeadCode({
 					maxPageRank: 0.001,
@@ -123,8 +123,8 @@ export function registerAnalysisTools(server: McpServer, deps: ToolDeps): void {
 			const startTime = Date.now();
 
 			try {
-				const { tracker } = await cache.get();
-				const analyzer = createCodeAnalyzer(tracker);
+				const { tracker, branchId } = await cache.get();
+				const analyzer = createCodeAnalyzer(tracker, branchId);
 
 				const results = analyzer.findTestGaps({
 					minPageRank: 0.005,
@@ -146,7 +146,9 @@ export function registerAnalysisTools(server: McpServer, deps: ToolDeps): void {
 					callerCount: r.callerCount,
 				}));
 
-				const totalSourceSymbols = tracker.getAllSymbols().length;
+				const totalSourceSymbols = tracker
+					.graph(branchId)
+					.getAllSymbols().length;
 				const untestedCount = untestedSymbols.length;
 				const coveragePercent =
 					totalSourceSymbols > 0
@@ -199,8 +201,8 @@ export function registerAnalysisTools(server: McpServer, deps: ToolDeps): void {
 			const startTime = Date.now();
 
 			try {
-				const { tracker } = await cache.get();
-				const analyzer = createCodeAnalyzer(tracker);
+				const { tracker, branchId } = await cache.get();
+				const analyzer = createCodeAnalyzer(tracker, branchId);
 				const indexState = await buildIndexState(deps, startTime);
 
 				const target = analyzer.findSymbolForImpact(symbolName);

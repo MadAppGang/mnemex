@@ -272,11 +272,20 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 					}
 				}
 
-				let results = await indexer.search(query, {
+				// `searchScoped`, not `search`: D1 requires `branch_unknown` to reach
+				// THIS response, and the flag is a property of the response, not of
+				// any row (§4.4.2, required item 2).
+				const scoped = await indexer.searchScoped(query, {
 					limit: limit ?? 10,
 					language,
 					useCase: useCase ?? "search",
 				});
+				let results = scoped.results;
+				/** D1's two response fields, on every return path below. */
+				const branchState = {
+					branch_unknown: scoped.branchUnknown,
+					branch: scoped.branchLabel,
+				};
 
 				// ONE index-db connection for this request, shared by the learning
 				// system and activity recording. Learning goes through the same
@@ -349,6 +358,7 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 					const trailer = JSON.stringify({
 						...buildFreshness(stateManager, startTime),
 						...indexState,
+						...branchState,
 					});
 					const emptyResponse = `No results found for "${query}". Make sure the codebase is indexed using \`index_codebase\`.\n${trailer}`;
 					return {
@@ -362,6 +372,12 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 				}
 
 				let response = `## Search Results for "${query}"\n\n`;
+				if (scoped.branchUnknown) {
+					// Visible in the prose too, not only in the trailer: D1 chose the
+					// superset BECAUSE it fails visibly, and a flag nobody renders is
+					// the invisible failure it exists to avoid.
+					response += `*Branch \`${scoped.branchLabel ?? "?"}\` is not in the index; showing results from every indexed branch. Each result lists the branches it belongs to.*\n\n`;
+				}
 				if (autoIndexed > 0) {
 					response += `*Auto-indexed ${autoIndexed} changed file(s)*\n\n`;
 				}
@@ -381,6 +397,11 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 					if (chunk.parentName) response += ` (in \`${chunk.parentName}\`)`;
 					response += `\n`;
 					response += `Score: ${(r.score * 100).toFixed(1)}% (vector: ${(r.vectorScore * 100).toFixed(0)}%, keyword: ${(r.keywordScore * 100).toFixed(0)}%)\n`;
+					// D1's PER-ROW attribution. It is what lets an agent discount a
+					// foreign row instead of discarding the whole response.
+					if (r.branches && r.branches.length > 0) {
+						response += `Branches: ${r.branches.join(", ")}\n`;
+					}
 					response += `ID: \`${chunk.id.slice(0, 12)}...\`\n\n`;
 					response += `\`\`\`${chunk.language}\n`;
 					response += chunk.content.slice(0, 1000);
@@ -396,6 +417,12 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 				const trailer = JSON.stringify({
 					...buildFreshness(stateManager, startTime),
 					...indexState,
+					...branchState,
+					results: results.map((r) => ({
+						id: r.chunk.id,
+						file: r.chunk.filePath,
+						branches: r.branches ?? [],
+					})),
 				});
 				response += `\n${trailer}`;
 

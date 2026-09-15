@@ -24,9 +24,11 @@ import {
 export class TreeSitterBackend implements ISearchBackend {
 	readonly name = "tree-sitter" as const;
 
+	/** Built per query; see `LocationBackend` for why the branch is a field. */
 	constructor(
 		private parserManager: ParserManager,
 		private tracker: IFileTracker,
+		private branchId: number,
 		private workspaceRoot: string,
 		private maxFilesToScan: number,
 	) {}
@@ -47,7 +49,7 @@ export class TreeSitterBackend implements ISearchBackend {
 		const entityName = intent.extractedEntities[0];
 
 		// Get all indexed files
-		const allFiles = this.tracker.getAllFiles();
+		const allFiles = this.tracker.getAllFiles(this.branchId);
 		if (signal.aborted) return [];
 
 		// Apply filePattern filter if provided

@@ -17,6 +17,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+
+/** Every row this file writes and reads lives on one branch. */
+const BRANCH = 0;
+
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -55,7 +59,7 @@ function addDocument(
 	documentType: DocumentType,
 	filePath: string,
 ): void {
-	tracker.trackDocument({
+	tracker.trackDocument(BRANCH, {
 		id,
 		documentType,
 		filePath,
@@ -206,20 +210,24 @@ describe("derived documents", () => {
 		const filePath = "src/a.ts";
 		tracker.markIndexed(0, join(workDir, filePath), "hash-a", ["c1"]);
 		tracker.setEnrichmentState(
+			BRANCH,
 			join(workDir, filePath),
 			"file_summary",
 			"complete",
 		);
 		tracker.setEnrichmentState(
+			BRANCH,
 			join(workDir, filePath),
 			"symbol_summary",
 			"complete",
 		);
 		addDocument(tracker, "derived-1", "file_summary", filePath);
 
-		expect(tracker.getDocumentProvenance("derived-1")?.isValid).toBe(true);
+		expect(tracker.getDocumentProvenance(BRANCH, "derived-1")?.isValid).toBe(
+			true,
+		);
 
-		const counts = invalidateForChangedFiles(tracker, {
+		const counts = invalidateForChangedFiles(tracker, BRANCH, {
 			changedPaths: [filePath],
 			commitSha: SHA,
 		});
@@ -227,7 +235,7 @@ describe("derived documents", () => {
 		expect(counts.derivedInvalidated).toBe(1);
 		expect(counts.filesQueuedForReEnrichment).toBe(1);
 
-		const provenance = tracker.getDocumentProvenance("derived-1");
+		const provenance = tracker.getDocumentProvenance(BRANCH, "derived-1");
 		expect(provenance?.invalidatedAtCommit).toBe(SHA);
 		expect(provenance?.isValid).toBe(false);
 		// Superseded, not flagged: the two states are independent.
@@ -235,9 +243,9 @@ describe("derived documents", () => {
 
 		// Queued for re-derivation.
 		expect(
-			tracker.needsEnrichment(join(workDir, filePath), "file_summary"),
+			tracker.needsEnrichment(BRANCH, join(workDir, filePath), "file_summary"),
 		).toBe(true);
-		expect(tracker.getFilesNeedingEnrichment("file_summary")).toContain(
+		expect(tracker.getFilesNeedingEnrichment(BRANCH, "file_summary")).toContain(
 			filePath,
 		);
 
@@ -250,13 +258,17 @@ describe("derived documents", () => {
 		addDocument(tracker, "changed", "file_summary", "src/a.ts");
 		addDocument(tracker, "untouched", "file_summary", "src/b.ts");
 
-		invalidateForChangedFiles(tracker, {
+		invalidateForChangedFiles(tracker, BRANCH, {
 			changedPaths: ["src/a.ts"],
 			commitSha: SHA,
 		});
 
-		expect(tracker.getDocumentProvenance("changed")?.isValid).toBe(false);
-		expect(tracker.getDocumentProvenance("untouched")?.isValid).toBe(true);
+		expect(tracker.getDocumentProvenance(BRANCH, "changed")?.isValid).toBe(
+			false,
+		);
+		expect(tracker.getDocumentProvenance(BRANCH, "untouched")?.isValid).toBe(
+			true,
+		);
 
 		tracker.close();
 	});
@@ -265,11 +277,11 @@ describe("derived documents", () => {
 		const tracker = newTracker();
 		addDocument(tracker, "derived-1", "file_summary", "src/a.ts");
 
-		invalidateForChangedFiles(tracker, {
+		invalidateForChangedFiles(tracker, BRANCH, {
 			changedPaths: ["src/a.ts"],
 			commitSha: SHA,
 		});
-		const second = invalidateForChangedFiles(tracker, {
+		const second = invalidateForChangedFiles(tracker, BRANCH, {
 			changedPaths: ["src/a.ts"],
 			commitSha: "b".repeat(40),
 		});
@@ -278,7 +290,7 @@ describe("derived documents", () => {
 		// last notice".
 		expect(second.derivedInvalidated).toBe(0);
 		expect(
-			tracker.getDocumentProvenance("derived-1")?.invalidatedAtCommit,
+			tracker.getDocumentProvenance(BRANCH, "derived-1")?.invalidatedAtCommit,
 		).toBe(SHA);
 
 		tracker.close();
@@ -289,13 +301,13 @@ describe("derived documents", () => {
 		// Nothing in the schema forces the relative spelling; the diff is relative.
 		addDocument(tracker, "abs-1", "file_summary", join(workDir, "src/a.ts"));
 
-		const counts = invalidateForChangedFiles(tracker, {
+		const counts = invalidateForChangedFiles(tracker, BRANCH, {
 			changedPaths: ["src/a.ts"],
 			commitSha: SHA,
 		});
 
 		expect(counts.derivedInvalidated).toBe(1);
-		expect(tracker.getDocumentProvenance("abs-1")?.isValid).toBe(false);
+		expect(tracker.getDocumentProvenance(BRANCH, "abs-1")?.isValid).toBe(false);
 
 		tracker.close();
 	});
@@ -309,7 +321,7 @@ describe("observed documents", () => {
 		addDocument(tracker, "obs-2", "project_doc", "src/a.ts");
 		const before = documentCount(tracker);
 
-		const counts = invalidateForChangedFiles(tracker, {
+		const counts = invalidateForChangedFiles(tracker, BRANCH, {
 			changedPaths: ["src/a.ts"],
 			commitSha: SHA,
 		});
@@ -318,7 +330,7 @@ describe("observed documents", () => {
 		expect(counts.derivedInvalidated).toBe(0);
 
 		for (const id of ["obs-1", "obs-2"]) {
-			const provenance = tracker.getDocumentProvenance(id);
+			const provenance = tracker.getDocumentProvenance(BRANCH, id);
 			expect(provenance).not.toBeNull();
 			expect(provenance?.staleAtCommit).toBe(SHA);
 			expect(provenance?.isStale).toBe(true);
@@ -330,9 +342,9 @@ describe("observed documents", () => {
 
 		// The rows are still there.
 		expect(documentCount(tracker)).toBe(before);
-		expect(tracker.getDocumentsForFile(join(workDir, "src/a.ts"))).toHaveLength(
-			2,
-		);
+		expect(
+			tracker.getDocumentsForFile(BRANCH, join(workDir, "src/a.ts")),
+		).toHaveLength(2);
 
 		tracker.close();
 	});
@@ -341,20 +353,22 @@ describe("observed documents", () => {
 		const tracker = newTracker();
 		addDocument(tracker, "obs-1", "session_observation", "src/a.ts");
 
-		invalidateForChangedFiles(tracker, {
+		invalidateForChangedFiles(tracker, BRANCH, {
 			changedPaths: ["src/a.ts"],
 			commitSha: SHA,
 		});
-		const second = invalidateForChangedFiles(tracker, {
+		const second = invalidateForChangedFiles(tracker, BRANCH, {
 			changedPaths: ["src/a.ts"],
 			commitSha: "b".repeat(40),
 		});
 		expect(second.observedFlaggedStale).toBe(0);
-		expect(tracker.getDocumentProvenance("obs-1")?.staleAtCommit).toBe(SHA);
+		expect(tracker.getDocumentProvenance(BRANCH, "obs-1")?.staleAtCommit).toBe(
+			SHA,
+		);
 
 		// A flag nobody can clear is a flag everybody learns to ignore.
-		expect(tracker.clearDocumentsStale(["obs-1"])).toBe(1);
-		expect(tracker.getDocumentProvenance("obs-1")?.isStale).toBe(false);
+		expect(tracker.clearDocumentsStale(BRANCH, ["obs-1"])).toBe(1);
+		expect(tracker.getDocumentProvenance(BRANCH, "obs-1")?.isStale).toBe(false);
 		expect(documentCount(tracker)).toBe(1);
 
 		tracker.close();
@@ -373,7 +387,7 @@ describe("external documents", () => {
 			addDocument(tracker, id, type, "src/a.ts");
 		}
 
-		const counts = invalidateForChangedFiles(tracker, {
+		const counts = invalidateForChangedFiles(tracker, BRANCH, {
 			changedPaths: ["src/a.ts"],
 			commitSha: SHA,
 		});
@@ -384,7 +398,7 @@ describe("external documents", () => {
 		expect(counts.observedFlaggedStale).toBe(0);
 
 		for (const id of ["ext-1", "ext-2", "ext-3"]) {
-			const provenance = tracker.getDocumentProvenance(id);
+			const provenance = tracker.getDocumentProvenance(BRANCH, id);
 			// Upstream documentation did not change because this repo committed.
 			expect(provenance?.invalidatedAtCommit).toBeNull();
 			expect(provenance?.staleAtCommit).toBeNull();
@@ -400,7 +414,7 @@ describe("external documents", () => {
 		addDocument(tracker, "ext-1", "framework_doc", "src/a.ts");
 
 		const [, sql] = recordSql(tracker, () =>
-			invalidateForChangedFiles(tracker, {
+			invalidateForChangedFiles(tracker, BRANCH, {
 				changedPaths: ["src/a.ts"],
 				commitSha: SHA,
 			}),
@@ -429,7 +443,7 @@ describe("safety rails", () => {
 		tracker.setCurrentCommit(null);
 		addDocument(tracker, "legacy-1", "file_summary", "src/legacy.ts");
 
-		const provenance = tracker.getDocumentProvenance("legacy-1");
+		const provenance = tracker.getDocumentProvenance(BRANCH, "legacy-1");
 		expect(provenance?.validFromCommit).toBeNull();
 		expect(provenance?.invalidatedAtCommit).toBeNull();
 		expect(provenance?.staleAtCommit).toBeNull();
@@ -438,14 +452,16 @@ describe("safety rails", () => {
 		expect(provenance?.isValid).toBe(true);
 
 		// And an invalidation pass over unrelated files must not change that.
-		invalidateForChangedFiles(tracker, {
+		invalidateForChangedFiles(tracker, BRANCH, {
 			changedPaths: ["src/other.ts"],
 			commitSha: SHA,
 		});
-		expect(tracker.getDocumentProvenance("legacy-1")?.isValid).toBe(true);
+		expect(tracker.getDocumentProvenance(BRANCH, "legacy-1")?.isValid).toBe(
+			true,
+		);
 
 		// The report agrees: nothing is invalidated or stale.
-		const report = getStalenessReport(tracker);
+		const report = getStalenessReport(tracker, BRANCH);
 		expect(report.totals.total).toBe(1);
 		expect(report.totals.invalidated).toBe(0);
 		expect(report.totals.stale).toBe(0);
@@ -465,7 +481,7 @@ describe("safety rails", () => {
 		expect(before).toBe(4);
 
 		const [, sql] = recordSql(tracker, () =>
-			invalidateForChangedFiles(tracker, {
+			invalidateForChangedFiles(tracker, BRANCH, {
 				changedPaths: ["src/a.ts"],
 				commitSha: SHA,
 			}),
@@ -477,7 +493,7 @@ describe("safety rails", () => {
 
 		// Every id still resolves.
 		for (const id of ["d-1", "d-2", "o-1", "e-1"]) {
-			expect(tracker.getDocumentProvenance(id)).not.toBeNull();
+			expect(tracker.getDocumentProvenance(BRANCH, id)).not.toBeNull();
 		}
 
 		tracker.close();
@@ -495,7 +511,7 @@ describe("safety rails", () => {
 		}
 
 		const [counts, sql] = recordSql(tracker, () =>
-			invalidateForChangedFiles(tracker, {
+			invalidateForChangedFiles(tracker, BRANCH, {
 				changedPaths: paths,
 				commitSha: SHA,
 			}),
@@ -519,7 +535,7 @@ describe("safety rails", () => {
 		addDocument(tracker, "d-1", "file_summary", "src/a.ts");
 
 		const [counts, sql] = recordSql(tracker, () =>
-			invalidateForChangedFiles(tracker, {
+			invalidateForChangedFiles(tracker, BRANCH, {
 				changedPaths: [],
 				commitSha: SHA,
 			}),
@@ -527,7 +543,7 @@ describe("safety rails", () => {
 
 		expect(counts.derivedInvalidated).toBe(0);
 		expect(sql.some((s) => /^\s*UPDATE/i.test(s))).toBe(false);
-		expect(tracker.getDocumentProvenance("d-1")?.isValid).toBe(true);
+		expect(tracker.getDocumentProvenance(BRANCH, "d-1")?.isValid).toBe(true);
 
 		tracker.close();
 	});
@@ -543,11 +559,11 @@ describe("outside a git repository", () => {
 		addDocument(tracker, "d-1", "file_summary", "src/a.ts");
 
 		// mkdtemp lands under the OS temp root, which is not inside any repo.
-		const counts = await invalidateForCommit(workDir, tracker);
+		const counts = await invalidateForCommit(workDir, tracker, BRANCH);
 		expect(counts).toBeNull();
 
 		// Nothing was invalidated on a guess.
-		expect(tracker.getDocumentProvenance("d-1")?.isValid).toBe(true);
+		expect(tracker.getDocumentProvenance(BRANCH, "d-1")?.isValid).toBe(true);
 		expect(documentCount(tracker)).toBe(1);
 
 		tracker.close();
@@ -569,7 +585,7 @@ describe("outside a git repository", () => {
 		).resolves.toBeNull();
 
 		// And nothing was invalidated on a guess.
-		expect(tracker.getDocumentProvenance("d-1")?.isValid).toBe(true);
+		expect(tracker.getDocumentProvenance(BRANCH, "d-1")?.isValid).toBe(true);
 
 		tracker.close();
 	});
@@ -613,12 +629,12 @@ describe("staleness report", () => {
 		addDocument(tracker, "o-2", "project_doc", "src/b.ts");
 		addDocument(tracker, "e-1", "framework_doc", "src/a.ts");
 
-		invalidateForChangedFiles(tracker, {
+		invalidateForChangedFiles(tracker, BRANCH, {
 			changedPaths: ["src/a.ts"],
 			commitSha: SHA,
 		});
 
-		const report = getStalenessReport(tracker);
+		const report = getStalenessReport(tracker, BRANCH);
 
 		expect(report.byClass.derived.total).toBe(2);
 		expect(report.byClass.derived.invalidated).toBe(1);
@@ -648,7 +664,7 @@ describe("staleness report", () => {
 	test("is empty and cheap on a fresh index", () => {
 		const tracker = newTracker();
 
-		const report = getStalenessReport(tracker);
+		const report = getStalenessReport(tracker, BRANCH);
 		expect(report.totals).toEqual({ total: 0, invalidated: 0, stale: 0 });
 		expect(report.byType).toEqual([]);
 		expect(report.staleObserved).toEqual([]);

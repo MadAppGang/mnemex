@@ -15,7 +15,24 @@
  * THE FIX is `+s.is_exported = 1`. The unary plus makes the left side an
  * expression rather than a column reference, so neither the partial index's
  * WHERE clause nor a plain index on `is_exported` can match it, and the planner
- * takes `idx_symbols_name (name=?)` — an equality on the reference's own name.
+ * takes `idx_symbols_name` — an equality on the reference's own name.
+ *
+ * ── Phase 3b-1, I-12 RULING 3 ─────────────────────────────────────────────
+ * `symbols` is now keyed `(branch_id, id)` and `idx_symbols_name` leads with
+ * `branch_id`, so the plan's expected detail changes from `(name=?)` to
+ * `(branch_id=? AND name=?)`. THE TEST'S INTENT IS UNCHANGED: one name lookup
+ * per reference, never a scan across exported symbols. The index serves exactly
+ * the same role, with one more equality column in front of it.
+ *
+ * Ruling 3 requires the new plan to be re-proven with the SAME falsification,
+ * and there are now TWO ways to lose it, each with its own test below:
+ *   (a) drop the `+` — the planner takes `idx_symbols_exported` again;
+ *   (b) drop the branch scoping from the subqueries — `name=?` alone cannot
+ *       use a `(branch_id, name)` index, so the plan regresses to a full SCAN
+ *       of `symbols`, which is the same unbounded cost through a different
+ *       door.
+ * Both are executed, against the real fixture, in "premise" below.
+ * ──────────────────────────────────────────────────────────────────────────
  *
  * WHY THE GUARD IS A PLAN AND NOT A STOPWATCH. Timing tests on this machine
  * flaked at load average 68. `EXPLAIN QUERY PLAN` is deterministic and
@@ -60,20 +77,51 @@ const PRE_FIX_SQL = `
 			UPDATE symbol_references
 			SET to_symbol_id = (
 				SELECT s.id FROM symbols s
-				WHERE s.name = symbol_references.to_symbol_name
+				WHERE s.branch_id = ?
+				AND s.name = symbol_references.to_symbol_name
 				AND s.is_exported = 1
 				LIMIT 1
 			),
 			is_resolved = 1
-			WHERE is_resolved = 0
+			WHERE branch_id = ?
+			AND is_resolved = 0
 			AND EXISTS (
 				SELECT 1 FROM symbols s
-				WHERE s.name = symbol_references.to_symbol_name
+				WHERE s.branch_id = ?
+				AND s.name = symbol_references.to_symbol_name
 				AND s.is_exported = 1
 			)
 		`;
 
-const NAME_INDEX_SEARCH = "SEARCH s USING INDEX idx_symbols_name (name=?)";
+/**
+ * Ruling 3's OTHER falsifier: the `+` kept, the branch scoping removed from
+ * both subqueries. `idx_symbols_name` leads with `branch_id`, so `name=?` alone
+ * cannot use it.
+ */
+const UNSCOPED_SUBQUERY_SQL = `
+			UPDATE symbol_references
+			SET to_symbol_id = (
+				SELECT s.id FROM symbols s
+				WHERE s.name = symbol_references.to_symbol_name
+				AND +s.is_exported = 1
+				LIMIT 1
+			),
+			is_resolved = 1
+			WHERE branch_id = ?
+			AND is_resolved = 0
+			AND EXISTS (
+				SELECT 1 FROM symbols s
+				WHERE s.name = symbol_references.to_symbol_name
+				AND +s.is_exported = 1
+			)
+		`;
+
+/** The v4 shape of the index this statement's plan depends on (Ruling 3). */
+const NAME_INDEX_SEARCH =
+	"SEARCH s USING INDEX idx_symbols_name (branch_id=? AND name=?)";
+
+/** Every fixture here lives on one branch; the second exists only in V3.11. */
+const BRANCH = 1;
 
 const tempDirs: string[] = [];
 
@@ -144,6 +192,11 @@ function refRows(tracker: FileTracker): RefRow[] {
 		.all() as RefRow[];
 }
 
+/** The branch-scoped graph handle every fixture writes and reads through. */
+function graphOf(tracker: FileTracker) {
+	return tracker.graph(BRANCH);
+}
+
 /** Every SQL string the tracker PREPARES while `run` executes. */
 function capturePrepared(tracker: FileTracker, run: () => void): string[] {
 	const db = tracker.getDatabase();
@@ -198,7 +251,7 @@ function subqueryAccessPaths(plan: PlanRow[]): string[][] {
 /** The one `UPDATE symbol_references … SET to_symbol_id` the method prepares. */
 function resolveStatementOf(tracker: FileTracker): string {
 	const prepared = capturePrepared(tracker, () => {
-		tracker.resolveReferencesByName();
+		graphOf(tracker).resolveReferencesByName();
 	});
 	const updates = prepared.filter((sql) =>
 		/UPDATE\s+symbol_references\s+SET\s+to_symbol_id/i.test(sql),
@@ -221,7 +274,8 @@ function resolveStatementOf(tracker: FileTracker): string {
  * was inserted first.
  */
 function seedHandFixture(tracker: FileTracker): void {
-	tracker.insertSymbols([
+	const graph = graphOf(tracker);
+	graph.insertSymbols([
 		symbol("alpha-a", "alpha", true),
 		symbol("beta-priv", "beta", false),
 		symbol("beta-b", "beta", true),
@@ -230,8 +284,8 @@ function seedHandFixture(tracker: FileTracker): void {
 		symbol("dup-b", "dup", true),
 		symbol("dup-c", "dup", true),
 	]);
-	tracker.insertSymbol(symbol("dup-a", "dup", true)); // REPLACE: new rowid
-	tracker.insertReferences([
+	graph.insertSymbol(symbol("dup-a", "dup", true)); // REPLACE: new rowid
+	graph.insertReferences([
 		reference("alpha-a", "alpha"), // 1 → alpha-a
 		reference("alpha-a", "beta"), // 2 → beta-b (the private one is skipped)
 		reference("alpha-a", "gamma"), // 3 only a private definition: stays
@@ -272,7 +326,8 @@ function seedGeneratedFixture(tracker: FileTracker): void {
 			),
 		);
 	}
-	tracker.insertSymbols(symbols);
+	const graph = graphOf(tracker);
+	graph.insertSymbols(symbols);
 	const replaced: SymbolDefinition[] = [];
 	for (let i = 0; i < GENERATED.replaced; i++) {
 		const original = symbols[
@@ -283,7 +338,7 @@ function seedGeneratedFixture(tracker: FileTracker): void {
 			isExported: i % 2 === 0 ? !original.isExported : original.isExported,
 		});
 	}
-	tracker.insertSymbols(replaced);
+	graph.insertSymbols(replaced);
 
 	const refs: SymbolReference[] = [];
 	for (let i = 0; i < GENERATED.refs; i++) {
@@ -297,7 +352,7 @@ function seedGeneratedFixture(tracker: FileTracker): void {
 				: reference(from, name),
 		);
 	}
-	tracker.insertReferences(refs);
+	graph.insertReferences(refs);
 }
 
 /**
@@ -361,12 +416,24 @@ describe("resolveReferencesByName — the query plan", () => {
 			.get() as { n: number };
 		expect(stat.n).toBe(0);
 
-		const plan = explain(tracker, PRE_FIX_SQL);
-		console.log(`pre-fix plan:\n${renderPlan(plan)}`);
-		expect(subqueryAccessPaths(plan)).toEqual([
-			["SEARCH s USING INDEX idx_symbols_exported (is_exported=?)"],
-			["SEARCH s USING INDEX idx_symbols_exported (is_exported=?)"],
+		// Falsifier (a): the `+` removed, the scoping kept.
+		const preFix = explain(tracker, PRE_FIX_SQL);
+		console.log(`pre-fix plan (no +):\n${renderPlan(preFix)}`);
+		expect(subqueryAccessPaths(preFix)).toEqual([
+			[
+				"SEARCH s USING INDEX idx_symbols_exported (branch_id=? AND is_exported=?)",
+			],
+			[
+				"SEARCH s USING INDEX idx_symbols_exported (branch_id=? AND is_exported=?)",
+			],
 		]);
+
+		// Falsifier (b), Ruling 3's: the `+` kept, the branch scoping removed.
+		// `idx_symbols_name` leads with `branch_id`, so `name=?` alone cannot use
+		// it and the plan regresses to a full scan of `symbols`.
+		const unscoped = explain(tracker, UNSCOPED_SUBQUERY_SQL);
+		console.log(`unscoped-subquery plan:\n${renderPlan(unscoped)}`);
+		expect(subqueryAccessPaths(unscoped)).toEqual([["SCAN s"], ["SCAN s"]]);
 		tracker.close();
 	});
 });
@@ -390,7 +457,7 @@ describe("resolveReferencesByName — resolves exactly what the pre-fix statemen
 			).map((r) => r.id),
 		).toEqual(["dup-b", "dup-c", "dup-a"]);
 
-		expect(tracker.resolveReferencesByName()).toBe(4);
+		expect(graphOf(tracker).resolveReferencesByName()).toBe(4);
 		expect(
 			refRows(tracker).map((r) => [
 				r.id,
@@ -409,7 +476,7 @@ describe("resolveReferencesByName — resolves exactly what the pre-fix statemen
 			[8, "Alpha", null, 0],
 		]);
 		// Idempotent: a second pass has nothing left to resolve.
-		expect(tracker.resolveReferencesByName()).toBe(0);
+		expect(graphOf(tracker).resolveReferencesByName()).toBe(0);
 		tracker.close();
 	});
 
@@ -427,8 +494,8 @@ describe("resolveReferencesByName — resolves exactly what the pre-fix statemen
 		const preFixChanges = before
 			.getDatabase()
 			.prepare(PRE_FIX_SQL)
-			.run().changes;
-		const changes = after.resolveReferencesByName();
+			.run(BRANCH, BRANCH, BRANCH).changes;
+		const changes = graphOf(after).resolveReferencesByName();
 
 		const rows = refRows(after);
 		expect(rows).toEqual(refRows(before));

@@ -23,6 +23,7 @@ import { theme } from "../theme.js";
 export function MapView() {
 	const {
 		tracker,
+		branchId,
 		setActiveTab,
 		pushNav,
 		inputFocused,
@@ -38,7 +39,7 @@ export function MapView() {
 		loading,
 		error,
 		refresh,
-	} = useRepoMap(tracker);
+	} = useRepoMap(tracker, branchId);
 
 	const [selectedPath, setSelectedPath] = useState<string | null>(null);
 	const [filterFocused, setFilterFocused] = useState(false);

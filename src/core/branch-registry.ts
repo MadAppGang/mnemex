@@ -316,6 +316,25 @@ export function openRegistry(
 }
 
 /**
+ * READ-ONLY. The registry as it is on disk, for a caller that must not (and
+ * cannot) take the store lock — every SEARCH path (§4.4). The file header's
+ * "`branches.json` may be READ anywhere" is this function; REG-1 governs
+ * WRITES, and this one has no handle, no mutator and no `flush`.
+ *
+ * An absent file is an EMPTY registry, exactly as `openRegistry` treats it: a
+ * store that has never been indexed has no entries, and every label is then
+ * unknown (D1). A CORRUPT file still throws `BranchRegistryCorruptError`. That
+ * is deliberate and it is not D1's case: D1 covers a knowable "this HEAD has no
+ * entry", where returning the superset with `branchUnknown` is more useful than
+ * an error. An unreadable registry is a broken store, the error carries the
+ * remedy, and silently answering "unknown branch" would hide it behind a flag
+ * that means something else.
+ */
+export function readBranchRegistry(loc: StoreLocation): BranchRegistryFile {
+	return readRegistryFile(getBranchRegistryPathFor(loc));
+}
+
+/**
  * The registry's bytes, in the canonical key order. Exported so tests can
  * compare a file against what this build would write, not so callers can write
  * it: only `openRegistry`'s handle writes.

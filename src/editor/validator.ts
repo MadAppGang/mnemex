@@ -62,8 +62,8 @@ export class EditValidator {
 	 * Compare current file hash with tracked hash to detect stale edits.
 	 * Returns the current content hash for TOCTOU re-verification inside locks.
 	 */
-	hashCheck(filePath: string, tracker: IFileTracker): string {
-		const state = tracker.getFileState(filePath);
+	hashCheck(filePath: string, tracker: IFileTracker, branchId: number): string {
+		const state = tracker.getFileState(branchId, filePath);
 		if (!state) {
 			// File not indexed yet — allow edit but warn
 			return "";

@@ -42,10 +42,10 @@ export function registerContextTools(server: McpServer, deps: ToolDeps): void {
 			const startTime = Date.now();
 
 			try {
-				const { graphManager, tracker } = await cache.get();
+				const { graphManager, tracker, branchId } = await cache.get();
 
-				// Find which symbol contains the given file:line
-				const allSymbols = tracker.getAllSymbols();
+				// Find which symbol contains the given file:line, on THIS branch.
+				const allSymbols = tracker.graph(branchId).getAllSymbols();
 				const atLocation = allSymbols.filter(
 					(s) =>
 						(s.filePath === file || s.filePath.endsWith(`/${file}`)) &&

@@ -39,6 +39,7 @@ interface ProjectContext {
 export function gatherProjectContext(
 	projectPath: string,
 	tracker: FileTracker | null,
+	branchId: number,
 	result: DoctorResult,
 ): ProjectContext {
 	const ctx: ProjectContext = {
@@ -53,14 +54,17 @@ export function gatherProjectContext(
 	// 1. Top symbols from FileTracker
 	if (tracker) {
 		try {
-			const symbols = tracker.getTopSymbols(10);
+			// `doctor` reports the CURRENT branch. The store-wide totals it also
+			// prints are the lifecycle sub-phase's (`mnemex branches`, 3b-3).
+			const graph = tracker.graph(branchId);
+			const symbols = graph.getTopSymbols(10);
 			ctx.topSymbols = symbols.map((s) => ({
 				name: s.name,
 				kind: s.kind,
 				pagerank: s.pagerankScore,
 			}));
 
-			const stats = tracker.getSymbolGraphStats();
+			const stats = graph.getSymbolGraphStats();
 			ctx.projectScale = {
 				symbols: stats.totalSymbols,
 				files: 0, // Will be set from file tracker

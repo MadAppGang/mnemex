@@ -8,6 +8,7 @@
  * - Context formatting with attention-aware positioning
  */
 
+import type { BranchScope } from "../core/branch-scope.js";
 import type { IVectorStore } from "../core/store.js";
 import type {
 	CodeUnit,
@@ -54,6 +55,11 @@ export interface EnhancedRetrieverOptions {
 }
 
 export interface SearchOptions {
+	/**
+	 * REQUIRED (§4.4). Which branch this retrieval may see. Per call, never
+	 * construction state: this object outlives a branch switch.
+	 */
+	scope: BranchScope;
 	/** Number of results (default: 10) */
 	limit?: number;
 	/** Filter by unit types */
@@ -139,7 +145,7 @@ export class EnhancedRetriever {
 	 */
 	async search(
 		query: string,
-		options: SearchOptions = {},
+		options: SearchOptions,
 	): Promise<EnhancedSearchResult> {
 		const startTime = Date.now();
 		const {
@@ -166,6 +172,7 @@ export class EnhancedRetriever {
 
 		// Step 2: Execute search based on strategy
 		const initialResults = await this.executeSearch(query, routing, {
+			scope: options.scope,
 			limit: this.options.initialLimit,
 			unitTypes,
 			pathPattern,
@@ -202,7 +209,7 @@ export class EnhancedRetriever {
 		if (includeSummaries && finalResults.length > 0) {
 			const uniqueFiles = [...new Set(finalResults.map((r) => r.filePath))];
 			for (const filePath of uniqueFiles.slice(0, 5)) {
-				const fileSummary = await this.getFileSummary(filePath);
+				const fileSummary = await this.getFileSummary(options.scope, filePath);
 				if (fileSummary) {
 					summaries.push(fileSummary);
 				}
@@ -236,10 +243,7 @@ export class EnhancedRetriever {
 	/**
 	 * Search and return formatted context string for direct LLM use
 	 */
-	async searchForLLM(
-		query: string,
-		options: SearchOptions = {},
-	): Promise<string> {
+	async searchForLLM(query: string, options: SearchOptions): Promise<string> {
 		const result = await this.search(query, options);
 		return this.formatter.formatForLLM({
 			primary: result.results.slice(0, Math.ceil(result.results.length * 0.6)),
@@ -255,7 +259,12 @@ export class EnhancedRetriever {
 	private async executeSearch(
 		query: string,
 		routing: RouteResult,
-		options: { limit: number; unitTypes?: UnitType[]; pathPattern?: string },
+		options: {
+			scope: BranchScope;
+			limit: number;
+			unitTypes?: UnitType[];
+			pathPattern?: string;
+		},
 	): Promise<Array<CodeUnit & { score: number }>> {
 		const { strategy } = routing;
 		const { limit, unitTypes, pathPattern } = options;
@@ -267,7 +276,7 @@ export class EnhancedRetriever {
 		switch (strategy.primary) {
 			case "symbol":
 				// Symbol lookup: prioritize exact/fuzzy name matches
-				return this.store.searchCodeUnits(query, queryVector, {
+				return this.store.searchCodeUnits(query, queryVector, options.scope, {
 					limit,
 					unitTypes: unitTypes || strategy.unitTypes,
 					filePath: pathPattern || strategy.filters?.pathPattern,
@@ -275,14 +284,14 @@ export class EnhancedRetriever {
 
 			case "path":
 				// Path-based: filter by path pattern
-				return this.store.searchCodeUnits(query, queryVector, {
+				return this.store.searchCodeUnits(query, queryVector, options.scope, {
 					limit,
 					unitTypes,
 					filePath: pathPattern || strategy.filters?.pathPattern,
 				});
 			default:
 				// Hybrid search (default)
-				return this.store.searchCodeUnits(query, queryVector, {
+				return this.store.searchCodeUnits(query, queryVector, options.scope, {
 					limit,
 					unitTypes: unitTypes || strategy.unitTypes,
 					filePath: pathPattern,
@@ -295,10 +304,13 @@ export class EnhancedRetriever {
 	 * Fixed: Now properly uses LLM-generated summary from metadata, with better fallback
 	 */
 	private async getFileSummary(
+		scope: BranchScope,
 		filePath: string,
 	): Promise<{ name: string; summary: string; path: string } | null> {
 		try {
-			const units = await this.store.getCodeUnitsByFile(filePath, ["file"]);
+			const units = await this.store.getCodeUnitsByFile(scope, filePath, [
+				"file",
+			]);
 			if (units.length > 0) {
 				const fileUnit = units[0];
 				// Prefer LLM-generated summary from metadata if available
@@ -345,6 +357,7 @@ export class EnhancedRetriever {
 	 */
 	async searchCodeUnits(
 		query: string,
+		scope: BranchScope,
 		options: {
 			limit?: number;
 			unitTypes?: UnitType[];
@@ -352,7 +365,7 @@ export class EnhancedRetriever {
 		} = {},
 	): Promise<Array<CodeUnit & { score: number }>> {
 		const queryVector = await this.embeddings.embedOne(query);
-		return this.store.searchCodeUnits(query, queryVector, {
+		return this.store.searchCodeUnits(query, queryVector, scope, {
 			limit: options.limit || 10,
 			unitTypes: options.unitTypes,
 			filePath: options.pathPattern,
@@ -362,8 +375,11 @@ export class EnhancedRetriever {
 	/**
 	 * Get children of a code unit
 	 */
-	async getUnitChildren(unitId: string): Promise<CodeUnit[]> {
-		return this.store.getChildUnits(unitId);
+	async getUnitChildren(
+		scope: BranchScope,
+		unitId: string,
+	): Promise<CodeUnit[]> {
+		return this.store.getChildUnits(scope, unitId);
 	}
 
 	/**

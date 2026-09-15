@@ -44,8 +44,8 @@ export function registerStatusTools(server: McpServer, deps: ToolDeps): void {
 					}
 
 					try {
-						const { tracker } = await cache.get();
-						const stats = tracker.getStats();
+						const { tracker, branchId } = await cache.get();
+						const stats = tracker.getStats(branchId);
 						indexedFileCount = stats.totalFiles;
 						indexDbLastIndexed = stats.lastIndexed;
 					} catch {

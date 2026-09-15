@@ -278,6 +278,13 @@ function cachedIndex(graphManager: unknown) {
 		graphManager,
 		repoMapGen: null,
 		loadedAt: Date.now(),
+		branchId: 0,
+		branch: {
+			scope: { kind: "all" as const },
+			branchUnknown: false,
+			label: null,
+			labels: new Map<number, string>(),
+		},
 	};
 }
 
@@ -410,7 +417,7 @@ describe("personalized PageRank enabled", () => {
 		tempDirs.push(graphDir);
 		const tracker = new FileTracker(join(graphDir, "index.db"), graphDir);
 		try {
-			const graphManager = createReferenceGraphManager(tracker);
+			const graphManager = createReferenceGraphManager(tracker, 0);
 
 			const run = await runSearch(ws, () => cachedIndex(graphManager));
 
@@ -437,7 +444,7 @@ describe("personalized PageRank enabled", () => {
 		// Never `buildGraph()`ed, and backed by a database with no symbols at all.
 		const tracker = new FileTracker(join(graphDir, "index.db"), graphDir);
 		try {
-			const graphManager = createReferenceGraphManager(tracker);
+			const graphManager = createReferenceGraphManager(tracker, 0);
 
 			const run = await runSearch(ws, () => cachedIndex(graphManager));
 

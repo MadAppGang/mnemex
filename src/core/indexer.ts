@@ -56,6 +56,11 @@ import {
 	openRegistry,
 } from "./branch-registry.js";
 import {
+	graphBranchIdForRead,
+	labelBranchIds,
+	resolveBranchScopeForRead,
+} from "./branch-scope.js";
+import {
 	CachingEmbeddingsClient,
 	createCachingEmbeddingsClient,
 } from "./caching-embeddings-client.js";
@@ -374,6 +379,21 @@ export const CHANGES_MAX_SLICES = 64;
 // ============================================================================
 // Indexer Class
 // ============================================================================
+
+/**
+ * What one scoped search answered, D1's response-level flag included.
+ *
+ * `branchUnknown` is not a property of any row, so it cannot ride on
+ * `SearchResult`. It must reach the MCP `search_code` response and `--agent`,
+ * not only one CLI line (D1, required item 2).
+ */
+export interface BranchScopedSearch {
+	readonly results: SearchResult[];
+	/** D1: HEAD has no live registry entry, so the branch filter was DROPPED. */
+	readonly branchUnknown: boolean;
+	/** The HEAD label this search resolved, or null outside a repository. */
+	readonly branchLabel: string | null;
+}
 
 export class Indexer {
 	private projectPath: string;
@@ -1018,6 +1038,7 @@ export class Indexer {
 		const invalidation = await invalidateForCommit(
 			this.projectPath,
 			this.fileTracker!,
+			branchId,
 			{ head },
 		);
 		if (invalidation) {
@@ -1255,7 +1276,7 @@ export class Indexer {
 			}
 		} else {
 			// Incremental indexing
-			const changes = await this.getChangesInSlices(allFiles);
+			const changes = await this.getChangesInSlices(branchId, allFiles);
 			filesToIndex = [...changes.newFiles, ...changes.modifiedFiles];
 			deletedFiles = changes.deletedFiles;
 
@@ -1278,7 +1299,7 @@ export class Indexer {
 			// await between them does not count — it is skipped for a file with no
 			// chunk ids, and even when it runs it is not a guaranteed macrotask.
 			for (const deletedFile of deletedFiles) {
-				const chunkIds = this.fileTracker!.getChunkIds(deletedFile);
+				const chunkIds = this.fileTracker!.getChunkIds(branchId, deletedFile);
 				if (chunkIds.length > 0) {
 					const rowsDeleted = await this.vectorStore!.deleteByFile(deletedFile);
 					// The tracker says this file has chunks, so a delete that removed
@@ -1293,7 +1314,7 @@ export class Indexer {
 					}
 				}
 				await yieldToEventLoop();
-				this.fileTracker!.removeFile(deletedFile);
+				this.fileTracker!.removeFile(branchId, deletedFile);
 				await yieldToEventLoop();
 			}
 
@@ -1338,7 +1359,7 @@ export class Indexer {
 				// Now delete old data (the store converts the path to its stored form).
 				// NEVER GATED — see above.
 				await this.vectorStore!.deleteByFile(modifiedFile);
-				this.fileTracker!.resetEnrichmentState(modifiedFile);
+				this.fileTracker!.resetEnrichmentState(branchId, modifiedFile);
 				// SR-2: the next turn's region must not follow this one unyielded.
 				await yieldToEventLoop();
 			}
@@ -1962,8 +1983,10 @@ export class Indexer {
 			const alreadyQueued = new Set(
 				fileChunksForEnrichment.map((f) => f.filePath),
 			);
-			const unenrichedPaths =
-				this.fileTracker.getFilesNeedingEnrichment("file_summary");
+			const unenrichedPaths = this.fileTracker.getFilesNeedingEnrichment(
+				branchId,
+				"file_summary",
+			);
 
 			for (const relPath of unenrichedPaths) {
 				if (alreadyQueued.has(relPath)) continue;
@@ -2037,7 +2060,7 @@ export class Indexer {
 
 		const runASTExtraction = async (): Promise<void> => {
 			if (filesToIndex.length > 0) {
-				await this.extractSymbolGraph(filesToIndex, force, pathRoot);
+				await this.extractSymbolGraph(branchId, filesToIndex, force, pathRoot);
 			}
 		};
 
@@ -2161,13 +2184,21 @@ export class Indexer {
 	}
 
 	/**
-	 * Search the indexed codebase
-	 * Uses the stored embedding model from indexing for consistency
+	 * Search the indexed codebase, through the branch HEAD points at right now.
+	 *
+	 * Returns the results TOGETHER with D1's response-level flag, because
+	 * `branchUnknown` is a property of the response and not of any row: a caller
+	 * that only sees `SearchResult[]` cannot report it, and D1's whole argument
+	 * is that a silent empty (or a silent superset) is the failure mode worth
+	 * preventing. `search()` below keeps the old shape for the callers that do
+	 * not surface it; the CLI and the MCP tool use this one.
+	 *
+	 * The scope is resolved PER CALL, never cached (§2.5, V3.10).
 	 */
-	async search(
+	async searchScoped(
 		query: string,
 		options: SearchOptions = {},
-	): Promise<SearchResult[]> {
+	): Promise<BranchScopedSearch> {
 		// Initialize with forSearch=true to use stored embedding model
 		await this.initialize(true);
 
@@ -2191,19 +2222,42 @@ export class Indexer {
 			queryVector = await this.embeddingsClient.embedOne(query);
 		}
 
+		// The branch this read is scoped to. D1 (§4.4.2): a HEAD with no registry
+		// entry drops the filter and sets `branchUnknown`, rather than returning
+		// nothing — returning nothing fails INVISIBLY, and an agent reads "no
+		// results" as "this code does not exist" and writes it again.
+		const branch = resolveBranchScopeForRead(
+			resolveStoreLocation(this.projectPath),
+		);
+
 		// Search
-		const results = await this.vectorStore!.search(query, queryVector, {
-			...options,
-			keywordOnly: useKeywordOnly,
-		});
+		const results = await this.vectorStore!.search(
+			query,
+			queryVector,
+			branch.scope,
+			{
+				...options,
+				keywordOnly: useKeywordOnly,
+			},
+		);
+
+		// D1's per-row attribution: ids -> registry labels, from the snapshot the
+		// scope was resolved against. The registry is ~10 entries and already
+		// read, so this is a lookup, not a query.
+		for (const r of results) {
+			if (r.branchIds !== undefined) {
+				r.branches = labelBranchIds(r.branchIds, branch.labels);
+			}
+		}
 
 		// Dead code deprioritization: penalize symbols with 0 callers
 		// This prevents agents from being directed to unused/dead code
 		if (this.fileTracker && results.length > 1) {
 			const DEAD_CODE_PENALTY = 0.6; // 40% score reduction
+			const graph = this.fileTracker.graph(graphBranchIdForRead(branch));
 			for (const r of results) {
 				if (!r.chunk.name) continue;
-				const syms = this.fileTracker.getSymbolByName(r.chunk.name);
+				const syms = graph.getSymbolByName(r.chunk.name);
 				// Find the symbol in the same file
 				const sym =
 					syms.find((s) => s.filePath === r.chunk.filePath) ?? syms[0];
@@ -2215,7 +2269,22 @@ export class Indexer {
 			results.sort((a, b) => b.score - a.score);
 		}
 
-		return results;
+		return {
+			results,
+			branchUnknown: branch.branchUnknown,
+			branchLabel: branch.label,
+		};
+	}
+
+	/**
+	 * `searchScoped` without the response-level flags, for callers that do not
+	 * surface them. Every row still carries its `branches` attribution.
+	 */
+	async search(
+		query: string,
+		options: SearchOptions = {},
+	): Promise<SearchResult[]> {
+		return (await this.searchScoped(query, options)).results;
 	}
 
 	/**
@@ -2236,7 +2305,11 @@ export class Indexer {
 		// Initialize with forSearch=true (not indexing, just reading status)
 		await this.initialize(true);
 
-		const trackerStats = this.fileTracker!.getStats();
+		const trackerStats = this.fileTracker!.getStats(
+			graphBranchIdForRead(
+				resolveBranchScopeForRead(resolveStoreLocation(this.projectPath)),
+			),
+		);
 
 		// A corrupt index must be REPORTED, not thrown, so the caller can route
 		// to the repair in index() above. Throwing here would abort every
@@ -2409,7 +2482,10 @@ export class Indexer {
 	 * in THAT slice, so a path is deleted iff EVERY slice reports it — the
 	 * intersection, kept in the first slice's order.
 	 */
-	private async getChangesInSlices(allFiles: string[]): Promise<FileChanges> {
+	private async getChangesInSlices(
+		branchId: number,
+		allFiles: string[],
+	): Promise<FileChanges> {
 		const size = Math.max(
 			CHANGES_SLICE,
 			Math.ceil(allFiles.length / CHANGES_MAX_SLICES),
@@ -2422,6 +2498,7 @@ export class Indexer {
 		// path as deleted.
 		for (let start = 0; start === 0 || start < allFiles.length; start += size) {
 			const part = this.fileTracker!.getChanges(
+				branchId,
 				allFiles.slice(start, start + size),
 			);
 			for (const f of part.newFiles) newFiles.push(f);
@@ -2448,24 +2525,31 @@ export class Indexer {
 	 * Phase 4.5 of the indexing pipeline
 	 */
 	private async extractSymbolGraph(
+		branchId: number,
 		filesToIndex: string[],
 		force: boolean,
 		pathRoot: string,
 	): Promise<void> {
 		const symbolExtractor = createSymbolExtractor();
-		const graphManager = createReferenceGraphManager(this.fileTracker!);
+		// This run's branch, for every symbol-graph statement below. `--force`
+		// clears THIS branch's graph, not the store's (D3, §4.5).
+		const graph = this.fileTracker!.graph(branchId);
+		const graphManager = createReferenceGraphManager(
+			this.fileTracker!,
+			branchId,
+		);
 		const parserManager = getParserManager();
 
 		// Delete old symbols/references for files being re-indexed
 		if (!force) {
 			for (const filePath of filesToIndex) {
-				this.fileTracker!.deleteSymbolsByFile(filePath);
+				graph.deleteSymbolsByFile(filePath);
 				// SR-2: one R-txn per file, and nothing else in this loop.
 				await yieldToEventLoop();
 			}
 		} else {
 			// Full reindex - clear all symbol data
-			this.fileTracker!.clearSymbolGraph();
+			graph.clearSymbolGraph();
 		}
 
 		// Extract symbols and references from each file
@@ -2508,7 +2592,7 @@ export class Indexer {
 					// committed — the same partial state a failed insertReferences
 					// after a successful insertSymbols always left.
 					for (let i = 0; i < symbols.length; i += GRAPH_CHUNK) {
-						this.fileTracker!.insertSymbols(symbols.slice(i, i + GRAPH_CHUNK));
+						graph.insertSymbols(symbols.slice(i, i + GRAPH_CHUNK));
 						await yieldToEventLoop();
 					}
 
@@ -2521,9 +2605,7 @@ export class Indexer {
 					);
 
 					for (let i = 0; i < references.length; i += GRAPH_CHUNK) {
-						this.fileTracker!.insertReferences(
-							references.slice(i, i + GRAPH_CHUNK),
-						);
+						graph.insertReferences(references.slice(i, i + GRAPH_CHUNK));
 						await yieldToEventLoop();
 					}
 				}
@@ -2576,7 +2658,7 @@ export class Indexer {
 		this.reportProgress();
 
 		// Generate and cache repo map
-		const repoMapGen = createRepoMapGenerator(this.fileTracker!);
+		const repoMapGen = createRepoMapGenerator(this.fileTracker!, branchId);
 		const repoMap = repoMapGen.generate({ maxTokens: 4000 });
 		this.fileTracker!.setMetadata("repoMap", repoMap);
 		this.fileTracker!.setMetadata(
@@ -2585,7 +2667,7 @@ export class Indexer {
 		);
 
 		// Store graph stats
-		const stats = this.fileTracker!.getSymbolGraphStats();
+		const stats = graph.getSymbolGraphStats();
 		this.fileTracker!.setMetadata("symbolGraphStats", JSON.stringify(stats));
 
 		if (this.onProgress) {

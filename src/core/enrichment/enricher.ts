@@ -15,6 +15,7 @@ import type {
 	IEmbeddingsClient,
 	ILLMClient,
 } from "../../types.js";
+import { scopeForBranchId } from "../branch-scope.js";
 import type { IVectorStore, RowMembership } from "../store.js";
 import type { IFileTracker } from "../tracker.js";
 import {
@@ -168,7 +169,11 @@ export class Enricher {
 		try {
 			// Load existing docs for this file to enable true incremental enrichment
 			// (extractors can skip if content unchanged)
+			// The incremental check reads back only what THIS run's branch wrote:
+			// another branch's summary for the same path is not evidence that this
+			// branch's is current.
 			const existingDocs = await this.vectorStore.getDocumentsByFile(
+				scopeForBranchId(options.membership.branchId),
 				file.filePath,
 				options.documentTypes,
 			);
@@ -235,14 +240,19 @@ export class Enricher {
 				enrichedAt: doc.enrichedAt,
 			}));
 
-			this.tracker.trackDocuments(trackedDocs);
+			this.tracker.trackDocuments(options.membership.branchId, trackedDocs);
 
 			// Update enrichment state
 			const completedTypes = new Set(
 				pipelineResult.documents.map((d) => d.documentType),
 			);
 			for (const docType of completedTypes) {
-				this.tracker.setEnrichmentState(file.filePath, docType, "complete");
+				this.tracker.setEnrichmentState(
+					options.membership.branchId,
+					file.filePath,
+					docType,
+					"complete",
+				);
 			}
 
 			documentsCreated = pipelineResult.documents.length;
@@ -378,6 +388,7 @@ export class Enricher {
 					for (const doc of docs) {
 						if (doc.filePath) {
 							this.tracker.setEnrichmentState(
+								options.membership.branchId,
 								doc.filePath,
 								"file_summary",
 								"complete",
@@ -547,7 +558,7 @@ export class Enricher {
 				createdAt: doc.createdAt,
 				enrichedAt: doc.enrichedAt,
 			}));
-			this.tracker.trackDocuments(trackedDocs);
+			this.tracker.trackDocuments(options.membership.branchId, trackedDocs);
 
 			totalCreated = allDocuments.length;
 			reportProgress(
@@ -623,15 +634,22 @@ export class Enricher {
 	/**
 	 * Check if a file needs enrichment
 	 */
-	needsEnrichment(filePath: string, documentType: DocumentType): boolean {
-		return this.tracker.needsEnrichment(filePath, documentType);
+	needsEnrichment(
+		branchId: number,
+		filePath: string,
+		documentType: DocumentType,
+	): boolean {
+		return this.tracker.needsEnrichment(branchId, filePath, documentType);
 	}
 
 	/**
 	 * Get files that need enrichment for a document type
 	 */
-	getFilesNeedingEnrichment(documentType: DocumentType): string[] {
-		return this.tracker.getFilesNeedingEnrichment(documentType);
+	getFilesNeedingEnrichment(
+		branchId: number,
+		documentType: DocumentType,
+	): string[] {
+		return this.tracker.getFilesNeedingEnrichment(branchId, documentType);
 	}
 
 	// ========================================================================

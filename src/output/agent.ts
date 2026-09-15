@@ -103,10 +103,23 @@ function indexComplete(result: EnrichedIndexResult): void {
 function searchResults(
 	query: string,
 	results: SearchResult[],
-	meta?: { embeddingModel?: string; configuredModel?: string },
+	meta?: {
+		embeddingModel?: string;
+		configuredModel?: string;
+		/** D1 (§4.4.2): HEAD has no registry entry, so the branch filter was dropped. */
+		branchUnknown?: boolean;
+		/** The HEAD label this search resolved; absent outside a repository. */
+		branch?: string | null;
+	},
 ): void {
 	console.log(`query=${query}`);
 	console.log(`result_count=${results.length}`);
+	// D1's response-level flag. Emitted on EVERY search, so a consumer can rely
+	// on the key rather than on its absence meaning "known".
+	console.log(`branch_unknown=${meta?.branchUnknown ? 1 : 0}`);
+	if (meta?.branch) {
+		console.log(`branch=${meta.branch}`);
+	}
 	// Only present when the query was embedded with the model the INDEX was
 	// built with rather than the configured one. An agent that gets results back
 	// otherwise has no way to know a different model answered.
@@ -126,6 +139,11 @@ function searchResults(
 			);
 		} else {
 			let line = `result file=${r.chunk.filePath} line=${r.chunk.startLine} end_line=${r.chunk.endLine} score=${r.score.toFixed(3)} type=${r.chunk.chunkType} name=${r.chunk.name ?? ""}`;
+			// D1's PER-ROW attribution, so an agent can discount a foreign row
+			// instead of discarding the whole response.
+			if (r.branches && r.branches.length > 0) {
+				line += ` branches=${r.branches.join(",")}`;
+			}
 			if (r.summary) {
 				// Extract first sentence of summary for agent context
 				const summaryMatch = r.summary.match(/Summary:\s*(.+?)(?:\n|$)/);

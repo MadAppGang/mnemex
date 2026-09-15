@@ -17,6 +17,7 @@ import {
 	createCloudAwareSearch,
 	createGitDiffChangeDetector,
 } from "../../cloud/index.js";
+import { resolveBranchScopeForProject } from "../../core/branch-scope.js";
 import { createEmbeddingsClient } from "../../core/embeddings.js";
 import {
 	createIndexer,
@@ -221,8 +222,8 @@ export function registerSearchTools(server: McpServer, deps: ToolDeps): void {
 				// Location backend (requires tracker from cache)
 				if (pipelineConfig.backends.location) {
 					try {
-						const { tracker } = await deps.cache.get();
-						backends.push(new LocationBackend(tracker));
+						const { tracker, branchId } = await deps.cache.get();
+						backends.push(new LocationBackend(tracker, branchId));
 					} catch {
 						// Tracker not available — skip
 					}
@@ -231,12 +232,13 @@ export function registerSearchTools(server: McpServer, deps: ToolDeps): void {
 				// Tree-sitter backend (requires tracker from cache)
 				if (pipelineConfig.backends.treeSitter) {
 					try {
-						const { tracker } = await deps.cache.get();
+						const { tracker, branchId } = await deps.cache.get();
 						const parserManager = getParserManager();
 						backends.push(
 							new TreeSitterBackend(
 								parserManager,
 								tracker,
+								branchId,
 								config.workspaceRoot,
 								pipelineConfig.treeSitterConfig.maxFilesToScan,
 							),
@@ -335,6 +337,25 @@ export function registerSearchTools(server: McpServer, deps: ToolDeps): void {
 					backend: r.backends.join("+"),
 				}));
 
+				// D1's response-level flag on the pipeline path too (§4.4.2).
+				//
+				// Resolved DIRECTLY, not through `deps.cache`: this is a HEAD read
+				// plus a `branches.json` read, and routing it through the cache
+				// would open `index.db` on every search even when no backend needs
+				// it — the cost `buildIndexState` already avoids, and the thing
+				// `ppr-wiring.test.ts` attributes `cache.get()` counts by.
+				//
+				// Per-ROW attribution is not available on this path: `MergedResult`
+				// is the backends' common shape and carries no branch ids — the
+				// semantic backend has them, the tree-sitter and location backends
+				// read files rather than rows. The `search_code` tool, which D1
+				// names, carries both.
+				const branch = resolveBranchScopeForProject(config.workspaceRoot);
+				const branchState = {
+					branch_unknown: branch.branchUnknown,
+					branch: branch.label,
+				};
+
 				// Compute index state AFTER the indexer.index(false) auto-index above,
 				// at the return point (A2) — auto-index can change freshness.
 				const indexState = await buildIndexState(deps, startTime);
@@ -349,6 +370,7 @@ export function registerSearchTools(server: McpServer, deps: ToolDeps): void {
 								autoIndexed,
 								...buildFreshness(stateManager, startTime),
 								...indexState,
+								...branchState,
 							}),
 						},
 					],

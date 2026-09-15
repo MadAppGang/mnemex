@@ -77,6 +77,12 @@ mock.module("../../../src/core/indexer.js", () => ({
 			errors: [],
 		}),
 		search: async () => indexerResults,
+		// D1's flags ride on the response, so `search_code` uses `searchScoped`.
+		searchScoped: async () => ({
+			results: indexerResults,
+			branchUnknown: false,
+			branchLabel: null,
+		}),
 		close: async () => {},
 		getStatus: async () => ({ exists: false }),
 	}),

@@ -41,6 +41,14 @@
  *       from a call/`new` that was handed a tracker handle, a derived handle
  *       or `this` (`createReferenceGraphManager(this.fileTracker!)`,
  *       `createEnricher(…, this.fileTracker)`), to a fixpoint;
+ *   T2b a local or `this.` field assigned from `<handle>.graph(branchId)`.
+ *       `BranchScopedGraph` is the ONLY way to reach a symbol-graph statement
+ *       (architecture §4.4.1), and it runs its regions on the TRACKER's own
+ *       connection — so `for (const f of files) graph.deleteSymbolsByFile(f)`
+ *       is precisely the SR-2 hazard this sweep exists to catch. It is named
+ *       specifically rather than generalised to "any call on a handle": that
+ *       wider rule would make every `const ids = tracker.getChunkIds(…)` a
+ *       handle and fire on `ids.push(…)` in a loop.
  *   T3  any call that is HANDED a tracker handle, a derived handle or `this`;
  *   T4  `this.m(…)` where method `m` of this file reaches a region, and
  *       `f(…)` where local function `f` does — both to a fixpoint;
@@ -329,6 +337,18 @@ export function sweepIndexerLoops(
 		const v = unwrap(valueNode);
 		if (v.type !== "call_expression" && v.type !== "new_expression") {
 			return false;
+		}
+		// T2b: `<handle>.graph(branchId)` — the branch-scoped symbol graph, whose
+		// statements run in the tracker's own regions on the tracker's own
+		// connection.
+		const callee = v.childForFieldName("function");
+		if (
+			callee !== null &&
+			unwrap(callee).type === "member_expression" &&
+			unwrap(callee).childForFieldName("property")?.text === "graph"
+		) {
+			const receiver = unwrap(callee).childForFieldName("object");
+			if (receiver !== null && isHandle(receiver)) return true;
 		}
 		const args = v.childForFieldName("arguments");
 		return (args ? namedChildren(args) : []).some(

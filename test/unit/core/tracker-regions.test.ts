@@ -410,9 +410,12 @@ describe("V2.9 — src/core/sqlite.ts sets no pragma", () => {
 
 describe("the clamp, as the tracker's regions apply it", () => {
 	test("per-statement busy_timeout: the shared clamp, DIVIDED — literal values", () => {
-		// R0: 40 statements → floor(250 / 40)
-		expect(TRACKER_REGIONS.open.blockingStatements).toBe(40);
-		expect(trackerBusyTimeoutMs(TRACKER_REGIONS.open, 0)).toBe(6);
+		// R0: 45 statements → floor(250 / 45). It gained `idx_files_path`
+		// (I-12 Ruling 2), the four `PRAGMA table_info` probes that decide
+		// whether a branch-leading index can be created at all, and the 14
+		// branch-leading indexes themselves.
+		expect(TRACKER_REGIONS.open.blockingStatements).toBe(45);
+		expect(trackerBusyTimeoutMs(TRACKER_REGIONS.open, 0)).toBe(5);
 		// Reads retry once, so 1 statement is 2 chances to wait → floor(250 / 2)
 		expect(trackerBusyTimeoutMs(TRACKER_REGIONS.changes, 0)).toBe(125);
 		expect(trackerBusyTimeoutMs(TRACKER_REGIONS.read, 0)).toBe(125);
@@ -470,7 +473,7 @@ describe("observed at the driver seam", () => {
 
 		// R0 is everything between its clamp and the first rest.
 		const start = issued.findIndex(
-			(e) => e.sql.trim() === "PRAGMA busy_timeout = 6",
+			(e) => e.sql.trim() === "PRAGMA busy_timeout = 5",
 		);
 		const end = issued.findIndex(
 			(e, i) => i > start && e.sql.trim() === "PRAGMA busy_timeout = 0",
@@ -483,9 +486,29 @@ describe("observed at the driver seam", () => {
 		for (const entry of r0) {
 			statements += entry.kind === "exec" ? statementsIn(entry.sql) : 1;
 		}
-		// The read-back `PRAGMA journal_mode` runs only when the WAL switch was
-		// contended, so it is the one declared statement this path cannot issue.
-		expect(statements + 1).toBe(TRACKER_REGIONS.open.blockingStatements);
+		// Two declared statements this path cannot issue, and both absences are
+		// the point:
+		//
+		//   1. the read-back `PRAGMA journal_mode`, which runs only when the WAL
+		//      switch was contended;
+		//   2. the TWO branch-leading `documents` indexes. This fixture's
+		//      `documents` is at the PRE-v4 shape and has no `branch_id`, so
+		//      `openRegion` skips them — which is exactly what keeps a v3
+		//      database openable at all (R0 fails the open, and §6.1's upgrade
+		//      signal is read from an OPEN tracker). `symbols`,
+		//      `symbol_references` and `indexed_docs` do not exist in the fixture,
+		//      so `CREATE TABLE IF NOT EXISTS` makes them at the v4 shape and
+		//      their 12 indexes DO run.
+		const SKIPPED_ON_THIS_FIXTURE = 1 + 2;
+		expect(statements + SKIPPED_ON_THIS_FIXTURE).toBe(
+			TRACKER_REGIONS.open.blockingStatements,
+		);
+		// Not vacuous: the open SUCCEEDED over the old shape, and the tracker
+		// says so. Before the conditional index pass this threw
+		// `no such column: branch_id` and no v3 store could be upgraded.
+		const reopened = new FileTracker(dbPath, root);
+		expect(reopened.trackerNeedsV4Schema()).toBe(true);
+		reopened.close();
 
 		// ONE statement per exec. bun:sqlite's multi-statement exec carries on
 		// past a SQLITE_BUSY and loses it (see CORE_SCHEMA_DDL), so a batch here
@@ -538,7 +561,7 @@ describe("observed at the driver seam", () => {
 			"PRAGMA busy_timeout = 125",
 			"PRAGMA busy_timeout = 0",
 		]);
-		expect(clampsFor(() => tracker.getSymbolGraphStats())).toEqual([
+		expect(clampsFor(() => tracker.graph(1).getSymbolGraphStats())).toEqual([
 			"PRAGMA busy_timeout = 20",
 			"PRAGMA busy_timeout = 0",
 		]);
@@ -581,14 +604,14 @@ describe("observed at the driver seam", () => {
 		// Files and metadata
 		tracker.markIndexed(0, join(root, "src/a.ts"), "h1", ["c1"]);
 		tracker.markIndexed(0, real, "stale-mtime", ["c2"]);
-		expect(tracker.getChunkIds(join(root, "src/a.ts"))).toEqual(["c1"]);
-		expect(tracker.getFileState(join(root, "src/a.ts"))?.chunkIds).toEqual([
+		expect(tracker.getChunkIds(0, join(root, "src/a.ts"))).toEqual(["c1"]);
+		expect(tracker.getFileState(0, join(root, "src/a.ts"))?.chunkIds).toEqual([
 			"c1",
 		]);
-		expect(tracker.getAllFiles()).toHaveLength(2);
+		expect(tracker.getAllFiles(0)).toHaveLength(2);
 		tracker.setMetadata("k", "v");
 		expect(tracker.getMetadata("k")).toBe("v");
-		expect(tracker.getStats().totalFiles).toBe(2);
+		expect(tracker.getStats(0).totalFiles).toBe(2);
 
 		// getChanges' second region: same content, moved mtime → refreshed.
 		const { createHash } =
@@ -598,10 +621,10 @@ describe("observed at the driver seam", () => {
 			.digest("hex");
 		tracker.markIndexed(0, real, realHash, ["c2"]);
 		utimesSync(real, new Date(2001, 0, 1), new Date(2001, 0, 1));
-		const changes = tracker.getChanges([real, join(root, "src/new.ts")]);
+		const changes = tracker.getChanges(0, [real, join(root, "src/new.ts")]);
 		expect(changes.unchangedFiles).toEqual([real]);
 		expect(changes.newFiles).toEqual([join(root, "src/new.ts")]);
-		expect(tracker.getFileState(real)?.mtime).toBe(
+		expect(tracker.getFileState(0, real)?.mtime).toBe(
 			new Date(2001, 0, 1).getTime(),
 		);
 
@@ -612,31 +635,35 @@ describe("observed at the driver seam", () => {
 
 		// Enrichment — the read-modify-write keeps the other key.
 		tracker.setEnrichmentState(
+			0,
 			join(root, "src/a.ts"),
 			"file_summary",
 			"complete",
 		);
 		tracker.setEnrichmentState(
+			0,
 			join(root, "src/a.ts"),
 			"symbol_summary",
 			"pending",
 		);
-		expect(tracker.getEnrichmentState(join(root, "src/a.ts"))).toEqual({
+		expect(tracker.getEnrichmentState(0, join(root, "src/a.ts"))).toEqual({
 			file_summary: "complete",
 			symbol_summary: "pending",
 		});
 		expect(
-			tracker.needsEnrichment(join(root, "src/a.ts"), "file_summary"),
+			tracker.needsEnrichment(0, join(root, "src/a.ts"), "file_summary"),
 		).toBe(false);
-		tracker.setAllEnrichmentStates(join(root, "src/a.ts"), {});
-		tracker.resetEnrichmentState(join(root, "src/a.ts"));
-		expect(tracker.getFilesNeedingEnrichment("file_summary")).toHaveLength(2);
+		tracker.setAllEnrichmentStates(0, join(root, "src/a.ts"), {});
+		tracker.resetEnrichmentState(0, join(root, "src/a.ts"));
+		expect(tracker.getFilesNeedingEnrichment(0, "file_summary")).toHaveLength(
+			2,
+		);
 
 		// Documents and provenance
 		tracker.recordCommit("a".repeat(40), 7, null);
 		expect(tracker.getCommitOrdinal("a".repeat(40))).toBe(7);
-		tracker.setFileIndexedCommit("src/a.ts", "a".repeat(40));
-		expect(tracker.getFileIndexedCommit("src/a.ts")).toBe("a".repeat(40));
+		tracker.setFileIndexedCommit(0, "src/a.ts", "a".repeat(40));
+		expect(tracker.getFileIndexedCommit(0, "src/a.ts")).toBe("a".repeat(40));
 		const doc = {
 			id: "d1",
 			documentType: "file_summary" as const,
@@ -644,40 +671,46 @@ describe("observed at the driver seam", () => {
 			sourceIds: ["c1"],
 			createdAt: now,
 		};
-		tracker.trackDocument(doc);
-		tracker.trackDocuments([{ ...doc, id: "d2" }]);
-		tracker.trackDocuments([]);
-		expect(tracker.getDocumentsForFile(join(root, "src/a.ts"))).toHaveLength(2);
-		expect(tracker.getDocumentsByType("file_summary")).toHaveLength(2);
-		expect(tracker.getDocumentCounts().file_summary).toBe(2);
-		tracker.setDocumentsValidFromCommit(["d1"], "a".repeat(40));
-		expect(tracker.getDocumentProvenance("d1")?.validFromCommit).toBe(
+		tracker.trackDocument(0, doc);
+		tracker.trackDocuments(0, [{ ...doc, id: "d2" }]);
+		tracker.trackDocuments(0, []);
+		expect(tracker.getDocumentsForFile(0, join(root, "src/a.ts"))).toHaveLength(
+			2,
+		);
+		expect(tracker.getDocumentsByType(0, "file_summary")).toHaveLength(2);
+		expect(tracker.getDocumentCounts(0).file_summary).toBe(2);
+		tracker.setDocumentsValidFromCommit(0, ["d1"], "a".repeat(40));
+		expect(tracker.getDocumentProvenance(0, "d1")?.validFromCommit).toBe(
 			"a".repeat(40),
 		);
 		expect(
 			tracker.markDocumentsStale(
+				0,
 				["src/a.ts"],
 				["file_summary"],
 				"b".repeat(40),
 			),
 		).toBe(2);
-		expect(tracker.getStaleDocuments(10)).toHaveLength(2);
-		expect(tracker.clearDocumentsStale(["d1", "d2"])).toBe(2);
-		expect(tracker.countDocumentsForPaths(["src/a.ts"], ["file_summary"])).toBe(
-			2,
-		);
-		expect(tracker.countDocumentsForPaths([""], ["file_summary"])).toBe(0);
+		expect(tracker.getStaleDocuments(0, 10)).toHaveLength(2);
+		expect(tracker.clearDocumentsStale(0, ["d1", "d2"])).toBe(2);
+		expect(
+			tracker.countDocumentsForPaths(0, ["src/a.ts"], ["file_summary"]),
+		).toBe(2);
+		expect(tracker.countDocumentsForPaths(0, [""], ["file_summary"])).toBe(0);
 		expect(
 			tracker.markDocumentsInvalidated(
+				0,
 				["src/a.ts"],
 				["file_summary"],
 				"c".repeat(40),
 			),
 		).toBe(2);
-		expect(tracker.getDocumentStatusCounts()[0]?.invalidated).toBe(2);
-		expect(tracker.queueReEnrichment(["src/a.ts"], ["file_summary"])).toBe(1);
-		tracker.deleteDocumentsForFile(join(root, "src/a.ts"));
-		tracker.deleteDocumentsByType("file_summary");
+		expect(tracker.getDocumentStatusCounts(0)[0]?.invalidated).toBe(2);
+		expect(tracker.queueReEnrichment(0, ["src/a.ts"], ["file_summary"])).toBe(
+			1,
+		);
+		tracker.deleteDocumentsForFile(0, join(root, "src/a.ts"));
+		tracker.deleteDocumentsByType(0, "file_summary");
 
 		// Indexed docs
 		tracker.markDocsIndexed("react", "18", "context7", "h", ["x", "y"]);
@@ -690,37 +723,38 @@ describe("observed at the driver seam", () => {
 		tracker.deleteIndexedDocs("react");
 		tracker.clearAllIndexedDocs();
 
-		// Symbol graph
-		tracker.insertSymbol(symbol("s1", "alpha"));
-		tracker.insertSymbols([symbol("s2", "beta"), symbol("s3", "gamma")]);
-		expect(tracker.getSymbol("s1")?.name).toBe("alpha");
-		expect(tracker.getSymbolsByFile("src/a.ts")).toHaveLength(3);
-		expect(tracker.getSymbolByName("beta")).toHaveLength(1);
-		expect(tracker.getSymbolByName("beta", "function")).toHaveLength(1);
-		expect(tracker.getSymbolsByParent("none")).toHaveLength(0);
-		expect(tracker.getAllSymbols()).toHaveLength(3);
-		expect(tracker.getTopSymbols(2)).toHaveLength(2);
-		tracker.insertReference(reference("s1", "beta"));
-		tracker.insertReferences([reference("s2", "gamma")]);
-		expect(tracker.getUnresolvedReferences()).toHaveLength(2);
-		expect(tracker.resolveReferencesByName()).toBe(2);
-		const [firstRef] = tracker.getReferencesFrom("s1");
-		tracker.resolveReference(firstRef?.id as number, "s2");
-		expect(tracker.getReferencesTo("s2")).toHaveLength(1);
-		expect(tracker.getAllReferences()).toHaveLength(2);
-		tracker.updateDegreeCounts();
-		tracker.updatePageRankScores(new Map([["s1", 0.5]]));
-		tracker.setGraphMetadata("g", "1");
-		expect(tracker.getGraphMetadata("g")).toBe("1");
-		const stats = tracker.getSymbolGraphStats();
+		// Symbol graph, through the branch-scoped handle — the only way in.
+		const graph = tracker.graph(1);
+		graph.insertSymbol(symbol("s1", "alpha"));
+		graph.insertSymbols([symbol("s2", "beta"), symbol("s3", "gamma")]);
+		expect(graph.getSymbol("s1")?.name).toBe("alpha");
+		expect(graph.getSymbolsByFile("src/a.ts")).toHaveLength(3);
+		expect(graph.getSymbolByName("beta")).toHaveLength(1);
+		expect(graph.getSymbolByName("beta", "function")).toHaveLength(1);
+		expect(graph.getSymbolsByParent("none")).toHaveLength(0);
+		expect(graph.getAllSymbols()).toHaveLength(3);
+		expect(graph.getTopSymbols(2)).toHaveLength(2);
+		graph.insertReference(reference("s1", "beta"));
+		graph.insertReferences([reference("s2", "gamma")]);
+		expect(graph.getUnresolvedReferences()).toHaveLength(2);
+		expect(graph.resolveReferencesByName()).toBe(2);
+		const [firstRef] = graph.getReferencesFrom("s1");
+		graph.resolveReference(firstRef?.id as number, "s2");
+		expect(graph.getReferencesTo("s2")).toHaveLength(1);
+		expect(graph.getAllReferences()).toHaveLength(2);
+		graph.updateDegreeCounts();
+		graph.updatePageRankScores(new Map([["s1", 0.5]]));
+		graph.setGraphMetadata("g", "1");
+		expect(graph.getGraphMetadata("g")).toBe("1");
+		const stats = graph.getSymbolGraphStats();
 		expect(stats.totalSymbols).toBe(3);
 		expect(stats.resolvedReferences).toBe(2);
 		expect(stats.pagerankComputedAt).toBeTruthy();
-		tracker.deleteReferencesByFile("src/a.ts");
-		tracker.deleteSymbolsByFile("src/a.ts");
-		tracker.clearSymbolGraph();
+		graph.deleteReferencesByFile("src/a.ts");
+		graph.deleteSymbolsByFile("src/a.ts");
+		graph.clearSymbolGraph();
 
-		tracker.removeFile("src/a.ts");
+		tracker.removeFile(0, "src/a.ts");
 		tracker.clear();
 		tracker.close();
 

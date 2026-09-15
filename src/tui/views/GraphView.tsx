@@ -204,6 +204,7 @@ function DefinitionPane({
 export function GraphView() {
 	const {
 		tracker,
+		branchId,
 		navHistory,
 		pushNav,
 		setActiveTab,
@@ -222,7 +223,7 @@ export function GraphView() {
 		goForward,
 		canGoBack,
 		canGoForward,
-	} = useGraph(tracker);
+	} = useGraph(tracker, branchId);
 
 	const { width } = useTerminalDimensions();
 	const isWide = width >= layout.wideWidth;

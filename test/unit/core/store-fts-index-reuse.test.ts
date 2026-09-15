@@ -28,6 +28,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { SCOPE_ALL } from "../../../src/core/branch-scope.js";
 import type { ChunkWithEmbedding } from "../../../src/types.js";
 
 // ── Module mock ─────────────────────────────────────────────────────────────
@@ -159,7 +160,7 @@ async function seed(chunks: ChunkWithEmbedding[]): Promise<void> {
  */
 const searchFor = (text: string) =>
 	withFreshStore((store) =>
-		store.search(text, undefined, { limit: 10, keywordOnly: true }),
+		store.search(text, undefined, SCOPE_ALL, { limit: 10, keywordOnly: true }),
 	);
 
 const idsOf = (results: Array<{ chunk: { id: string } }>) =>

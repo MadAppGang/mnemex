@@ -12,6 +12,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as lancedb from "@lancedb/lancedb";
+import { SCOPE_ALL } from "../../../src/core/branch-scope.js";
 import {
 	codeChunksSchema,
 	createVectorStore,
@@ -312,7 +313,10 @@ describe("the read seam: repo paths come back absolute, synthetic ones as stored
 	test("search: the repo row is absolute under pathRoot, the docs row untouched", async () => {
 		await seed();
 		const results = await withStore((s) =>
-			s.search("parseConfig", undefined, { limit: 10, keywordOnly: true }),
+			s.search("parseConfig", undefined, SCOPE_ALL, {
+				limit: 10,
+				keywordOnly: true,
+			}),
 		);
 		const paths = results.map((r) => r.chunk.filePath).sort();
 		expect(paths).toContain(join(root, "src/a.ts"));
@@ -332,11 +336,13 @@ describe("the read seam: repo paths come back absolute, synthetic ones as stored
 				]);
 				// Typed: with no type filter `getDocumentsByFile` returns every row
 				// of the path, chunks and units included (unchanged behaviour).
-				const docs = await s.getDocumentsByFile(arg, ["file_summary"]);
+				const docs = await s.getDocumentsByFile(SCOPE_ALL, arg, [
+					"file_summary",
+				]);
 				expect(docs.map((d) => [d.id, d.filePath])).toEqual([
 					["summary", join(root, "src/a.ts")],
 				]);
-				const units = await s.getCodeUnitsByFile(arg);
+				const units = await s.getCodeUnitsByFile(SCOPE_ALL, arg);
 				expect(units.map((u) => [u.id, u.filePath])).toEqual([
 					["unit", join(root, "src/a.ts")],
 				]);

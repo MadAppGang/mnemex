@@ -16,6 +16,7 @@ import type {
 	ILLMClient,
 	LLMMessage,
 } from "../../types.js";
+import type { BranchScope } from "../branch-scope.js";
 import type { VectorStore } from "../store.js";
 import {
 	buildClassSummaryPrompt,
@@ -32,6 +33,8 @@ import {
 // ============================================================================
 
 export interface SummarizationOptions {
+	/** REQUIRED (§4.4). Which branch's code units this summarises. */
+	scope: BranchScope;
 	/** Maximum concurrent LLM calls */
 	concurrency?: number;
 	/** Progress callback */
@@ -71,13 +74,13 @@ export class BottomUpSummarizer {
 	 */
 	async summarizeFile(
 		filePath: string,
-		options: SummarizationOptions = {},
+		options: SummarizationOptions,
 	): Promise<SummarizationResult> {
 		const startTime = Date.now();
 		const { onProgress, skipExisting = false, concurrency = 5 } = options;
 
 		// Get all units for this file
-		const units = await this.store.getCodeUnitsByFile(filePath);
+		const units = await this.store.getCodeUnitsByFile(options.scope, filePath);
 		if (units.length === 0) {
 			return { summariesGenerated: 0, errors: [], durationMs: 0 };
 		}
@@ -165,7 +168,7 @@ export class BottomUpSummarizer {
 	 */
 	async summarizeFiles(
 		filePaths: string[],
-		options: SummarizationOptions = {},
+		options: SummarizationOptions,
 	): Promise<SummarizationResult> {
 		const startTime = Date.now();
 		let totalGenerated = 0;

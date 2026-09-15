@@ -147,7 +147,19 @@ export interface IndexedDocState {
  * Allows swapping in alternative storage backends.
  */
 export interface IFileTracker {
-	getChanges(currentFiles: string[]): FileChanges;
+	/**
+	 * EVERY per-branch member takes `branchId` as its FIRST positional
+	 * parameter, so a caller that forgets it is a type error rather than a read
+	 * that silently spans branches (§4.4.1). The exceptions are named where they
+	 * appear: the `indexed_docs` members (external docs are repository-scoped and
+	 * carry `branch_id = 0` literally), `clear()` (whole store, reached only
+	 * through `rebuildStore`'s producers), and the `commits`/`metadata`/
+	 * `activity_log` members, whose tables describe the repository (§3.5).
+	 *
+	 * The symbol graph is NOT here. Its 24 members live on `BranchScopedGraph`,
+	 * reachable only as `graph(branchId)`.
+	 */
+	getChanges(branchId: number, currentFiles: string[]): FileChanges;
 	/**
 	 * `branchId` FIRST, so a caller that omits it is a type error rather than a
 	 * row written under the wrong branch: the registry's id for the current
@@ -159,13 +171,17 @@ export interface IFileTracker {
 		contentHash: string,
 		chunkIds: string[],
 	): void;
-	getChunkIds(filePath: string): string[];
-	removeFile(filePath: string): void;
-	getFileState(filePath: string): FileState | null;
-	getAllFiles(): FileState[];
+	getChunkIds(branchId: number, filePath: string): string[];
+	removeFile(branchId: number, filePath: string): void;
+	getFileState(branchId: number, filePath: string): FileState | null;
+	getAllFiles(branchId: number): FileState[];
 	getMetadata(key: string): string | null;
 	setMetadata(key: string, value: string): void;
-	getStats(): { totalFiles: number; lastIndexed: string | null };
+	getStats(branchId: number): {
+		totalFiles: number;
+		lastIndexed: string | null;
+	};
+	/** WHOLE STORE. V3.11b's one declared exception; see the method. */
 	clear(): void;
 	/** §6.1's third upgrade signal: `files` exists and lacks `branch_id`. */
 	trackerNeedsV4Schema(): boolean;
@@ -181,23 +197,38 @@ export interface IFileTracker {
 	pruneActivity(keepCount?: number): void;
 	close(): void;
 	getDatabase(): SQLiteDatabase;
-	getEnrichmentState(filePath: string): EnrichmentStateMap;
+	getEnrichmentState(branchId: number, filePath: string): EnrichmentStateMap;
 	setEnrichmentState(
+		branchId: number,
 		filePath: string,
 		documentType: DocumentType,
 		state: EnrichmentState,
 	): void;
-	setAllEnrichmentStates(filePath: string, states: EnrichmentStateMap): void;
-	resetEnrichmentState(filePath: string): void;
-	needsEnrichment(filePath: string, documentType: DocumentType): boolean;
-	getFilesNeedingEnrichment(documentType: DocumentType): string[];
-	trackDocument(doc: TrackedDocument): void;
-	trackDocuments(docs: TrackedDocument[]): void;
-	getDocumentsForFile(filePath: string): TrackedDocument[];
-	getDocumentsByType(documentType: DocumentType): TrackedDocument[];
-	deleteDocumentsForFile(filePath: string): void;
-	deleteDocumentsByType(documentType: DocumentType): void;
-	getDocumentCounts(): Record<DocumentType, number>;
+	setAllEnrichmentStates(
+		branchId: number,
+		filePath: string,
+		states: EnrichmentStateMap,
+	): void;
+	resetEnrichmentState(branchId: number, filePath: string): void;
+	needsEnrichment(
+		branchId: number,
+		filePath: string,
+		documentType: DocumentType,
+	): boolean;
+	getFilesNeedingEnrichment(
+		branchId: number,
+		documentType: DocumentType,
+	): string[];
+	trackDocument(branchId: number, doc: TrackedDocument): void;
+	trackDocuments(branchId: number, docs: TrackedDocument[]): void;
+	getDocumentsForFile(branchId: number, filePath: string): TrackedDocument[];
+	getDocumentsByType(
+		branchId: number,
+		documentType: DocumentType,
+	): TrackedDocument[];
+	deleteDocumentsForFile(branchId: number, filePath: string): void;
+	deleteDocumentsByType(branchId: number, documentType: DocumentType): void;
+	getDocumentCounts(branchId: number): Record<DocumentType, number>;
 	markDocsIndexed(
 		library: string,
 		version: string | null,
@@ -222,57 +253,53 @@ export interface IFileTracker {
 		oldestFetch: string | null;
 		newestFetch: string | null;
 	};
-	insertSymbol(symbol: SymbolDefinition): void;
-	insertSymbols(symbols: SymbolDefinition[]): void;
-	getSymbol(id: string): SymbolDefinition | null;
-	getSymbolsByFile(filePath: string): SymbolDefinition[];
-	getSymbolByName(name: string, kind?: SymbolKind): SymbolDefinition[];
-	getSymbolsByParent(parentId: string): SymbolDefinition[];
-	getAllSymbols(): SymbolDefinition[];
-	getTopSymbols(limit: number): SymbolDefinition[];
-	deleteSymbolsByFile(filePath: string): void;
-	insertReference(ref: SymbolReference): void;
-	insertReferences(refs: SymbolReference[]): void;
-	getReferencesFrom(symbolId: string): SymbolReference[];
-	getReferencesTo(symbolId: string): SymbolReference[];
-	getUnresolvedReferences(): SymbolReference[];
-	getAllReferences(): SymbolReference[];
-	resolveReference(refId: number, toSymbolId: string): void;
-	resolveReferencesByName(): number;
-	deleteReferencesByFile(filePath: string): void;
-	updatePageRankScores(scores: Map<string, number>): void;
-	updateDegreeCounts(): void;
-	getGraphMetadata(key: string): string | null;
-	setGraphMetadata(key: string, value: string): void;
-	getSymbolGraphStats(): SymbolGraphStats;
-	clearSymbolGraph(): void;
+	/** The symbol graph, through one branch. See `BranchScopedGraph`. */
+	graph(branchId: number): BranchScopedGraph;
 	recordCommit(sha: string, ordinal: number, committedAt?: string | null): void;
 	getCommitOrdinal(sha: string): number | null;
 	recordHeadCommit(): Promise<CommitProvenance | null>;
 	setCurrentCommit(sha: string | null): void;
 	getCurrentCommit(): string | null;
-	setFileIndexedCommit(filePath: string, sha: string | null): void;
-	getFileIndexedCommit(filePath: string): string | null;
-	setDocumentsValidFromCommit(documentIds: string[], sha: string | null): void;
-	getDocumentProvenance(documentId: string): DocumentProvenance | null;
+	setFileIndexedCommit(
+		branchId: number,
+		filePath: string,
+		sha: string | null,
+	): void;
+	getFileIndexedCommit(branchId: number, filePath: string): string | null;
+	setDocumentsValidFromCommit(
+		branchId: number,
+		documentIds: string[],
+		sha: string | null,
+	): void;
+	getDocumentProvenance(
+		branchId: number,
+		documentId: string,
+	): DocumentProvenance | null;
 	markDocumentsInvalidated(
+		branchId: number,
 		filePaths: string[],
 		documentTypes: DocumentType[],
 		sha: string,
 	): number;
 	markDocumentsStale(
+		branchId: number,
 		filePaths: string[],
 		documentTypes: DocumentType[],
 		sha: string,
 	): number;
-	clearDocumentsStale(documentIds: string[]): number;
+	clearDocumentsStale(branchId: number, documentIds: string[]): number;
 	countDocumentsForPaths(
+		branchId: number,
 		filePaths: string[],
 		documentTypes: DocumentType[],
 	): number;
-	queueReEnrichment(filePaths: string[], documentTypes: DocumentType[]): number;
-	getStaleDocuments(limit?: number): StaleDocument[];
-	getDocumentStatusCounts(): DocumentStatusCount[];
+	queueReEnrichment(
+		branchId: number,
+		filePaths: string[],
+		documentTypes: DocumentType[],
+	): number;
+	getStaleDocuments(branchId: number, limit?: number): StaleDocument[];
+	getDocumentStatusCounts(branchId: number): DocumentStatusCount[];
 }
 
 // ============================================================================
@@ -500,8 +527,23 @@ const METADATA_TABLE_DDL = `CREATE TABLE IF NOT EXISTS metadata (
 	value TEXT NOT NULL
 )`;
 
+/**
+ * v4: `(branch_id, id)`.
+ *
+ * A document id is CONTENT-DERIVED (`<sha of filePath>:<documentType>` and
+ * friends), so the same file summarised on two branches produces the SAME id —
+ * I-12 Ruling 1's first case. Under a single-column key the second branch's
+ * `INSERT OR REPLACE` would silently overwrite the first's row.
+ *
+ * Ruling 1's other half binds here: EVERY statement touching this table is
+ * scoped in the same change. Without that, `WHERE id = ?` becomes a table scan,
+ * and two such statements (`setDocumentsValidFromCommit`, `clearDocumentsStale`)
+ * run N times inside ONE `BEGIN IMMEDIATE` — a heartbeat hazard (3a-2's D-a,
+ * reason 2).
+ */
 const DOCUMENTS_TABLE_DDL = `CREATE TABLE IF NOT EXISTS documents (
-	id TEXT PRIMARY KEY,
+	branch_id INTEGER NOT NULL,
+	id TEXT NOT NULL,
 	document_type TEXT NOT NULL,
 	file_path TEXT,
 	source_ids TEXT NOT NULL DEFAULT '[]',
@@ -519,10 +561,33 @@ const DOCUMENTS_TABLE_DDL = `CREATE TABLE IF NOT EXISTS documents (
 	-- evidence that they may be wrong, never proof. Auto-invalidating them
 	-- would destroy a human/agent observation that no pipeline can
 	-- regenerate. NULL = not flagged. See src/core/invalidation.ts.
-	stale_at_commit TEXT
+	stale_at_commit TEXT,
+	PRIMARY KEY (branch_id, id)
 )`;
 
+/**
+ * v4: a `branch_id` column, and the key is UNCHANGED.
+ *
+ * REPORTED, because this table fits NEITHER of I-12 Ruling 1's two named cases
+ * (it has no content-derived id that repeats across branches, and no
+ * AUTOINCREMENT surrogate) — its key is the natural, content-derived triple
+ * `(library, version, provider)`.
+ *
+ * What settles it is that the design states this table's end state outright
+ * (§4.4.1: "`indexed_docs`, id 0 only … no `branchId` parameter — external docs
+ * are repository-scoped (§3.2.1). Statements carry `branch_id = 0` literally").
+ * Nothing is invented here. And Ruling 1's PRINCIPLE agrees: the composite key
+ * exists to stop two branches colliding on one id, and these rows are all
+ * written under `BRANCH_ID_SHARED`, so no two branches ever produce the same
+ * key. Adding `branch_id` to the key would buy nothing and cost every lookup
+ * its plan.
+ *
+ * The column is still carried, for two reasons: the V3.11b sweep then needs no
+ * exception for this table (every statement names `branch_id`), and
+ * `highestBranchId()`'s C1 raise reads a uniform shape across `BRANCH_ID_TABLES`.
+ */
 const INDEXED_DOCS_TABLE_DDL = `CREATE TABLE IF NOT EXISTS indexed_docs (
+	branch_id INTEGER NOT NULL,
 	library TEXT NOT NULL,
 	version TEXT,
 	provider TEXT NOT NULL,
@@ -552,15 +617,107 @@ const COMMITS_TABLE_DDL = `CREATE TABLE IF NOT EXISTS commits (
 
 const FILES_INDEX_DDL: readonly string[] = [
 	"CREATE INDEX IF NOT EXISTS idx_files_content_hash ON files(content_hash)",
+	/**
+	 * I-12 Ruling 2. Under the `(branch_id, path)` key an UNSCOPED
+	 * `WHERE path = ?` is a table scan — measured at 2.5 ms per call over 20 000
+	 * rows, against 0.003 ms scoped (~900x). Path-only lookups exist in the END
+	 * state, not only as a migration artefact: D1's unknown-branch fallback
+	 * drops the branch filter BY DESIGN (§4.4.2), so the scan would be permanent.
+	 * `tracker-resolve-plan.test.ts` asserts with EXPLAIN QUERY PLAN that an
+	 * unscoped lookup uses this index and a scoped one still uses the key.
+	 */
+	"CREATE INDEX IF NOT EXISTS idx_files_path ON files(path)",
 ];
 
-const DOCUMENTS_INDEX_DDL: readonly string[] = [
-	"CREATE INDEX IF NOT EXISTS idx_documents_file_path ON documents(file_path)",
-	"CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(document_type)",
+/**
+ * INDEXES THAT NAME `branch_id` ARE CONDITIONAL, and that is a migration
+ * requirement, not a nicety.
+ *
+ * `CREATE TABLE IF NOT EXISTS` is a no-op against a PRE-v4 table, so on a v3
+ * database the old shape survives R0 — which is the point: §6.1's third upgrade
+ * signal is read from an OPEN tracker, and `rebuildTreeScopedSchemaForV4()` is
+ * what replaces the shape. But `CREATE INDEX … ON documents(branch_id, …)`
+ * against that old table raises `no such column: branch_id` and, inside R0,
+ * that FAILS THE OPEN — so the upgrade could never be detected and no store
+ * written before this release could ever be read again.
+ *
+ * So every index whose column list names `branch_id` is issued only when its
+ * table actually has the column (`openRegion` probes once per table). The
+ * rebuild pass re-issues all of them AFTER its DROP + CREATE, where it always
+ * does.
+ *
+ * `idx_files_content_hash`, `idx_files_path`, `idx_indexed_docs_fetched` and
+ * `MIGRATION_INDEXES` name no `branch_id`, so they stay unconditional.
+ */
+const BRANCH_LEADING_INDEX_DDL: ReadonlyArray<{
+	readonly table: (typeof BRANCH_ID_TABLES)[number];
+	readonly ddl: string;
+}> = [
+	{
+		table: "documents",
+		ddl: "CREATE INDEX IF NOT EXISTS idx_documents_file_path ON documents(branch_id, file_path)",
+	},
+	{
+		table: "documents",
+		ddl: "CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(branch_id, document_type)",
+	},
+	{
+		table: "indexed_docs",
+		ddl: "CREATE INDEX IF NOT EXISTS idx_indexed_docs_library ON indexed_docs(branch_id, library)",
+	},
+	{
+		table: "symbols",
+		ddl: "CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(branch_id, name)",
+	},
+	{
+		table: "symbols",
+		ddl: "CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(branch_id, file_path)",
+	},
+	{
+		table: "symbols",
+		ddl: "CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(branch_id, kind)",
+	},
+	{
+		table: "symbols",
+		ddl: "CREATE INDEX IF NOT EXISTS idx_symbols_pagerank ON symbols(branch_id, pagerank DESC)",
+	},
+	{
+		table: "symbols",
+		ddl: "CREATE INDEX IF NOT EXISTS idx_symbols_parent ON symbols(branch_id, parent_id)",
+	},
+	{
+		table: "symbols",
+		ddl: "CREATE INDEX IF NOT EXISTS idx_symbols_exported ON symbols(branch_id, is_exported) WHERE is_exported = 1",
+	},
+	{
+		table: "symbol_references",
+		ddl: "CREATE INDEX IF NOT EXISTS idx_refs_from ON symbol_references(branch_id, from_symbol_id)",
+	},
+	{
+		table: "symbol_references",
+		ddl: "CREATE INDEX IF NOT EXISTS idx_refs_to ON symbol_references(branch_id, to_symbol_id)",
+	},
+	{
+		table: "symbol_references",
+		ddl: "CREATE INDEX IF NOT EXISTS idx_refs_to_name ON symbol_references(branch_id, to_symbol_name)",
+	},
+	{
+		table: "symbol_references",
+		ddl: "CREATE INDEX IF NOT EXISTS idx_refs_file ON symbol_references(branch_id, file_path)",
+	},
+	{
+		table: "symbol_references",
+		ddl: "CREATE INDEX IF NOT EXISTS idx_refs_kind ON symbol_references(branch_id, kind)",
+	},
 ];
+
+/** The tables `openRegion` probes before issuing a branch-leading index. */
+const BRANCH_INDEXED_TABLES: ReadonlyArray<(typeof BRANCH_ID_TABLES)[number]> =
+	[...new Set(BRANCH_LEADING_INDEX_DDL.map((entry) => entry.table))];
+
+const DOCUMENTS_INDEX_DDL: readonly string[] = [];
 
 const INDEXED_DOCS_INDEX_DDL: readonly string[] = [
-	"CREATE INDEX IF NOT EXISTS idx_indexed_docs_library ON indexed_docs(library)",
 	"CREATE INDEX IF NOT EXISTS idx_indexed_docs_fetched ON indexed_docs(fetched_at)",
 ];
 
@@ -577,10 +734,49 @@ const CORE_SCHEMA_DDL: readonly string[] = [
 	...INDEXED_DOCS_INDEX_DDL,
 ];
 
-/** The symbol graph: 3 CREATE TABLE + 11 CREATE INDEX. */
+/**
+ * The symbol graph's 3 CREATE TABLEs, at index version 4. Its 11 indexes all
+ * lead with `branch_id` and therefore live in `BRANCH_LEADING_INDEX_DDL`.
+ *
+ * This block is the design's member #1, `initializeSymbolGraphSchema` — in this
+ * tree the DDL is a constant consumed by the schema pass, not a method, so
+ * `BranchScopedGraph` carries the OTHER 24 members of §4.4.1's table and this
+ * constant carries the first. It is the V3.11b sweep's one declared exception
+ * for these three tables.
+ *
+ * I-12 Ruling 1, per table:
+ *
+ * - `symbols` — CONTENT-DERIVED id: `sha256(filePath:name:kind:line)`
+ *   (`symbol-extractor.ts`), identical on every branch that has the symbol once
+ *   paths are repo-relative. Ruling 1's first case, so `PRIMARY KEY
+ *   (branch_id, id)`. Without it `INSERT OR REPLACE` silently overwrites the
+ *   other branch's row.
+ * - `symbol_references` — SURROGATE id: `INTEGER PRIMARY KEY AUTOINCREMENT`,
+ *   already unique table-wide. Ruling 1's second case, so the single-column key
+ *   is KEPT and the table gains `branch_id NOT NULL` plus branch-LEADING
+ *   secondary indexes. This is 3a-2's finding 1: SQLite assigns rowid aliases
+ *   only to a single-column INTEGER PRIMARY KEY, so the design's literal
+ *   `(branch_id, id)` would give every inserted reference `id NULL` and
+ *   `resolveReference(refId)` would then match nothing.
+ * - `graph_metadata` — content-derived key (`pagerank_last_computed`), the same
+ *   string on every branch. Ruling 1's first case: `PRIMARY KEY (branch_id, key)`.
+ *
+ * THE THREE FOREIGN KEYS ARE DROPPED (§3.5.1, N33). `symbols(id)` is no longer
+ * a unique single-column key, so a FK that names it is not even declarable; and
+ * a cross-branch `ON DELETE CASCADE` is exactly the data loss this phase closes.
+ * The `DELETE`s that the cascade covered are issued explicitly already
+ * (`deleteSymbolsByFile` deletes references first, "cascade would handle this,
+ * but be explicit").
+ *
+ * Every index leads with `branch_id`, because every statement is now scoped.
+ * `idx_symbols_name` becomes `(branch_id, name)`, which is the index I-12
+ * Ruling 3 requires `resolveReferencesByName` to keep using — its plan is
+ * pinned, with its falsifier, in `tracker-resolve-plan.test.ts`.
+ */
 const SYMBOL_GRAPH_DDL: readonly string[] = [
 	`CREATE TABLE IF NOT EXISTS symbols (
-		id TEXT PRIMARY KEY,
+		branch_id INTEGER NOT NULL,
+		id TEXT NOT NULL,
 		name TEXT NOT NULL,
 		kind TEXT NOT NULL,
 		file_path TEXT NOT NULL,
@@ -596,10 +792,11 @@ const SYMBOL_GRAPH_DDL: readonly string[] = [
 		out_degree INTEGER DEFAULT 0,
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL,
-		FOREIGN KEY (parent_id) REFERENCES symbols(id) ON DELETE SET NULL
+		PRIMARY KEY (branch_id, id)
 	)`,
 	`CREATE TABLE IF NOT EXISTS symbol_references (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		branch_id INTEGER NOT NULL,
 		from_symbol_id TEXT NOT NULL,
 		to_symbol_name TEXT NOT NULL,
 		to_symbol_id TEXT,
@@ -607,26 +804,15 @@ const SYMBOL_GRAPH_DDL: readonly string[] = [
 		file_path TEXT NOT NULL,
 		line INTEGER NOT NULL,
 		is_resolved INTEGER DEFAULT 0,
-		created_at TEXT NOT NULL,
-		FOREIGN KEY (from_symbol_id) REFERENCES symbols(id) ON DELETE CASCADE,
-		FOREIGN KEY (to_symbol_id) REFERENCES symbols(id) ON DELETE SET NULL
+		created_at TEXT NOT NULL
 	)`,
 	`CREATE TABLE IF NOT EXISTS graph_metadata (
-		key TEXT PRIMARY KEY,
+		branch_id INTEGER NOT NULL,
+		key TEXT NOT NULL,
 		value TEXT NOT NULL,
-		updated_at TEXT NOT NULL
+		updated_at TEXT NOT NULL,
+		PRIMARY KEY (branch_id, key)
 	)`,
-	"CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name)",
-	"CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_path)",
-	"CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind)",
-	"CREATE INDEX IF NOT EXISTS idx_symbols_pagerank ON symbols(pagerank DESC)",
-	"CREATE INDEX IF NOT EXISTS idx_symbols_parent ON symbols(parent_id)",
-	"CREATE INDEX IF NOT EXISTS idx_symbols_exported ON symbols(is_exported) WHERE is_exported = 1",
-	"CREATE INDEX IF NOT EXISTS idx_refs_from ON symbol_references(from_symbol_id)",
-	"CREATE INDEX IF NOT EXISTS idx_refs_to ON symbol_references(to_symbol_id)",
-	"CREATE INDEX IF NOT EXISTS idx_refs_to_name ON symbol_references(to_symbol_name)",
-	"CREATE INDEX IF NOT EXISTS idx_refs_file ON symbol_references(file_path)",
-	"CREATE INDEX IF NOT EXISTS idx_refs_kind ON symbol_references(kind)",
 ];
 
 /** Activity log (monitor mode): 1 CREATE TABLE + 1 CREATE INDEX. */
@@ -709,13 +895,28 @@ const MIGRATION_INDEXES = [
  * table with a `branch_id` column is missing from the list. Leaving one out
  * re-opens C1 for that table.
  *
- * `files` only, for now. The other five tree-scoped tables gain `branch_id`
- * in Phase 3b, together with the statements that scope them. A `branch_id`
- * leading key under unscoped statements makes every path lookup on those tables
- * a table scan, and takes away the index `resolveReferencesByName`'s plan
- * depends on (`tracker-resolve-plan.test.ts`).
+ * ALL SIX tree-scoped tables, as of Phase 3b-1 (I-12 Ruling 1). 3a-2 carried
+ * `files` alone, deliberately: a `branch_id` leading key under UNSCOPED
+ * statements makes every path lookup a table scan and takes away the index
+ * `resolveReferencesByName`'s plan depends on. 3b-1 changes the DDL TOGETHER
+ * with the statements that scope it, which is what makes the other five safe to
+ * add. Every statement on these tables now names `branch_id` (swept: V3.11b).
+ *
+ * `commits`, `metadata` and `activity_log` describe the REPOSITORY, not a tree,
+ * and carry no branch id (§3.5).
+ *
+ * Finding 4 (3a-2) is still open and still belongs to 3b-2: LanceDB rows carry
+ * branch ids too, and the raise does not read them. The journal is what makes
+ * that reachable.
  */
-export const BRANCH_ID_TABLES = ["files"] as const;
+export const BRANCH_ID_TABLES = [
+	"files",
+	"documents",
+	"indexed_docs",
+	"symbols",
+	"symbol_references",
+	"graph_metadata",
+] as const;
 
 /** Each listed table's two probes, written as literals: no interpolated SQL. */
 const BRANCH_ID_PROBES: Readonly<
@@ -727,6 +928,26 @@ const BRANCH_ID_PROBES: Readonly<
 	files: {
 		columns: "PRAGMA table_info(files)",
 		highest: "SELECT MAX(branch_id) AS highest FROM files",
+	},
+	documents: {
+		columns: "PRAGMA table_info(documents)",
+		highest: "SELECT MAX(branch_id) AS highest FROM documents",
+	},
+	indexed_docs: {
+		columns: "PRAGMA table_info(indexed_docs)",
+		highest: "SELECT MAX(branch_id) AS highest FROM indexed_docs",
+	},
+	symbols: {
+		columns: "PRAGMA table_info(symbols)",
+		highest: "SELECT MAX(branch_id) AS highest FROM symbols",
+	},
+	symbol_references: {
+		columns: "PRAGMA table_info(symbol_references)",
+		highest: "SELECT MAX(branch_id) AS highest FROM symbol_references",
+	},
+	graph_metadata: {
+		columns: "PRAGMA table_info(graph_metadata)",
+		highest: "SELECT MAX(branch_id) AS highest FROM graph_metadata",
 	},
 };
 
@@ -761,6 +982,10 @@ const TREE_SCOPED_CREATE_DDL: readonly string[] = [
 	...INDEXED_DOCS_INDEX_DDL,
 	...MIGRATION_INDEXES,
 	...SYMBOL_GRAPH_DDL,
+	// UNCONDITIONALLY here, unlike in `openRegion`: every one of these tables
+	// was just dropped and re-created at the v4 shape three statements ago, so
+	// `branch_id` is present by construction.
+	...BRANCH_LEADING_INDEX_DDL.map((entry) => entry.ddl),
 ];
 
 /** A branch id is a safe integer >= 0; 0 is the shared marker. */
@@ -857,14 +1082,20 @@ export interface TrackerRegion extends SyncRegion {
  *
  *    2   PRAGMA journal_mode = WAL, and its read-back when the switch is contended
  *    1   PRAGMA database_list — the memo key; measured lock-free, counted anyway
- *   11   CORE_SCHEMA_DDL.length
- *   14   SYMBOL_GRAPH_DDL.length
+ *    9   CORE_SCHEMA_DDL.length: 5 CREATE TABLE + 4 CREATE INDEX. It gained
+ *          `idx_files_path` (I-12 Ruling 2) and lost three to the conditional
+ *          list below (both `documents` indexes and `idx_indexed_docs_library`)
+ *    3   SYMBOL_GRAPH_DDL.length — the 3 CREATE TABLEs
  *    2   ACTIVITY_LOG_DDL.length
+ *    4   PRAGMA table_info — BRANCH_INDEXED_TABLES
+ *   14   BRANCH_LEADING_INDEX_DDL.length, at most: each is issued only when its
+ *          table has `branch_id`, and `blockingStatements` is an UPPER BOUND on
+ *          what the region can issue, which is what the clamp needs
  *    2   PRAGMA table_info — MIGRATED_TABLES
  *    6   ALTER TABLE, at most — COLUMN_MIGRATIONS
  *    2   MIGRATION_INDEXES
  *   --
- *   40   → floor(250 / 40) = 6 ms per statement; 40 × 6 = 240 ms ≤ BUSY_TIMEOUT_MS
+ *   45   → floor(250 / 45) = 5 ms per statement; 45 × 5 = 225 ms ≤ BUSY_TIMEOUT_MS
  *
  * The architecture's table says 15 ("the 14 constructor DDL execs + the
  * pragma"). That counted `exec` CALLS; the DDL was then three batched execs
@@ -885,6 +1116,8 @@ const R0_BLOCKING_STATEMENTS =
 	CORE_SCHEMA_DDL.length +
 	SYMBOL_GRAPH_DDL.length +
 	ACTIVITY_LOG_DDL.length +
+	BRANCH_INDEXED_TABLES.length +
+	BRANCH_LEADING_INDEX_DDL.length +
 	MIGRATED_TABLES.length +
 	COLUMN_MIGRATIONS.length +
 	MIGRATION_INDEXES.length;
@@ -895,7 +1128,7 @@ const R0_BLOCKING_STATEMENTS =
  * it.
  *
  *   region    what runs                                   blocking   on contention
- *   R0        WAL pragma, memo key, schema pass           40         fail the open
+ *   R0        WAL pragma, memo key, schema pass           45         fail the open
  *   R1        getChanges' one SELECT over `files`         1          retry once
  *   R-read    n read-only statements (`reads(n)`)         n          retry once
  *   R-write   ONE autocommit write statement              1          fail
@@ -1228,6 +1461,23 @@ export class FileTracker implements IFileTracker {
 			for (const statement of SYMBOL_GRAPH_DDL) this.db.exec(statement);
 			for (const statement of ACTIVITY_LOG_DDL) this.db.exec(statement);
 
+			// Branch-leading indexes, ONLY on tables that have the column. See
+			// `BRANCH_LEADING_INDEX_DDL`: issuing them unconditionally makes R0
+			// throw on a v3 database, and R0 fails the OPEN — so §6.1's upgrade
+			// signal could never be read and no pre-v4 store could be recovered.
+			const branchIndexed = new Set<string>();
+			for (const table of BRANCH_INDEXED_TABLES) {
+				const columns = this.db
+					.prepare(`PRAGMA table_info(${table})`)
+					.all() as Array<{ name: string }>;
+				if (columns.some((column) => column.name === "branch_id")) {
+					branchIndexed.add(table);
+				}
+			}
+			for (const { table, ddl } of BRANCH_LEADING_INDEX_DDL) {
+				if (branchIndexed.has(table)) this.db.exec(ddl);
+			}
+
 			// Migration: columns and indexes an older database lacks. Runs for every
 			// database this process has not seen before, including one created by
 			// an older version — the memo is only consulted above, never used to
@@ -1283,7 +1533,8 @@ export class FileTracker implements IFileTracker {
 	 * Unscoped by branch in this build: the `{ branchId, pathPrefix }` scope is
 	 * Phase 3b's (§3.5.2).
 	 */
-	getChanges(currentFiles: string[]): FileChanges {
+	getChanges(branchId: number, currentFiles: string[]): FileChanges {
+		assertBranchId(branchId);
 		const newFiles: string[] = [];
 		const modifiedFiles: string[] = [];
 		const unchangedFiles: string[] = [];
@@ -1291,8 +1542,10 @@ export class FileTracker implements IFileTracker {
 		// Get all indexed files — R1, one SELECT.
 		const indexed = this.withRegion(TRACKER_REGIONS.changes, () =>
 			this.db
-				.prepare("SELECT branch_id, path, content_hash, mtime FROM files")
-				.all(),
+				.prepare(
+					"SELECT branch_id, path, content_hash, mtime FROM files WHERE branch_id = ?",
+				)
+				.all(branchId),
 		) as Array<{
 			branch_id: number;
 			path: string;
@@ -1434,13 +1687,14 @@ export class FileTracker implements IFileTracker {
 	/**
 	 * Get chunk IDs for a file
 	 */
-	getChunkIds(filePath: string): string[] {
+	getChunkIds(branchId: number, filePath: string): string[] {
+		assertBranchId(branchId);
 		const relativePath = this.storedPath(filePath);
 
 		const row = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
-				.prepare("SELECT chunk_ids FROM files WHERE path = ?")
-				.get(relativePath),
+				.prepare("SELECT chunk_ids FROM files WHERE branch_id = ? AND path = ?")
+				.get(branchId, relativePath),
 		) as { chunk_ids: string } | undefined;
 
 		if (!row) {
@@ -1457,27 +1711,31 @@ export class FileTracker implements IFileTracker {
 	/**
 	 * Remove a file from the index
 	 */
-	removeFile(filePath: string): void {
+	removeFile(branchId: number, filePath: string): void {
+		assertBranchId(branchId);
 		// Absolute or already stored: see `storedPath`.
 		const relativePath = this.storedPath(filePath);
 
 		this.withRegion(TRACKER_REGIONS.write, () => {
-			this.db.prepare("DELETE FROM files WHERE path = ?").run(relativePath);
+			this.db
+				.prepare("DELETE FROM files WHERE branch_id = ? AND path = ?")
+				.run(branchId, relativePath);
 		});
 	}
 
 	/**
 	 * Get file state
 	 */
-	getFileState(filePath: string): FileState | null {
+	getFileState(branchId: number, filePath: string): FileState | null {
+		assertBranchId(branchId);
 		const relativePath = this.storedPath(filePath);
 
 		const row = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
 				.prepare(
-					"SELECT path, content_hash, mtime, chunk_ids FROM files WHERE path = ?",
+					"SELECT path, content_hash, mtime, chunk_ids FROM files WHERE branch_id = ? AND path = ?",
 				)
-				.get(relativePath),
+				.get(branchId, relativePath),
 		) as
 			| {
 					path: string;
@@ -1502,11 +1760,14 @@ export class FileTracker implements IFileTracker {
 	/**
 	 * Get all indexed files
 	 */
-	getAllFiles(): FileState[] {
+	getAllFiles(branchId: number): FileState[] {
+		assertBranchId(branchId);
 		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
-				.prepare("SELECT path, content_hash, mtime, chunk_ids FROM files")
-				.all(),
+				.prepare(
+					"SELECT path, content_hash, mtime, chunk_ids FROM files WHERE branch_id = ?",
+				)
+				.all(branchId),
 		) as Array<{
 			path: string;
 			content_hash: string;
@@ -1546,14 +1807,20 @@ export class FileTracker implements IFileTracker {
 	/**
 	 * Get statistics
 	 */
-	getStats(): { totalFiles: number; lastIndexed: string | null } {
+	getStats(branchId: number): {
+		totalFiles: number;
+		lastIndexed: string | null;
+	} {
+		assertBranchId(branchId);
 		return this.withRegion(reads(2), () => {
 			const countRow = this.db
-				.prepare("SELECT COUNT(*) as count FROM files")
-				.get() as { count: number };
+				.prepare("SELECT COUNT(*) as count FROM files WHERE branch_id = ?")
+				.get(branchId) as { count: number };
 			const lastRow = this.db
-				.prepare("SELECT MAX(indexed_at) as last FROM files")
-				.get() as { last: string | null };
+				.prepare(
+					"SELECT MAX(indexed_at) as last FROM files WHERE branch_id = ?",
+				)
+				.get(branchId) as { last: string | null };
 			return {
 				totalFiles: countRow.count,
 				lastIndexed: lastRow.last,
@@ -1581,17 +1848,27 @@ export class FileTracker implements IFileTracker {
 
 	/**
 	 * §6.1's third upgrade signal, and the only one that sees the SQLite half:
-	 * `files` exists and has no `branch_id`. False for a database with no `files`
-	 * table at all, which is fresh, not outdated.
+	 * a table in `BRANCH_ID_TABLES` EXISTS and has no `branch_id`. A table that
+	 * does not exist at all is fresh, not outdated, and contributes nothing —
+	 * which is what keeps a brand-new database from reporting an upgrade.
+	 *
+	 * Extended in 3b-1 from `files` alone to every table that now carries the
+	 * column. A store written by 3a-2 has `files.branch_id` and no
+	 * `symbols.branch_id`; probing `files` alone would call that store current
+	 * and leave five tables at the v3 shape, where `INSERT OR REPLACE` silently
+	 * overwrites another branch's row.
 	 */
 	trackerNeedsV4Schema(): boolean {
-		const columns = this.withRegion(TRACKER_REGIONS.read, () =>
-			this.db.prepare(BRANCH_ID_PROBES.files.columns).all(),
-		) as Array<{ name?: unknown }>;
-		return (
-			columns.length > 0 &&
-			!columns.some((column) => column.name === "branch_id")
-		);
+		return this.withRegion(reads(BRANCH_ID_TABLES.length), () => {
+			for (const table of BRANCH_ID_TABLES) {
+				const columns = this.db
+					.prepare(BRANCH_ID_PROBES[table].columns)
+					.all() as Array<{ name?: unknown }>;
+				if (columns.length === 0) continue;
+				if (!columns.some((column) => column.name === "branch_id")) return true;
+			}
+			return false;
+		});
 	}
 
 	/**
@@ -1725,13 +2002,16 @@ export class FileTracker implements IFileTracker {
 	/**
 	 * Get enrichment state for a file
 	 */
-	getEnrichmentState(filePath: string): EnrichmentStateMap {
+	getEnrichmentState(branchId: number, filePath: string): EnrichmentStateMap {
+		assertBranchId(branchId);
 		const relativePath = this.storedPath(filePath);
 
 		const row = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
-				.prepare("SELECT enrichment_state FROM files WHERE path = ?")
-				.get(relativePath),
+				.prepare(
+					"SELECT enrichment_state FROM files WHERE branch_id = ? AND path = ?",
+				)
+				.get(branchId, relativePath),
 		) as { enrichment_state: string } | undefined;
 
 		if (!row?.enrichment_state) {
@@ -1749,10 +2029,12 @@ export class FileTracker implements IFileTracker {
 	 * Set enrichment state for a specific document type
 	 */
 	setEnrichmentState(
+		branchId: number,
 		filePath: string,
 		documentType: DocumentType,
 		state: EnrichmentState,
 	): void {
+		assertBranchId(branchId);
 		const relativePath = this.storedPath(filePath);
 
 		// Read-modify-write in ONE immediate transaction. Two processes that each
@@ -1760,8 +2042,12 @@ export class FileTracker implements IFileTracker {
 		// under BEGIN IMMEDIATE the second waits for the first.
 		this.withRegion(TRACKER_REGIONS.txn, () => {
 			const row = this.db
-				.prepare("SELECT enrichment_state FROM files WHERE path = ?")
-				.get(relativePath) as { enrichment_state: string } | undefined;
+				.prepare(
+					"SELECT enrichment_state FROM files WHERE branch_id = ? AND path = ?",
+				)
+				.get(branchId, relativePath) as
+				| { enrichment_state: string }
+				| undefined;
 			let current: EnrichmentStateMap = {};
 			if (row?.enrichment_state) {
 				try {
@@ -1774,11 +2060,12 @@ export class FileTracker implements IFileTracker {
 
 			this.db
 				.prepare(
-					"UPDATE files SET enrichment_state = ?, enriched_at = ? WHERE path = ?",
+					"UPDATE files SET enrichment_state = ?, enriched_at = ? WHERE branch_id = ? AND path = ?",
 				)
 				.run(
 					JSON.stringify(current),
 					state === "complete" ? new Date().toISOString() : null,
+					branchId,
 					relativePath,
 				);
 		});
@@ -1787,7 +2074,12 @@ export class FileTracker implements IFileTracker {
 	/**
 	 * Set all enrichment states for a file at once
 	 */
-	setAllEnrichmentStates(filePath: string, states: EnrichmentStateMap): void {
+	setAllEnrichmentStates(
+		branchId: number,
+		filePath: string,
+		states: EnrichmentStateMap,
+	): void {
+		assertBranchId(branchId);
 		const relativePath = this.storedPath(filePath);
 
 		const hasComplete = Object.values(states).some((s) => s === "complete");
@@ -1795,11 +2087,12 @@ export class FileTracker implements IFileTracker {
 		this.withRegion(TRACKER_REGIONS.write, () => {
 			this.db
 				.prepare(
-					"UPDATE files SET enrichment_state = ?, enriched_at = ? WHERE path = ?",
+					"UPDATE files SET enrichment_state = ?, enriched_at = ? WHERE branch_id = ? AND path = ?",
 				)
 				.run(
 					JSON.stringify(states),
 					hasComplete ? new Date().toISOString() : null,
+					branchId,
 					relativePath,
 				);
 		});
@@ -1808,32 +2101,43 @@ export class FileTracker implements IFileTracker {
 	/**
 	 * Reset enrichment state for a file (e.g., when file is modified)
 	 */
-	resetEnrichmentState(filePath: string): void {
+	resetEnrichmentState(branchId: number, filePath: string): void {
+		assertBranchId(branchId);
 		const relativePath = this.storedPath(filePath);
 
 		this.withRegion(TRACKER_REGIONS.write, () => {
 			this.db
 				.prepare(
-					"UPDATE files SET enrichment_state = '{}', enriched_at = NULL WHERE path = ?",
+					"UPDATE files SET enrichment_state = '{}', enriched_at = NULL WHERE branch_id = ? AND path = ?",
 				)
-				.run(relativePath);
+				.run(branchId, relativePath);
 		});
 	}
 
 	/**
 	 * Check if a file needs enrichment for a specific document type
 	 */
-	needsEnrichment(filePath: string, documentType: DocumentType): boolean {
-		const state = this.getEnrichmentState(filePath);
+	needsEnrichment(
+		branchId: number,
+		filePath: string,
+		documentType: DocumentType,
+	): boolean {
+		const state = this.getEnrichmentState(branchId, filePath);
 		return state[documentType] !== "complete";
 	}
 
 	/**
 	 * Get all files that need enrichment for a specific document type
 	 */
-	getFilesNeedingEnrichment(documentType: DocumentType): string[] {
+	getFilesNeedingEnrichment(
+		branchId: number,
+		documentType: DocumentType,
+	): string[] {
+		assertBranchId(branchId);
 		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
-			this.db.prepare("SELECT path, enrichment_state FROM files").all(),
+			this.db
+				.prepare("SELECT path, enrichment_state FROM files WHERE branch_id = ?")
+				.all(branchId),
 		) as Array<{
 			path: string;
 			enrichment_state: string;
@@ -1863,14 +2167,16 @@ export class FileTracker implements IFileTracker {
 	/**
 	 * Track a document in the documents table
 	 */
-	trackDocument(doc: TrackedDocument): void {
+	trackDocument(branchId: number, doc: TrackedDocument): void {
+		assertBranchId(branchId);
 		this.withRegion(TRACKER_REGIONS.write, () => {
 			const stmt = this.db.prepare(`
-			INSERT OR REPLACE INTO documents (id, document_type, file_path, source_ids, created_at, enriched_at, valid_from_commit)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
+			INSERT OR REPLACE INTO documents (branch_id, id, document_type, file_path, source_ids, created_at, enriched_at, valid_from_commit)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		`);
 
 			stmt.run(
+				branchId,
 				doc.id,
 				doc.documentType,
 				doc.filePath,
@@ -1885,19 +2191,21 @@ export class FileTracker implements IFileTracker {
 	/**
 	 * Track multiple documents at once
 	 */
-	trackDocuments(docs: TrackedDocument[]): void {
+	trackDocuments(branchId: number, docs: TrackedDocument[]): void {
+		assertBranchId(branchId);
 		if (docs.length === 0) return;
 
 		// ONE immediate transaction for the batch, where there used to be one
 		// autocommit INSERT per document: blockingStatements 2, not N.
 		this.withRegion(TRACKER_REGIONS.txn, () => {
 			const stmt = this.db.prepare(`
-			INSERT OR REPLACE INTO documents (id, document_type, file_path, source_ids, created_at, enriched_at, valid_from_commit)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
+			INSERT OR REPLACE INTO documents (branch_id, id, document_type, file_path, source_ids, created_at, enriched_at, valid_from_commit)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		`);
 
 			for (const doc of docs) {
 				stmt.run(
+					branchId,
 					doc.id,
 					doc.documentType,
 					doc.filePath,
@@ -1913,15 +2221,16 @@ export class FileTracker implements IFileTracker {
 	/**
 	 * Get all tracked documents for a file
 	 */
-	getDocumentsForFile(filePath: string): TrackedDocument[] {
+	getDocumentsForFile(branchId: number, filePath: string): TrackedDocument[] {
+		assertBranchId(branchId);
 		const relativePath = this.storedPath(filePath);
 
 		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
 				.prepare(
-					"SELECT id, document_type, file_path, source_ids, created_at, enriched_at FROM documents WHERE file_path = ?",
+					"SELECT id, document_type, file_path, source_ids, created_at, enriched_at FROM documents WHERE branch_id = ? AND file_path = ?",
 				)
-				.all(relativePath),
+				.all(branchId, relativePath),
 		) as Array<{
 			id: string;
 			document_type: string;
@@ -1944,13 +2253,17 @@ export class FileTracker implements IFileTracker {
 	/**
 	 * Get all tracked documents of a specific type
 	 */
-	getDocumentsByType(documentType: DocumentType): TrackedDocument[] {
+	getDocumentsByType(
+		branchId: number,
+		documentType: DocumentType,
+	): TrackedDocument[] {
+		assertBranchId(branchId);
 		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
 				.prepare(
-					"SELECT id, document_type, file_path, source_ids, created_at, enriched_at FROM documents WHERE document_type = ?",
+					"SELECT id, document_type, file_path, source_ids, created_at, enriched_at FROM documents WHERE branch_id = ? AND document_type = ?",
 				)
-				.all(documentType),
+				.all(branchId, documentType),
 		) as Array<{
 			id: string;
 			document_type: string;
@@ -1973,37 +2286,42 @@ export class FileTracker implements IFileTracker {
 	/**
 	 * Delete all documents for a file
 	 */
-	deleteDocumentsForFile(filePath: string): void {
+	deleteDocumentsForFile(branchId: number, filePath: string): void {
+		assertBranchId(branchId);
 		const relativePath = this.storedPath(filePath);
 
 		this.withRegion(TRACKER_REGIONS.write, () => {
 			this.db
-				.prepare("DELETE FROM documents WHERE file_path = ?")
-				.run(relativePath);
+				.prepare("DELETE FROM documents WHERE branch_id = ? AND file_path = ?")
+				.run(branchId, relativePath);
 		});
 	}
 
 	/**
 	 * Delete documents by type
 	 */
-	deleteDocumentsByType(documentType: DocumentType): void {
+	deleteDocumentsByType(branchId: number, documentType: DocumentType): void {
+		assertBranchId(branchId);
 		this.withRegion(TRACKER_REGIONS.write, () => {
 			this.db
-				.prepare("DELETE FROM documents WHERE document_type = ?")
-				.run(documentType);
+				.prepare(
+					"DELETE FROM documents WHERE branch_id = ? AND document_type = ?",
+				)
+				.run(branchId, documentType);
 		});
 	}
 
 	/**
 	 * Get document count by type
 	 */
-	getDocumentCounts(): Record<DocumentType, number> {
+	getDocumentCounts(branchId: number): Record<DocumentType, number> {
+		assertBranchId(branchId);
 		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
 				.prepare(
-					"SELECT document_type, COUNT(*) as count FROM documents GROUP BY document_type",
+					"SELECT document_type, COUNT(*) as count FROM documents WHERE branch_id = ? GROUP BY document_type",
 				)
-				.all(),
+				.all(branchId),
 		) as Array<{ document_type: string; count: number }>;
 
 		const counts: Record<string, number> = {};
@@ -2087,13 +2405,20 @@ export class FileTracker implements IFileTracker {
 	 * Set `indexed_at_commit` for an already-tracked file.
 	 * No-op when the file is not tracked.
 	 */
-	setFileIndexedCommit(filePath: string, sha: string | null): void {
+	setFileIndexedCommit(
+		branchId: number,
+		filePath: string,
+		sha: string | null,
+	): void {
+		assertBranchId(branchId);
 		const relativePath = this.storedPath(filePath);
 
 		this.withRegion(TRACKER_REGIONS.write, () => {
 			this.db
-				.prepare("UPDATE files SET indexed_at_commit = ? WHERE path = ?")
-				.run(sha, relativePath);
+				.prepare(
+					"UPDATE files SET indexed_at_commit = ? WHERE branch_id = ? AND path = ?",
+				)
+				.run(sha, branchId, relativePath);
 		});
 	}
 
@@ -2103,13 +2428,16 @@ export class FileTracker implements IFileTracker {
 	 * existed" — in both cases there is nothing to compare against, never a
 	 * reason to hide the file.
 	 */
-	getFileIndexedCommit(filePath: string): string | null {
+	getFileIndexedCommit(branchId: number, filePath: string): string | null {
+		assertBranchId(branchId);
 		const relativePath = this.storedPath(filePath);
 
 		const row = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
-				.prepare("SELECT indexed_at_commit FROM files WHERE path = ?")
-				.get(relativePath),
+				.prepare(
+					"SELECT indexed_at_commit FROM files WHERE branch_id = ? AND path = ?",
+				)
+				.get(branchId, relativePath),
 		) as { indexed_at_commit: string | null } | undefined;
 		return row?.indexed_at_commit ?? null;
 	}
@@ -2118,15 +2446,24 @@ export class FileTracker implements IFileTracker {
 	 * Set `valid_from_commit` on the given documents.
 	 * Unknown IDs are silently ignored.
 	 */
-	setDocumentsValidFromCommit(documentIds: string[], sha: string | null): void {
+	setDocumentsValidFromCommit(
+		branchId: number,
+		documentIds: string[],
+		sha: string | null,
+	): void {
+		assertBranchId(branchId);
 		if (documentIds.length === 0) return;
 
+		// `branch_id = ?` is not only FR-4 here: under the v4 `(branch_id, id)`
+		// key an unscoped `WHERE id = ?` is a table scan, and this loop runs N of
+		// them inside ONE `BEGIN IMMEDIATE` (3a-2's D-a, reason 2). Scoped, every
+		// iteration is a primary-key lookup.
 		this.withRegion(TRACKER_REGIONS.txn, () => {
 			const stmt = this.db.prepare(
-				"UPDATE documents SET valid_from_commit = ? WHERE id = ?",
+				"UPDATE documents SET valid_from_commit = ? WHERE branch_id = ? AND id = ?",
 			);
 			for (const id of documentIds) {
-				stmt.run(sha, id);
+				stmt.run(sha, branchId, id);
 			}
 		});
 	}
@@ -2140,13 +2477,17 @@ export class FileTracker implements IFileTracker {
 	 * false". Encoding it the other way would make every pre-provenance index
 	 * silently return nothing.
 	 */
-	getDocumentProvenance(documentId: string): DocumentProvenance | null {
+	getDocumentProvenance(
+		branchId: number,
+		documentId: string,
+	): DocumentProvenance | null {
+		assertBranchId(branchId);
 		const row = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
 				.prepare(
-					"SELECT valid_from_commit, invalidated_at_commit, stale_at_commit FROM documents WHERE id = ?",
+					"SELECT valid_from_commit, invalidated_at_commit, stale_at_commit FROM documents WHERE branch_id = ? AND id = ?",
 				)
-				.get(documentId),
+				.get(branchId, documentId),
 		) as
 			| {
 					valid_from_commit: string | null;
@@ -2232,11 +2573,13 @@ export class FileTracker implements IFileTracker {
 	 * `buildSql` receives the placeholder lists for types and paths.
 	 */
 	private updateDocumentsByPath(
+		branchId: number,
 		filePaths: string[],
 		documentTypes: DocumentType[],
 		leadingParams: unknown[],
 		buildSql: (typePlaceholders: string, pathPlaceholders: string) => string,
 	): number {
+		assertBranchId(branchId);
 		if (filePaths.length === 0 || documentTypes.length === 0) return 0;
 
 		const variants = this.pathVariants(filePaths);
@@ -2256,7 +2599,7 @@ export class FileTracker implements IFileTracker {
 				);
 				const result = this.db
 					.prepare(sql)
-					.run(...leadingParams, ...documentTypes, ...batch);
+					.run(...leadingParams, branchId, ...documentTypes, ...batch);
 				changed += result.changes;
 			}
 			return changed;
@@ -2274,17 +2617,20 @@ export class FileTracker implements IFileTracker {
 	 * Never deletes. Returns the number of documents newly superseded.
 	 */
 	markDocumentsInvalidated(
+		branchId: number,
 		filePaths: string[],
 		documentTypes: DocumentType[],
 		sha: string,
 	): number {
 		return this.updateDocumentsByPath(
+			branchId,
 			filePaths,
 			documentTypes,
 			[sha],
 			(types, paths) => `
 				UPDATE documents SET invalidated_at_commit = ?
 				WHERE invalidated_at_commit IS NULL
+					AND branch_id = ?
 					AND document_type IN (${types})
 					AND file_path IN (${paths})
 			`,
@@ -2298,17 +2644,20 @@ export class FileTracker implements IFileTracker {
 	 * still returned by every reader. Returns the number newly flagged.
 	 */
 	markDocumentsStale(
+		branchId: number,
 		filePaths: string[],
 		documentTypes: DocumentType[],
 		sha: string,
 	): number {
 		return this.updateDocumentsByPath(
+			branchId,
 			filePaths,
 			documentTypes,
 			[sha],
 			(types, paths) => `
 				UPDATE documents SET stale_at_commit = ?
 				WHERE stale_at_commit IS NULL
+					AND branch_id = ?
 					AND document_type IN (${types})
 					AND file_path IN (${paths})
 			`,
@@ -2320,7 +2669,8 @@ export class FileTracker implements IFileTracker {
 	 * true" acknowledgement. Without this a flagged observation stays flagged
 	 * forever, which trains people to ignore the flag.
 	 */
-	clearDocumentsStale(documentIds: string[]): number {
+	clearDocumentsStale(branchId: number, documentIds: string[]): number {
+		assertBranchId(branchId);
 		if (documentIds.length === 0) return 0;
 
 		return this.withRegion(TRACKER_REGIONS.txn, () => {
@@ -2331,9 +2681,9 @@ export class FileTracker implements IFileTracker {
 			)) {
 				const result = this.db
 					.prepare(
-						`UPDATE documents SET stale_at_commit = NULL WHERE id IN (${FileTracker.placeholders(batch.length)})`,
+						`UPDATE documents SET stale_at_commit = NULL WHERE branch_id = ? AND id IN (${FileTracker.placeholders(batch.length)})`,
 					)
-					.run(...batch);
+					.run(branchId, ...batch);
 				changed += result.changes;
 			}
 			return changed;
@@ -2345,9 +2695,11 @@ export class FileTracker implements IFileTracker {
 	 * Used to report how many documents a policy deliberately left alone.
 	 */
 	countDocumentsForPaths(
+		branchId: number,
 		filePaths: string[],
 		documentTypes: DocumentType[],
 	): number {
+		assertBranchId(branchId);
 		if (filePaths.length === 0 || documentTypes.length === 0) return 0;
 
 		const batches = FileTracker.chunk(
@@ -2363,10 +2715,13 @@ export class FileTracker implements IFileTracker {
 			for (const batch of batches) {
 				const sql = `
 				SELECT COUNT(*) as count FROM documents
-				WHERE document_type IN (${FileTracker.placeholders(documentTypes.length)})
+				WHERE branch_id = ?
+					AND document_type IN (${FileTracker.placeholders(documentTypes.length)})
 					AND file_path IN (${FileTracker.placeholders(batch.length)})
 			`;
-				const row = this.db.prepare(sql).get(...documentTypes, ...batch) as {
+				const row = this.db
+					.prepare(sql)
+					.get(branchId, ...documentTypes, ...batch) as {
 					count: number;
 				};
 				total += row.count;
@@ -2387,9 +2742,11 @@ export class FileTracker implements IFileTracker {
 	 * otherwise abort the entire batch and take the healthy rows with it.
 	 */
 	queueReEnrichment(
+		branchId: number,
 		filePaths: string[],
 		documentTypes: DocumentType[],
 	): number {
+		assertBranchId(branchId);
 		if (filePaths.length === 0 || documentTypes.length === 0) return 0;
 
 		const variants = this.pathVariants(filePaths);
@@ -2410,9 +2767,12 @@ export class FileTracker implements IFileTracker {
 						${FileTracker.placeholders(jsonPaths.length)}
 					),
 					enriched_at = NULL
-				WHERE path IN (${FileTracker.placeholders(batch.length)})
+				WHERE branch_id = ?
+					AND path IN (${FileTracker.placeholders(batch.length)})
 			`;
-				const result = this.db.prepare(sql).run(...jsonPaths, ...batch);
+				const result = this.db
+					.prepare(sql)
+					.run(...jsonPaths, branchId, ...batch);
 				changed += result.changes;
 			}
 			return changed;
@@ -2422,18 +2782,21 @@ export class FileTracker implements IFileTracker {
 	/**
 	 * Documents currently flagged stale, newest flag first.
 	 */
-	getStaleDocuments(limit?: number): StaleDocument[] {
+	getStaleDocuments(branchId: number, limit?: number): StaleDocument[] {
+		assertBranchId(branchId);
 		const sql = `
 			SELECT id, document_type, file_path, stale_at_commit, created_at
 			FROM documents
-			WHERE stale_at_commit IS NOT NULL
+			WHERE branch_id = ? AND stale_at_commit IS NOT NULL
 			ORDER BY created_at DESC
 			${limit && limit > 0 ? "LIMIT ?" : ""}
 		`;
 
 		const rows = this.withRegion(TRACKER_REGIONS.read, () => {
 			const stmt = this.db.prepare(sql);
-			return limit && limit > 0 ? stmt.all(limit) : stmt.all();
+			return limit && limit > 0
+				? stmt.all(branchId, limit)
+				: stmt.all(branchId);
 		}) as Array<{
 			id: string;
 			document_type: string;
@@ -2454,7 +2817,8 @@ export class FileTracker implements IFileTracker {
 	/**
 	 * Per-type validity tallies in a single scan.
 	 */
-	getDocumentStatusCounts(): DocumentStatusCount[] {
+	getDocumentStatusCounts(branchId: number): DocumentStatusCount[] {
+		assertBranchId(branchId);
 		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
 				.prepare(`
@@ -2464,9 +2828,10 @@ export class FileTracker implements IFileTracker {
 					SUM(CASE WHEN invalidated_at_commit IS NOT NULL THEN 1 ELSE 0 END) as invalidated,
 					SUM(CASE WHEN stale_at_commit IS NOT NULL THEN 1 ELSE 0 END) as stale
 				FROM documents
+				WHERE branch_id = ?
 				GROUP BY document_type
 			`)
-				.all(),
+				.all(branchId),
 		) as Array<{
 			document_type: string;
 			total: number;
@@ -2507,8 +2872,8 @@ export class FileTracker implements IFileTracker {
 		this.withRegion(TRACKER_REGIONS.write, () => {
 			const stmt = this.db.prepare(`
 			INSERT OR REPLACE INTO indexed_docs
-			(library, version, provider, content_hash, fetched_at, chunk_ids)
-			VALUES (?, ?, ?, ?, ?, ?)
+			(branch_id, library, version, provider, content_hash, fetched_at, chunk_ids)
+			VALUES (0, ?, ?, ?, ?, ?, ?)
 		`);
 
 			stmt.run(
@@ -2547,7 +2912,8 @@ export class FileTracker implements IFileTracker {
 				.prepare(`
 			SELECT library, version, provider, content_hash, fetched_at, chunk_ids
 			FROM indexed_docs
-			WHERE library = ? AND (version = ? OR (version IS NULL AND ? IS NULL))
+			WHERE branch_id = 0
+				AND library = ? AND (version = ? OR (version IS NULL AND ? IS NULL))
 		`)
 				.get(library, version || null, version || null),
 		) as
@@ -2582,6 +2948,7 @@ export class FileTracker implements IFileTracker {
 				.prepare(`
 			SELECT library, version, provider, content_hash, fetched_at, chunk_ids
 			FROM indexed_docs
+			WHERE branch_id = 0
 			ORDER BY library, version
 		`)
 				.all(),
@@ -2620,12 +2987,14 @@ export class FileTracker implements IFileTracker {
 			if (version !== undefined) {
 				this.db
 					.prepare(
-						"DELETE FROM indexed_docs WHERE library = ? AND (version = ? OR (version IS NULL AND ? IS NULL))",
+						"DELETE FROM indexed_docs WHERE branch_id = 0 AND library = ? AND (version = ? OR (version IS NULL AND ? IS NULL))",
 					)
 					.run(library, version, version);
 			} else {
 				this.db
-					.prepare("DELETE FROM indexed_docs WHERE library = ?")
+					.prepare(
+						"DELETE FROM indexed_docs WHERE branch_id = 0 AND library = ?",
+					)
 					.run(library);
 			}
 		});
@@ -2636,7 +3005,7 @@ export class FileTracker implements IFileTracker {
 	 */
 	clearAllIndexedDocs(): void {
 		this.withRegion(TRACKER_REGIONS.write, () => {
-			this.db.exec("DELETE FROM indexed_docs");
+			this.db.exec("DELETE FROM indexed_docs WHERE branch_id = 0");
 		});
 	}
 
@@ -2657,21 +3026,21 @@ export class FileTracker implements IFileTracker {
 				totalLibraries: (
 					this.db
 						.prepare(
-							"SELECT COUNT(DISTINCT library) as count FROM indexed_docs",
+							"SELECT COUNT(DISTINCT library) as count FROM indexed_docs WHERE branch_id = 0",
 						)
 						.get() as { count: number }
 				).count,
 				docs: this.db
-					.prepare("SELECT chunk_ids FROM indexed_docs")
+					.prepare("SELECT chunk_ids FROM indexed_docs WHERE branch_id = 0")
 					.all() as Array<{ chunk_ids: string }>,
 				providerRows: this.db
 					.prepare(
-						"SELECT provider, COUNT(*) as count FROM indexed_docs GROUP BY provider",
+						"SELECT provider, COUNT(*) as count FROM indexed_docs WHERE branch_id = 0 GROUP BY provider",
 					)
 					.all() as Array<{ provider: string; count: number }>,
 				times: this.db
 					.prepare(
-						"SELECT MIN(fetched_at) as oldest, MAX(fetched_at) as newest FROM indexed_docs",
+						"SELECT MIN(fetched_at) as oldest, MAX(fetched_at) as newest FROM indexed_docs WHERE branch_id = 0",
 					)
 					.get() as { oldest: string | null; newest: string | null },
 			}),
@@ -2703,23 +3072,87 @@ export class FileTracker implements IFileTracker {
 		};
 	}
 
-	// ========================================================================
-	// Symbol CRUD Methods
-	// ========================================================================
+	/**
+	 * THE ONLY WAY to reach a symbol-graph statement (§4.4.1, step 3).
+	 *
+	 * Every one of the 24 members below lived on `FileTracker` and took no
+	 * branch. Nineteen of them kept compiling unchanged when the key became
+	 * `(branch_id, id)` and silently went cross-branch — including a
+	 * `deleteSymbolsByFile` that `extractSymbolGraph` drives PER FILE on every
+	 * incremental re-index, which is cross-branch data loss, not a theoretical
+	 * one. Relying on the compiler to find them would have found five.
+	 *
+	 * So the members moved onto a handle that cannot be obtained without naming
+	 * a branch, and the handle holds NO branch-free state: a `db`, a `branchId`,
+	 * the region runner and the path mapper, and nothing else. A 26th method
+	 * added to `BranchScopedGraph` has nothing unscoped to reach for.
+	 */
+	graph(branchId: number): BranchScopedGraph {
+		assertBranchId(branchId);
+		return new BranchScopedGraph(
+			this.db,
+			branchId,
+			(region, fn) => this.withRegion(region, fn),
+			(filePath) => this.storedPath(filePath),
+		);
+	}
+}
+
+/**
+ * The symbol graph, through ONE branch (§4.4.1).
+ *
+ * Obtained only as `tracker.graph(branchId)`. Every statement here names
+ * `branch_id`, and the static sweep V3.11b (`tracker-graph-sweep.test.ts`)
+ * fails on any that does not — including the one nobody has written yet.
+ *
+ * The three tables' DDL (the design's member #1) is `SYMBOL_GRAPH_DDL`, above,
+ * which is the sweep's declared exception for them.
+ */
+export class BranchScopedGraph {
+	constructor(
+		private readonly db: SQLiteDatabase,
+		private readonly branchId: number,
+		private readonly runRegion: <T>(region: TrackerRegion, fn: () => T) => T,
+		private readonly storedPath: (filePath: string) => string | null,
+	) {}
 
 	/**
-	 * Insert a single symbol
+	 * THE ONE PLACE a statement may run on this handle (SR-1), and it is a real
+	 * METHOD rather than the injected field itself because the NAME is what
+	 * V2.10's sweep recognises: `withRegion` may appear only as a method
+	 * definition's name or as a call's callee, so that an alias cannot open a
+	 * region the flow walk (SR-2) never sees. The field is therefore called
+	 * `runRegion`, and this delegates to it.
+	 *
+	 * It is `FileTracker.withRegion` underneath, on the SAME connection, so the
+	 * clamp, the nesting guard and the contention ledger are shared — a graph
+	 * region and a tracker region cannot nest.
 	 */
+	private withRegion<T>(region: TrackerRegion, fn: () => T): T {
+		return this.runRegion(region, fn);
+	}
+
+	/** Which branch this handle reads and writes. Diagnostics only. */
+	get scopedBranchId(): number {
+		return this.branchId;
+	}
+
+	// ========================================================================
+	// Symbol CRUD
+	// ========================================================================
+
+	/** Insert a single symbol, under this handle's branch. */
 	insertSymbol(symbol: SymbolDefinition): void {
 		this.withRegion(TRACKER_REGIONS.write, () => {
 			const stmt = this.db.prepare(`
 			INSERT OR REPLACE INTO symbols
-			(id, name, kind, file_path, start_line, end_line, signature, docstring,
+			(branch_id, id, name, kind, file_path, start_line, end_line, signature, docstring,
 			 parent_id, is_exported, language, pagerank, in_degree, out_degree, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`);
 
 			stmt.run(
+				this.branchId,
 				symbol.id,
 				symbol.name,
 				symbol.kind,
@@ -2740,9 +3173,7 @@ export class FileTracker implements IFileTracker {
 		});
 	}
 
-	/**
-	 * Insert multiple symbols in ONE immediate transaction (batched)
-	 */
+	/** Insert multiple symbols in ONE immediate transaction (batched). */
 	insertSymbols(symbols: SymbolDefinition[]): void {
 		if (symbols.length === 0) return;
 
@@ -2752,13 +3183,14 @@ export class FileTracker implements IFileTracker {
 		this.withRegion(TRACKER_REGIONS.txn, () => {
 			const stmt = this.db.prepare(`
 			INSERT OR REPLACE INTO symbols
-			(id, name, kind, file_path, start_line, end_line, signature, docstring,
+			(branch_id, id, name, kind, file_path, start_line, end_line, signature, docstring,
 			 parent_id, is_exported, language, pagerank, in_degree, out_degree, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`);
 
 			for (const symbol of symbols) {
 				stmt.run(
+					this.branchId,
 					symbol.id,
 					symbol.name,
 					symbol.kind,
@@ -2780,138 +3212,123 @@ export class FileTracker implements IFileTracker {
 		});
 	}
 
-	/**
-	 * Get a symbol by ID
-	 */
+	/** Get a symbol by ID. */
 	getSymbol(id: string): SymbolDefinition | null {
 		const row = this.withRegion(TRACKER_REGIONS.read, () =>
-			this.db.prepare("SELECT * FROM symbols WHERE id = ?").get(id),
+			this.db
+				.prepare("SELECT * FROM symbols WHERE branch_id = ? AND id = ?")
+				.get(this.branchId, id),
 		) as Record<string, unknown> | undefined;
-		return row ? this.rowToSymbol(row) : null;
+		return row ? rowToSymbol(row) : null;
 	}
 
-	/**
-	 * Get all symbols for a file
-	 */
+	/** Get all symbols for a file. */
 	getSymbolsByFile(filePath: string): SymbolDefinition[] {
 		const relativePath = this.storedPath(filePath);
 
 		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
-				.prepare("SELECT * FROM symbols WHERE file_path = ?")
-				.all(relativePath),
+				.prepare("SELECT * FROM symbols WHERE branch_id = ? AND file_path = ?")
+				.all(this.branchId, relativePath),
 		) as Array<Record<string, unknown>>;
-		return rows.map((row) => this.rowToSymbol(row));
+		return rows.map((row) => rowToSymbol(row));
 	}
 
 	/**
-	 * Get symbols by name (with optional kind filter)
+	 * Get symbols by name (with optional kind filter).
+	 *
+	 * SINGULAR — `getSymbolByName`. Revision 1 of the design wrote
+	 * `getSymbolsByName`, which is not an identifier in this tree (N37).
 	 */
 	getSymbolByName(name: string, kind?: SymbolKind): SymbolDefinition[] {
 		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
 			kind
 				? this.db
-						.prepare("SELECT * FROM symbols WHERE name = ? AND kind = ?")
-						.all(name, kind)
-				: this.db.prepare("SELECT * FROM symbols WHERE name = ?").all(name),
+						.prepare(
+							"SELECT * FROM symbols WHERE branch_id = ? AND name = ? AND kind = ?",
+						)
+						.all(this.branchId, name, kind)
+				: this.db
+						.prepare("SELECT * FROM symbols WHERE branch_id = ? AND name = ?")
+						.all(this.branchId, name),
 		) as Array<Record<string, unknown>>;
 
-		return rows.map((row) => this.rowToSymbol(row));
+		return rows.map((row) => rowToSymbol(row));
 	}
 
-	/**
-	 * Get all symbols whose parent_id matches the given parentId
-	 */
+	/** Get all symbols whose parent_id matches the given parentId. */
 	getSymbolsByParent(parentId: string): SymbolDefinition[] {
 		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
-				.prepare("SELECT * FROM symbols WHERE parent_id = ?")
-				.all(parentId),
+				.prepare("SELECT * FROM symbols WHERE branch_id = ? AND parent_id = ?")
+				.all(this.branchId, parentId),
 		) as Array<Record<string, unknown>>;
-		return rows.map((row) => this.rowToSymbol(row));
+		return rows.map((row) => rowToSymbol(row));
 	}
 
-	/**
-	 * Get all symbols
-	 */
+	/** Get all symbols. */
 	getAllSymbols(): SymbolDefinition[] {
 		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
-			this.db.prepare("SELECT * FROM symbols").all(),
+			this.db
+				.prepare("SELECT * FROM symbols WHERE branch_id = ?")
+				.all(this.branchId),
 		) as Array<Record<string, unknown>>;
-		return rows.map((row) => this.rowToSymbol(row));
+		return rows.map((row) => rowToSymbol(row));
 	}
 
-	/**
-	 * Get top symbols by PageRank score
-	 */
+	/** Get top symbols by PageRank score. Feeds `map` and `doctor`. */
 	getTopSymbols(limit: number): SymbolDefinition[] {
 		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
-				.prepare("SELECT * FROM symbols ORDER BY pagerank DESC LIMIT ?")
-				.all(limit),
+				.prepare(
+					"SELECT * FROM symbols WHERE branch_id = ? ORDER BY pagerank DESC LIMIT ?",
+				)
+				.all(this.branchId, limit),
 		) as Array<Record<string, unknown>>;
-		return rows.map((row) => this.rowToSymbol(row));
+		return rows.map((row) => rowToSymbol(row));
 	}
 
 	/**
-	 * Delete all symbols for a file
+	 * Delete all symbols for a file, on THIS branch only.
+	 *
+	 * `extractSymbolGraph` calls this per file on every incremental re-index. It
+	 * is the statement N3 was raised CRITICAL over: unpredicated, one worktree's
+	 * re-index erased that file's symbols for every other branch.
 	 */
 	deleteSymbolsByFile(filePath: string): void {
 		const relativePath = this.storedPath(filePath);
 
 		this.withRegion(TRACKER_REGIONS.txn, () => {
-			// Delete references first (cascade would handle this, but be explicit)
+			// References first. The v4 DDL drops the three FKs (N33), so there is
+			// no cascade to fall back on — which was already the reason this
+			// statement was written out explicitly.
 			this.db
-				.prepare("DELETE FROM symbol_references WHERE file_path = ?")
-				.run(relativePath);
+				.prepare(
+					"DELETE FROM symbol_references WHERE branch_id = ? AND file_path = ?",
+				)
+				.run(this.branchId, relativePath);
 
-			// Delete symbols
 			this.db
-				.prepare("DELETE FROM symbols WHERE file_path = ?")
-				.run(relativePath);
+				.prepare("DELETE FROM symbols WHERE branch_id = ? AND file_path = ?")
+				.run(this.branchId, relativePath);
 		});
 	}
 
-	/**
-	 * Convert database row to SymbolDefinition
-	 */
-	private rowToSymbol(row: Record<string, unknown>): SymbolDefinition {
-		return {
-			id: row.id as string,
-			name: row.name as string,
-			kind: row.kind as SymbolKind,
-			filePath: row.file_path as string,
-			startLine: row.start_line as number,
-			endLine: row.end_line as number,
-			signature: (row.signature as string) || undefined,
-			docstring: (row.docstring as string) || undefined,
-			parentId: (row.parent_id as string) || undefined,
-			isExported: (row.is_exported as number) === 1,
-			language: row.language as string,
-			pagerankScore: row.pagerank as number,
-			inDegree: row.in_degree as number,
-			outDegree: row.out_degree as number,
-			createdAt: row.created_at as string,
-			updatedAt: row.updated_at as string,
-		};
-	}
-
 	// ========================================================================
-	// Reference CRUD Methods
+	// Reference CRUD
 	// ========================================================================
 
-	/**
-	 * Insert a single reference
-	 */
+	/** Insert a single reference. */
 	insertReference(ref: SymbolReference): void {
 		this.withRegion(TRACKER_REGIONS.write, () => {
 			const stmt = this.db.prepare(`
 			INSERT INTO symbol_references
-			(from_symbol_id, to_symbol_name, to_symbol_id, kind, file_path, line, is_resolved, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			(branch_id, from_symbol_id, to_symbol_name, to_symbol_id, kind, file_path, line, is_resolved, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`);
 
 			stmt.run(
+				this.branchId,
 				ref.fromSymbolId,
 				ref.toSymbolName,
 				ref.toSymbolId || null,
@@ -2924,9 +3341,7 @@ export class FileTracker implements IFileTracker {
 		});
 	}
 
-	/**
-	 * Insert multiple references in ONE immediate transaction (batched)
-	 */
+	/** Insert multiple references in ONE immediate transaction (batched). */
 	insertReferences(refs: SymbolReference[]): void {
 		if (refs.length === 0) return;
 
@@ -2934,12 +3349,13 @@ export class FileTracker implements IFileTracker {
 		this.withRegion(TRACKER_REGIONS.txn, () => {
 			const stmt = this.db.prepare(`
 			INSERT INTO symbol_references
-			(from_symbol_id, to_symbol_name, to_symbol_id, kind, file_path, line, is_resolved, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			(branch_id, from_symbol_id, to_symbol_name, to_symbol_id, kind, file_path, line, is_resolved, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`);
 
 			for (const ref of refs) {
 				stmt.run(
+					this.branchId,
 					ref.fromSymbolId,
 					ref.toSymbolName,
 					ref.toSymbolId || null,
@@ -2953,252 +3369,261 @@ export class FileTracker implements IFileTracker {
 		});
 	}
 
-	/**
-	 * Get all references from a symbol
-	 */
+	/** Get all references from a symbol. */
 	getReferencesFrom(symbolId: string): SymbolReference[] {
 		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
-				.prepare("SELECT * FROM symbol_references WHERE from_symbol_id = ?")
-				.all(symbolId),
+				.prepare(
+					"SELECT * FROM symbol_references WHERE branch_id = ? AND from_symbol_id = ?",
+				)
+				.all(this.branchId, symbolId),
 		) as Array<Record<string, unknown>>;
-		return rows.map((row) => this.rowToReference(row));
+		return rows.map((row) => rowToReference(row));
 	}
 
-	/**
-	 * Get all references to a symbol
-	 */
+	/** Get all references to a symbol. */
 	getReferencesTo(symbolId: string): SymbolReference[] {
 		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
-				.prepare("SELECT * FROM symbol_references WHERE to_symbol_id = ?")
-				.all(symbolId),
+				.prepare(
+					"SELECT * FROM symbol_references WHERE branch_id = ? AND to_symbol_id = ?",
+				)
+				.all(this.branchId, symbolId),
 		) as Array<Record<string, unknown>>;
-		return rows.map((row) => this.rowToReference(row));
+		return rows.map((row) => rowToReference(row));
 	}
 
-	/**
-	 * Get all unresolved references
-	 */
+	/** Get all unresolved references. */
 	getUnresolvedReferences(): SymbolReference[] {
 		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
-				.prepare("SELECT * FROM symbol_references WHERE is_resolved = 0")
-				.all(),
+				.prepare(
+					"SELECT * FROM symbol_references WHERE branch_id = ? AND is_resolved = 0",
+				)
+				.all(this.branchId),
 		) as Array<Record<string, unknown>>;
-		return rows.map((row) => this.rowToReference(row));
+		return rows.map((row) => rowToReference(row));
 	}
 
-	/**
-	 * Get all references
-	 */
+	/** Get all references. */
 	getAllReferences(): SymbolReference[] {
 		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
-			this.db.prepare("SELECT * FROM symbol_references").all(),
+			this.db
+				.prepare("SELECT * FROM symbol_references WHERE branch_id = ?")
+				.all(this.branchId),
 		) as Array<Record<string, unknown>>;
-		return rows.map((row) => this.rowToReference(row));
+		return rows.map((row) => rowToReference(row));
 	}
 
 	/**
-	 * Resolve a reference to a symbol
+	 * Resolve a reference to a symbol.
+	 *
+	 * `id` is a SURROGATE (`INTEGER PRIMARY KEY AUTOINCREMENT`), unique across
+	 * the whole table, so `WHERE id = ?` alone would find the right row — I-12
+	 * Ruling 1's second case, and the reason this table keeps its single-column
+	 * key. `branch_id = ?` is still in the predicate: it makes a cross-branch
+	 * `refId` a no-op rather than a silent write, and it is what V3.11b's sweep
+	 * asserts for every statement on these tables.
 	 */
 	resolveReference(refId: number, toSymbolId: string): void {
 		this.withRegion(TRACKER_REGIONS.write, () => {
 			this.db
 				.prepare(
-					"UPDATE symbol_references SET to_symbol_id = ?, is_resolved = 1 WHERE id = ?",
+					"UPDATE symbol_references SET to_symbol_id = ?, is_resolved = 1 WHERE branch_id = ? AND id = ?",
 				)
-				.run(toSymbolId, refId);
+				.run(toSymbolId, this.branchId, refId);
 		});
 	}
 
 	/**
-	 * Bulk resolve references by name
-	 * Resolves all unresolved references matching a symbol name
+	 * Bulk resolve references by name, within this branch.
 	 *
 	 * `+s.is_exported`, NOT `s.is_exported`: the unary plus is load-bearing.
 	 * It stops that term from using an index, so the planner answers both
-	 * subqueries from `idx_symbols_name (name=?)`. Without it — and a tracker
-	 * database has no ANALYZE statistics — SQLite picks the partial index
-	 * `idx_symbols_exported`, and every unresolved reference walks EVERY
-	 * exported symbol, twice, inside this ONE synchronous statement. Measured:
-	 * 5.4 s at 8 000 exported x 20 000 references, and a lock heartbeat frozen
-	 * for 34.5 s at 20 000 x 40 000, past the 10 s stale rule (CLAUDE.md #31).
-	 * No caller-side yield can split one statement.
+	 * subqueries from the name index. Without it — and a tracker database has no
+	 * ANALYZE statistics — SQLite picks the partial index `idx_symbols_exported`,
+	 * and every unresolved reference walks EVERY exported symbol, twice, inside
+	 * this ONE synchronous statement. Measured: 5.4 s at 8 000 exported x 20 000
+	 * references, and a lock heartbeat frozen for 34.5 s at 20 000 x 40 000, past
+	 * the 10 s stale rule (CLAUDE.md #31). No caller-side yield can split one
+	 * statement.
 	 *
-	 * The result set is unchanged: `+` is a no-op on the value, and both plans
-	 * visit a name's exported rows in rowid order, so `LIMIT 1` picks the same
-	 * row. `tracker-resolve-plan.test.ts` pins the PLAN (not a timing) and the
-	 * rows against the pre-fix statement.
+	 * I-12 Ruling 3: the name index is now `idx_symbols_name (branch_id, name)`,
+	 * and BOTH correlated subqueries carry `s.branch_id = ?` so the planner can
+	 * still use it as an equality lookup on both columns. The test's intent is
+	 * unchanged — one name lookup per reference, never a scan across exported
+	 * symbols — and `tracker-resolve-plan.test.ts` pins the PLAN with the same
+	 * falsification: remove the scoping, or the `+`, and it regresses to a scan.
+	 *
+	 * The result set is unchanged by the `+`: it is a no-op on the value, and
+	 * both plans visit a name's exported rows in rowid order, so `LIMIT 1` picks
+	 * the same row.
 	 */
 	resolveReferencesByName(): number {
-		// Resolve references where target_name matches a symbol name exactly
 		const result = this.withRegion(TRACKER_REGIONS.write, () =>
 			this.db
 				.prepare(`
 			UPDATE symbol_references
 			SET to_symbol_id = (
 				SELECT s.id FROM symbols s
-				WHERE s.name = symbol_references.to_symbol_name
+				WHERE s.branch_id = ?
+				AND s.name = symbol_references.to_symbol_name
 				AND +s.is_exported = 1
 				LIMIT 1
 			),
 			is_resolved = 1
-			WHERE is_resolved = 0
+			WHERE branch_id = ?
+			AND is_resolved = 0
 			AND EXISTS (
 				SELECT 1 FROM symbols s
-				WHERE s.name = symbol_references.to_symbol_name
+				WHERE s.branch_id = ?
+				AND s.name = symbol_references.to_symbol_name
 				AND +s.is_exported = 1
 			)
 		`)
-				.run(),
+				.run(this.branchId, this.branchId, this.branchId),
 		);
 
 		return result.changes;
 	}
 
-	/**
-	 * Delete all references for a file
-	 */
+	/** Delete all references for a file, on THIS branch only. */
 	deleteReferencesByFile(filePath: string): void {
 		const relativePath = this.storedPath(filePath);
 
 		this.withRegion(TRACKER_REGIONS.write, () => {
 			this.db
-				.prepare("DELETE FROM symbol_references WHERE file_path = ?")
-				.run(relativePath);
+				.prepare(
+					"DELETE FROM symbol_references WHERE branch_id = ? AND file_path = ?",
+				)
+				.run(this.branchId, relativePath);
 		});
 	}
 
-	/**
-	 * Convert database row to SymbolReference
-	 */
-	private rowToReference(row: Record<string, unknown>): SymbolReference {
-		return {
-			id: row.id as number,
-			fromSymbolId: row.from_symbol_id as string,
-			toSymbolName: row.to_symbol_name as string,
-			toSymbolId: (row.to_symbol_id as string) || undefined,
-			kind: row.kind as ReferenceKind,
-			filePath: row.file_path as string,
-			line: row.line as number,
-			isResolved: (row.is_resolved as number) === 1,
-			createdAt: row.created_at as string,
-		};
-	}
-
 	// ========================================================================
-	// PageRank and Graph Metadata Methods
+	// PageRank and Graph Metadata
 	// ========================================================================
 
-	/**
-	 * Update PageRank scores for all symbols
-	 */
+	/** Update PageRank scores for this branch's symbols. */
 	updatePageRankScores(scores: Map<string, number>): void {
 		// ONE immediate transaction for the scores AND the timestamp that says they
 		// were computed. They used to be a transaction followed by a second,
 		// separate write — two regions with no yield between them (SR-2).
 		this.withRegion(TRACKER_REGIONS.txn, () => {
 			const stmt = this.db.prepare(
-				"UPDATE symbols SET pagerank = ? WHERE id = ?",
+				"UPDATE symbols SET pagerank = ? WHERE branch_id = ? AND id = ?",
 			);
 			for (const [id, score] of scores) {
-				stmt.run(score, id);
+				stmt.run(score, this.branchId, id);
 			}
 
 			const now = new Date().toISOString();
 			this.db
 				.prepare(
-					"INSERT OR REPLACE INTO graph_metadata (key, value, updated_at) VALUES (?, ?, ?)",
+					"INSERT OR REPLACE INTO graph_metadata (branch_id, key, value, updated_at) VALUES (?, ?, ?, ?)",
 				)
-				.run("pagerank_last_computed", now, now);
+				.run(this.branchId, "pagerank_last_computed", now, now);
 		});
 	}
 
 	/**
-	 * Update in/out degree counts for all symbols
+	 * Update in/out degree counts for this branch's symbols.
+	 *
+	 * The outer UPDATE and BOTH subqueries are scoped: unscoped, this wrote
+	 * across branches AND counted across them, so branch A's degrees reflected
+	 * branch B's references.
 	 */
 	updateDegreeCounts(): void {
 		this.withRegion(TRACKER_REGIONS.txn, () => {
-			// Update in_degree
-			this.db.exec(`
+			this.db
+				.prepare(`
 			UPDATE symbols SET in_degree = (
 				SELECT COUNT(*) FROM symbol_references r
-				WHERE r.to_symbol_id = symbols.id
+				WHERE r.branch_id = ? AND r.to_symbol_id = symbols.id
 			)
-		`);
+			WHERE branch_id = ?
+		`)
+				.run(this.branchId, this.branchId);
 
-			// Update out_degree
-			this.db.exec(`
+			this.db
+				.prepare(`
 			UPDATE symbols SET out_degree = (
 				SELECT COUNT(*) FROM symbol_references r
-				WHERE r.from_symbol_id = symbols.id
+				WHERE r.branch_id = ? AND r.from_symbol_id = symbols.id
 			)
-		`);
+			WHERE branch_id = ?
+		`)
+				.run(this.branchId, this.branchId);
 		});
 	}
 
-	/**
-	 * Get graph metadata value
-	 */
+	/** Get graph metadata value. */
 	getGraphMetadata(key: string): string | null {
 		const row = this.withRegion(TRACKER_REGIONS.read, () =>
 			this.db
-				.prepare("SELECT value FROM graph_metadata WHERE key = ?")
-				.get(key),
+				.prepare(
+					"SELECT value FROM graph_metadata WHERE branch_id = ? AND key = ?",
+				)
+				.get(this.branchId, key),
 		) as { value: string } | undefined;
 		return row?.value || null;
 	}
 
-	/**
-	 * Set graph metadata value
-	 */
+	/** Set graph metadata value. */
 	setGraphMetadata(key: string, value: string): void {
 		this.withRegion(TRACKER_REGIONS.write, () => {
 			this.db
 				.prepare(
-					"INSERT OR REPLACE INTO graph_metadata (key, value, updated_at) VALUES (?, ?, ?)",
+					"INSERT OR REPLACE INTO graph_metadata (branch_id, key, value, updated_at) VALUES (?, ?, ?, ?)",
 				)
-				.run(key, value, new Date().toISOString());
+				.run(this.branchId, key, value, new Date().toISOString());
 		});
 	}
 
-	/**
-	 * Get symbol graph statistics
-	 */
+	/** Symbol graph statistics, for THIS branch — `doctor` used to sum all of them. */
 	getSymbolGraphStats(): SymbolGraphStats {
 		// Six SELECTs in ONE region. The pagerank timestamp is read here rather
 		// than through getGraphMetadata(), which would be a second region with no
 		// yield before it (SR-2).
 		const raw = this.withRegion(reads(6), () => ({
 			symbolCount: (
-				this.db.prepare("SELECT COUNT(*) as count FROM symbols").get() as {
+				this.db
+					.prepare("SELECT COUNT(*) as count FROM symbols WHERE branch_id = ?")
+					.get(this.branchId) as {
 					count: number;
 				}
 			).count,
 			refCount: (
 				this.db
-					.prepare("SELECT COUNT(*) as count FROM symbol_references")
-					.get() as { count: number }
+					.prepare(
+						"SELECT COUNT(*) as count FROM symbol_references WHERE branch_id = ?",
+					)
+					.get(this.branchId) as { count: number }
 			).count,
 			resolvedCount: (
 				this.db
 					.prepare(
-						"SELECT COUNT(*) as count FROM symbol_references WHERE is_resolved = 1",
+						"SELECT COUNT(*) as count FROM symbol_references WHERE branch_id = ? AND is_resolved = 1",
 					)
-					.get() as { count: number }
+					.get(this.branchId) as { count: number }
 			).count,
 			kindRows: this.db
-				.prepare("SELECT kind, COUNT(*) as count FROM symbols GROUP BY kind")
-				.all() as Array<{ kind: string; count: number }>,
+				.prepare(
+					"SELECT kind, COUNT(*) as count FROM symbols WHERE branch_id = ? GROUP BY kind",
+				)
+				.all(this.branchId) as Array<{ kind: string; count: number }>,
 			refKindRows: this.db
 				.prepare(
-					"SELECT kind, COUNT(*) as count FROM symbol_references GROUP BY kind",
+					"SELECT kind, COUNT(*) as count FROM symbol_references WHERE branch_id = ? GROUP BY kind",
 				)
-				.all() as Array<{ kind: string; count: number }>,
+				.all(this.branchId) as Array<{ kind: string; count: number }>,
 			pagerank: this.db
-				.prepare("SELECT value FROM graph_metadata WHERE key = ?")
-				.get("pagerank_last_computed") as { value: string } | undefined,
+				.prepare(
+					"SELECT value FROM graph_metadata WHERE branch_id = ? AND key = ?",
+				)
+				.get(this.branchId, "pagerank_last_computed") as
+				| { value: string }
+				| undefined,
 		}));
 
 		// Symbols by kind
@@ -3224,15 +3649,61 @@ export class FileTracker implements IFileTracker {
 	}
 
 	/**
-	 * Clear all symbol graph data
+	 * Clear THIS branch's symbol graph.
+	 *
+	 * Unpredicated, a force-rebuild in one worktree erased every branch's graph
+	 * — the one instance revision 1 of the design found.
 	 */
 	clearSymbolGraph(): void {
 		this.withRegion(TRACKER_REGIONS.txn, () => {
-			this.db.exec("DELETE FROM symbol_references");
-			this.db.exec("DELETE FROM symbols");
-			this.db.exec("DELETE FROM graph_metadata");
+			this.db
+				.prepare("DELETE FROM symbol_references WHERE branch_id = ?")
+				.run(this.branchId);
+			this.db
+				.prepare("DELETE FROM symbols WHERE branch_id = ?")
+				.run(this.branchId);
+			this.db
+				.prepare("DELETE FROM graph_metadata WHERE branch_id = ?")
+				.run(this.branchId);
 		});
 	}
+}
+
+/** Database row → `SymbolDefinition`. Runs no SQL, so it takes no branch. */
+function rowToSymbol(row: Record<string, unknown>): SymbolDefinition {
+	return {
+		id: row.id as string,
+		name: row.name as string,
+		kind: row.kind as SymbolKind,
+		filePath: row.file_path as string,
+		startLine: row.start_line as number,
+		endLine: row.end_line as number,
+		signature: (row.signature as string) || undefined,
+		docstring: (row.docstring as string) || undefined,
+		parentId: (row.parent_id as string) || undefined,
+		isExported: (row.is_exported as number) === 1,
+		language: row.language as string,
+		pagerankScore: row.pagerank as number,
+		inDegree: row.in_degree as number,
+		outDegree: row.out_degree as number,
+		createdAt: row.created_at as string,
+		updatedAt: row.updated_at as string,
+	};
+}
+
+/** Database row → `SymbolReference`. Runs no SQL, so it takes no branch. */
+function rowToReference(row: Record<string, unknown>): SymbolReference {
+	return {
+		id: row.id as number,
+		fromSymbolId: row.from_symbol_id as string,
+		toSymbolName: row.to_symbol_name as string,
+		toSymbolId: (row.to_symbol_id as string) || undefined,
+		kind: row.kind as ReferenceKind,
+		filePath: row.file_path as string,
+		line: row.line as number,
+		isResolved: (row.is_resolved as number) === 1,
+		createdAt: row.created_at as string,
+	};
 }
 
 // ============================================================================

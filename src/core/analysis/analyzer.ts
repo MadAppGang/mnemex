@@ -12,7 +12,7 @@ import {
 	createReferenceGraphManager,
 	type ReferenceGraphManager,
 } from "../reference-graph.js";
-import type { IFileTracker } from "../tracker.js";
+import type { BranchScopedGraph, IFileTracker } from "../tracker.js";
 import {
 	createTestFileDetector,
 	type TestFileDetector,
@@ -80,13 +80,18 @@ export interface ImpactOptions {
 // ============================================================================
 
 export class CodeAnalyzer {
-	private tracker: IFileTracker;
+	/**
+	 * `dead-code`, `test-gaps` and `impact` are PER-BRANCH answers (N3, N35): a
+	 * symbol with no callers on this branch may be the entry point of another,
+	 * and reporting the union is wrong in both directions.
+	 */
+	private readonly symbols: BranchScopedGraph;
 	private graphManager: ReferenceGraphManager;
 	private testDetector: TestFileDetector;
 
-	constructor(tracker: IFileTracker) {
-		this.tracker = tracker;
-		this.graphManager = createReferenceGraphManager(tracker);
+	constructor(tracker: IFileTracker, branchId: number) {
+		this.symbols = tracker.graph(branchId);
+		this.graphManager = createReferenceGraphManager(tracker, branchId);
 		this.testDetector = createTestFileDetector();
 	}
 
@@ -105,7 +110,7 @@ export class CodeAnalyzer {
 			limit = 100,
 		} = options;
 
-		const allSymbols = this.tracker.getAllSymbols();
+		const allSymbols = this.symbols.getAllSymbols();
 		const results: DeadCodeResult[] = [];
 
 		for (const symbol of allSymbols) {
@@ -148,7 +153,7 @@ export class CodeAnalyzer {
 	findTestGaps(options: TestGapOptions = {}): TestGapResult[] {
 		const { minPageRank = 0.01, limit = 50, kinds } = options;
 
-		const allSymbols = this.tracker.getAllSymbols();
+		const allSymbols = this.symbols.getAllSymbols();
 		const results: TestGapResult[] = [];
 
 		for (const symbol of allSymbols) {
@@ -206,7 +211,7 @@ export class CodeAnalyzer {
 			groupByFile = true,
 		} = options;
 
-		const target = this.tracker.getSymbol(symbolId);
+		const target = this.symbols.getSymbol(symbolId);
 		if (!target) {
 			return null;
 		}
@@ -278,7 +283,7 @@ export class CodeAnalyzer {
 		avgPageRank: number;
 		symbolsWithNoCallers: number;
 	} {
-		const allSymbols = this.tracker.getAllSymbols();
+		const allSymbols = this.symbols.getAllSymbols();
 		let testSymbols = 0;
 		let symbolsWithNoCallers = 0;
 		let totalPageRank = 0;
@@ -366,6 +371,9 @@ export class CodeAnalyzer {
 /**
  * Create a code analyzer instance
  */
-export function createCodeAnalyzer(tracker: IFileTracker): CodeAnalyzer {
-	return new CodeAnalyzer(tracker);
+export function createCodeAnalyzer(
+	tracker: IFileTracker,
+	branchId: number,
+): CodeAnalyzer {
+	return new CodeAnalyzer(tracker, branchId);
 }

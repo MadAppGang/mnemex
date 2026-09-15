@@ -13,6 +13,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+
+/** Every row this file writes and reads lives on one branch. */
+const BRANCH = 0;
+
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -86,7 +90,24 @@ describe("schema migration", () => {
 		expect(indexes.map((i) => i.name)).toContain("idx_commits_ordinal");
 	});
 
-	test("upgrades a database created at the old schema, and its rows stay valid", () => {
+	/**
+	 * CHANGED BY PHASE 3b-1, deliberately, and the change is the point.
+	 *
+	 * It used to assert that legacy rows "stay valid" — read back through the
+	 * ordinary accessors after the column migration. Under index version 4 that
+	 * is no longer true and must not be asserted: every tree-scoped statement
+	 * carries `branch_id`, and a pre-v4 `files`/`documents` has no such column,
+	 * so those reads THROW rather than return a legacy row. Nothing here
+	 * regressed — §6 makes the v4 upgrade a REBUILD, which drops those tables
+	 * outright, so "the legacy row survives and is readable" was never going to
+	 * be true of a v4 store.
+	 *
+	 * What is still true, and still worth pinning, is everything the rebuild
+	 * depends on: the open SUCCEEDS over the old shape (R0 must not fail, or
+	 * §6.1's signal could never be read), the ALTER-based column migration still
+	 * runs, and the tracker REPORTS the old shape.
+	 */
+	test("opens a database created at the old schema, migrates its columns, and reports that it needs the v4 rebuild", () => {
 		const dbPath = join(workDir, "index.db");
 
 		// Build the pre-provenance schema by hand — no commits table, and no
@@ -142,20 +163,37 @@ describe("schema migration", () => {
 		expect(columnNames(dbPath, "documents")).toContain("valid_from_commit");
 		expect(columnNames(dbPath, "documents")).toContain("invalidated_at_commit");
 
-		// Pre-existing data survived and reads back as unknown-but-valid.
-		expect(tracker.getFileIndexedCommit("src/legacy.ts")).toBeNull();
-
-		const provenance = tracker.getDocumentProvenance("doc-legacy");
-		expect(provenance).not.toBeNull();
-		expect(provenance?.validFromCommit).toBeNull();
-		expect(provenance?.invalidatedAtCommit).toBeNull();
-		// The rule: unknown provenance is CURRENTLY VALID, never hidden.
-		expect(provenance?.isValid).toBe(true);
-
-		// The legacy row is still readable through the normal document accessor.
+		// The old rows are still THERE — read with no branch predicate, through
+		// the same connection. Nothing was destroyed by opening.
 		expect(
-			tracker.getDocumentsForFile(join(workDir, "src/legacy.ts")),
-		).toHaveLength(1);
+			(
+				tracker
+					.getDatabase()
+					.prepare("SELECT COUNT(*) AS n FROM documents")
+					.get() as { n: number }
+			).n,
+		).toBe(1);
+
+		// And the tracker says the shape is pre-v4, which is what routes this
+		// store into `rebuildTreeScopedSchemaForV4()` (§6.1's third signal).
+		expect(tracker.trackerNeedsV4Schema()).toBe(true);
+
+		// The scoped accessors cannot read the old shape — the column is not
+		// there. Asserted, rather than left implicit, because it is the reason
+		// the upgrade is a rebuild and not an in-place migration.
+		expect(() => tracker.getFileIndexedCommit(BRANCH, "src/legacy.ts")).toThrow(
+			/branch_id/,
+		);
+
+		// After the rebuild the shape is current, and the old rows are gone —
+		// §6's stated cost, asserted rather than assumed.
+		tracker.rebuildTreeScopedSchemaForV4();
+		expect(tracker.trackerNeedsV4Schema()).toBe(false);
+		expect(tracker.getFileIndexedCommit(BRANCH, "src/legacy.ts")).toBeNull();
+		expect(tracker.getDocumentProvenance(BRANCH, "doc-legacy")).toBeNull();
+		expect(
+			tracker.getDocumentsForFile(BRANCH, join(workDir, "src/legacy.ts")),
+		).toHaveLength(0);
 
 		tracker.close();
 	});
@@ -244,7 +282,7 @@ describe("provenance stamping", () => {
 		tracker.recordCommit(sha, 5, null);
 		tracker.setCurrentCommit(sha);
 
-		tracker.trackDocument({
+		tracker.trackDocument(BRANCH, {
 			id: "doc-1",
 			documentType: "file_summary",
 			filePath: "src/a.ts",
@@ -252,7 +290,7 @@ describe("provenance stamping", () => {
 			createdAt: new Date().toISOString(),
 		});
 
-		const provenance = tracker.getDocumentProvenance("doc-1");
+		const provenance = tracker.getDocumentProvenance(BRANCH, "doc-1");
 		expect(provenance?.validFromCommit).toBe(sha);
 		expect(provenance?.isValid).toBe(true);
 
@@ -263,22 +301,30 @@ describe("provenance stamping", () => {
 		const dbPath = join(workDir, "index.db");
 		const tracker = new FileTracker(dbPath, workDir);
 
-		tracker.trackDocument({
+		tracker.trackDocument(BRANCH, {
 			id: "doc-2",
 			documentType: "file_summary",
 			filePath: "src/b.ts",
 			sourceIds: [],
 			createdAt: new Date().toISOString(),
 		});
-		expect(tracker.getDocumentProvenance("doc-2")?.validFromCommit).toBeNull();
+		expect(
+			tracker.getDocumentProvenance(BRANCH, "doc-2")?.validFromCommit,
+		).toBeNull();
 
 		const sha = "1".repeat(40);
 		expect(() =>
-			tracker.setDocumentsValidFromCommit(["doc-2", "does-not-exist"], sha),
+			tracker.setDocumentsValidFromCommit(
+				BRANCH,
+				["doc-2", "does-not-exist"],
+				sha,
+			),
 		).not.toThrow();
 
-		expect(tracker.getDocumentProvenance("doc-2")?.validFromCommit).toBe(sha);
-		expect(tracker.getDocumentProvenance("does-not-exist")).toBeNull();
+		expect(
+			tracker.getDocumentProvenance(BRANCH, "doc-2")?.validFromCommit,
+		).toBe(sha);
+		expect(tracker.getDocumentProvenance(BRANCH, "does-not-exist")).toBeNull();
 
 		tracker.close();
 	});
@@ -289,11 +335,11 @@ describe("provenance stamping", () => {
 
 		const filePath = join(workDir, "src", "c.ts");
 		tracker.markIndexed(0, filePath, "hash-c", ["c1"]);
-		expect(tracker.getFileIndexedCommit(filePath)).toBeNull();
+		expect(tracker.getFileIndexedCommit(BRANCH, filePath)).toBeNull();
 
 		const sha = "2".repeat(40);
-		tracker.setFileIndexedCommit(filePath, sha);
-		expect(tracker.getFileIndexedCommit(filePath)).toBe(sha);
+		tracker.setFileIndexedCommit(BRANCH, filePath, sha);
+		expect(tracker.getFileIndexedCommit(BRANCH, filePath)).toBe(sha);
 
 		tracker.close();
 	});
@@ -308,12 +354,12 @@ describe("provenance stamping", () => {
 		tracker.markIndexed(0, join(workDir, "src", "d.ts"), "hash-d", ["c1"]);
 		tracker.markIndexed(0, join(workDir, "src", "e.ts"), "hash-e", ["c2"]);
 
-		expect(tracker.getFileIndexedCommit(join(workDir, "src", "d.ts"))).toBe(
-			sha,
-		);
-		expect(tracker.getFileIndexedCommit(join(workDir, "src", "e.ts"))).toBe(
-			sha,
-		);
+		expect(
+			tracker.getFileIndexedCommit(BRANCH, join(workDir, "src", "d.ts")),
+		).toBe(sha);
+		expect(
+			tracker.getFileIndexedCommit(BRANCH, join(workDir, "src", "e.ts")),
+		).toBe(sha);
 
 		tracker.close();
 	});
@@ -353,16 +399,16 @@ describe("HEAD resolution outside a git repository", () => {
 		expect(() =>
 			tracker.markIndexed(0, filePath, "hash-f", ["c1"]),
 		).not.toThrow();
-		expect(tracker.getFileIndexedCommit(filePath)).toBeNull();
+		expect(tracker.getFileIndexedCommit(BRANCH, filePath)).toBeNull();
 
-		tracker.trackDocument({
+		tracker.trackDocument(BRANCH, {
 			id: "doc-3",
 			documentType: "file_summary",
 			filePath: "src/f.ts",
 			sourceIds: ["c1"],
 			createdAt: new Date().toISOString(),
 		});
-		const provenance = tracker.getDocumentProvenance("doc-3");
+		const provenance = tracker.getDocumentProvenance(BRANCH, "doc-3");
 		expect(provenance?.validFromCommit).toBeNull();
 		// Unknown provenance must not hide the document.
 		expect(provenance?.isValid).toBe(true);

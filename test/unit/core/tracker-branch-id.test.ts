@@ -283,7 +283,7 @@ describe("markIndexed writes the branch id it is given, and nothing else is a br
 
 		const later = statSync(file).mtimeMs / 1000 + 60;
 		utimesSync(file, later, later);
-		const changes = tracker.getChanges([file]);
+		const changes = tracker.getChanges(4, [file]);
 		tracker.close();
 
 		expect(changes.unchangedFiles).toEqual([file]);
@@ -301,7 +301,7 @@ describe("stored paths do not depend on the caller's spelling or the process cwd
 		const tracker = new FileTracker(dbPath, dir);
 		tracker.markIndexed(0, join(dir, "src", "a.ts"), "h", []);
 		tracker.markIndexed(0, join(dir, "src", "gone.ts"), "h", []);
-		const changes = tracker.getChanges([join(dir, "src", "a.ts")]);
+		const changes = tracker.getChanges(0, [join(dir, "src", "a.ts")]);
 		tracker.close();
 
 		expect(
@@ -326,8 +326,8 @@ describe("stored paths do not depend on the caller's spelling or the process cwd
 		const cwd = process.cwd();
 		process.chdir(elsewhere);
 		try {
-			expect(tracker.getChunkIds("src/a.ts")).toEqual(["c1", "c2"]);
-			tracker.removeFile("src/a.ts");
+			expect(tracker.getChunkIds(0, "src/a.ts")).toEqual(["c1", "c2"]);
+			tracker.removeFile(0, "src/a.ts");
 		} finally {
 			process.chdir(cwd);
 			rmSync(elsewhere, { recursive: true, force: true });
