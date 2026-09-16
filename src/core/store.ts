@@ -96,6 +96,18 @@ const VECTOR_WEIGHT = 0.6;
 export const LANCEDB_WRITE_TIMEOUT_MS = 60000;
 
 /**
+ * How long a superseded dataset version is kept before `optimize()` prunes it.
+ *
+ * ONE HOUR, and the reasoning — including the measurement that a pruned-out
+ * handle fails with `Not found: …lance` rather than degrading — is on
+ * `VectorStore.optimize()`, which is the only caller. LanceDB's own default is
+ * 7 days, which this feature's rewrite volume turns into 6.8x the live data on
+ * disk. Raising it costs disk; lowering it starts to approach the lifetime of a
+ * table handle another process is holding, which is the thing it is buying.
+ */
+export const VERSION_RETENTION_MS = 60 * 60 * 1000;
+
+/**
  * Thrown when a write batch carries zero-dimension vectors.
  *
  * LanceDB infers the table schema from the first batch, so a batch whose
@@ -1412,13 +1424,22 @@ export class VectorStore implements IVectorStore {
 		const fetchLimit = limit * 3;
 
 		// Vector search (skip if keyword-only mode or no vector)
+		//
+		// NFR-5: both retriever lists go through `stabilizeRetrieverOrder` before
+		// fusion. Tied rows come back from the engine in STORAGE order, which every
+		// widening rewrite changes, and rank-only fusion turns a tie swap into a
+		// real reordering. See that function for the measurement.
 		let vectorResults: any[] = [];
 		if (!keywordOnly && queryVector) {
 			let vectorQuery = table.vectorSearch(queryVector).limit(fetchLimit);
 			if (filterStr) {
 				vectorQuery = vectorQuery.where(filterStr);
 			}
-			vectorResults = await vectorQuery.toArray();
+			vectorResults = trimIncompleteTieTail(
+				stabilizeRetrieverOrder(await vectorQuery.toArray(), "_distance"),
+				"_distance",
+				{ fetched: fetchLimit, keepAtLeast: limit },
+			);
 		}
 
 		// BM25 full-text search (if available)
@@ -1432,7 +1453,11 @@ export class VectorStore implements IVectorStore {
 			if (filterStr) {
 				ftsQuery = ftsQuery.where(filterStr);
 			}
-			bm25Results = await ftsQuery.toArray();
+			bm25Results = trimIncompleteTieTail(
+				stabilizeRetrieverOrder(await ftsQuery.toArray(), "_score"),
+				"_score",
+				{ fetched: fetchLimit, keepAtLeast: limit },
+			);
 		} catch {
 			bm25Results = [];
 		}
@@ -1844,24 +1869,66 @@ export class VectorStore implements IVectorStore {
 	}
 
 	/**
-	 * M5 (I-7 FINAL): ONE `optimize()` at the end of the widening drain.
+	 * M5 (I-7 FINAL): ONE `optimize()` at the end of the widening drain — and
+	 * the only place this store prunes old dataset versions.
 	 *
 	 * Every row a merge rewrites leaves the FTS index — measured, 19 026 of
 	 * 20 000 after a second worktree's first run. Recall is NOT lost
 	 * (`fullTextSearch` scans the unindexed tail and returned 982/982), so this
-	 * is a latency and a SCORING step, not a correctness one: filtered FTS goes
-	 * from 0.7 ms to 60-72 ms, and rewritten rows' BM25 scores shift by up to
-	 * 5 %. Fusion is rank-only, so a 5 % shift can reorder results. `optimize()`
-	 * folds the tail back in, restores scores exactly, and compacts to two
-	 * fragments; 180-580 ms at 20 000 rows.
+	 * is a latency step: filtered FTS goes from 0.7 ms to 60-72 ms, and
+	 * `optimize()` folds the tail back in and compacts to two fragments;
+	 * 180-700 ms at 20 000-26 288 rows.
+	 *
+	 * It does NOT restore BM25 scores, and it never had to. The claim that a
+	 * merge shifts them "by up to 5 %" was measured false at repository scale:
+	 * 0 of 1 200 score cells moved after all 26 288 rows were rewritten, and 0
+	 * of 1 200 again after a forced `createIndex(replace:true)`. The NFR-5
+	 * exposure is TIE ORDER, and it is closed in `stabilizeRetrieverOrder`.
 	 *
 	 * Never per batch: the cost is in the fold, not in the number of rows.
+	 *
+	 * ── PRUNING, AND WHY THE WINDOW IS AN HOUR RATHER THAN A MINUTE ─────────
+	 * `table.optimize()` with no argument keeps every version for LanceDB's
+	 * default **7 days**, and this feature multiplies rewrite volume: one
+	 * dataset version per 256-id merge batch, ~82-107 of them for a single
+	 * worktree's first index. Measured across three worktrees of one repository:
+	 * `vectors/` grew **97.7 MB -> 679.2 MB against 105 MB of live data** — 6.8x
+	 * — entirely in retained old versions. Nothing else in `src/` prunes, and
+	 * nothing in `src/` does a time-travel read (no `listVersions`, `checkout`
+	 * or `restore` on this table), so the retained versions serve no reader.
+	 *
+	 * They do serve one thing, which is what sets the window. A local lancedb
+	 * table handle is PINNED to the version it opened — no read-consistency
+	 * interval is configured anywhere — and pruning out from under such a handle
+	 * is not graceful. Measured on a throwaway table: a handle opened before the
+	 * churn, then `optimize({cleanupOlderThan: now})`, then a read:
+	 *
+	 *     Not found: …/t.lance/data/0111…fe3b4ba1399f.lance
+	 *
+	 * So the window must exceed the lifetime of any handle another process may
+	 * be holding. Every store handle in `src/` is opened and closed inside one
+	 * operation — the MCP search tool and the file watcher each build an Indexer
+	 * per call and `close()` it, and a CLI search is a process — so the longest
+	 * such lifetime is a single search, measured at 0.8-1.2 s including process
+	 * start. ONE HOUR is ~3 000x that, still collapses the steady state (a
+	 * post-commit hook's ~6 MB per run is retained for an hour instead of a
+	 * week, ~35x less), and leaves a wide margin for a long-held handle nobody
+	 * has thought of. `deleteUnverified` is deliberately NOT set: files that
+	 * belong to no manifest may be an in-progress transaction of another
+	 * process, and LanceDB's 7-day rule for those is the right one to keep.
+	 *
+	 * Measured against the doc comment, because the doc comment reads as if no
+	 * window under 7 days can do anything: with `deleteUnverified` false and
+	 * files minutes old, `cleanupOlderThan` removed 42 old versions and
+	 * 4 166 555 bytes, taking the directory from 4.6 MB to 1.9 MB.
 	 */
 	async optimize(): Promise<void> {
 		const table = await this.ensureTableOpen();
 		if (!table) return;
 		await withTimeout(
-			table.optimize(),
+			table.optimize({
+				cleanupOlderThan: new Date(Date.now() - VERSION_RETENTION_MS),
+			}),
 			LANCEDB_WRITE_TIMEOUT_MS,
 			"optimize:table.optimize",
 		);
@@ -2236,12 +2303,16 @@ export class VectorStore implements IVectorStore {
 
 		const filterStr = filters.length > 0 ? filters.join(" AND ") : undefined;
 
-		// Vector search
+		// Vector search. NFR-5: deterministic rank order, see `search` above.
 		let vectorQuery = table.vectorSearch(queryVector).limit(limit * 3);
 		if (filterStr) {
 			vectorQuery = vectorQuery.where(filterStr);
 		}
-		const vectorResults = await vectorQuery.toArray();
+		const vectorResults = trimIncompleteTieTail(
+			stabilizeRetrieverOrder(await vectorQuery.toArray(), "_distance"),
+			"_distance",
+			{ fetched: limit * 3, keepAtLeast: limit },
+		);
 
 		// BM25 full-text search
 		await this.ensureFtsIndex();
@@ -2254,7 +2325,11 @@ export class VectorStore implements IVectorStore {
 			if (filterStr) {
 				ftsQuery = ftsQuery.where(filterStr);
 			}
-			bm25Results = await ftsQuery.toArray();
+			bm25Results = trimIncompleteTieTail(
+				stabilizeRetrieverOrder(await ftsQuery.toArray(), "_score"),
+				"_score",
+				{ fetched: limit * 3, keepAtLeast: limit },
+			);
 		} catch {
 			bm25Results = [];
 		}
@@ -2773,10 +2848,14 @@ export class VectorStore implements IVectorStore {
 
 		const filterStr = filters.join(" AND ");
 
-		// Vector search
+		// Vector search. NFR-5: deterministic rank order, see `search` above.
 		let vectorQuery = table.vectorSearch(queryVector).limit(limit * 2);
 		vectorQuery = vectorQuery.where(filterStr);
-		const vectorResults = await vectorQuery.toArray();
+		const vectorResults = trimIncompleteTieTail(
+			stabilizeRetrieverOrder(await vectorQuery.toArray(), "_distance"),
+			"_distance",
+			{ fetched: limit * 2, keepAtLeast: limit },
+		);
 
 		// BM25 search (search both content and summary if summaries exist)
 		await this.ensureFtsIndex();
@@ -2787,7 +2866,11 @@ export class VectorStore implements IVectorStore {
 				.fullTextSearch(queryText, { columns: ["content"] })
 				.limit(limit * 2);
 			ftsQuery = ftsQuery.where(filterStr);
-			bm25Results = await ftsQuery.toArray();
+			bm25Results = trimIncompleteTieTail(
+				stabilizeRetrieverOrder(await ftsQuery.toArray(), "_score"),
+				"_score",
+				{ fetched: limit * 2, keepAtLeast: limit },
+			);
 		} catch {
 			bm25Results = [];
 		}
@@ -2867,6 +2950,149 @@ interface FusedResult extends StoredChunk {
 
 /** Test file weight multiplier for downranking */
 const TEST_FILE_WEIGHT = 0.3;
+
+/**
+ * NFR-5's ACTUAL mechanism, and the one place it is closed.
+ *
+ * ── WHAT WAS MEASURED, AND WHAT IT RULED OUT ────────────────────────────────
+ * The design (and the comment on `optimize()` that this supersedes) said a
+ * widening `mergeInsert` shifts rewritten rows' BM25 scores by up to 5 %, and
+ * that the end-of-drain `optimize()` "restores scores exactly". Measured on a
+ * 26 288-row copy of a real repository store, all 26 288 rows rewritten through
+ * the shipped `rowsForWidening` + `writeBranchIdsMirror` pair:
+ *
+ *   BM25 scores differing after the rewrite + optimize(): 0 of 1 200 cells
+ *   BM25 scores differing after a FORCED createIndex(replace:true): 0 of 1 200
+ *   BM25 ordered id lists identical: 7 of 20, in BOTH cases
+ *   of the 13 queries whose list moved, moves confined to EQUAL-SCORE groups: 13
+ *   vector channel: 20/20 ordered lists identical, 0 of 1 200 distances moved
+ *
+ * So the scores never drift — not across the rewrite, not across compaction —
+ * and a full FTS rebuild changes nothing (314 ms for an identical reading). The
+ * list moves because **the retrievers return TIED rows in storage order**, and
+ * every rewrite changes storage order. Ties are not rare here and never will be:
+ * a `code_chunk` row and its `code_unit` row carry the SAME text, so they score
+ * identically in both channels by construction — the same duplication that puts
+ * 49 repeated `(path, startLine, endLine)` tuples in 400 result rows.
+ *
+ * Fusion is rank-only (`1 / (k + i + 1)`), so a tie SWAP at ranks i / i+1 is a
+ * real fused-score difference, and at the top-20 boundary it evicts a result.
+ * That is the `max=20` in the pre-release measurement: a swap at rank 19/20.
+ *
+ * ── THE FIX ─────────────────────────────────────────────────────────────────
+ * Make each retriever's rank a pure function of `(score, id)` instead of of
+ * storage layout. `id` is content-addressed and unique per row, so the order is
+ * total, stable across compaction, and identical in every worktree — which is
+ * exactly what NFR-5 asks for. This costs one sort of at most `limit * 3` rows.
+ *
+ * ── WHY IT REFUSES RATHER THAN GUESSES WHEN THE COLUMN IS ABSENT ────────────
+ * LanceDB supplies the rank column (`_score` for FTS, `_distance` for vector)
+ * on a full projection; verified on 0.38. If a future version renames or drops
+ * it, sorting anyway would order the whole candidate list BY ID — catastrophic,
+ * and silent. So a list that does not carry a finite number in `scoreField` on
+ * every row is returned untouched, which is exactly today's behaviour, and
+ * `store-rank-stability.test.ts` fails loudly instead.
+ *
+ * The candidate SET is the OTHER half of this, and it is `trimIncompleteTieTail`'s.
+ */
+export function stabilizeRetrieverOrder<T extends Record<string, unknown>>(
+	rows: T[],
+	scoreField: "_score" | "_distance",
+): T[] {
+	// `_score` is better-when-larger, `_distance` better-when-smaller.
+	const sign = scoreField === "_score" ? -1 : 1;
+	for (const row of rows) {
+		const score = row[scoreField];
+		if (typeof score !== "number" || !Number.isFinite(score)) return rows;
+		if (typeof row.id !== "string") return rows;
+	}
+	return [...rows].sort((a, b) => {
+		const sa = a[scoreField] as number;
+		const sb = b[scoreField] as number;
+		if (sa !== sb) return sign * (sa - sb);
+		const ia = a.id as string;
+		const ib = b.id as string;
+		return ia < ib ? -1 : ia > ib ? 1 : 0;
+	});
+}
+
+/**
+ * Drop the LAST score group when the engine cut the list, because that group is
+ * the one that may be incomplete.
+ *
+ * ── THE HALF OF NFR-5 THAT ORDERING ALONE DOES NOT CLOSE ────────────────────
+ * `stabilizeRetrieverOrder` makes the ORDER of a candidate list independent of
+ * storage. It cannot make the list's MEMBERSHIP independent of it: the engine
+ * takes the top `fetched` rows by score and breaks its own ties by storage
+ * order, so when a tie group straddles rank `fetched`, WHICH of its members is
+ * fetched at all is decided by the layout that the last rewrite happened to
+ * leave.
+ *
+ * That is not hypothetical and it is not rare enough to wave away. Measured on
+ * the live 26 288-row store, query 10 of the pinned set, `limit = 20` so
+ * `fetched = 60`:
+ *
+ *     caching-embeddings-client.ts:1020-1036  code_unit   vector rank 59
+ *     caching-embeddings-client.ts:1020-1036  code_chunk  vector rank 60
+ *     both at distance 0.7403558492660522 — bit-identical
+ *
+ * One row in, one row out, of an IDENTICALLY-scored pair, split by the cut. And
+ * the two are not interchangeable downstream: the fusion weights `code_chunk`
+ * at 0.25 and has no entry for `code_unit`, which falls back to 0.1, so which
+ * twin survives changes the fused score 2.5x. That single swap is the whole of
+ * the one ordered list (of 20) that still moved after a fifth worktree's first
+ * index, and it moved by EVICTING a result from the top 20.
+ *
+ * ── THE RULE, AND WHY IT IS DETERMINISTIC RATHER THAN MERELY LUCKIER ────────
+ * The engine's contract is "the top `fetched` rows BY SCORE". So the set of
+ * rows scoring strictly better than the last row's score is fully determined by
+ * the corpus — no tie order can change it. Everything at exactly the last
+ * score, in contrast, is an arbitrary sample of its group. Dropping that group
+ * turns a count-bounded candidate set into a THRESHOLD-bounded one, which is
+ * the property that makes it reproducible.
+ *
+ * Over-fetching was the alternative and it is strictly weaker: it moves the
+ * boundary without removing it, and the same straddle happens at the new rank.
+ *
+ * ── THE THREE CONDITIONS, EACH OF WHICH IS A WAY TO GET THIS WRONG ─────────
+ *   - Only when `rows.length >= fetched`. A short list was not cut, so its last
+ *     group is complete and dropping it would delete real results.
+ *   - Never below `keepAtLeast`. A single-term query can put every fetched row
+ *     on one score; trimming there would empty the channel. In that case the
+ *     arbitrary sample is kept, because an arbitrary answer beats no answer —
+ *     and it is the case where no choice can be principled anyway.
+ *   - Only on a list that is already ordered by score, which is why this runs
+ *     AFTER `stabilizeRetrieverOrder` and reads the score of the LAST row.
+ */
+export function trimIncompleteTieTail<T extends Record<string, unknown>>(
+	rows: T[],
+	scoreField: "_score" | "_distance",
+	options: { fetched: number; keepAtLeast: number },
+): T[] {
+	if (rows.length === 0 || rows.length < options.fetched) return rows;
+	const edge = rows[rows.length - 1][scoreField];
+	if (typeof edge !== "number" || !Number.isFinite(edge)) return rows;
+	let cut = rows.length;
+	while (cut > 0 && rows[cut - 1][scoreField] === edge) cut--;
+	if (cut < options.keepAtLeast) return rows;
+	return rows.slice(0, cut);
+}
+
+/**
+ * The same total order applied to the FUSED list.
+ *
+ * Belt to `stabilizeRetrieverOrder`'s braces: once both input lists are ordered
+ * deterministically the fused order already is, because `Array.sort` is stable
+ * and the `Map` preserves insertion order. This removes the dependence on both
+ * of those facts, and covers the case two rows land on exactly the same fused
+ * score from different channels.
+ */
+function sortFused(results: FusedResult[]): FusedResult[] {
+	return results.sort((a, b) => {
+		if (a.fusedScore !== b.fusedScore) return b.fusedScore - a.fusedScore;
+		return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+	});
+}
 
 /**
  * Combine results from vector and BM25 search using RRF
@@ -2950,10 +3176,8 @@ function reciprocalRankFusion(
 		}
 	}
 
-	// Sort by fused score
-	return Array.from(scores.values()).sort(
-		(a, b) => b.fusedScore - a.fusedScore,
-	);
+	// Sort by fused score, ties broken by id (see `sortFused`).
+	return sortFused(Array.from(scores.values()));
 }
 
 // ============================================================================
@@ -3117,10 +3341,8 @@ function typeAwareRRFFusion(
 		}
 	}
 
-	// Sort by fused score
-	return Array.from(scores.values()).sort(
-		(a, b) => b.fusedScore - a.fusedScore,
-	);
+	// Sort by fused score, ties broken by id (see `sortFused`).
+	return sortFused(Array.from(scores.values()));
 }
 
 // ============================================================================

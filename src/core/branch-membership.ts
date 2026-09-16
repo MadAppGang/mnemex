@@ -52,10 +52,45 @@ export const WRITE_CHUNK = 256;
 export const RECOVERY_CHUNK = 256;
 
 /**
- * Rows the widening drain may rewrite in ONE run (§4.1.3b).
+ * The FLOOR on what one run's widening drain will rewrite (§4.1.3b) — not a cap
+ * on it.
  *
- * An exhausted budget is not silent: `IndexResult.membershipWidenRemaining`
- * carries the leftover and the run tells the user to index again.
+ * ── WHY THIS IS A FLOOR NOW, AND WAS A CAP ──────────────────────────────────
+ * It was `20_000` rows, applied as a hard cap. The pre-release measurement pass
+ * indexed a real repository: **25 614 rows**, so a second worktree's first index
+ * stopped mid-drain with `branch_widen_remaining=5614` — 22 % of the store not
+ * yet visible from the new branch — and converged only on a SECOND `index` run.
+ * The third worktree did the same. On a repository 30 % larger it would take
+ * three runs.
+ *
+ * That is a silent truncation of CORRECTNESS by a constant whose job was to
+ * bound WORK. The budget's own comment said the leftover "is not silent"
+ * because `IndexResult.membershipWidenRemaining` carries it — but §6.3
+ * established that two of the four entry points that call `index()` (the git
+ * post-commit hook and the MCP search tool's auto-reindex) pass no `onProgress`
+ * at all, so the "run it again" line reaches neither. What the user sees is a
+ * smaller result set and no explanation: D1's failure shape exactly.
+ *
+ * So the drain now always clears the backlog that EXISTS WHEN IT STARTS, and
+ * this constant only raises that when the backlog is small. Three reasons it is
+ * safe to let the drain run to the end of its entry backlog:
+ *
+ *   - It is BOUNDED by construction. `chunk_write_intent`'s primary key is
+ *     `(chunk_id, kind)`, so there is at most ONE `'widen'` row per chunk id no
+ *     matter how many branches widened it: the backlog can never exceed the
+ *     store's row count, and it is read ONCE, before the loop, so the drain
+ *     cannot chase work appended while it runs.
+ *   - It is a ONE-TIME cost per worktree, and a small one. Measured on the
+ *     26 288-row store: 2.3-2.4 s for ALL of it, against the 23 s that
+ *     worktree's whole first index took and the 385 s the first worktree paid.
+ *   - It does not lengthen a blocked region. Every batch yields
+ *     (`yieldToEventLoop`) and calls `reportProgress`, so a longer drain is more
+ *     ticks of the same bounded regions, not one longer one — CLAUDE.md #20 and
+ *     #31's arithmetic are functions of the REGION, not of the loop's length.
+ *
+ * `remaining > 0` therefore no longer means "the budget stopped me"; it means a
+ * run crashed or aborted mid-drain and the next run will finish it. That is a
+ * genuinely exceptional state, and `budgetExhausted` now reports it as one.
  */
 export const WIDEN_BUDGET = 20_000;
 
@@ -410,8 +445,27 @@ export interface WidenDrainResult {
 	missingRows: number;
 	/** `'widen'` intents still outstanding when the drain stopped. */
 	remaining: number;
-	/** True when the drain stopped on `WIDEN_BUDGET` rather than on an empty backlog. */
+	/**
+	 * True when the drain stopped on its budget rather than on an empty backlog.
+	 *
+	 * Since the budget became a FLOOR over the backlog read at entry, this can
+	 * only be reached by an EXPLICIT `options.budget` (a fixture) or by intents
+	 * committed after that read — which the store lock prevents. On the shipped
+	 * path it reads `false`, and a non-zero `remaining` means a previous run
+	 * crashed mid-drain, not that this one was truncated.
+	 */
 	budgetExhausted: boolean;
+	/**
+	 * The `'widen'` backlog this drain STARTED with — this run's own intents
+	 * plus anything an earlier run left.
+	 *
+	 * Reported as DATA (`IndexResult.branch.widenBacklog`, `--agent`'s
+	 * `branch_widen_backlog`) so that "the drain was complete" is a readable
+	 * fact — backlog N, `remaining` 0 — rather than an absence. The hook and the
+	 * MCP auto-reindex render no progress line at all, so an absence is all they
+	 * would otherwise have.
+	 */
+	backlog: number;
 }
 
 export interface WidenDrainOptions {
@@ -448,7 +502,13 @@ export async function drainWidenIntents(
 	store: IVectorStore,
 	options: WidenDrainOptions = {},
 ): Promise<WidenDrainResult> {
-	const budget = options.budget ?? WIDEN_BUDGET;
+	// ONE read, BEFORE the loop. The budget is a floor over it (see
+	// `WIDEN_BUDGET`): the drain always clears the backlog that exists when it
+	// starts, so a second worktree's first index converges in ONE run instead of
+	// leaving a fifth of the store invisible until the next one. Reading it once
+	// is also what stops the drain chasing work appended while it runs.
+	const backlog = tracker.countWidenIntents();
+	const budget = options.budget ?? Math.max(WIDEN_BUDGET, backlog);
 	const result: WidenDrainResult = {
 		rowsWidened: 0,
 		batches: 0,
@@ -456,6 +516,7 @@ export async function drainWidenIntents(
 		missingRows: 0,
 		remaining: 0,
 		budgetExhausted: false,
+		backlog,
 	};
 
 	let spent = 0;

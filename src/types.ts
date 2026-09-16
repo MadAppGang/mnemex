@@ -421,11 +421,27 @@ export interface IndexBranchResult {
 	 */
 	rowsWidened: number;
 	/**
-	 * `'widen'` intents still outstanding when the run finished. Non-zero means
-	 * the per-run budget was exhausted and another `mnemex index` is needed;
-	 * searches from this branch see a subset of the store until then.
+	 * `'widen'` intents still outstanding when the run finished.
+	 *
+	 * Expected 0 on every completed run since the per-run budget became a FLOOR
+	 * over the backlog read at drain entry (`WIDEN_BUDGET`). It used to read
+	 * 5 614 after a second worktree's first index of this repository — 22 % of
+	 * the store invisible from the new branch until another run happened — which
+	 * is the defect that change closes. A non-zero reading now means a run
+	 * crashed or aborted mid-drain; searches from this branch see a subset of the
+	 * store until the next `mnemex index` finishes it.
 	 */
 	widenRemaining: number;
+	/**
+	 * The `'widen'` backlog the drain STARTED with: this run's own widened ids
+	 * plus anything an earlier run left behind.
+	 *
+	 * Emitted so that a complete drain is a positive fact a consumer can read
+	 * — `widenBacklog: 26288, widenRemaining: 0` — rather than an absence. The
+	 * git post-commit hook and the MCP auto-reindex render no progress line, so
+	 * an absence is all they would otherwise have to go on.
+	 */
+	widenBacklog?: number;
 	/**
 	 * What a crashed previous run left, and this run re-drove (§4.1.4).
 	 * `added` rows were deleted (an interrupted append refers to nothing);

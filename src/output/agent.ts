@@ -152,6 +152,12 @@ function indexComplete(result: EnrichedIndexResult): void {
 		console.log(`branch_ids_widened=${result.branch.idsWidened}`);
 		console.log(`branch_rows_widened=${result.branch.rowsWidened}`);
 		console.log(`branch_widen_remaining=${result.branch.widenRemaining}`);
+		// The backlog the drain started with. Paired with the line above it, a
+		// complete drain is readable as a fact (`backlog=N remaining=0`) instead
+		// of as the absence of a warning.
+		if (result.branch.widenBacklog !== undefined) {
+			console.log(`branch_widen_backlog=${result.branch.widenBacklog}`);
+		}
 		if (result.branch.recoveredCrashResidue) {
 			console.log(
 				`recovered_crash_residue_added=${result.branch.recoveredCrashResidue.added}`,

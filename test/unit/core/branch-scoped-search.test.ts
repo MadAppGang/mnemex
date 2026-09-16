@@ -22,9 +22,12 @@
  *          identical, and `countRows()` through an independent connection is
  *          unchanged.
  *   V5.4c  a second branch that CHANGES files containing the query terms leaves
- *          branch A's ordered list identical. This is the release gate. If it
- *          fails, the number to report is the mean rank displacement, which is
- *          measured and printed either way.
+ *          branch A's ordered list identical. This is the release gate. Two
+ *          numbers are printed for every run: EXACT ordered-list identity, which
+ *          is what the gate asserts, and the mean/max rank displacement, which is
+ *          the magnitude an NFR-5 carve-out would have to quote. Identity is the
+ *          one that decides the gate; the magnitude carries an ordinal
+ *          convention (see `occurrenceKeys`) and identity does not.
  *
  * ── FALSIFIERS, ALL EXECUTED ────────────────────────────────────────────────
  *   V3.3   drop the branch term from EITHER retriever — the foreign chunk comes
@@ -154,28 +157,122 @@ async function independentBranchIds(filePath: string): Promise<string[]> {
 	return rows.map((r) => r.branchIds);
 }
 
-/** Mean and max rank displacement between two ordered lists. */
+/**
+ * Disambiguate each `path:start-end` tuple by its ORDINAL within the list.
+ *
+ * THE DEFECT THIS CLOSES, which this fixture is too small to expose.
+ * `displacement()` built `new Map(after.map((key, i) => [key, i]))` over the
+ * tuples, and a `Map` keeps the LAST index for a repeated key — so a tuple that
+ * occurs twice was scored against the wrong position. A real repository repeats
+ * them by construction: one span is carried by BOTH a `code_chunk` row and its
+ * `code_unit` row, which is visible directly in `search --agent` output as two
+ * `result file=… line=412 end_line=420` lines with different scores. Measured on
+ * this repository's own store: **49 of the 400 tuples** in 20 top-20 lists are
+ * repeats, and the metric read `mean=0.635 max=14` on two BYTE-IDENTICAL lists.
+ *
+ * The 30 chunks seeded below have no repeated span, so the published metric has
+ * never fired here and could not have. Ordinals make "the second occurrence of
+ * this span" a distinct key, which is what the comparison meant all along.
+ */
+function occurrenceKeys(list: readonly string[]): string[] {
+	const seen = new Map<string, number>();
+	return list.map((key) => {
+		const n = seen.get(key) ?? 0;
+		seen.set(key, n + 1);
+		return `${key}#${n}`;
+	});
+}
+
+/**
+ * Mean and max rank displacement between two ordered lists, plus EXACT ordered
+ * identity.
+ *
+ * `identical` is the number the gate asserts on (`expect(after).toEqual(before)`
+ * is the same statement, per query); mean/max/`setChanged` are the MAGNITUDE an
+ * NFR-5 carve-out would have to quote. They are reported side by side
+ * deliberately: the magnitude comes from a metric with an ordinal convention in
+ * it, and identity does not.
+ */
 function displacement(
-	before: string[],
-	after: string[],
-): { mean: number; max: number; setChanged: boolean } {
-	const position = new Map(after.map((key, i) => [key, i]));
+	before: readonly string[],
+	after: readonly string[],
+): { mean: number; max: number; setChanged: boolean; identical: boolean } {
+	const beforeKeys = occurrenceKeys(before);
+	const afterKeys = occurrenceKeys(after);
+	const position = new Map(afterKeys.map((key, i) => [key, i]));
 	let total = 0;
 	let max = 0;
-	for (let i = 0; i < before.length; i++) {
-		const now = position.get(before[i]);
-		const moved = now === undefined ? before.length : Math.abs(now - i);
+	for (let i = 0; i < beforeKeys.length; i++) {
+		const now = position.get(beforeKeys[i]);
+		const moved = now === undefined ? beforeKeys.length : Math.abs(now - i);
 		total += moved;
 		max = Math.max(max, moved);
 	}
 	return {
-		mean: before.length === 0 ? 0 : total / before.length,
+		mean: beforeKeys.length === 0 ? 0 : total / beforeKeys.length,
 		max,
 		setChanged:
-			before.length !== after.length ||
-			before.some((key) => !position.has(key)),
+			beforeKeys.length !== afterKeys.length ||
+			beforeKeys.some((key) => !position.has(key)),
+		identical:
+			beforeKeys.length === afterKeys.length &&
+			beforeKeys.every((key, i) => afterKeys[i] === key),
 	};
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// The INSTRUMENT itself — a metric that cannot report zero measures nothing
+// ════════════════════════════════════════════════════════════════════════════
+
+describe("displacement() — the published NFR-5 metric", () => {
+	/**
+	 * The exact shape a real corpus produces and this file's 30-row fixture
+	 * cannot: one `(path, startLine, endLine)` carried by a `code_chunk` row AND
+	 * by its `code_unit` row, so the tuple appears twice in one top-20 list.
+	 *
+	 * Against the pre-fix metric — `new Map(after.map((k, i) => [k, i]))` — every
+	 * occurrence resolved to the LAST index, and these two BYTE-IDENTICAL lists
+	 * read `mean=1.250 max=3` (measured, by running that metric verbatim on this
+	 * exact input). On the repository's own store the same defect read
+	 * `mean=0.635 max=14` over 49 repeated tuples in 400.
+	 */
+	const withRepeats = [
+		"src/core/store.ts:412-420",
+		"src/core/store.ts:412-420",
+		"src/core/indexer.ts:10-20",
+		"src/core/store.ts:412-420",
+	];
+
+	test("two byte-identical lists with a repeated tuple read exactly zero", () => {
+		const d = displacement(withRepeats, [...withRepeats]);
+		expect(d.mean).toBe(0);
+		expect(d.max).toBe(0);
+		expect(d.setChanged).toBe(false);
+		expect(d.identical).toBe(true);
+	});
+
+	test("...and it still SEES a real move of a repeated tuple", () => {
+		// Occurrence #1 and the `indexer.ts` row swap. A metric that scored every
+		// occurrence against the same index could not tell this from the case
+		// above, which is precisely why the one above could not report zero.
+		const moved = [
+			"src/core/store.ts:412-420",
+			"src/core/indexer.ts:10-20",
+			"src/core/store.ts:412-420",
+			"src/core/store.ts:412-420",
+		];
+		const d = displacement(withRepeats, moved);
+		expect(d.identical).toBe(false);
+		expect(d.max).toBeGreaterThan(0);
+		expect(d.setChanged).toBe(false);
+	});
+
+	test("a result LEAVING the list is reported as a changed set", () => {
+		const d = displacement(["a:1-2", "b:1-2"], ["a:1-2", "c:1-2"]);
+		expect(d.setChanged).toBe(true);
+		expect(d.identical).toBe(false);
+	});
+});
 
 // ════════════════════════════════════════════════════════════════════════════
 // V3.3 — a chunk that exists only on the other branch
@@ -375,17 +472,23 @@ describe("V5.4c — the release gate: a second branch that changes the query ter
 		let meanSum = 0;
 		let maxSeen = 0;
 		let setsChanged = 0;
+		let identical = 0;
 		for (let q = 0; q < QUERIES.length; q++) {
 			const d = displacement(before[q], after[q]);
 			meanSum += d.mean;
 			maxSeen = Math.max(maxSeen, d.max);
 			if (d.setChanged) setsChanged++;
+			if (d.identical) identical++;
 		}
+		// Exact ordered-list identity is printed BESIDE the magnitude, because
+		// identity is what this gate asserts and the magnitude is what a carve-out
+		// would quote. They answer different questions and neither substitutes.
 		console.log(
-			`V5.4c displacement: mean=${(meanSum / QUERIES.length).toFixed(3)} max=${maxSeen} queriesWithChangedSet=${setsChanged}/${QUERIES.length}`,
+			`V5.4c displacement: mean=${(meanSum / QUERIES.length).toFixed(3)} max=${maxSeen} queriesWithChangedSet=${setsChanged}/${QUERIES.length} orderedListsIdentical=${identical}/${QUERIES.length}`,
 		);
 
 		expect(after).toEqual(before);
+		expect(identical).toBe(QUERIES.length);
 		expect(maxSeen).toBe(0);
 		expect(setsChanged).toBe(0);
 	});
@@ -412,17 +515,22 @@ describe("V5.4c — the release gate: a second branch that changes the query ter
 		let meanSum = 0;
 		let maxSeen = 0;
 		let setsChanged = 0;
+		let identical = 0;
 		for (let q = 0; q < QUERIES.length; q++) {
 			const d = displacement(before[q], unfiltered[q]);
 			meanSum += d.mean;
 			maxSeen = Math.max(maxSeen, d.max);
 			if (d.setChanged) setsChanged++;
+			if (d.identical) identical++;
 		}
 		console.log(
-			`V5.4c FALSIFIER displacement: mean=${(meanSum / QUERIES.length).toFixed(3)} max=${maxSeen} queriesWithChangedSet=${setsChanged}/${QUERIES.length}`,
+			`V5.4c FALSIFIER displacement: mean=${(meanSum / QUERIES.length).toFixed(3)} max=${maxSeen} queriesWithChangedSet=${setsChanged}/${QUERIES.length} orderedListsIdentical=${identical}/${QUERIES.length}`,
 		);
 
 		expect(unfiltered).not.toEqual(before);
 		expect(setsChanged).toBeGreaterThan(0);
+		// The instrument can go RED on the identity number too, not only on the
+		// magnitude — a green reading from a blind instrument is worth nothing.
+		expect(identical).toBeLessThan(QUERIES.length);
 	});
 });

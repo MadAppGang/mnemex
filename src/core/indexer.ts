@@ -3028,9 +3028,20 @@ export class Indexer {
 		// M5 (I-7 FINAL) — ONE optimize() at the END of the drain, never per
 		// batch. Every row a merge rewrites leaves the FTS index; recall is NOT
 		// lost (`fullTextSearch` scans the unindexed tail, 982/982 measured), but
-		// filtered FTS goes from 0.7 ms to 60-72 ms and rewritten rows' BM25
-		// scores shift by up to 5 %. Fusion is rank-only, so a 5 % shift can
-		// reorder results — an NFR-5 exposure closed inside the same run.
+		// filtered FTS goes from 0.7 ms to 60-72 ms. `optimize()` folds the tail
+		// back in and compacts; 180-700 ms at 20 000-26 000 rows.
+		//
+		// ── WHAT M5 DOES *NOT* DO, MEASURED ─────────────────────────────────
+		// This comment used to say the same call closed an NFR-5 exposure, by
+		// restoring BM25 scores the rewrite had shifted "by up to 5 %". It does
+		// not, and it never needed to: on a 26 288-row copy of a real store with
+		// EVERY row rewritten, BM25 scores were bit-identical before and after —
+		// 0 of 1 200 cells moved, and 0 of 1 200 again after a forced
+		// `createIndex(replace:true)`. The ranking moved because tied rows come
+		// back in STORAGE order, which is `stabilizeRetrieverOrder`'s business in
+		// `store.ts`, not this call's. Deleting that claim rather than acting on
+		// it is deliberate: a forced rebuild here was measured at 302-314 ms for
+		// an IDENTICAL reading, i.e. pure cost.
 		//
 		// The SWEEP's narrow rewrites mirrors through the same `mergeInsert`, so
 		// its rows leave the FTS index in exactly the same way and are folded
@@ -3048,11 +3059,16 @@ export class Indexer {
 			await this.vectorStore!.optimize();
 			this.reportProgress();
 		}
-		if (widenDrain.budgetExhausted) {
+		if (widenDrain.budgetExhausted || widenDrain.remaining > 0) {
+			// Since the budget became a floor over the backlog read at drain entry,
+			// this is no longer the routine end of a big first index — it means a
+			// previous run crashed or aborted mid-drain. Said plainly, and still
+			// carried in DATA (`branch_widen_remaining`) for the two entry points
+			// that render no progress line at all.
 			this.onProgress?.(
 				0,
 				0,
-				`[branch-membership] membership widening incomplete (${widenDrain.remaining} rows) — run \`mnemex index\` again`,
+				`[branch-membership] membership widening incomplete (${widenDrain.remaining} of ${widenDrain.backlog} rows left by an interrupted run) — run \`mnemex index\` again`,
 			);
 		}
 
@@ -3239,6 +3255,7 @@ export class Indexer {
 				idsWidened: totalChunksWidened + totalUnitsWidened,
 				rowsWidened: widenDrain.rowsWidened,
 				widenRemaining: widenDrain.remaining,
+				widenBacklog: widenDrain.backlog,
 				recoveredCrashResidue:
 					crashResidue.added > 0 || crashResidue.removed > 0
 						? crashResidue
