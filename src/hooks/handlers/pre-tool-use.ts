@@ -10,7 +10,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { getIndexDbPath } from "../../config.js";
 import { runSelfSync } from "../../core/entry-point-launcher.js";
 import type { HookInput, HookOutput, IndexStatus } from "../types.js";
 import { logToolStart } from "./interaction-logger.js";
@@ -20,13 +20,17 @@ import { logToolStart } from "./interaction-logger.js";
 // ============================================================================
 
 /**
- * Check if project is indexed
+ * Check if project is indexed.
+ *
+ * Through the seam (FR-3, decision I-8), never `join(cwd, ".mnemex", …)`. This
+ * was one of the four files on `MNEMEX_STORE_PATH_ALLOWLIST`, and the entry was
+ * a deferral rather than a justification (`phase-3b-inputs.md` §7). From Phase
+ * 3c the store is `<gitCommonDir>/mnemex`, so the hand-built path probes a
+ * directory nothing writes: this hook would report EVERY indexed repository as
+ * un-indexed and tell the user to run `mnemex index` after they just had.
  */
 function isIndexed(cwd: string): IndexStatus {
-	const indexDir = join(cwd, ".mnemex");
-	const dbPath = join(indexDir, "index.db");
-
-	if (!existsSync(dbPath)) {
+	if (!existsSync(getIndexDbPath(cwd))) {
 		return { indexed: false };
 	}
 

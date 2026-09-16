@@ -57,7 +57,12 @@ function withoutBranchLines(stdout: string): string {
 				!line.startsWith("branch_unknown=") &&
 				!line.startsWith("branch_empty=") &&
 				!line.startsWith("branch=") &&
-				!line.startsWith("branch_hint="),
+				!line.startsWith("branch_hint=") &&
+				// V1.7, added in Phase 3c. The list is what counts as "the branch
+				// REPORT" rather than "the answer", and this line is report: it
+				// says WHY the branch is empty. It is filtered here and asserted
+				// present below, so widening the filter cannot hide it.
+				!line.startsWith("store_rebuilt_elsewhere="),
 		)
 		.join("\n");
 }
@@ -158,6 +163,11 @@ describe("a branch that is registered and holds no rows says so", () => {
 				expect(emptied.stdout).toContain("branch=feat");
 				// It must NAME THE COMMAND that fixes it, not merely flag a state.
 				expect(emptied.stdout).toMatch(/branch_hint=.*mnemex index/);
+				// V1.7 (§4.5, Phase 3c): the store-wide rebuild that emptied this
+				// branch was stamped, so the report says WHY and not only THAT.
+				// Asserted here because `withoutBranchLines` now filters it out.
+				expect(emptied.stdout).toContain("store_rebuilt_elsewhere=1");
+				expect(indexed.stdout).not.toContain("store_rebuilt_elsewhere=");
 			} finally {
 				fx.cleanup();
 			}

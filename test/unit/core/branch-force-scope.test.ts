@@ -346,19 +346,31 @@ describe("V3.19 — `mnemex index --force` narrows only the branch it runs on", 
 				const allBefore = (await storeRows(fx.vectors)).length;
 
 				fx.git(fx.project, "checkout", "-q", "main");
-				// `keychain migrate --dry-runDD` ran a REAL migration because the
-				// flag was decided by `includes()`. Both flags here are decided the
-				// same way, so the question is which way a typo falls — and both
-				// of these fall towards the SMALLER blast radius: neither spelling
-				// is `--force-all` and neither is `--force`, so the run is an
-				// ordinary incremental index that empties nothing.
+				// ── INVERTED IN PHASE 3c, deliberately ───────────────────────
+				//
+				// As written in 3b-3b this asserted `exitCode === 0`: neither
+				// spelling matched either flag, so the run was an ordinary
+				// incremental index that emptied nothing. 3b-3b's own decision 7
+				// and finding 6 said exactly what was wrong with that — both typo
+				// directions failed safe by LUCK OF SPELLING rather than by
+				// construction, and "which way does the default point" is not a
+				// property anyone should be relying on for a destructive pair.
+				//
+				// Decision I-17 item 4 gave `index` the same `ACCEPTED_FLAGS`
+				// treatment `mnemex keychain` has. A typo is now an ERROR
+				// before anything runs, and the near miss is named. The
+				// "writes nothing" assertions below are UNCHANGED and are still
+				// the ones that matter: the pre-fix `keychain migrate` exited 0
+				// while writing, so an exit code alone never could have seen it.
 				for (const typo of ["--force-alll", "--force-al"]) {
 					const run = await runCli(
 						["--agent", "index", typo],
 						fx.scratch,
 						fx.project,
 					);
-					expect(run.exitCode, `${typo}: ${run.stderr}`).toBe(0);
+					expect(run.exitCode, `${typo}: ${run.stderr}`).not.toBe(0);
+					expect(run.stderr, typo).toContain("error=unknown_flag");
+					expect(run.stderr, typo).toContain("Did you mean --force-all?");
 					expect(run.stdout, typo).not.toContain("force_scope=");
 				}
 

@@ -19,6 +19,10 @@ import { appendFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import {
+	branchEmptyNotice,
+	branchUnknownNotice,
+} from "../../core/branch-notices.js";
 import { createIndexer, IndexLockError } from "../../core/indexer.js";
 import { createLearningSystem } from "../../learning/index.js";
 import { discoverEmbeddingModels } from "../../models/model-discovery.js";
@@ -286,9 +290,20 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 					useCase: useCase ?? "search",
 				});
 				let results = scoped.results;
-				/** D1's two response fields, on every return path below. */
+				/** D1's response fields, on every return path below. */
 				const branchState = {
 					branch_unknown: scoped.branchUnknown,
+					// Decision I-17 item 2: the state D1 does not cover — the registry
+					// KNOWS this branch and the store holds no row for it, which is what
+					// another worktree's `--force-all` leaves behind. Without it an
+					// agent reads the empty result as "this code does not exist" and
+					// writes it again, which is the exact failure D1 was written about.
+					branch_empty: scoped.branchEmpty,
+					// V1.7 / §4.5: WHY it is empty, when the marker can say. Only
+					// ever present alongside `branch_empty: true`.
+					...(scoped.storeRebuiltElsewhere
+						? { store_rebuilt_elsewhere: true }
+						: {}),
 					branch: scoped.branchLabel,
 				};
 
@@ -365,7 +380,15 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 						...indexState,
 						...branchState,
 					});
-					const emptyResponse = `No results found for "${query}". Make sure the codebase is indexed using \`index_codebase\`.\n${trailer}`;
+					// The prose too, not only the trailer: an agent reads the sentence
+					// and a `branch_empty=true` buried in a JSON tail is exactly the
+					// "flag nobody renders" D1 refuses.
+					const branchNote = scoped.branchUnknown
+						? `\n${branchUnknownNotice(scoped.branchLabel, "search_code")}`
+						: scoped.branchEmpty
+							? `\n${branchEmptyNotice(scoped.branchLabel, "search_code", scoped.storeRebuiltElsewhere)}`
+							: "";
+					const emptyResponse = `No results found for "${query}". Make sure the codebase is indexed using \`index_codebase\`.${branchNote}\n${trailer}`;
 					return {
 						content: [
 							{

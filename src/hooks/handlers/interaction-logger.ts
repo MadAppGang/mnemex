@@ -7,7 +7,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { getIndexDbPath } from "../../config.js";
 import { createDatabaseSync, type SQLiteDatabase } from "../../core/sqlite.js";
 import {
 	createInteractionSystem,
@@ -39,14 +39,47 @@ function getInteractionSystem(projectPath: string): InteractionSystem | null {
 		return systemCache.get(projectPath)!;
 	}
 
-	// Check if project is indexed
-	const indexDir = join(projectPath, ".mnemex");
-	if (!existsSync(indexDir)) {
+	// ── THE WRITER (phase-3b-inputs.md §6, item 1) ────────────────────────────
+	//
+	// This opens the store's `index.db` READ-WRITE and creates seven tables in
+	// it. It built the path by hand — `join(projectPath, ".mnemex", "index.db")`
+	// — and was the most dangerous of the four allowlist entries: under
+	// `STORE_SCOPE_DEFAULT = "git-common-dir"` it would have kept writing the OLD
+	// per-worktree location for EVERY user, silently, while every probe and every
+	// reader looked at the new one. Not limited to override users, and invisible,
+	// because this hook swallows every failure by design.
+	//
+	// It resolves through the seam now (FR-3, decision I-8), so it opens the same
+	// file the store lock guards.
+	//
+	// WHY IT STILL TAKES NO STORE LOCK (§6's condition 2, the second half: "or is
+	// shown to write nothing the lock guards"). The seven tables this system
+	// creates and writes — `agent_sessions`, `tool_events`, `code_changes`,
+	// `corrections`, `patterns`, `improvements`, `improvement_metrics`
+	// (`src/learning/interaction/interaction-store.ts`) — are DISJOINT from every
+	// table the store lock exists to serialise: the tracker's `files`,
+	// `documents`, `symbols`, `symbol_references`, `graph_metadata`,
+	// `indexed_docs`, `chunk_branches`, `chunk_index`, `chunk_write_intent`,
+	// `enrichment_by_content`. None of them carries a `branch_id`, none is
+	// dropped by `rebuildStore()`'s §3.5.1 pass, and none is read by the indexer.
+	// So this writer cannot race the id algebra, cannot widen or narrow
+	// membership, and cannot be torn by a rebuild of the tree-scoped schema.
+	//
+	// What it DOES share is the SQLite file, which is why it must not hold a
+	// transaction open: a hook runs on every tool call, and a blocking writer
+	// here would surface as `SQLITE_BUSY` in an index run. The tracker sets WAL
+	// on the file, so a reader never blocks, and this system's writes are single
+	// statements. Taking the store lock instead would be strictly worse: a hook
+	// that waits on a 20-minute index run stalls the editor.
+	//
+	// A session row is worth nothing after the store it describes is rebuilt, but
+	// it is also worth nothing to guard with a lock: losing one is free, and the
+	// whole module already returns `null` on any failure.
+	const dbPath = getIndexDbPath(projectPath);
+	if (!existsSync(dbPath)) {
 		return null;
 	}
 
-	// Open or create database
-	const dbPath = join(indexDir, "index.db");
 	let db = dbCache.get(projectPath);
 	if (!db) {
 		try {

@@ -223,10 +223,10 @@ describe("the churn cost of content in the id", () => {
 				const idsBefore = new Set(rowsBefore.map((r) => String(r.id)));
 				const moved = rowsAfter.filter((r) => !idsBefore.has(String(r.id)));
 				const textsBefore = new Set(
-					rowsBefore.map((r) => `${r.documentType} ${r.content}`),
+					rowsBefore.map((r) => `${r.documentType}\0${r.content}`),
 				);
 				const newTexts = rowsAfter.filter(
-					(r) => !textsBefore.has(`${r.documentType} ${r.content}`),
+					(r) => !textsBefore.has(`${r.documentType}\0${r.content}`),
 				);
 				const newUnitTexts = newTexts.filter(
 					(r) => r.documentType === "code_unit",
@@ -253,7 +253,7 @@ describe("the churn cost of content in the id", () => {
 						.filter(
 							(r) =>
 								idsBefore.has(String(r.id)) &&
-								!textsBefore.has(`${r.documentType} ${r.content}`),
+								!textsBefore.has(`${r.documentType}\0${r.content}`),
 						)
 						.map((r) => String(r.id)),
 				).toEqual([]);

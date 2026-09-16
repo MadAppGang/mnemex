@@ -34,6 +34,7 @@ import { __resetStoreLocationCacheForTests } from "../../../src/core/store-locat
 import { createGitSandbox } from "../../helpers/git-sandbox.js";
 import {
 	BM25_ONLY,
+	mainCheckoutStoreDir,
 	runCli,
 	runLifecycleChild,
 	writeSource,
@@ -65,8 +66,8 @@ function makeRepo(prefix: string): Fixture {
 	return {
 		project,
 		scratch: join(sandbox.root, "scratch"),
-		storeDir: join(project, ".mnemex"),
-		registryPath: join(project, ".mnemex", "branches.json"),
+		storeDir: mainCheckoutStoreDir(project),
+		registryPath: join(mainCheckoutStoreDir(project), "branches.json"),
 		cleanup: () => sandbox.cleanup(),
 		git: sandbox.git,
 	};

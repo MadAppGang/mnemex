@@ -9,6 +9,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { __resetStoreLocationCacheForTests } from "../../../src/core/store-location.js";
 import { loadMcpConfig } from "../../../src/mcp/config.js";
 
 // ---------------------------------------------------------------------------
@@ -63,10 +67,15 @@ describe("loadMcpConfig()", () => {
 	beforeEach(() => {
 		envSnapshot = saveEnv();
 		clearMcpEnv();
+		// The seam memoizes on (realpath, MNEMEX_INDEX_DIR). These tests change
+		// the variable, and two of them reuse a fresh temp directory, so a stale
+		// entry would answer for a previous test's environment.
+		__resetStoreLocationCacheForTests();
 	});
 
 	afterEach(() => {
 		restoreEnv(envSnapshot);
+		__resetStoreLocationCacheForTests();
 	});
 
 	// -------------------------------------------------------------------------
@@ -106,11 +115,47 @@ describe("loadMcpConfig()", () => {
 			expect(config.ignorePatterns.length).toBeGreaterThan(0);
 		});
 
-		test("indexDir defaults to .mnemex under workspaceRoot", () => {
-			const config = loadMcpConfig();
-			// workspaceRoot is process.cwd()
-			expect(config.indexDir).toContain(".mnemex");
-			expect(config.indexDir.startsWith(config.workspaceRoot)).toBe(true);
+		test("indexDir is the STORE for a plain directory: <dir>/.mnemex", () => {
+			// REWRITTEN IN 3c, and the old form is worth recording because it was
+			// already fragile. It called `loadMcpConfig()` with no argument, so
+			// `workspaceRoot` was `process.cwd()` — the DEVELOPER'S OWN CHECKOUT —
+			// and asserted `indexDir` contained ".mnemex" and started with the
+			// workspace root. From 3c both are false when the suite runs from
+			// inside a git repository (the store is `<gitCommonDir>/mnemex`), and
+			// they were false BEFORE 3c for anyone with `MNEMEX_INDEX_DIR` set,
+			// because a store is not obliged to live under the workspace at all.
+			//
+			// A temp directory with no `.git` pins row 4 (FR-7), which the flip
+			// does not touch: no non-git user's store moves.
+			const dir = mkdtempSync(join(tmpdir(), "mnemex-mcp-config-"));
+			try {
+				const config = loadMcpConfig(dir);
+				expect(config.indexDir).toBe(join(realpathSync(dir), ".mnemex"));
+				// Outside a repository the store and the per-worktree directory
+				// ARE the same path. Inside one they are not — the row below.
+				expect(config.worktreeDir).toBe(config.indexDir);
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		});
+
+		test("worktreeDir is per-worktree even when the store is elsewhere", () => {
+			// The property §2.4 rests on, asserted without needing a git fixture:
+			// an override moves the STORE and never the path convention, so the
+			// two directories separate. This is the same separation the flip
+			// creates for every repository user, reached through row 1.
+			const dir = mkdtempSync(join(tmpdir(), "mnemex-mcp-config-"));
+			const store = mkdtempSync(join(tmpdir(), "mnemex-mcp-store-"));
+			try {
+				process.env.MNEMEX_INDEX_DIR = store;
+				const config = loadMcpConfig(dir);
+				expect(config.indexDir).toBe(store);
+				expect(config.worktreeDir).toBe(join(realpathSync(dir), ".mnemex"));
+				expect(config.worktreeDir).not.toBe(config.indexDir);
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+				rmSync(store, { recursive: true, force: true });
+			}
 		});
 
 		test("workspaceRoot equals process.cwd()", () => {

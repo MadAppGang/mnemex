@@ -63,6 +63,11 @@ export class TestWorkspace {
 		this._config = {
 			workspaceRoot: this.root,
 			indexDir: this.indexDir,
+			// These workspaces are plain directories, not git repositories, so
+			// the store and the per-worktree directory ARE the same path under
+			// every scope (§2.3 row 4). Spelled out rather than shared, so a
+			// reader sees that the two are distinct concepts that coincide here.
+			worktreeDir: join(root, ".mnemex"),
 			debounceMs: 120000,
 			watchPatterns: ["**/*.ts"],
 			ignorePatterns: ["node_modules/**"],

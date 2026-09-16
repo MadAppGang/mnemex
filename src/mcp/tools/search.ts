@@ -18,6 +18,7 @@ import {
 	createGitDiffChangeDetector,
 } from "../../cloud/index.js";
 import { resolveBranchScopeForProject } from "../../core/branch-scope.js";
+import { resolveBranchReadState } from "../../core/branch-state.js";
 import { createEmbeddingsClient } from "../../core/embeddings.js";
 import {
 	createIndexer,
@@ -350,9 +351,26 @@ export function registerSearchTools(server: McpServer, deps: ToolDeps): void {
 				// semantic backend has them, the tree-sitter and location backends
 				// read files rather than rows. The `search_code` tool, which D1
 				// names, carries both.
-				const branch = resolveBranchScopeForProject(config.workspaceRoot);
+				//
+				// `branch_empty` (decision I-17 item 2) rides the same resolution.
+				// It is computed ONLY when the result set is empty and the branch
+				// resolved live: a non-empty answer cannot have come from a branch
+				// that holds nothing, so the two counts would be spent to learn
+				// `false`, and this path is deliberately cheap.
+				const branchRead =
+					resultItems.length === 0
+						? resolveBranchReadState(config.workspaceRoot)
+						: null;
+				const branch =
+					branchRead?.resolution ??
+					resolveBranchScopeForProject(config.workspaceRoot);
 				const branchState = {
 					branch_unknown: branch.branchUnknown,
+					branch_empty: branchRead?.branchEmpty === true,
+					// V1.7 / §4.5. Present only when it explains a `branch_empty`.
+					...(branchRead?.storeRebuiltElsewhere === true
+						? { store_rebuilt_elsewhere: true }
+						: {}),
 					branch: branch.label,
 				};
 

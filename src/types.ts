@@ -354,6 +354,41 @@ export interface IndexResult {
 	 * reaches at most two of the four entry points.
 	 */
 	upgradedFromIndexVersion?: number;
+	/**
+	 * WHERE this run wrote (architecture §6.3). Absolute, realpath spelling.
+	 *
+	 * Built in Phase 3c, because the flip is the moment a user can no longer
+	 * guess it. Until 3c the store was `<project>/.mnemex` for everyone without
+	 * an override, so "where is my index?" had an answer you could type; from 3c
+	 * it is `<gitCommonDir>/mnemex`, which is inside `.git` and which nothing
+	 * else would lead you to. §6.3 names it as the field V1.1 and the FR-3
+	 * behavioural sweep assert on, and it was the one §6.3 field with no
+	 * producer — `mnemex branches --agent` emitted `store_dir=` and `index` did
+	 * not, so the command that MOVES a store could not say where it moved it.
+	 *
+	 * DATA, not a progress line, for the reason `upgradedFromIndexVersion` is:
+	 * the git post-commit hook and the MCP search tool's auto-reindex pass no
+	 * `onProgress`, so a rendered notice reaches at most two of four entry
+	 * points.
+	 */
+	storeDir?: string;
+	/** Which precedence row chose {@link storeDir} (§2.3's `StoreKind`). */
+	storeKind?: string;
+	/**
+	 * The store this run REPLACED, when it was in a different directory —
+	 * §6.1's migration report, and the half deferred to 3c because before the
+	 * flip the probed directory and `storeDir` were always the same one.
+	 *
+	 * It is left exactly where it is: not moved, not merged, not deleted (§6.1;
+	 * the finding's §6.2 proves an N-to-1 rename of non-portable rows has no
+	 * correct form). Reported so the user can delete it themselves, and so
+	 * "my index got smaller" has a visible cause.
+	 */
+	abandonedStoreDir?: string;
+	/** Why the seam fell back inside something that looked like a repository. */
+	degradedReason?: string;
+	/** D2: `ProjectConfig.indexDir` held the literal `".mnemex"` and was ignored. */
+	ignoredLegacyIndexDir?: boolean;
 	/** What the embedding cache did this run. Absent when it never ran. */
 	embedCache?: IndexEmbedCacheStats;
 	/** Branch membership, when the store has a branch model (architecture §4.1). */

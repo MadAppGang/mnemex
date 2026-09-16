@@ -20,6 +20,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import * as lancedb from "@lancedb/lancedb";
+import { GIT_STORE_DIR_NAME } from "../../src/core/store-location.js";
 import { keychainSafeChildEnv } from "./child-env.js";
 
 const REPO_ROOT = join(import.meta.dir, "..", "..");
@@ -53,6 +54,28 @@ export const DIST_ENTRY = join(REPO_ROOT, "dist", "index.js");
 
 /** Project config that keeps a run in BM25 mode: no network, no keychain. */
 export const BM25_ONLY = { vector: false, enrichment: false } as const;
+
+/**
+ * The STORE directory of a MAIN checkout, SPELLED OUT rather than resolved.
+ *
+ * From Phase 3c the store is `<gitCommonDir>/mnemex` (`STORE_SCOPE_DEFAULT =
+ * "git-common-dir"`). A main checkout — `git init` or `git clone`, which is what
+ * every fixture here builds — has `.git` as a DIRECTORY, so its common dir is
+ * `<project>/.git` and this is the exact path.
+ *
+ * Deliberately NOT `resolveStoreLocation(project).storeDir`. These tests assert
+ * that the writers' bytes land where the TEST decided, so computing the
+ * expectation with the resolver under test would make every one of them pass by
+ * construction — the co-location discipline `store-one-resolver.test.ts` states,
+ * and the reason its expectations are built from the sandbox root.
+ *
+ * It does NOT hold for a LINKED worktree, whose `.git` is a file: there the
+ * store is the MAIN checkout's. `two-worktrees-one-store-e2e.test.ts` covers
+ * that case and reads the common dir from `git rev-parse` instead.
+ */
+export function mainCheckoutStoreDir(project: string): string {
+	return join(project, ".git", GIT_STORE_DIR_NAME);
+}
 
 /** The zero-row delete warning the indexer prints to stderr (indexer.ts). */
 export const ZERO_ROW_DELETE_WARNING = "removed 0 of its";

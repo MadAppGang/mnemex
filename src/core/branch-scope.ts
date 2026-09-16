@@ -107,6 +107,17 @@ export interface BranchScopeResolution {
 	readonly label: string | null;
 	/** id → label, for the per-row attribution D1 requires. Every entry, live or not. */
 	readonly labels: ReadonlyMap<number, string>;
+	/**
+	 * When this branch was last indexed, from its registry entry — epoch ms, or
+	 * `null` when it has never been indexed, was cleared by a `--force` /
+	 * `clear`, or there is no live entry at all.
+	 *
+	 * Read here because §4.5's `storeRebuildAt` comparison needs it and this is
+	 * the one place the registry is already open on a read path. Carrying it does
+	 * not make it a cache: the resolution is per call (§2.5), like the HEAD read
+	 * beside it.
+	 */
+	readonly lastIndexedAt: number | null;
 }
 
 /**
@@ -129,6 +140,7 @@ export function resolveBranchScopeForRead(
 			branchUnknown: false,
 			label: null,
 			labels: new Map(),
+			lastIndexedAt: null,
 		};
 	}
 
@@ -145,9 +157,24 @@ export function resolveBranchScopeForRead(
 	if (live === undefined) {
 		// D1: the superset, flagged. Returning nothing fails INVISIBLY — an agent
 		// reads "no results" as "this code does not exist" and writes it again.
-		return { scope: SCOPE_ALL, branchUnknown: true, label, labels };
+		return {
+			scope: SCOPE_ALL,
+			branchUnknown: true,
+			label,
+			labels,
+			lastIndexedAt: null,
+		};
 	}
-	return { scope: branchScope(live.id), branchUnknown: false, label, labels };
+	return {
+		scope: branchScope(live.id),
+		branchUnknown: false,
+		label,
+		labels,
+		// Epoch ms, never the ISO string: the only use is an ORDERING against
+		// `store.json.storeRebuildAt`, and comparing two ISO strings is
+		// lexicographic-by-luck-of-format rather than chronological.
+		lastIndexedAt: parseTimestamp(live.lastIndexedAt),
+	};
 }
 
 /**
@@ -235,4 +262,11 @@ export function decodeBranchIds(cell: unknown): number[] {
 		if (Number.isSafeInteger(id) && id >= 0 && !ids.includes(id)) ids.push(id);
 	}
 	return ids;
+}
+
+/** An ISO timestamp as epoch ms, or `null` when absent or unparseable. */
+function parseTimestamp(value: string | null): number | null {
+	if (value === null) return null;
+	const ms = Date.parse(value);
+	return Number.isFinite(ms) ? ms : null;
 }

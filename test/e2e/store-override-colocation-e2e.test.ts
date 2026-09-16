@@ -242,9 +242,27 @@ function seedDocsRow(store: string, project: string): void {
 	}
 }
 
-/** Store artifacts that appeared in `<project>/.mnemex`. */
+/**
+ * Store artifacts that appeared in a directory an override should have emptied.
+ *
+ * Checks BOTH candidates, because Phase 3c moved the no-override default and an
+ * override has to beat the NEW one as well as the old: `<project>/.mnemex` (the
+ * pre-3c default, and still the per-worktree directory) and
+ * `<project>/.git/mnemex` (row 3, the default from 3c). An override that leaked
+ * into either has failed, and checking only the one that used to be the default
+ * would have stopped watching the only one a leak can now land in.
+ */
 function leakedIntoDefault(project: string): string[] {
-	return STORE_ARTIFACTS.filter((f) => existsSync(join(project, ".mnemex", f)));
+	const leaked: string[] = [];
+	for (const dir of [
+		join(project, ".mnemex"),
+		join(project, ".git", "mnemex"),
+	]) {
+		for (const f of STORE_ARTIFACTS) {
+			if (existsSync(join(dir, f))) leaked.push(join(dir, f));
+		}
+	}
+	return leaked;
 }
 
 /** A clone indexed into a fresh override directory, with the env that names it. */
@@ -386,14 +404,24 @@ describe("while ANOTHER process holds the OVERRIDE's lock", () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-describe("MNEMEX_INDEX_DIR unset: no store moves", () => {
-	test("the data and its lock are both at <project>/.mnemex", async () => {
+describe("no override: the store is the repository's, and the lock is with it", () => {
+	test("the data and its lock are both at <gitCommonDir>/mnemex", async () => {
+		// RE-TARGETED IN 3c. With no override this falls to row 3, which is now
+		// `<gitCommonDir>/mnemex` rather than `<clone>/.mnemex`. The property
+		// being asserted is UNCHANGED and is the one that matters here (FR-2):
+		// wherever the store is, the lock is in the same directory, so two
+		// processes that agree about the data agree about the lock.
+		//
+		// `git clone` makes a main checkout, so its common dir is `<clone>/.git`
+		// — spelled out, not resolved, like every other expectation in this file.
 		const clone = freshClone();
 		const run = await runCli(["index", "--no-llm", clone], clone);
 		expect(run.code).toBe(0);
-		const store = join(clone, ".mnemex");
+		const store = join(clone, ".git", "mnemex");
 		expect(await lanceRows(store)).toBeGreaterThan(0);
 		expect(sqlRows(store, "files")).toBeGreaterThan(0);
+		// And nothing was left at the pre-3c location.
+		expect(existsSync(join(clone, ".mnemex", "index.db"))).toBe(false);
 
 		const holder = await holdStoreLock(clone);
 		try {

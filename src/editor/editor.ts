@@ -80,7 +80,16 @@ export class SymbolEditor {
 		private lspManager: LspManager | null = null,
 	) {
 		this.validator = new EditValidator();
-		this.history = new EditHistory(config.indexDir);
+		// `worktreeDir`, NOT `indexDir` (architecture §2.4, §9's MUST-change row
+		// for `src/editor/history.ts`). Edit backups are AUTHORED data: they are
+		// the only copy of what a file looked like before an edit, and no rebuild
+		// can recreate them — the same property that keeps `memories/` out of the
+		// store. On `indexDir` they would have moved into
+		// `<gitCommonDir>/mnemex/edit-history` the moment Phase 3c flipped the
+		// default, stranding every existing session's backups at the old path and
+		// making one `sessions.json` shared by every worktree of the repository,
+		// so a restore in one checkout could list and touch another's.
+		this.history = new EditHistory(config.worktreeDir);
 		// Locator is created lazily when cache is loaded
 		this.locator = null!;
 	}

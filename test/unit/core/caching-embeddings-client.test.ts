@@ -889,7 +889,7 @@ describe("NFR-2 — the embedded text IS the item's content", () => {
 		const fake = new CountingEmbedder();
 		const items = [
 			{ content: "export function a() {}", name: "a" },
-			{ content: "  \n\t weird   bytes \n", name: "b" },
+			{ content: "  \n\t weird \0 bytes \n", name: "b" },
 		];
 		const result = await proxy(fake, cache).embedContentOf(items, "chunks");
 		expect(fake.textsSeen).toEqual(items.map((i) => i.content));

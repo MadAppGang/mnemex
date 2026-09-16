@@ -90,7 +90,7 @@ afterAll(() => {
 	sb?.cleanup();
 });
 
-/** A fresh clone: no `.mnemex`, no store directory at all. */
+/** A fresh clone: no store directory at all. */
 function freshClone(): string {
 	const dest = join(sb.root, `clone-${++clones}`);
 	sb.git(sb.root, "clone", "-q", origin, dest);
@@ -177,8 +177,23 @@ async function holdStoreLock(project: string): Promise<Holder> {
 	};
 }
 
+/**
+ * The STORE directory for a clone, SPELLED OUT rather than resolved.
+ *
+ * From Phase 3c the store is `<gitCommonDir>/mnemex`. `git clone` makes a main
+ * checkout, whose `.git` is a DIRECTORY and whose common dir is therefore
+ * `<clone>/.git` — so this is the exact path, computed by the test. Deliberately
+ * NOT `resolveStoreLocation(clone).storeDir`: this file's whole point is to find
+ * the writers' bytes in a directory the TEST decided on, never in one the code
+ * under test chose (the co-location discipline `store-one-resolver.test.ts`
+ * states).
+ */
+function storeOf(clone: string): string {
+	return join(clone, ".git", "mnemex");
+}
+
 async function observationRows(project: string): Promise<number> {
-	const vectors = join(project, ".mnemex", "vectors");
+	const vectors = join(storeOf(project), "vectors");
 	if (!existsSync(vectors)) return 0;
 	const db = await lancedb.connect(vectors);
 	try {
@@ -193,7 +208,7 @@ async function observationRows(project: string): Promise<number> {
 }
 
 function docsRows(project: string): number {
-	const db = new Database(join(project, ".mnemex", "index.db"), {
+	const db = new Database(join(storeOf(project), "index.db"), {
 		readonly: true,
 	});
 	try {
@@ -209,7 +224,7 @@ function docsRows(project: string): number {
 describe("V2.6 — a fresh clone with no store directory", () => {
 	test("observe acquires on first use and records the row", async () => {
 		const clone = freshClone();
-		expect(existsSync(join(clone, ".mnemex"))).toBe(false);
+		expect(existsSync(storeOf(clone))).toBe(false);
 
 		// `--agent` so the output shape does not depend on how the CLI detects
 		// an agent session in the environment it inherits.
@@ -251,10 +266,7 @@ describe("V2.7 — while ANOTHER process holds the store lock", () => {
 		);
 		expect(seed.code).toBe(0);
 		expect(await observationRows(clone)).toBe(1);
-		const tracker = createFileTracker(
-			join(clone, ".mnemex", "index.db"),
-			clone,
-		);
+		const tracker = createFileTracker(join(storeOf(clone), "index.db"), clone);
 		tracker.markDocsIndexed("left-pad", null, "llms_txt", "hash", ["c1"]);
 		tracker.close();
 		expect(docsRows(clone)).toBe(1);

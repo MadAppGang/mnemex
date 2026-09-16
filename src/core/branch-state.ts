@@ -19,8 +19,16 @@
  * "was the store rebuilt after this branch was last indexed"; this answers "does
  * the store hold anything for this branch", which is the fact the user acts on
  * and is true of every way of reaching the state, including the ones no marker
- * is stamped for. The two are not exclusive: a marker would let the message say
- * WHY, and §4.5's V1.7 is unbuilt (see the log's findings).
+ * is stamped for.
+ *
+ * The two are not exclusive, and BOTH now exist (Phase 3c, decision I-17 item
+ * 3). `branchEmpty` is the SIGNAL and `storeRebuiltElsewhere` is the
+ * EXPLANATION: the marker is read only after the rows have already said the
+ * branch is empty, so it narrows "your branch holds nothing" to "another
+ * worktree rebuilt this index after you last indexed" and can never contradict
+ * the rows or be mistaken for them. If `store.json` is lost or hand-edited the
+ * explanation disappears and the signal does not, which is the whole reason the
+ * ordering is that way round.
  *
  * ── WHAT "EMPTY" MEANS, EXACTLY ─────────────────────────────────────────────
  * Zero `files` rows AND zero `chunk_branches` rows for this branch's id. Both,
@@ -46,6 +54,7 @@ import {
 	resolveStoreLocation,
 	type StoreLocation,
 } from "./store-location.js";
+import { readStoreRebuildAt } from "./store-meta.js";
 import { createFileTracker } from "./tracker.js";
 
 export interface BranchReadState {
@@ -58,6 +67,17 @@ export interface BranchReadState {
 	 * different state with its own message.
 	 */
 	readonly branchEmpty: boolean;
+	/**
+	 * V1.7 / §4.5: `store.json.storeRebuildAt` is newer than this branch's
+	 * `lastIndexedAt`, so a whole-store rebuild is WHY {@link branchEmpty} is
+	 * true.
+	 *
+	 * Never true unless `branchEmpty` is. It is the explanation and never the
+	 * signal (decision I-17 item 3): rows cannot lie and cover every way of
+	 * reaching an empty branch, including an interrupted `--force` and a partly
+	 * drained sweep, which no producer stamps a marker for.
+	 */
+	readonly storeRebuiltElsewhere: boolean;
 }
 
 /**
@@ -75,21 +95,70 @@ export function resolveBranchReadState(projectPath: string): BranchReadState {
 
 export function resolveBranchReadStateFor(loc: StoreLocation): BranchReadState {
 	const resolution = resolveBranchScopeForRead(loc);
-	if (resolution.scope.kind !== "branch") {
-		return { resolution, branchEmpty: false };
-	}
+	const none = { resolution, branchEmpty: false, storeRebuiltElsewhere: false };
+	if (resolution.scope.kind !== "branch") return none;
 	const dbPath = getIndexDbPathFor(loc);
-	if (!existsSync(dbPath)) return { resolution, branchEmpty: false };
-	const branchId = resolution.scope.branchId;
+	if (!existsSync(dbPath)) return none;
 	const tracker = createFileTracker(dbPath, loc.pathRoot);
+	let branchEmpty: boolean;
 	try {
-		const tree = tracker.countBranchTreeRows(branchId);
-		const membership = tracker.countMembership(branchId);
-		return {
-			resolution,
-			branchEmpty: tree.files === 0 && membership === 0,
-		};
+		branchEmpty = branchHoldsNoRows(tracker, resolution.scope.branchId);
 	} finally {
 		tracker.close();
 	}
+	return {
+		resolution,
+		branchEmpty,
+		// V1.7: computed ONLY once the rows have already said the branch is
+		// empty, so the marker can narrow the reason and can never stand in for
+		// the signal (decision I-17 item 3). One small JSON read, on a path that
+		// has already opened SQLite.
+		storeRebuiltElsewhere: branchEmpty && rebuiltAfter(loc, resolution),
+	};
+}
+
+/** `storeRebuildAt` is newer than this branch's `lastIndexedAt` (§4.5). */
+function rebuiltAfter(
+	loc: StoreLocation,
+	resolution: BranchScopeResolution,
+): boolean {
+	const rebuiltAt = readStoreRebuildAt(loc);
+	if (rebuiltAt === null) return false;
+	// A cleared stamp counts: a branch whose `lastIndexedAt` was wiped by a
+	// rebuild it did not survive is the same story, told with one fact missing.
+	return (
+		resolution.lastIndexedAt === null || rebuiltAt > resolution.lastIndexedAt
+	);
+}
+
+/** What this module needs of a tracker: two counts it already exposes. */
+export interface BranchRowCounter {
+	countBranchTreeRows(branchId: number): { readonly files: number };
+	countMembership(branchId: number): number;
+}
+
+/**
+ * THE definition of "this branch holds nothing", in ONE place.
+ *
+ * Two callers, deliberately, because they differ only in who owns the
+ * connection: `resolveBranchReadStateFor` opens its own (the CLI's graph
+ * commands, which hold no tracker at that point), and `Indexer.searchScoped`
+ * passes the tracker it already has open (decision I-17 item 2). A second
+ * spelling of the predicate is how the two surfaces would come to disagree
+ * about what "empty" means, which is the failure the `clear()`-does-not-clear-
+ * the-symbol-graph defect had: one rule, stated twice, implemented once.
+ *
+ * Both counts, never either alone — see this file's header. Neither statement
+ * is new: `countBranchTreeRows` and `countMembership` are existing region-
+ * wrapped tracker members, so this adds no `.prepare(` and CLAUDE.md #31's
+ * clamp arithmetic for R0 is untouched.
+ */
+export function branchHoldsNoRows(
+	tracker: BranchRowCounter,
+	branchId: number,
+): boolean {
+	return (
+		tracker.countBranchTreeRows(branchId).files === 0 &&
+		tracker.countMembership(branchId) === 0
+	);
 }

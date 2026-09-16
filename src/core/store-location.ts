@@ -6,23 +6,42 @@
  * own. Architecture §2.3.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * PHASE 1: NOTHING IN PRODUCTION CALLS THIS YET. Only tests do.
+ * ROW 3 IS ON (Phase 3c). `STORE_SCOPE_DEFAULT = "git-common-dir"`, so inside a
+ * repository with no override the store is `<gitCommonDir>/mnemex` and EVERY
+ * worktree of that repository shares it. That is FR-1, and that one constant is
+ * the whole of 3c's precedence change.
  *
- * ROW 3 IS GATED OFF until Phase 3c. `resolveStoreLocation` runs the
- * precedence with `STORE_SCOPE_DEFAULT = "worktree"`, so inside a repository
- * with no override the store stays `<startPath>/.mnemex` (kind
- * `worktree-local`), which is exactly today's `getIndexDir`. Phase 2 may wire
- * callers to this function and no store moves (§8). Phase 3c flips
- * `STORE_SCOPE_DEFAULT` to `"git-common-dir"`, and that one line is the whole
- * of 3c's precedence change. It must not land before 3b: a store shared while
- * its graph and tracker are not yet branch-scoped is a correctness regression
- * against today (§8, "Ordering within the release is forced").
+ * WHAT THE FLIP DOES TO AN EXISTING USER. Their index is at
+ * `<worktree>/.mnemex`; the new location does not exist, so the next `mnemex
+ * index` probes the per-worktree directory (`probeStoreBeingReplaced`), finds a
+ * store older than `CURRENT_INDEX_VERSION`, rebuilds once into the new location
+ * and reports `abandoned_store_dir=<old>` (§6.1, §6.3). The OLD directory is
+ * left exactly where it was — not moved, not merged, not deleted — because §6.2
+ * proves an N-worktrees-to-1 rename with non-portable rows has no correct form.
+ * The rebuild costs ZERO embedding requests: the embedding cache is keyed on
+ * `sha256(model \0 dimension \0 text)` with no path in it (CLAUDE.md #31), and
+ * zero LLM calls through §4.6's content-keyed enrichment reuse.
+ *
+ * WHY IT COULD NOT LAND EARLIER, and what had to be true first. A store shared
+ * while the graph and the tracker are not yet branch-scoped is a correctness
+ * REGRESSION against a per-worktree store, so 3b had to complete first (§8,
+ * "Ordering within the release is forced"). Beyond that, four things that were
+ * merely untidy under the old default become data loss under this one, and all
+ * four were closed before this constant moved (`phase-3b-inputs.md` §6, §10):
+ * three Claude Code hooks and the benchmark evaluator that built
+ * `<cwd>/.mnemex/index.db` BY HAND — one of them a writer, which would have gone
+ * on writing the old location for every user while every reader looked at the
+ * new one; the `.reindex-*` debounce, now explicitly per-worktree; and `mnemex
+ * clear`, which was an unlocked whole-store destructive command.
  *
  * `pickStoreDir(inputs, scope)` is the precedence as a pure function. Tests
- * call it with each scope directly. There is deliberately NO setter for the
- * default: a test seam able to write a production default was a bypass once
- * already (CLAUDE.md #24). Production code calls `resolveStoreLocation`, and a
- * sweep in store-location-imports.test.ts keeps `pickStoreDir` out of `src/`.
+ * call it with each scope directly — which is what kept BOTH sides of this flip
+ * covered by passing tests before it happened, and what still covers the
+ * pre-3c scope now that it is no longer the default. There is deliberately NO
+ * setter for the default: a test seam able to write a production default was a
+ * bypass once already (CLAUDE.md #24). Production code calls
+ * `resolveStoreLocation`, and a sweep in store-location-imports.test.ts keeps
+ * `pickStoreDir` out of `src/`.
  *
  * IMPORT ALLOWLIST: `node:fs`, `node:path`, `./git-layout.js`,
  * `./project-config.js`, and NOTHING ELSE (NFR-2). No embeddings client, no LLM
@@ -84,8 +103,17 @@ export type StoreKind =
  */
 export type StoreScope = "worktree" | "git-common-dir";
 
-/** Phase 3c flips this to "git-common-dir". That flip is the whole of 3c's precedence change. */
-const STORE_SCOPE_DEFAULT: StoreScope = "worktree";
+/**
+ * THE LINE. Phase 3c flipped this from `"worktree"`, and that flip is the whole
+ * of 3c's precedence change — see this file's header for what it does to an
+ * existing store and for the four preconditions that had to be cleared first.
+ *
+ * Changing it back is a supported way to bisect a store-location problem, but
+ * it is NOT a supported configuration: a user who wants a per-worktree store
+ * sets `ProjectConfig.indexDir` to anything other than the literal `".mnemex"`
+ * (D2), which is row 2 and outranks this.
+ */
+const STORE_SCOPE_DEFAULT: StoreScope = "git-common-dir";
 
 export interface StoreLocation {
 	/** SHARED. Holds index.db, vectors/, branches.json, store.json, docs-cache/, .indexing.lock. */
@@ -288,10 +316,15 @@ export function pickStoreDir(
 				configured.ignoredLegacy,
 			);
 		}
-		// Row 4's formula, deliberately: Phase 2 callers pass `projectPath` as
-		// `startPath`, so this is today's `getIndexDir`. From a subdirectory it is
-		// `<subdir>/.mnemex`, which is also what `getIndexDir(<subdir>)` returns.
-		// `pathRoot` is still the worktree root; it starts mattering in 3a.
+		// The PRE-3c default, no longer reached by `resolveStoreLocation` but
+		// still reachable through `pickStoreDir(inputs, "worktree")` — which is
+		// how both sides of the flip stay covered by passing tests, in the same
+		// place, and how a store-location problem can be bisected without
+		// editing a production constant.
+		//
+		// Row 4's formula, deliberately: it is the pre-3c `getIndexDir`. From a
+		// subdirectory it is `<subdir>/.mnemex`, which is also what
+		// `getIndexDir(<subdir>)` returned. `pathRoot` is still the worktree root.
 		return locate(
 			join(startPath, PROJECT_CONFIG_DIR),
 			"worktree-local",
@@ -336,6 +369,25 @@ export function getStoreMetaPathFor(loc: StoreLocation): string {
 /** `<storeDir>/branches.json` */
 export function getBranchRegistryPathFor(loc: StoreLocation): string {
 	return join(loc.storeDir, BRANCH_REGISTRY_FILE);
+}
+
+/**
+ * `<pathRoot>/.mnemex`: the PER-WORKTREE directory (§2.4), for the artifacts
+ * that must NOT follow the store when 3c moves it under the git common dir —
+ * `memories/`, `edit-history/`, `activity.jsonl`, `.reindex-timestamp`,
+ * `.reindex-lock`, `generated/`, `overlay/`, `benchmark*`.
+ *
+ * A function rather than "read `loc.worktreeDir`" so that a caller which wants
+ * the per-worktree directory says so in a shape the FR-3 sweeps can see, beside
+ * the `get*PathFor` helpers that name the store. The distinction is the whole of
+ * §2.4 and it is invisible in a bare field read.
+ *
+ * Before 3c this equals `storeDir` for any project resolved at its own root
+ * with no override. From 3c on it does not, and a caller that took the wrong
+ * one silently relocates a file no rebuild can recreate.
+ */
+export function getWorktreeDirFor(loc: StoreLocation): string {
+	return loc.worktreeDir;
 }
 
 /**

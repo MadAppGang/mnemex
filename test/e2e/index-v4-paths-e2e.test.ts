@@ -23,6 +23,7 @@ import { createGitSandbox } from "../helpers/git-sandbox.js";
 import {
 	agentResultPaths,
 	BM25_ONLY,
+	mainCheckoutStoreDir,
 	runCli,
 	sandboxHome,
 	writeSource,
@@ -58,7 +59,7 @@ describe("V1.6: search output paths are absolute and exist, from any cwd", () =>
 				// An external-docs row, written as the docs phase writes one: synthetic,
 				// shared. Through a store of this process's own on the same directory.
 				const store = createVectorStore({
-					vectorsDir: join(project, ".mnemex", "vectors"),
+					vectorsDir: join(mainCheckoutStoreDir(project), "vectors"),
 					pathRoot: project,
 				});
 				await store.initialize();
@@ -148,9 +149,16 @@ describe("V4.3: the rebuild is served from the embedding cache", () => {
 
 			// Make the store a v3 one the way a v3 build stamped it: no store.json,
 			// the version in config.json. The next run must rebuild.
-			rmSync(join(project, ".mnemex", "store.json"));
+			// This fixture's `project` is a PLAIN DIRECTORY (no `init` above), so
+			// its store is `<project>/.mnemex` under row 4 — the row Phase 3c's
+			// flip does not touch, which is FR-7's promise that no non-git user's
+			// store moves. The V1.6 fixture above IS a repository and uses
+			// `mainCheckoutStoreDir`; the difference is deliberate, not an
+			// oversight.
+			const storeDir = join(project, ".mnemex");
+			rmSync(join(storeDir, "store.json"));
 			writeFileSync(
-				join(project, ".mnemex", "config.json"),
+				join(storeDir, "config.json"),
 				JSON.stringify({ indexVersion: 3 }),
 			);
 			if (clearCacheFirst)

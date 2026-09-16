@@ -27,6 +27,7 @@ import { isAbsolute, join } from "node:path";
 import { createGitSandbox } from "../../helpers/git-sandbox.js";
 import {
 	BM25_ONLY,
+	mainCheckoutStoreDir,
 	runIndexChild,
 	storeRows,
 	writeSource,
@@ -57,7 +58,14 @@ describe.each([
 					sb.git(project, "commit", "-q", "-m", "init");
 				}
 				const scratch = join(sb.root, "scratch");
-				const vectors = join(project, ".mnemex", "vectors");
+				// The store: `<gitCommonDir>/mnemex` inside a repository from Phase
+				// 3c, `<project>/.mnemex` outside one (row 4, FR-7 — the flip does
+				// not move a non-git user's store). Spelled out by the TEST, never
+				// asked of the resolver these assertions exist to check.
+				const storeDir = isGit
+					? mainCheckoutStoreDir(project)
+					: join(project, ".mnemex");
+				const vectors = join(storeDir, "vectors");
 
 				const first = await runIndexChild("index", project, scratch, elsewhere);
 				expect(first.exitCode, first.stderr).toBe(0);
@@ -105,7 +113,7 @@ describe.each([
 				}
 				if (isGit) {
 					const registry = JSON.parse(
-						readFileSync(join(project, ".mnemex", "branches.json"), "utf8"),
+						readFileSync(join(storeDir, "branches.json"), "utf8"),
 					);
 					expect(registry.branches.map((b: { id: number }) => b.id)).toEqual([
 						1,
@@ -113,7 +121,7 @@ describe.each([
 				}
 
 				// The tracker agrees, read through its own independent connection.
-				const db = new Database(join(project, ".mnemex", "index.db"));
+				const db = new Database(join(storeDir, "index.db"));
 				try {
 					const tracked = (
 						db.prepare("SELECT path FROM files").all() as Array<{

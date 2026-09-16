@@ -139,7 +139,7 @@ mnemex rg install
 
 Requirements:
 - `~/.local/bin` must be early on your `$PATH`: `export PATH="$HOME/.local/bin:$PATH"`
-- The project needs a `.mnemex/` index for augmentation to kick in. Without one, the shim is a zero-overhead passthrough to the bundled `rg`.
+- The project needs an index for augmentation to kick in (`mnemex index`). Without one, the shim is a zero-overhead passthrough to the bundled `rg`.
 
 How it behaves:
 - **With an index**: runs `rg` + `mnemex search` in parallel (2s cap on mnemex), merges output with semantic hits first, deduplicated by `file:line`.
@@ -209,7 +209,9 @@ This repo also contains an experimental VS Code inline completion extension that
 
 1. **Parses code** with tree-sitter — extracts functions, classes, methods as chunks (not dumb line splits)
 2. **Generates embeddings** via OpenRouter (default: voyage-3.5-lite, best value)
-3. **Stores locally** in LanceDB — everything stays in `.mnemex/` in your project
+3. **Stores locally** in LanceDB — everything stays inside your repository, in
+   `<git-common-dir>/mnemex/` (`.git/mnemex/` in an ordinary checkout), so every git
+   worktree of the repository shares one index
 4. **Hybrid search** — BM25 for exact matches + vector similarity for semantic. Combines both.
 5. **Builds symbol graph** — tracks references between symbols, computes PageRank for importance
 
@@ -535,7 +537,30 @@ Inside tmux or zellij, mnemex asks the multiplexer, not your terminal, for the b
 Files:
 - `~/.mnemex/config.json` — global config (provider, model, docs settings)
 - `~/.mnemex/embed-cache.db` — embedding cache, shared by every repo on the machine
-- `.mnemex/` — project index (add to .gitignore)
+- `<git-common-dir>/mnemex/` — **the index**, shared by every worktree of the repository
+  (`.git/mnemex/` in an ordinary checkout; a linked worktree uses the main checkout's).
+  It lives inside `.git/`, so there is nothing to gitignore. Outside a git repository it
+  stays at `<dir>/.mnemex/`
+- `.mnemex/` — per-worktree, and not the index: `memories/`, `edit-history/`,
+  `activity.jsonl` (add to .gitignore)
+
+### One index per repository
+
+Every git worktree of a repository reads and writes one index, and each row records which
+branches it belongs to. A second worktree of a tree you have already indexed costs **zero**
+embedding requests and **zero** LLM calls — the embedding cache is keyed on text and
+summaries are keyed on content, so neither is re-bought. Searching from a branch returns
+that branch's code; switching branches is an incremental re-index of what actually changed,
+not a rebuild.
+
+Upgrading moves the index once. The first `mnemex index` on this version rebuilds into the
+new location (served from the embedding cache, so no new embedding requests) and tells you
+where the old one is — under `--agent` as `abandoned_store_dir=`. **The old index is left
+in place, never deleted**, so you can check it and remove it yourself.
+
+To keep an index per worktree instead, set `indexDir` in `mnemex.json` to any path other
+than the literal `".mnemex"` — that one string is read as a copied default rather than an
+intent, and `mnemex doctor` tells you when it ignored one.
 
 ### Embedding cache
 

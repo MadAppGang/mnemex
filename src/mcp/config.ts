@@ -7,6 +7,7 @@
 import { join } from "node:path";
 import { PROJECT_CONFIG_DIR } from "../core/project-config.js";
 import {
+	getWorktreeDirFor,
 	resolveStoreLocation,
 	type StoreLocation,
 } from "../core/store-location.js";
@@ -34,6 +35,19 @@ export interface McpConfig {
 	indexDir: string;
 	/** Where the memory store keeps `memories/`. NOT always `indexDir`: see {@link memoryDirFor}. */
 	memoryDir: string;
+	/**
+	 * `<pathRoot>/.mnemex`, the PER-WORKTREE directory (§2.4). NOT the store.
+	 *
+	 * Added in Phase 3c, for `edit-history/`. `SymbolEditor` built its
+	 * `EditHistory` on `indexDir`, which is the STORE — so the flip to
+	 * `git-common-dir` would have relocated every user's edit backups into
+	 * `<gitCommonDir>/mnemex/edit-history` and made one backup set shared by
+	 * every worktree of the repository. §2.4 puts `edit-history/` per-worktree
+	 * for the same reason it puts `memories/` there: it is authored data that
+	 * cannot be rebuilt, so "abandon the old store and rebuild" — the migration
+	 * strategy the whole flip rests on — does not cover it.
+	 */
+	worktreeDir: string;
 	/** Debounce delay for reindexing in ms (MNEMEX_DEBOUNCE_MS, default 120000) */
 	debounceMs: number;
 	/** Glob patterns for files to watch (MNEMEX_WATCH_PATTERNS, comma-separated) */
@@ -129,6 +143,7 @@ export function loadMcpConfig(
 	const storeLocation = resolveStoreLocation(workspaceRoot);
 	const indexDir = storeLocation.storeDir;
 	const memoryDir = memoryDirFor(storeLocation, workspaceRoot);
+	const worktreeDir = getWorktreeDirFor(storeLocation);
 
 	const debounceMs = parseIntWithDefault(
 		process.env.MNEMEX_DEBOUNCE_MS,
@@ -172,6 +187,7 @@ export function loadMcpConfig(
 		workspaceRoot,
 		indexDir,
 		memoryDir,
+		worktreeDir,
 		debounceMs,
 		watchPatterns,
 		ignorePatterns,

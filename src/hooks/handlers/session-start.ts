@@ -17,6 +17,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getIndexDbPath } from "../../config.js";
 import { runSelfSync } from "../../core/entry-point-launcher.js";
 import type { HookInput, HookOutput, IndexStatus } from "../types.js";
 import { cleanupStaleSessions, logSessionStart } from "./interaction-logger.js";
@@ -79,15 +80,17 @@ function versionGte(version: string, required: string): boolean {
 // ============================================================================
 
 /**
- * Check if project is indexed
+ * Check if project is indexed.
+ *
+ * Through the seam (FR-3, decision I-8), never `join(cwd, ".mnemex", …)`. See
+ * `pre-tool-use.ts`'s `isIndexed` for why the hand-built path is fatal from
+ * Phase 3c on. The separate directory check is gone with it: `index.db`'s
+ * existence answers the question, and the directory's does not — a store
+ * directory holding only a `CACHEDIR.TAG` is not an index (`probeOldStore`
+ * makes the same distinction).
  */
 function isIndexed(cwd: string): IndexStatus {
-	const indexDir = join(cwd, ".mnemex");
-	if (!existsSync(indexDir)) {
-		return { indexed: false };
-	}
-
-	const dbPath = join(indexDir, "index.db");
+	const dbPath = getIndexDbPath(cwd);
 	if (!existsSync(dbPath)) {
 		return { indexed: false };
 	}

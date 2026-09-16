@@ -50,6 +50,7 @@ import {
 import { createGitSandbox } from "../../helpers/git-sandbox.js";
 import {
 	BM25_ONLY,
+	mainCheckoutStoreDir,
 	runLifecycleChild,
 	storeRows,
 	writeSource,
@@ -137,9 +138,9 @@ async function makeFixture(): Promise<Fixture> {
 		root: sandbox.root,
 		project,
 		scratch,
-		storeDir: join(project, ".mnemex"),
-		indexDb: join(project, ".mnemex", "index.db"),
-		vectorsDir: join(project, ".mnemex", "vectors"),
+		storeDir: mainCheckoutStoreDir(project),
+		indexDb: join(mainCheckoutStoreDir(project), "index.db"),
+		vectorsDir: join(mainCheckoutStoreDir(project), "vectors"),
 		cleanup: () => sandbox.cleanup(),
 		git: sandbox.git,
 	};

@@ -83,6 +83,7 @@ import {
 	labelBranchIds,
 	resolveBranchScopeForRead,
 } from "./branch-scope.js";
+import { branchHoldsNoRows } from "./branch-state.js";
 import {
 	completeInterruptedSweep,
 	type NarrowBranchResult,
@@ -135,8 +136,10 @@ import {
 import { resolveStoreLocation, type StoreLocation } from "./store-location.js";
 import {
 	probeOldStore,
+	readStoreRebuildAt,
 	readStoreState,
 	type SweepCursor,
+	stampStoreRebuild,
 	writeStoreState,
 } from "./store-meta.js";
 import { createSymbolExtractor } from "./symbol-extractor.js";
@@ -535,6 +538,56 @@ export interface BranchScopedSearch {
 	readonly branchUnknown: boolean;
 	/** The HEAD label this search resolved, or null outside a repository. */
 	readonly branchLabel: string | null;
+	/**
+	 * The registry KNOWS this branch and the store holds no row under its id —
+	 * decision I-17 item 2, the state `branchUnknown` cannot report.
+	 *
+	 * `search` was the one surface that did not carry it. The graph commands say
+	 * "this branch is not indexed"; the most-used command in the tool returned an
+	 * empty list in silence, which is D1's own "empty fails INVISIBLY" argument
+	 * landing on the wrong side. Always `false` when `branchUnknown` is true,
+	 * outside a repository, and when there is no index at all — each of those is
+	 * a different state with its own message. See `src/core/branch-state.ts` for
+	 * what "empty" is computed from, and why it is computed from ROWS.
+	 */
+	readonly branchEmpty: boolean;
+	/**
+	 * V1.7 / §4.5: the store was rebuilt WHOLE after this branch was last
+	 * indexed, which is WHY {@link branchEmpty} is true.
+	 *
+	 * Never true unless `branchEmpty` is — it is the explanation, not the signal
+	 * (decision I-17 item 3). The rows-based signal covers every way of reaching
+	 * an empty branch, including the ones no producer stamps a marker for; this
+	 * adds the reason for the one case that is stamped, so a user is told
+	 * "another worktree rebuilt this index" instead of "your branch is empty".
+	 */
+	readonly storeRebuiltElsewhere: boolean;
+}
+
+/**
+ * `mnemex clear`'s blast radius, chosen by the caller and reported by the run.
+ *
+ * `"branch"` is the DEFAULT, for D3's reason: when an operation's blast radius
+ * grows because the store became shared, the default must shrink, not stay.
+ */
+export type ClearScope = "branch" | "store";
+
+/** What `Indexer.clear()` actually removed. */
+export interface ClearResult {
+	/**
+	 * What the run DID, not what was asked. A store with no git layout reports
+	 * `"store"` for a `"branch"` request, because there is one tree there and
+	 * saying otherwise would be a lie (the same rule `force_scope` follows).
+	 */
+	readonly scope: ClearScope;
+	/** The branch whose rows went, for a branch-scoped clear. */
+	readonly branchLabel?: string | null;
+	/** `chunk_branches` rows removed. 0 for a whole-store rebuild, which drops the table. */
+	readonly membershipRowsRemoved: number;
+	/** LanceDB rows deleted because no branch pointed at them any more. */
+	readonly rowsDeleted: number;
+	/** LanceDB rows another branch still holds, whose membership mirror was rewritten. */
+	readonly rowsNarrowed?: number;
 }
 
 export class Indexer {
@@ -3133,6 +3186,52 @@ export class Indexer {
 			// left files unindexed is exactly the thing a caller must be able to see.
 			filesDeferred: deferredFiles.size > 0 ? [...deferredFiles] : undefined,
 			upgradedFromIndexVersion: this.upgradedFromIndexVersion,
+			// ── §6.3's store-location report, built in Phase 3c ───────────────
+			//
+			// `storeDir` is unconditional: the flip is the moment "where is my
+			// index?" stops having a guessable answer, and a field a consumer can
+			// rely on being present is worth more than one it has to test for.
+			// The other three are absent unless they are true, because each of
+			// them is an EVENT — a store was replaced, a layout was degraded, a
+			// config value was ignored — and an event reported as `false` on every
+			// ordinary run is noise a reader learns to skip.
+			storeDir: loc.storeDir,
+			storeKind: loc.kind,
+			// V4.1's half that 3a-2 deferred to 3c, for the reason it deferred it:
+			// before the flip the probed directory and `storeDir` were always the
+			// same one, so there was nothing this could ever have reported.
+			//
+			// ── ABANDONMENT IS NOT UPGRADE, AND 3c IS WHERE THEY SEPARATE ─────
+			//
+			// §6.1 writes this as `abandonedStoreDir = (probe.dir !== storeDir) ?
+			// probe.dir : undefined`, INSIDE its `if (isUpgrade)` block. Gating it
+			// on the upgrade is not part of that expression; it was implicit,
+			// because before the flip `probe.dir !== storeDir` could not happen at
+			// all — the probe looks at `storeDir` first, so it only returns a
+			// different directory when `storeDir` holds no store and the
+			// per-worktree one does, which is a state the pre-3c default could not
+			// produce.
+			//
+			// FOUND BY TEST, with the gate in place: a store already at
+			// CURRENT_INDEX_VERSION sitting at the old location (anyone who had
+			// `indexDir` pinned there and removed it, and anyone tracking this
+			// branch) relocated to the shared store and reported NOTHING —
+			// `upgradeStore` is false, so no `upgraded_from_index_version` and, with
+			// the gate, no `abandoned_store_dir` either. A whole index left behind
+			// in a directory nothing will ever clean up, silently. That is the
+			// class of failure §6.3's data channel exists to prevent, and it is
+			// worse here than a missed upgrade notice, because an upgrade at least
+			// rebuilds in place.
+			//
+			// `probe.dir !== storeDir` is exactly "this run is leaving a store
+			// behind", whatever the reason, so the condition is §6.1's own and the
+			// gate is gone.
+			abandonedStoreDir:
+				oldStore !== null && oldStore.dir !== loc.storeDir
+					? oldStore.dir
+					: undefined,
+			degradedReason: loc.degradedReason ?? undefined,
+			ignoredLegacyIndexDir: loc.ignoredLegacyIndexDir ? true : undefined,
 			embedCache: this.embedCacheResultStats(),
 			branch: {
 				branchId,
@@ -3273,10 +3372,70 @@ export class Indexer {
 			results.sort((a, b) => b.score - a.score);
 		}
 
+		// ── `branchEmpty` reaches SEARCH (decision I-17 item 2) ──────────────
+		//
+		// The asymmetry this closes: the nine graph commands say "this branch is
+		// known but holds no rows"; `search`, the most-used command in the tool,
+		// returned `[]` in silence. D1's entire argument is that an empty result
+		// fails INVISIBLY, and that argument does not weaken when the cause is an
+		// empty branch rather than an unknown one — a user whose worktree was
+		// emptied by a colleague's `--force-all` got an explicit `dead-code` and a
+		// silent `search`.
+		//
+		// ONE definition of "empty" (`branchHoldsNoRows`), shared with
+		// `resolveBranchReadState`, not a second predicate. Computed on the
+		// tracker THIS call already has open, so unlike the graph commands' path
+		// it costs no second SQLite connection — two counts on a warm schema memo,
+		// against the ~0.15 ms the standalone path measures for open + count +
+		// close.
+		//
+		// Only when the results are EMPTY. A non-empty result set cannot have come
+		// from a branch that holds nothing, so computing it would be two queries
+		// spent to learn `false`. Only for a resolved live branch, for the reason
+		// `branch-state.ts` gives: outside a repository there is no branch to be
+		// empty, and an unknown branch is already reported as unknown.
+		const branchEmpty =
+			results.length === 0 &&
+			!branch.branchUnknown &&
+			branch.scope.kind === "branch" &&
+			this.fileTracker !== null
+				? branchHoldsNoRows(this.fileTracker, branch.scope.branchId)
+				: false;
+
+		// ── V1.7: WHY it is empty, when the store itself can say ──────────────
+		//
+		// §4.5's marker, consumed. `branchEmpty` (from ROWS) is the signal and
+		// stays the authority — it is true of every way of reaching this state,
+		// including an interrupted `--force` and a partly-drained sweep, which no
+		// producer stamps, and rows cannot be lost to a hand-edited `store.json`.
+		// This only narrows the REASON: a whole-store rebuild that happened AFTER
+		// this branch was last indexed is why its rows are gone, and "another
+		// worktree rebuilt the store" is something a user can act on where "this
+		// branch is empty" sends them looking for a bug.
+		//
+		// Computed ONLY when the branch is already known to be empty, so it can
+		// never contradict the rows-based signal or stand in for it — decision
+		// I-17 item 3's condition for building it at all. `lastIndexedAt === null`
+		// counts: a branch whose stamp was cleared by a rebuild it did not survive
+		// is the same story.
+		const storeRebuiltElsewhere =
+			branchEmpty &&
+			(() => {
+				const rebuiltAt = readStoreRebuildAt(
+					resolveStoreLocation(this.projectPath),
+				);
+				if (rebuiltAt === null) return false;
+				return (
+					branch.lastIndexedAt === null || rebuiltAt > branch.lastIndexedAt
+				);
+			})();
+
 		return {
 			results,
 			branchUnknown: branch.branchUnknown,
 			branchLabel: branch.label,
+			branchEmpty,
+			storeRebuiltElsewhere,
 		};
 	}
 
@@ -3469,16 +3628,156 @@ export class Indexer {
 		// `getChanges` documents. SR-2 is a rule about loops, and the loop sweep's
 		// mutation test rejects a yield whose removal it could not detect.
 		tracker.clear();
+		// ── §4.5's marker, stamped HERE rather than at each producer (V1.7) ───
+		//
+		// §4.5 says `storeRebuildAt` "is stamped by every store-wide producer"
+		// and lists five. That is a rule an implementer has to remember at each
+		// site, and this build has already watched exactly that kind of rule fail:
+		// the SAME producer table said all five route through `rebuildStore()`,
+		// and three of them called `clear()` for months while the table read
+		// correct (3b-3b's finding 2). A list of obligations is not a mechanism.
+		//
+		// `rebuildStore()` IS the whole-store producer — every one of the six
+		// (placeholder repair, corruption repair, `force-model`, the version
+		// upgrade, `--force-all`, `mnemex clear --all`) reaches the store through
+		// this function and nothing else drops the table. Stamping here makes a
+		// producer that forgets the marker unconstructible, instead of merely
+		// forbidden. A branch-scoped narrow does not come through here, which is
+		// the distinction the marker exists to draw.
+		//
+		// Every caller holds the store lock (it is reached only from
+		// `indexInternal`, which `index()` wraps, and from `clear()`, which takes
+		// it itself), so this satisfies §3.6's lock-held write discipline.
+		stampStoreRebuild(resolveStoreLocation(this.projectPath));
 	}
 
 	/**
-	 * Clear the index
+	 * `mnemex clear` — remove this branch's rows, or the whole store.
+	 *
+	 * ── WHY THIS IS A PRECONDITION FOR PHASE 3c, NOT A POLISH ITEM ────────────
+	 * (`phase-3b-inputs.md` §10, decision I-17 item 1.)
+	 *
+	 * Until 3c this was:
+	 *
+	 *     await this.initialize();
+	 *     await this.vectorStore!.clear();   // dropTable — EVERY branch
+	 *     this.fileTracker!.clear();         // DELETE FROM — seven tables
+	 *
+	 * Three defects in four lines, each of which `--force` had and had fixed in
+	 * 3b-3b while this command, which has one caller and had zero tests, kept
+	 * all three:
+	 *
+	 *   1. NO LOCK, AT ALL. On a per-worktree store that is a local mistake: the
+	 *      only thing it can race is your own index run. From 3c the store is
+	 *      shared, so this becomes an UNLOCKED destructive command against a
+	 *      store another worktree may be indexing at that moment — the precise
+	 *      hazard FR-2 and the whole lock design exist to prevent, reached
+	 *      through a command no phase had scoped.
+	 *   2. WHOLE-STORE BY DEFAULT. Same silent data loss I-16 found in `--force`:
+	 *      every sibling branch's rows go, the siblings keep their registry
+	 *      entries, so `branchUnknown` never fires and their next search is empty
+	 *      with no signal. D3's rule applies unchanged — when an operation's
+	 *      blast radius grows because the store became shared, the DEFAULT must
+	 *      shrink rather than stay.
+	 *   3. `clear()` DOES NOT CLEAR THE SYMBOL GRAPH. `FileTracker.clear()`'s
+	 *      `DELETE FROM` pass does not include `symbols`, `symbol_references` or
+	 *      `graph_metadata` (3b-3b's finding 2, measured: a sibling left with 7
+	 *      symbol rows and 0 chunks). That state is worse than empty, because
+	 *      `map` and `dead-code` then answer from rows `search` cannot see. The
+	 *      whole-store path goes through `rebuildStore()` for exactly that
+	 *      reason, as §4.5's producer table always said it should.
+	 *
+	 * ── THE SHAPE, WHICH IS `--force` / `--force-all`'s ───────────────────────
+	 * `scope: "branch"` narrows this branch and leaves rows another branch still
+	 * holds — `narrowBranch`, the same function `--force` drives, minus the
+	 * re-index that follows it there. `scope: "store"` is `rebuildStore()`, and
+	 * it stamps `storeRebuildAt` like every other whole-store producer (§4.5), so
+	 * a sibling worktree's next search can say WHY it is empty.
+	 *
+	 * A store with no git layout takes the whole-store path whatever the caller
+	 * asked for: every row there carries `BRANCH_ID_SHARED` (§3.2.1), so "this
+	 * branch" and "the whole store" are the same set of rows, and reporting a
+	 * branch scope for it would be a lie. Same ruling as 3b-3b's decision 2.
+	 *
+	 * The store lock is held across the whole read-modify-write, and it FAILS
+	 * CLOSED: an unavailable lock throws `IndexLockError` and nothing is touched.
+	 * The MACHINE-GLOBAL lock is deliberately NOT taken — it serialises embedding
+	 * quota across repositories, and this command embeds nothing.
 	 */
-	async clear(): Promise<void> {
+	async clear(
+		options: { readonly scope?: ClearScope } = {},
+	): Promise<ClearResult> {
+		const requested = options.scope ?? "branch";
+		ensureProjectDir(this.projectPath);
 		await this.initialize();
 
-		await this.vectorStore!.clear();
-		this.fileTracker!.clear();
+		const loc = resolveStoreLocation(this.projectPath);
+		const lock = createStoreLock(loc);
+		const acquired = await lock.acquire({
+			...this.lockOptions,
+			onWaiting: this.onWaitingForLock,
+		});
+		if (!acquired.acquired) {
+			throw new IndexLockError(
+				acquired.holderPid,
+				acquired.runningFor,
+				acquired.reason as "already_running" | "timeout" | "error",
+			);
+		}
+		this.indexLock = lock;
+		try {
+			// No git layout: one tree, so the two scopes name the same rows.
+			if (loc.gitLayout === null || requested === "store") {
+				await this.rebuildStore(); // stamps storeRebuildAt (§4.5, V1.7)
+				return { scope: "store", membershipRowsRemoved: 0, rowsDeleted: 0 };
+			}
+
+			// Under the lock, and nowhere else (REG-1). The registry is opened for
+			// the id and for W-R6's stamp clear; nothing is allocated that is not
+			// already there, because `resolveId` resurrects rather than reallocates.
+			const rowSources = combineBranchIdSources(
+				this.fileTracker!,
+				await this.vectorStore!.highestBranchId(),
+			);
+			const registry = openRegistry(loc, lock, rowSources);
+			const head = readCurrentHead(loc.gitLayout);
+			const branchId = registry.resolveId(head);
+			if (branchId === BRANCH_ID_SHARED) {
+				await this.rebuildStore();
+				return { scope: "store", membershipRowsRemoved: 0, rowsDeleted: 0 };
+			}
+			// W-R6 FIRST, as in `--force`: the record of when this branch was last
+			// indexed stops being true before its rows go, not after.
+			registry.clearIndexStamp(branchId);
+			const narrowed = await narrowBranch(
+				this.fileTracker!,
+				this.vectorStore!,
+				branchId,
+				{
+					// CLAUDE.md #20: `reportProgress` advances `lastProgressAt`, the
+					// SOLE input to the hung/stale decision, and this loop runs for as
+					// long as the branch is large.
+					onProgress: (rows) => {
+						this.reportProgress();
+						this.onProgress?.(
+							rows,
+							rows,
+							`[clear] ${rows} membership row(s) cleared for this branch`,
+						);
+					},
+				},
+			);
+			return {
+				scope: "branch",
+				branchLabel: head.label,
+				membershipRowsRemoved: narrowed.membershipRowsRemoved,
+				rowsDeleted: narrowed.rowsDeleted,
+				rowsNarrowed: narrowed.rowsNarrowed,
+			};
+		} finally {
+			lock.release();
+			this.indexLock = null;
+		}
 	}
 
 	/**

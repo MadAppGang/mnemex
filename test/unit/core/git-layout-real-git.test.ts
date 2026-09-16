@@ -13,8 +13,8 @@
  * FALSIFIED by (run during Phase 1 and recorded in the implementation log):
  * skipping the `commondir` read in `layoutFrom` — both linked-worktree cases go
  * red with gitCommonDir `<common>/worktrees/<name>` where git says `<common>`.
- * And (Phase 1 fix pass): flipping `STORE_SCOPE_DEFAULT` to "git-common-dir"
- * turns the pre-3c-default test red.
+ * And (Phase 3c): setting `STORE_SCOPE_DEFAULT` back to "worktree" turns every
+ * row of the row-3 test red, on all seven real checkouts.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -209,11 +209,16 @@ function withoutEnvOverride(body: () => void): void {
 	}
 }
 
-describe("the pre-3c default on real repositories: row 3 is gated (§8 Phase 2)", () => {
-	test("with no override, every checkout's storeDir is today's getIndexDir, kind worktree-local", () => {
-		// The oracle is the committed `getIndexDir` through its public function.
-		// Falsified by: flipping STORE_SCOPE_DEFAULT to "git-common-dir" before
-		// 3c — every repository case then resolves under git's common dir.
+describe("the 3c default on REAL repositories: row 3 is on, and git is the oracle", () => {
+	test("every checkout resolves under git's own --git-common-dir, kind git-common-dir", () => {
+		// INVERTED IN 3c. This asserted `kind: "worktree-local"` and four
+		// DISTINCT stores; it now asserts the opposite of both, against the same
+		// seven real checkouts. The oracle is git itself — `--git-common-dir`
+		// read per checkout — not the seam's own idea of a common dir.
+		//
+		// Falsified by: setting STORE_SCOPE_DEFAULT back to "worktree", which
+		// turns every row here red; and by building row 3 from `gitDir` instead
+		// of `gitCommonDir`, which turns the linked-worktree rows red only.
 		withoutEnvOverride(() => {
 			const repos = [
 				main,
@@ -228,17 +233,54 @@ describe("the pre-3c default on real repositories: row 3 is gated (§8 Phase 2)"
 				const loc = resolveStoreLocation(cwd);
 				expect({ cwd, kind: loc.kind }).toEqual({
 					cwd,
-					kind: "worktree-local",
+					kind: "git-common-dir",
 				});
 				expect(loc.storeDir).toBe(getIndexDir(cwd));
 				// Not vacuous: git really does see a repository here.
 				expect(loc.gitLayout).not.toBeNull();
+				// The store is under what GIT says the common dir is.
+				expect(loc.storeDir).toBe(
+					join(gitPath(cwd, "--git-common-dir"), "mnemex"),
+				);
 			}
-			// ...so each worktree keeps its own store, exactly as today.
+			// ...so the four checkouts of ONE repository now share ONE store.
+			// This is FR-1, on real `git worktree add` output, and it is the
+			// exact assertion that read `.size).toBe(4)` before the flip.
 			const stores = [main, wtSibling, wtNested, wtDetached].map(
 				(cwd) => resolveStoreLocation(cwd).storeDir,
 			);
-			expect(new Set(stores).size).toBe(4);
+			expect(new Set(stores).size).toBe(1);
+			// A subdirectory of the main checkout joins them, rather than
+			// minting a store of its own as it did before 3c.
+			expect(resolveStoreLocation(join(main, "src", "deep")).storeDir).toBe(
+				resolveStoreLocation(main).storeDir,
+			);
+			// The submodule and the bare repo are SEPARATE repositories and keep
+			// separate stores — the sharing is per clone, not per directory tree.
+			expect(resolveStoreLocation(submodule).storeDir).not.toBe(
+				resolveStoreLocation(main).storeDir,
+			);
+			expect(resolveStoreLocation(bare).storeDir).not.toBe(
+				resolveStoreLocation(main).storeDir,
+			);
+		});
+	});
+
+	test("the PRE-3c answer is still computable, and production no longer gives it", () => {
+		// The bisect path, and the executable record of what the flip changed.
+		withoutEnvOverride(() => {
+			const old = [main, wtSibling, wtNested, wtDetached].map(
+				(cwd) => pickStoreDir(readStoreInputs(cwd), "worktree").storeDir,
+			);
+			expect(new Set(old).size).toBe(4);
+			for (const cwd of [main, wtSibling, wtNested, wtDetached]) {
+				expect(pickStoreDir(readStoreInputs(cwd), "worktree").kind).toBe(
+					"worktree-local",
+				);
+				expect(resolveStoreLocation(cwd).storeDir).not.toBe(
+					pickStoreDir(readStoreInputs(cwd), "worktree").storeDir,
+				);
+			}
 		});
 	});
 });

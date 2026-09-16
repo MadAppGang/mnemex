@@ -7,6 +7,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { getIndexDbPath } from "../../config.js";
 import {
 	graphBranchIdForRead,
 	resolveBranchScopeForProject,
@@ -39,10 +40,21 @@ export class TestCaseSelector {
 	private projectPath: string;
 	private tracker: FileTracker;
 
+	/**
+	 * Through the seam (FR-3, decision I-8). This was the fourth file on
+	 * `MNEMEX_STORE_PATH_ALLOWLIST`; its entry said "not owned by I-8; owed to
+	 * 3c", which is a deferral rather than a justification
+	 * (`phase-3b-inputs.md` §7), and 3c is the phase that owes it.
+	 *
+	 * `FileTracker` CREATES the file it is pointed at, so the hand-built path was
+	 * not a read-only mistake: from Phase 3c on it would have minted an empty
+	 * `<project>/.mnemex/index.db` beside the real store and then reported "No
+	 * indexed files found" against it — and that stray file is exactly what
+	 * `probeOldStore` reads as "there is an old store here to migrate from".
+	 */
 	constructor(projectPath: string) {
 		this.projectPath = projectPath;
-		const dbPath = join(projectPath, ".mnemex", "index.db");
-		this.tracker = new FileTracker(dbPath, projectPath);
+		this.tracker = new FileTracker(getIndexDbPath(projectPath), projectPath);
 	}
 
 	/**
@@ -51,11 +63,7 @@ export class TestCaseSelector {
 	async selectTestCases(
 		options: TestCaseSelectionOptions,
 	): Promise<TestCase[]> {
-		// Get all indexed files
-		// The branch HEAD points at, resolved per call. This selector is one of
-		// the four files still on `MNEMEX_STORE_PATH_ALLOWLIST` (it builds the
-		// store path by hand); that is 3c's precondition to clear, not this
-		// phase's. The branch scope, however, is this phase's.
+		// Get all indexed files, for the branch HEAD points at, resolved per call.
 		const fileStates = this.tracker.getAllFiles(
 			graphBranchIdForRead(resolveBranchScopeForProject(this.projectPath)),
 		);

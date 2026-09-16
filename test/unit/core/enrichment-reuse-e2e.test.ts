@@ -34,6 +34,7 @@ import { createGitSandbox } from "../../helpers/git-sandbox.js";
 import { startFakeLLMServer } from "../../helpers/stub-llm.js";
 import {
 	type ChildRun,
+	mainCheckoutStoreDir,
 	runCli,
 	sandboxHome,
 	storeRows,
@@ -308,7 +309,7 @@ describe("V3.5's third count — the enriched summary, end to end", () => {
 					MNEMEX_LLM: "local/stub-model",
 					MNEMEX_DISABLE_EMBED_CACHE: "1",
 				};
-				const vectors = join(project, ".mnemex", "vectors");
+				const vectors = join(mainCheckoutStoreDir(project), "vectors");
 
 				const counts: number[] = [];
 				for (const token of ["rev1", "rev2", "rev3"]) {

@@ -38,6 +38,11 @@ const LOCK_HELD_METHODS: Record<string, { method: string; reason: string }[]> =
 				reason:
 					"entered only from Indexer.index(), after createStoreLock(loc).acquire() succeeded, and left before release()",
 			},
+			{
+				method: "clear",
+				reason:
+					"Phase 3c. `mnemex clear` took NO lock at all before 3c (phase-3b-inputs.md §10), which on a shared store is an unlocked destructive command against a store another worktree may be indexing — the hazard FR-2 exists to prevent. It now acquires the store lock ITSELF, lexically inside this method: `createStoreLock(loc)` then `.acquire()`, refusing with IndexLockError when it cannot, `openRegistry` after that, and `release()` in a `finally`. A stronger position than indexInternal's, whose acquire is in its caller — and unlike that one it is VERIFIED below rather than asserted, because an entry whose reason nobody checks is how an allowlist becomes a hole (phase-3b-inputs.md §7)",
+			},
 		],
 		"src/core/branch-sweep.ts": [
 			{
@@ -267,6 +272,35 @@ describe("REG-1, statically: branches.json is mutated only under the store lock"
 			})();
 			expect(body).not.toMatch(/\bopenRegistry\s*\(/);
 		}
+	});
+
+	test("Indexer.clear ACQUIRES the store lock itself, and releases it, in that order", () => {
+		// The `clear` allowlist entry claims the method takes the lock inside its
+		// own body. Nothing else checks that claim, and an unchecked reason is how
+		// an allowlist stops describing the code (`phase-3b-inputs.md` §7): delete
+		// the two lines that take the lock and rule 1 would go on passing, with
+		// `mnemex clear` back to being the unlocked destructive command that gated
+		// this whole phase. So the claim is verified, on the METHOD BODY.
+		const indexer = srcFiles().find((f) => f.file === "src/core/indexer.ts");
+		const code = codeOnly(indexer?.source ?? "");
+		const header = /^[ \t]*async clear\s*\(/m.exec(code);
+		expect(header, "src/core/indexer.ts has no async clear(").not.toBeNull();
+		const params = code.indexOf("(", header?.index ?? 0);
+		const open = code.indexOf("{", matchingClose(code, params));
+		const body = code.slice(open, matchingClose(code, open));
+
+		const acquireAt = body.search(/\.\s*acquire\s*\(/);
+		const openRegistryAt = body.search(/\bopenRegistry\s*\(/);
+		const releaseAt = body.search(/\.\s*release\s*\(/);
+		expect(body).toMatch(/\bcreateStoreLock\s*\(/);
+		expect(acquireAt, "clear() does not acquire a lock").toBeGreaterThan(-1);
+		expect(openRegistryAt, "clear() opens no registry").toBeGreaterThan(-1);
+		expect(releaseAt, "clear() never releases the lock").toBeGreaterThan(-1);
+		// ORDER, not just presence: acquire, then open, then release.
+		expect(acquireAt).toBeLessThan(openRegistryAt);
+		expect(openRegistryAt).toBeLessThan(releaseAt);
+		// The release is in a `finally`, so a throw between them cannot strand it.
+		expect(body.slice(0, releaseAt)).toMatch(/\bfinally\s*\{[^}]*$/);
 	});
 
 	test("rule 3: only the registry module and the seam name the registry's path", () => {

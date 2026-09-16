@@ -174,54 +174,66 @@ describe("row 4 — outside any repository, today's behaviour (FR-7)", () => {
 	}
 });
 
-describe("row 3 is GATED — the pre-3c default keeps the store per worktree (§8 Phase 2)", () => {
-	test("main worktree, no override: today's getIndexDir, kind worktree-local", () => {
-		// The Phase 2 promise: wiring a caller to the seam moves no store.
-		// Falsified by: flipping STORE_SCOPE_DEFAULT to "git-common-dir" before
-		// 3c — storeDir becomes <root>/.git/mnemex and kind "git-common-dir".
+describe("row 3 is ON (Phase 3c) — a repository's worktrees share one store", () => {
+	test("main worktree, no override: <gitCommonDir>/mnemex, kind git-common-dir", () => {
+		// THE FLIP, at the seam. Falsified by: setting STORE_SCOPE_DEFAULT back to
+		// "worktree" — storeDir becomes <root>/.mnemex and kind "worktree-local",
+		// which is what the assertions below say it is not.
 		const main = makeMainRepo(join(freshDir(), "main"));
 		const loc = resolveStoreLocation(main.worktree);
-		expect(loc.kind).toBe("worktree-local");
+		expect(loc.kind).toBe("git-common-dir");
+		expect(loc.storeDir).toBe(join(main.gitDir, GIT_STORE_DIR_NAME));
 		expect(loc.storeDir).toBe(getIndexDir(main.worktree));
-		expect(loc.storeDir).toBe(join(main.worktree, ".mnemex"));
-		// Step 1 still ran: the layout and pathRoot are those of the repository.
+		expect(loc.storeDir).not.toBe(join(main.worktree, ".mnemex"));
+		// Step 1 is unchanged, and that is the point: an override — or the flip —
+		// relocates the STORE, never the path convention.
 		expect(loc.worktreeDir).toBe(join(main.worktree, ".mnemex"));
 		expect(loc.pathRoot).toBe(main.worktree);
 		expect(loc.gitLayout?.gitCommonDir).toBe(main.gitDir);
 		expect(loc.degradedReason).toBeNull();
 	});
 
-	test("a linked worktree keeps its OWN store, as it does today", () => {
-		// Falsified by: the flip above — both worktrees then share one storeDir.
+	test("a linked worktree SHARES the main checkout's store — FR-1, at the seam", () => {
+		// The feature, in one assertion. Falsified by: building row 3 from `gitDir`
+		// instead of `gitCommonDir`, or by reverting STORE_SCOPE_DEFAULT; either
+		// way the two storeDirs differ again.
 		const dir = freshDir();
 		const main = makeMainRepo(join(dir, "main"));
 		const wt = makeLinkedWorktree(main, join(dir, "wt"));
 		const a = resolveStoreLocation(main.worktree);
 		const b = resolveStoreLocation(wt.worktree);
-		expect(b.kind).toBe("worktree-local");
-		expect(a.storeDir).toBe(getIndexDir(main.worktree));
-		expect(b.storeDir).toBe(getIndexDir(wt.worktree));
-		expect(b.storeDir).not.toBe(a.storeDir);
+		expect(b.kind).toBe("git-common-dir");
+		expect(b.storeDir).toBe(a.storeDir);
+		expect(b.storeDir).toBe(join(main.gitDir, GIT_STORE_DIR_NAME));
+		// One store, TWO path roots. Every stored path is relative to the reader's
+		// own root, which is what lets one dataset answer both worktrees.
+		expect(b.pathRoot).not.toBe(a.pathRoot);
+		expect(b.worktreeDir).not.toBe(a.worktreeDir);
 	});
 
-	test("from a subdirectory: the store is <subdir>/.mnemex like getIndexDir(<subdir>), pathRoot is the root", () => {
-		// Row 4's formula, deliberately (see pickStoreDir). Falsified by: building
-		// the worktree-local store from pathRoot — it then differs from today's
-		// getIndexDir for any caller that passes a subdirectory.
+	test("from a subdirectory: the SAME store as from the root, and pathRoot is the root", () => {
+		// This is a BEHAVIOUR CHANGE the flip makes, and a fix. Before 3c the store
+		// was `join(startPath, ".mnemex")`, so running from `src/core` used a
+		// DIFFERENT store from running at the root — a per-subdirectory index that
+		// nobody asked for (3a-2's finding 6 names the same hazard). Row 3 is
+		// computed from the layout, not from the start path, so it cannot happen.
 		const main = makeMainRepo(join(freshDir(), "main"));
 		const sub = join(main.worktree, "src", "core");
 		mkdirSync(sub, { recursive: true });
 		const loc = resolveStoreLocation(sub);
-		expect(loc.kind).toBe("worktree-local");
+		expect(loc.kind).toBe("git-common-dir");
+		expect(loc.storeDir).toBe(resolveStoreLocation(main.worktree).storeDir);
 		expect(loc.storeDir).toBe(getIndexDir(sub));
 		expect(loc.pathRoot).toBe(main.worktree);
+		// And the per-worktree directory is the ROOT's, not the subdirectory's.
+		expect(loc.worktreeDir).toBe(join(main.worktree, ".mnemex"));
 	});
 
 	for (const [label, setup] of CONFIG_VARIANTS) {
-		test(`inside a repository, agrees with today's getIndexDir: ${label}`, () => {
-			// The same parity table as row 4, inside a repository. Falsified by: the
-			// flip (the no-config and legacy-default cases move under .git), or by
-			// any change to how rows 1-2 resolve a relative value.
+		test(`inside a repository, getIndexDir tracks the seam: ${label}`, () => {
+			// `getIndexDir` IS `resolveStoreLocation(...).storeDir` since I-8, so
+			// this is a parity check on the delegation, not on the value. Falsified
+			// by: restoring a second resolver in `src/config.ts`.
 			const main = makeMainRepo(join(freshDir(), "main"));
 			setup(main.worktree);
 			expect(resolveStoreLocation(main.worktree).storeDir).toBe(
@@ -230,13 +242,64 @@ describe("row 3 is GATED — the pre-3c default keeps the store per worktree (§
 		});
 	}
 
-	test("resolveStoreLocation IS pickStoreDir under the worktree scope", () => {
+	test("resolveStoreLocation IS pickStoreDir under the git-common-dir scope", () => {
+		// The production default and the pure function agree, which is what makes
+		// every `at(p, "git-common-dir")` assertion in this file a statement about
+		// production rather than about a function nothing calls.
 		const dir = freshDir();
 		const main = makeMainRepo(join(dir, "main"));
 		const wt = makeLinkedWorktree(main, join(dir, "wt"));
-		for (const p of [main.worktree, wt.worktree, dir]) {
-			expect(resolveStoreLocation(p)).toEqual(at(p, "worktree"));
+		for (const p of [main.worktree, wt.worktree]) {
+			expect(resolveStoreLocation(p)).toEqual(at(p, "git-common-dir"));
 		}
+		// Outside a repository the two scopes coincide (row 4), so `dir` itself is
+		// still equal under BOTH — which is why it is asserted separately.
+		expect(resolveStoreLocation(dir)).toEqual(at(dir, "git-common-dir"));
+		expect(resolveStoreLocation(dir)).toEqual(at(dir, "worktree"));
+	});
+});
+
+describe("the PRE-3c scope is still reachable, and still differs (via pickStoreDir)", () => {
+	// Kept and INVERTED rather than deleted. Two reasons. It is the bisect path
+	// for a store-location problem — `pickStoreDir(inputs, "worktree")` answers
+	// what the old default would have — and it is the only executable statement
+	// of WHAT THE FLIP CHANGED, which is the thing a reviewer of this phase most
+	// needs to see. The old describe asserted these values of
+	// `resolveStoreLocation`; it now asserts them of the other scope, and asserts
+	// that production no longer agrees.
+	test("the worktree scope still yields today's per-worktree store", () => {
+		const dir = freshDir();
+		const main = makeMainRepo(join(dir, "main"));
+		const wt = makeLinkedWorktree(main, join(dir, "wt"));
+		const oldA = at(main.worktree, "worktree");
+		const oldB = at(wt.worktree, "worktree");
+		expect(oldA.kind).toBe("worktree-local");
+		expect(oldA.storeDir).toBe(join(main.worktree, ".mnemex"));
+		expect(oldB.storeDir).toBe(join(wt.worktree, ".mnemex"));
+		// Two stores, which is exactly the problem FR-1 exists to solve.
+		expect(oldB.storeDir).not.toBe(oldA.storeDir);
+	});
+
+	test("and production NO LONGER answers that, for any repository shape", () => {
+		const dir = freshDir();
+		const main = makeMainRepo(join(dir, "main"));
+		const wt = makeLinkedWorktree(main, join(dir, "wt"));
+		const sub = join(main.worktree, "src");
+		mkdirSync(sub, { recursive: true });
+		for (const p of [main.worktree, wt.worktree, sub]) {
+			expect(resolveStoreLocation(p).storeDir).not.toBe(
+				at(p, "worktree").storeDir,
+			);
+		}
+	});
+
+	test("outside a repository the two scopes are IDENTICAL (FR-7 is untouched)", () => {
+		// The flip changes row 3 and nothing else. A plain directory has no layout,
+		// so it falls to row 4 under both scopes and no non-git user's store moves.
+		const plain = freshDir();
+		expect(at(plain, "worktree")).toEqual(at(plain, "git-common-dir"));
+		expect(resolveStoreLocation(plain).kind).toBe("plain-directory");
+		expect(resolveStoreLocation(plain).storeDir).toBe(join(plain, ".mnemex"));
 	});
 });
 
@@ -494,16 +557,25 @@ describe("D2 — the literal legacy default is ignored, and ONLY the literal (V1
 		expect(loc.ignoredLegacyIndexDir).toBe(true);
 	});
 
-	test('indexDir ".mnemex" inside a repository, pre-3c: the same directory as today, and flagged', () => {
-		// Before 3c, ignoring the literal and honouring it name one directory, so
-		// D2 is behaviour-neutral until the flip. The flag is set regardless, so
-		// `doctor` can warn ahead of the release that changes it.
+	test('indexDir ".mnemex" inside a repository: D2 now BITES, and the flip is why', () => {
+		// INVERTED IN 3c. Before the flip, ignoring the literal and honouring it
+		// named ONE directory, so D2 was behaviour-neutral and this test asserted
+		// exactly that. From 3c they differ, and this is the moment D2 was written
+		// for: a user with the documented default copied into `mnemex.json` is
+		// opted IN to the shared store rather than silently out of FR-1.
+		//
+		// The flag was set the whole time, which is what let `doctor` warn ahead
+		// of the release that changes it.
 		const main = makeMainRepo(join(freshDir(), "main"));
 		writeRootConfig(main.worktree, { indexDir: ".mnemex" });
 		const loc = resolveStoreLocation(main.worktree);
-		expect(loc.kind).toBe("worktree-local");
+		expect(loc.kind).toBe("git-common-dir");
+		expect(loc.storeDir).toBe(join(main.gitDir, GIT_STORE_DIR_NAME));
 		expect(loc.storeDir).toBe(getIndexDir(main.worktree));
 		expect(loc.ignoredLegacyIndexDir).toBe(true);
+		// The escape hatch is intact: ANY other value is honoured, so a user who
+		// genuinely wants a per-worktree store still has one (§2.3, D2).
+		expect(loc.storeDir).not.toBe(join(main.worktree, ".mnemex"));
 	});
 
 	test('indexDir ".mnemex" outside a repository: same directory as today, and flagged', () => {
@@ -619,7 +691,8 @@ describe("the memo is never staler than today's unmemoized getIndexDir for what 
 
 			delete process.env[INDEX_DIR_ENV_VAR];
 			const unset = resolveStoreLocation(main.worktree);
-			expect(unset.kind).toBe("worktree-local");
+			// Unset falls to row 3, which from 3c is the shared store.
+			expect(unset.kind).toBe("git-common-dir");
 			expect(unset.storeDir).toBe(getIndexDir(main.worktree));
 
 			process.env[INDEX_DIR_ENV_VAR] = first;
@@ -658,7 +731,7 @@ describe("the memo is never staler than today's unmemoized getIndexDir for what 
 		// `onProjectConfigSaved(clearLocationCache)` from store-location.ts.
 		const main = makeMainRepo(join(freshDir(), "main"));
 		const before = resolveStoreLocation(main.worktree);
-		expect(before.kind).toBe("worktree-local");
+		expect(before.kind).toBe("git-common-dir");
 		// Not vacuous: the first answer IS memoized.
 		expect(resolveStoreLocation(main.worktree)).toBe(before);
 

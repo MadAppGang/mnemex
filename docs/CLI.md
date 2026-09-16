@@ -159,11 +159,27 @@ Shows:
 
 ### `clear` - Clear Index
 
-Remove all indexed data for a project.
+Remove indexed data. **Branch-scoped by default**: rows another branch still holds
+survive, and other worktrees are untouched.
 
 ```bash
 mnemex clear [path]
 ```
+
+**Options:**
+| Flag | Description |
+|------|-------------|
+| `--all` | Clear the **whole store, every branch** — each one must index again |
+| `-f, --force` | Skip the confirmation prompt |
+
+One index is shared by every branch and worktree of a repository, so `clear` removes
+only the branch you are on. `--all` is the deliberate whole-store wipe; after it, every
+other branch reports itself empty until it is indexed again.
+
+`clear` takes the index lock for the whole operation and **refuses**, changing nothing,
+if another process is indexing this store. It rejects unrecognised flags before it
+removes anything, so a mistyped `--all` is an error rather than a clear you did not ask
+for.
 
 ### `models` - List Embedding Models
 
@@ -693,9 +709,25 @@ mnemex ai developer --compact
 | Path | Purpose |
 |------|---------|
 | `~/.mnemex/config.json` | Global config (provider, model, API keys) |
-| `.mnemex/` | Project index directory (add to `.gitignore`) |
-| `.mnemex/index.db` | SQLite vector database |
-| `.mnemex/benchmark.db` | Benchmark results database |
+| `<gitCommonDir>/mnemex/` | **The index, shared by every worktree of the repository.** In an ordinary checkout that is `.git/mnemex/`; in a linked worktree it is the main checkout's. Inside `.git/`, so there is nothing to gitignore |
+| `<gitCommonDir>/mnemex/index.db` | SQLite: tracker, branch membership, symbol graph, documents |
+| `<gitCommonDir>/mnemex/vectors/` | LanceDB vectors |
+| `<gitCommonDir>/mnemex/branches.json` | Which branches this index holds |
+| `.mnemex/` | Per-worktree, and NOT the index: `memories/`, `edit-history/`, `activity.jsonl`, `benchmark.db`. Add to `.gitignore` |
+
+Outside a git repository the index stays at `<dir>/.mnemex/`, exactly as before.
+
+**Where did my index go?** One index per repository is the point: a second worktree of a
+tree you have already indexed costs no embeddings and no LLM calls. Your first `mnemex
+index` on this version rebuilds once into the new location and reports where the old one
+is (`abandoned_store_dir=` under `--agent`, and a summary line otherwise). The old index
+is left in place, never deleted, so you can remove it yourself.
+
+**Pinning the index per worktree** is still supported: set `indexDir` in `mnemex.json` to
+any path *other* than the literal `".mnemex"`. That one string is treated as unset,
+because it is the value the documentation used to tell people to write, so it almost
+always records a copied default rather than an intent — `mnemex doctor` says so when it
+ignores one.
 
 ---
 

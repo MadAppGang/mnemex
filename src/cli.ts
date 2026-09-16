@@ -42,6 +42,11 @@ import {
 	saveGlobalConfig,
 } from "./config.js";
 import {
+	branchEmptyNotice,
+	branchHintForAgent,
+	branchUnknownNotice,
+} from "./core/branch-notices.js";
+import {
 	graphBranchIdForRead,
 	resolveBranchScopeForProject,
 	SCOPE_ALL,
@@ -876,6 +881,51 @@ export function formatIndexUpgradeLine(
 }
 
 /**
+ * The human half of §6.3's store-location report: where this run wrote, and —
+ * the line that matters — which store it walked away from.
+ *
+ * Built in Phase 3c, because the flip is when a user first has an index
+ * somewhere they did not put it. `--agent` gets `store_dir=` and
+ * `abandoned_store_dir=` unconditionally; a human gets the location only when
+ * it is NEWS, so an everyday incremental run does not grow a line nobody reads.
+ *
+ * "News" is exactly two cases:
+ *   - a store was abandoned, i.e. THIS run is the migration. The old directory
+ *     still holds the old index and nothing will ever delete it, so the user is
+ *     told where it is and that removing it is safe;
+ *   - the layout degraded, which means the store is not where the repository
+ *     would suggest and the reason is worth reading.
+ *
+ * Exported and pure, so it can be tested without a run, in the shape
+ * `formatIndexUpgradeLine` already has.
+ */
+export function formatStoreRelocationLines(result: {
+	storeDir?: string;
+	abandonedStoreDir?: string;
+	degradedReason?: string;
+}): string[] {
+	const lines: string[] = [];
+	if (result.abandonedStoreDir !== undefined) {
+		lines.push(`  Index moved to: ${result.storeDir ?? "(unknown)"}`);
+		lines.push(
+			`    One index is now shared by every worktree of this repository.`,
+		);
+		lines.push(
+			`    The old index is still at ${result.abandonedStoreDir} and is no longer used;`,
+		);
+		lines.push(
+			"    it was left in place rather than deleted. You can remove it.",
+		);
+	}
+	if (result.degradedReason !== undefined) {
+		lines.push(
+			`  Store location: ${result.storeDir ?? "(unknown)"} (${result.degradedReason})`,
+		);
+	}
+	return lines;
+}
+
+/**
  * The `index` summary line for files that were rolled back, or null when every
  * file that was indexed made it into the store.
  *
@@ -896,7 +946,71 @@ export function formatDeferredFilesLine(
 	);
 }
 
+/**
+ * Every flag `mnemex index` accepts. STRICT — see {@link assertKnownFlags}.
+ *
+ * Decision I-17 item 4. 3b-3b measured that both typo directions of
+ * `--force-all` fall towards the smaller blast radius today and declined to add
+ * the table, because "rejecting unknown dash-arguments touches every existing
+ * invocation" — which is exactly why the list below was DERIVED BY SEARCH over
+ * `src/` rather than from the help text. Three internal callers pass flags this
+ * handler never parsed, and a table built from the help text alone would have
+ * broken all three:
+ *
+ *   `--quiet`   `mcp/server.ts:108`, `mcp/reindexer.ts` (REINDEX_ARGS),
+ *               `hooks/handlers/post-tool-use.ts` — the auto-reindex path
+ *   `--if-idle` `mcp/reindexer.ts` — parsed, and in the help
+ *   `--files`   `editor/editor.ts:291` — takes a VALUE, and is in neither
+ *
+ * `--quiet` and `--files` are accepted and IGNORED here exactly as they were
+ * before this table existed. Making them errors would have turned the MCP
+ * server's background reindex and the editor's post-edit reindex into failures
+ * on the day this shipped, which is a far larger regression than the one the
+ * table prevents. They are listed as tolerated rather than silently unlisted,
+ * so the next person sees that the situation is known.
+ *
+ * A trailing `=` means the flag carries `--name=value`; `--files` and `-m`
+ * take a SEPARATE value argument, which `assertKnownFlags` ignores because it
+ * only inspects dash-arguments — a value that itself begins with `-` is
+ * already refused by `--model`'s own check above.
+ */
+const INDEX_FLAGS = [
+	"-f",
+	"--force",
+	"--force-all",
+	"--force-unlock",
+	"--no-llm",
+	"--no-enrichment",
+	"-w",
+	"--wait",
+	"--if-idle",
+	"-m",
+	"--model",
+	"--concurrency=",
+	"--wait-timeout=",
+	// Tolerated, unparsed, and passed by internal callers — see the header.
+	"--quiet",
+	"--files",
+] as const;
+
 async function handleIndex(args: string[]): Promise<void> {
+	// STRICT FLAGS, BEFORE anything destructive and before either lock
+	// (CLAUDE.md #30, decision I-17 item 4). `--force` / `--force-all` is a
+	// destructive pair sharing a prefix, which is the worst possible shape for
+	// membership parsing: `--force-alll` and `--force-al` both matched NEITHER
+	// flag and ran an ordinary incremental index, and that they failed safe was
+	// luck of spelling rather than construction. `--force-al` now refuses and
+	// names `--force-all`, which is the flag the user was reaching for.
+	//
+	// `process.exitCode` and RETURN, never `process.exit()`: exiting mid-write
+	// truncates buffered output, which is how an agent consumer ends up parsing
+	// half a line (the reason `handleKeychainCommand` returns a code instead of
+	// exiting). Nothing has been indexed at this point, so returning is safe.
+	if (!assertKnownFlags("index", args, INDEX_FLAGS)) {
+		process.exitCode = 1;
+		return;
+	}
+
 	// Parse arguments
 	//
 	// TWO forces, and the difference between them is a data-loss path (§4.5 /
@@ -905,9 +1019,8 @@ async function handleIndex(args: string[]): Promise<void> {
 	// which is what `--force` used to do to everyone silently.
 	//
 	// Exact-string membership, so no spelling of one is the other: `--force-all`
-	// is not `--force` (CLAUDE.md #30's failure mode is a typo that means the
-	// opposite, and both typo directions here fail towards the SMALLER blast
-	// radius — `--force-al` forces nothing, `--force` alone narrows one branch).
+	// is not `--force`. A MISSPELLING of either is now an error rather than a
+	// silent incremental index (the strict table above).
 	const forceAll = args.includes("--force-all");
 	const force = forceAll || args.includes("--force") || args.includes("-f");
 	const noLlm = args.includes("--no-llm") || args.includes("--no-enrichment");
@@ -935,8 +1048,38 @@ async function handleIndex(args: string[]): Promise<void> {
 	// The model NAME is a bare word too, so exclude it from the path search.
 	const modelValueIdx = modelIdx >= 0 ? modelIdx + 1 : -1;
 
+	// ── `--files <path>`'s VALUE is a bare word too, and it was being taken as
+	// the PROJECT PATH (found by `index-strict-flags.test.ts`) ────────────────
+	//
+	// `src/editor/editor.ts:291` spawns `index --quiet --files <ABSOLUTE FILE
+	// PATH>` after every applied edit. `--files` is unparsed, so that absolute
+	// path fell through to the positional search and became `projectPath` — the
+	// same defect the `--model` comment above describes, through a second door.
+	// The command therefore tried to index a FILE as if it were a project, and
+	// has never once worked: it dies in `ensureProjectDir` (mkdir under a file:
+	// ENOTDIR) or, with the store resolved elsewhere, in `discoverFiles`
+	// (readdir of a file). Nobody saw it because the child is detached and every
+	// failure there is best-effort.
+	//
+	// It matters MORE from Phase 3c than before it. Pre-flip the run dies in
+	// `ensureProjectDir`, before any lock. Post-flip that directory resolves to
+	// the REAL shared store and succeeds, so the run goes on to take the
+	// machine-global lock and the shared store lock — waiting up to
+	// DEFAULT_GLOBAL_LOCK_WAIT behind a real index run — before failing in
+	// `discoverFiles`. A broken command that used to fail early would start
+	// contending for the store every other worktree shares.
+	//
+	// Excluding the value restores the sane reading: an ordinary incremental
+	// index of the current project, which is what a post-edit reindex wants.
+	// `--files` remains an unimplemented FILTER; it is reported rather than
+	// invented here, because deciding what a file-scoped index means (membership
+	// narrowing? deletion detection over one path?) is a design question and not
+	// an argument-parsing one.
+	const filesIdx = args.indexOf("--files");
+	const filesValueIdx = filesIdx >= 0 ? filesIdx + 1 : -1;
+
 	const pathArg = args.find(
-		(a, i) => !a.startsWith("-") && i !== modelValueIdx,
+		(a, i) => !a.startsWith("-") && i !== modelValueIdx && i !== filesValueIdx,
 	);
 	const projectPath = pathArg ? resolve(pathArg) : process.cwd();
 
@@ -1082,6 +1225,8 @@ async function handleIndex(args: string[]): Promise<void> {
 		}
 		const upgradeLine = formatIndexUpgradeLine(result.upgradedFromIndexVersion);
 		if (upgradeLine) console.log(upgradeLine);
+		const relocation = formatStoreRelocationLines(result);
+		for (const line of relocation) console.log(line);
 		const cacheLine = formatEmbedCacheLine(result.embedCache);
 		if (cacheLine) console.log(cacheLine);
 		const deferredLine = formatDeferredFilesLine(result.filesDeferred);
@@ -1926,6 +2071,13 @@ async function handleSearch(args: string[]): Promise<void> {
 					}
 				: {}),
 			branchUnknown: scoped.branchUnknown,
+			// Decision I-17 item 2: `search` was the ONE surface that carried
+			// `branch_unknown` and not `branch_empty`, so a branch emptied by
+			// another worktree's `--force-all` produced a silent `[]` here while
+			// `dead-code` said exactly what had happened.
+			branchEmpty: scoped.branchEmpty,
+			// V1.7 / §4.5: WHY it is empty, when the marker can say.
+			storeRebuiltElsewhere: scoped.storeRebuiltElsewhere,
 			branch: scoped.branchLabel,
 		};
 		if (!agentMode && !adoptionReported) {
@@ -1937,9 +2089,18 @@ async function handleSearch(args: string[]): Promise<void> {
 			if (agentMode) {
 				agentOutput.searchResults(query, [], searchMeta);
 			} else {
+				// STDERR, through the shared notice, so the two states read the same
+				// on `search` as on the nine graph commands. `branchEmpty` is the
+				// case that used to be indistinguishable from an honest miss.
 				if (scoped.branchUnknown) {
-					console.log(
-						`\nBranch '${scoped.branchLabel ?? "?"}' is not in the index.`,
+					console.error(branchUnknownNotice(scoped.branchLabel, "search"));
+				} else if (scoped.branchEmpty) {
+					console.error(
+						branchEmptyNotice(
+							scoped.branchLabel,
+							"search",
+							scoped.storeRebuiltElsewhere,
+						),
 					);
 				}
 				console.log("\nNo results found.");
@@ -2294,17 +2455,43 @@ async function handleStatus(args: string[]): Promise<void> {
 	}
 }
 
+/**
+ * Every flag `mnemex clear` accepts. STRICT — see {@link assertKnownFlags}.
+ *
+ * `--all` and `-f` are a destructive pair that share no prefix, deliberately:
+ * an `--all` that was meant to be `--force` must not be reachable by a typo of
+ * either (CLAUDE.md #30).
+ */
+const CLEAR_FLAGS = ["--all", "--force", "-f"] as const;
+
 async function handleClear(args: string[]): Promise<void> {
 	printLogo();
+
+	// BEFORE anything destructive and before any lock, like `handleKeychainCommand`.
+	if (!assertKnownFlags("clear", args, CLEAR_FLAGS)) {
+		process.exitCode = 1;
+		return;
+	}
 
 	const pathArg = args.find((a) => !a.startsWith("-"));
 	const projectPath = pathArg ? resolve(pathArg) : process.cwd();
 
 	const force = args.includes("--force") || args.includes("-f");
+	// ── D3's rule, applied to `clear` (decision I-17 item 1) ──────────────────
+	//
+	// `clear` used to be whole-store, unconditionally and without a lock. From
+	// Phase 3c the store is shared by every worktree of the repository, so the
+	// DEFAULT shrinks to this branch and the old meaning keeps its own name —
+	// exactly what `--force` / `--force-all` did in 3b-3b. `--force` here is the
+	// confirmation skip and has nothing to do with scope; they are separate
+	// words because they answer separate questions.
+	const wholeStore = args.includes("--all");
 
 	if (!force) {
 		const confirmed = await confirm({
-			message: `Clear index for ${projectPath}?`,
+			message: wholeStore
+				? `Clear the WHOLE store for ${projectPath} — every branch, every worktree?`
+				: `Clear this branch's index for ${projectPath}?`,
 			default: false,
 		});
 
@@ -2314,15 +2501,152 @@ async function handleClear(args: string[]): Promise<void> {
 		}
 	}
 
-	const { createIndexer } = await import("./core/indexer.js");
-	const indexer = createIndexer({ projectPath });
+	const { createIndexer, IndexLockError } = await import("./core/indexer.js");
+	const indexer = createIndexer({
+		projectPath,
+		onWaitingForLock: (holderPid) => {
+			console.log(
+				`⏳ Waiting for an indexing process (PID ${holderPid}) to finish...`,
+			);
+		},
+	});
 
 	try {
-		await indexer.clear();
-		console.log("\n✅ Index cleared.");
+		const result = await indexer.clear({
+			scope: wholeStore ? "store" : "branch",
+		});
+		if (agentMode) {
+			console.log("cleared=1");
+			console.log(`clear_scope=${result.scope}`);
+			if (result.branchLabel) console.log(`branch=${result.branchLabel}`);
+			console.log(`clear_rows_deleted=${result.rowsDeleted}`);
+			if (result.rowsNarrowed !== undefined) {
+				console.log(`clear_rows_narrowed=${result.rowsNarrowed}`);
+			}
+			console.log(`clear_membership_removed=${result.membershipRowsRemoved}`);
+			return;
+		}
+		// What the run DID, not what was asked: a store with no git layout takes
+		// the whole-store path for a branch request, and a user who is not told
+		// that believes a sibling survived.
+		console.log(
+			result.scope === "store"
+				? "\n✅ The whole store is cleared. Every branch has to index itself again."
+				: `\n✅ Branch '${result.branchLabel ?? "?"}' is cleared. Other branches' rows are untouched.`,
+		);
+	} catch (error) {
+		// FAIL CLOSED and say so. Before 3c this command took no lock at all, so
+		// there was nothing to refuse — it simply ran, concurrently with whatever
+		// else held the store.
+		if (error instanceof IndexLockError) {
+			console.error(
+				`\n❌ Another process is indexing this store (PID ${error.holderPid ?? "?"}). Nothing was cleared.`,
+			);
+			process.exitCode = 1;
+			return;
+		}
+		throw error;
 	} finally {
 		await indexer.close();
 	}
+}
+
+/**
+ * STRICT FLAGS, the `handleKeychainCommand` mechanism, for a command that runs
+ * something destructive (CLAUDE.md #30, decision I-17 item 4).
+ *
+ * ── WHY MEMBERSHIP PARSING IS THE BUG AND NOT THE SPELLING ────────────────────
+ * A boolean flag decided with `args.includes("--x")` makes every TYPO of it mean
+ * the OPPOSITE of what was typed, silently. That is not hypothetical here:
+ * `mnemex keychain migrate --dry-runDD` fell through to the destructive default
+ * and ran a real migration on the maintainer's own machine, one day after that
+ * feature shipped — `~/.zsh_history` and the keychain items' `cdat` agree to the
+ * second. The user believed they had run a preview.
+ *
+ * `--force` and `--force-all` on `mnemex index` are the same shape and worse:
+ * a destructive PAIR sharing a prefix. 3b-3b measured which way each typo falls
+ * and pinned it, and reported (its finding 6) that both directions fail safe by
+ * luck of spelling rather than by construction. This is the construction.
+ *
+ * Returns `false` and prints when a dash-argument is not accepted. The near miss
+ * is NAMED, because the failure mode is a typo and asking a user to diff two
+ * strings by eye is how they conclude the tool is broken rather than the flag.
+ *
+ * Callers must run it BEFORE resolving anything, before the lock, and before any
+ * write. `--agent` is absent from every table on purpose: `runCli` strips it
+ * from `args` before a handler sees it.
+ */
+function assertKnownFlags(
+	command: string,
+	args: string[],
+	accepted: readonly string[],
+): boolean {
+	const unknown = args.find(
+		(a) =>
+			a.startsWith("-") &&
+			a !== "-" &&
+			// `--key=value` is matched on its key half, so `--wait-timeout=30` is
+			// checked against `--wait-timeout=` and a typo of the KEY still fires.
+			!accepted.includes(a) &&
+			!accepted.includes(`${a.split("=")[0]}=`),
+	);
+	if (unknown === undefined) return true;
+
+	const key = unknown.split("=")[0];
+	const meant = nearestFlag(key, accepted);
+	console.error(`error=unknown_flag command=${command} value=${unknown}`);
+	if (meant) console.error(`Did you mean ${meant}?`);
+	console.error(
+		`Accepted for '${command}': ${accepted.map((f) => f.replace(/=$/, "")).join(", ")}. Nothing was changed.`,
+	);
+	return false;
+}
+
+/**
+ * The accepted flag a typo most likely meant, or `null` when none is close.
+ *
+ * ── WHY "THE FIRST PREFIX MATCH" IS THE WRONG ANSWER ────────────────────────
+ * `handleKeychainCommand`'s version takes the first entry that is a prefix of
+ * the typo or vice versa. Its tables have four entries and no shared prefixes,
+ * so it never mattered there. On `index` it does: `--force` comes before
+ * `--force-all` in the table, `"--force-alll".startsWith("--force")` is true,
+ * and the first-match rule answers `--force` — pointing a user who typed
+ * `--force-alll` at the flag with the OTHER blast radius. A suggestion that
+ * names the wrong one of a destructive pair is worse than no suggestion, which
+ * is the whole reason this check exists.
+ *
+ * Longest shared prefix wins; ties go to the candidate closest in length, so
+ * `--forceall` (which shares only `--force` with both) resolves to `--force-all`
+ * on the 1-character difference rather than 3.
+ *
+ * A minimum of two real characters past the dashes, so an unrelated flag from
+ * another command (`--dry-run` against `index`'s table) shares only `--` and
+ * gets NO suggestion. Asserted both ways in `index-strict-flags.test.ts`.
+ */
+function nearestFlag(key: string, accepted: readonly string[]): string | null {
+	const dashes = /^-+/.exec(key)?.[0].length ?? 0;
+	let best: string | null = null;
+	let bestShared = 0;
+	let bestDelta = Number.POSITIVE_INFINITY;
+	for (const raw of accepted) {
+		const candidate = raw.replace(/=$/, "");
+		let shared = 0;
+		while (
+			shared < key.length &&
+			shared < candidate.length &&
+			key[shared] === candidate[shared]
+		) {
+			shared++;
+		}
+		if (shared < dashes + 2) continue;
+		const delta = Math.abs(candidate.length - key.length);
+		if (shared > bestShared || (shared === bestShared && delta < bestDelta)) {
+			best = candidate;
+			bestShared = shared;
+			bestDelta = delta;
+		}
+	}
+	return best;
 }
 
 /**
@@ -4866,40 +5190,53 @@ function readBranchId(projectPath: string): number {
  * `src/core/branch-state.ts` for what "empty" is computed from.
  */
 function reportBranchState(projectPath: string, command: string): void {
-	const { resolution, branchEmpty } = resolveBranchReadState(projectPath);
+	const { resolution, branchEmpty, storeRebuiltElsewhere } =
+		resolveBranchReadState(projectPath);
+	renderBranchState(
+		{ branchUnknown: resolution.branchUnknown, branchEmpty },
+		resolution.label,
+		command,
+		storeRebuiltElsewhere,
+	);
+}
+
+/**
+ * The two states, rendered. 3c's `search` surfaces call this directly, because
+ * they already know both flags (`searchScoped` returns them) and re-resolving
+ * would cost a second HEAD read, a second registry read and a second SQLite
+ * connection to learn what the caller is holding.
+ *
+ * The SENTENCES live in `src/core/branch-state.ts`, not here: there are now four
+ * surfaces (the nine graph commands, `status`, the CLI `search`, and two MCP
+ * tools) and the remedy they name has to change in one place.
+ */
+function renderBranchState(
+	state: { readonly branchUnknown: boolean; readonly branchEmpty: boolean },
+	label: string | null,
+	command: string,
+	/** V1.7 / §4.5: WHY the branch is empty, when the marker can say. */
+	storeRebuiltElsewhere = false,
+): void {
 	if (agentMode) {
 		// Emitted on EVERY one of these commands, including as 0, so a consumer
 		// can rely on the key rather than on its absence meaning "known".
-		console.log(`branch_unknown=${resolution.branchUnknown ? 1 : 0}`);
-		console.log(`branch_empty=${branchEmpty ? 1 : 0}`);
-		if (resolution.label !== null) console.log(`branch=${resolution.label}`);
-		if (resolution.branchUnknown) {
-			console.log(
-				`branch_hint=branch '${resolution.label}' is not indexed; ${command} answers for this branch only. Run: mnemex index`,
-			);
-		} else if (branchEmpty) {
-			console.log(
-				`branch_hint=branch '${resolution.label}' is known but the index holds no rows for it; ${command} answers for this branch only. Run: mnemex index`,
-			);
-		}
+		console.log(`branch_unknown=${state.branchUnknown ? 1 : 0}`);
+		console.log(`branch_empty=${state.branchEmpty ? 1 : 0}`);
+		if (label !== null) console.log(`branch=${label}`);
+		// V1.7. Absent unless true: it explains `branch_empty=1` and a `0` on
+		// every ordinary run would be a key that only ever says "nothing to
+		// explain".
+		if (storeRebuiltElsewhere) console.log("store_rebuilt_elsewhere=1");
+		const hint = branchHintForAgent(state, label, command);
+		if (hint !== null) console.log(`branch_hint=${hint}`);
 		return;
 	}
-	if (resolution.branchUnknown) {
-		console.error(
-			`\n⚠️  Branch '${resolution.label}' has not been indexed, so \`${command}\` has nothing to answer from.\n` +
-				"    This is NOT the same as 'nothing found' — no symbol of this branch is in the index yet.\n" +
-				"    Run: mnemex index\n",
-		);
+	if (state.branchUnknown) {
+		console.error(branchUnknownNotice(label, command));
 		return;
 	}
-	if (branchEmpty) {
-		console.error(
-			`\n⚠️  Branch '${resolution.label}' is in this index, but the index holds no rows for it, so\n` +
-				`    \`${command}\` has nothing to answer from. This is NOT the same as 'nothing found'.\n` +
-				"    The store was rebuilt (\`mnemex index --force-all\`, a model change or a version\n" +
-				"    upgrade), or a run was interrupted — every branch has to index itself again.\n" +
-				"    Run: mnemex index\n",
-		);
+	if (state.branchEmpty) {
+		console.error(branchEmptyNotice(label, command, storeRebuiltElsewhere));
 	}
 }
 
@@ -7559,7 +7896,7 @@ ${c.yellow}${c.bold}COMMANDS${c.reset}
   ${c.green}index${c.reset} [path]           Index a codebase (default: current directory)
   ${c.green}search${c.reset} <query>         Search indexed code ${c.dim}(auto-indexes changes)${c.reset}
   ${c.green}status${c.reset} [path]          Show index status
-  ${c.green}clear${c.reset} [path]           Clear the index
+  ${c.green}clear${c.reset} [path]           Clear ${c.bold}this branch's${c.reset} index ${c.dim}(--all for the whole store, every branch; -f to skip the prompt)${c.reset}
   ${c.green}init${c.reset}                   Interactive setup wizard
   ${c.green}models${c.reset}                 List available embedding models
   ${c.green}benchmark${c.reset} <subcommand>  Benchmarking tools ${c.dim}(list|show|llm|embedding|delete; run 'benchmark help')${c.reset}

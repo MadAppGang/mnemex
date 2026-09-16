@@ -38,6 +38,7 @@ import {
 	getDocsCachePathFor,
 	getIndexDbPathFor,
 	getVectorStorePathFor,
+	getWorktreeDirFor,
 	resolveStoreLocation,
 } from "./core/store-location.js";
 import type { EmbeddingProvider, GlobalConfig } from "./types.js";
@@ -1228,6 +1229,24 @@ export function getIndexDbPath(projectPath: string): string {
 /** `<storeDir>/vectors`, through the seam. */
 export function getVectorStorePath(projectPath: string): string {
 	return getVectorStorePathFor(resolveStoreLocation(projectPath));
+}
+
+/**
+ * `<pathRoot>/.mnemex`, through the seam: the PER-WORKTREE directory (§2.4).
+ *
+ * NOT the store. Use this for anything that must stay with the checkout when
+ * Phase 3c moves the store under the git common dir — `memories/`,
+ * `edit-history/`, `activity.jsonl`, the `.reindex-*` debounce pair,
+ * `generated/`. Use {@link getIndexDir} for the store.
+ *
+ * `pathRoot` is the WORKTREE ROOT, not the caller's path, so this is stable
+ * from a subdirectory where `join(projectPath, ".mnemex")` is not, and it does
+ * not move when an override relocates the store (an override relocates the
+ * store, not the path convention — §2.3 step 1). Realpath spelling, like every
+ * other seam result (decision I-3).
+ */
+export function getWorktreeDir(projectPath: string): string {
+	return getWorktreeDirFor(resolveStoreLocation(projectPath));
 }
 
 /**

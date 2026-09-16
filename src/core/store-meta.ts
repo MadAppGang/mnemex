@@ -95,6 +95,65 @@ export function writeStoreMeta(
 }
 
 /**
+ * §4.5's marker: WHEN the whole store was last rebuilt. V1.7.
+ *
+ * ── IT IS THE EXPLANATION, NEVER THE SIGNAL (decision I-17 item 3) ───────────
+ * The signal that a branch holds nothing is computed from ROWS
+ * (`src/core/branch-state.ts`), and it stays the authority for three reasons
+ * this marker cannot match: rows cannot lie; they are true of every way of
+ * reaching the state, including an interrupted `--force` and a partly-drained
+ * sweep, which no producer stamps; and a marker can be lost with a hand-edited
+ * or deleted `store.json` while the rows cannot.
+ *
+ * What the marker adds is WHY. "This branch holds no rows" sends a user looking
+ * for a bug; "the store was rebuilt from another worktree at 14:02, every
+ * branch has to index itself again" sends them to `mnemex index`. Compared
+ * against the branch's `lastIndexedAt` in `branches.json`: a rebuild NEWER than
+ * the branch's last index means this branch's rows went with it.
+ *
+ * Stamped by every store-wide producer (§4.5's table): `--force-all`,
+ * `mnemex clear --all`, the dimension-mismatch repair, the placeholder-vector
+ * repair, `onModelMismatch: "force-model"`, and the v4/v5 migration rebuild.
+ * NOT by a branch-scoped `--force` or `clear`, which is the whole distinction.
+ *
+ * Write it only while holding the store lock, like every other writer here.
+ */
+export function stampStoreRebuild(
+	loc: StoreLocation,
+	at: number = now(),
+): void {
+	const path = getStoreMetaPathFor(loc);
+	const existing = readJsonRecord(path) ?? {
+		formatVersion: STORE_META_FORMAT_VERSION,
+		gitCommonDir: loc.gitLayout?.gitCommonDir ?? null,
+		firstIndexedFrom: loc.pathRoot,
+	};
+	const next: Record<string, unknown> = {
+		...existing,
+		formatVersion: STORE_META_FORMAT_VERSION,
+		storeRebuildAt: new Date(at).toISOString(),
+		updatedAt: new Date(at).toISOString(),
+	};
+	writeFileAtomicallySync(path, `${JSON.stringify(next, null, 2)}\n`);
+}
+
+/**
+ * When the store was last rebuilt whole, or `null` when it never was (or when
+ * `store.json` is absent, unreadable or does not record it — all three read the
+ * same, because an absent marker is not evidence of anything).
+ *
+ * Returns EPOCH MILLISECONDS so callers compare numbers, not ISO strings whose
+ * ordering is only lexicographic by accident of format.
+ */
+export function readStoreRebuildAt(loc: StoreLocation): number | null {
+	const raw = readJsonRecord(getStoreMetaPathFor(loc));
+	const value = raw?.storeRebuildAt;
+	if (typeof value !== "string") return null;
+	const ms = Date.parse(value);
+	return Number.isFinite(ms) ? ms : null;
+}
+
+/**
  * The sweep's resumable cursor (§4.3). `null` when no branch is being swept.
  *
  * ITS PRESENCE IS ALSO A CLAIM: a cursor naming `branchId` means at least one

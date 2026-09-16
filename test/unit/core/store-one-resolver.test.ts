@@ -154,16 +154,25 @@ interface Scenario {
 	arrange(): Arranged;
 }
 
-/** Every row of §2.3's precedence that Phase 2 can reach (row 3 is gated). */
+/**
+ * Every row of §2.3's precedence. Row 3 is ON from Phase 3c, so the two rows
+ * that reach it (`no override, inside a repository` and D2's legacy default)
+ * now expect `<gitCommonDir>/mnemex` — computed from the project's own `.git`
+ * by the TEST, never by asking the resolver under test.
+ */
 const SCENARIOS: Scenario[] = [
 	{
 		name: "no override, inside a repository",
 		arrange: () => {
 			const project = makeProject(true);
+			// Row 3, from 3c. `git init` in `makeProject` leaves `.git` as a
+			// DIRECTORY in a main checkout, so the common dir is `<project>/.git`
+			// — spelled out here rather than resolved, so the expectation stays
+			// independent of the seam it is checking.
 			return {
 				project,
-				expected: join(project, ".mnemex"),
-				kind: "worktree-local",
+				expected: join(project, ".git", "mnemex"),
+				kind: "git-common-dir",
 			};
 		},
 	},
@@ -225,10 +234,13 @@ const SCENARIOS: Scenario[] = [
 		arrange: () => {
 			const project = makeProject(true);
 			writeProjectConfig(project, ".mnemex");
+			// D2: the literal is treated as UNSET, so this falls through to row 3
+			// like the case above. Before 3c the two answers coincided and D2 was
+			// behaviour-neutral; this row is where it starts to bite.
 			return {
 				project,
-				expected: join(project, ".mnemex"),
-				kind: "worktree-local",
+				expected: join(project, ".git", "mnemex"),
+				kind: "git-common-dir",
 			};
 		},
 	},
@@ -446,11 +458,27 @@ describe("co-location on disk: every writer lands in the lock's directory", () =
 
 // ════════════════════════════════════════════════════════════════════════════
 describe("MCP memories do not move with the store (memoryDirFor)", () => {
-	test("no override: <workspace>/.mnemex, the store's own directory", () => {
+	test("no override: memories stay at <workspace>/.mnemex while the store moves under .git", () => {
+		// THE CLAIM IN THIS DESCRIBE'S TITLE, now actually testable. Before 3c the
+		// two directories coincided in this case, so "memories do not move with
+		// the store" was asserted against a row where nothing moved. From 3c the
+		// store is under the git common dir and the memories are NOT — which is
+		// §2.4's rule, and the reason `memoryDirFor` exists at all rather than
+		// reading `loc.storeDir`.
+		//
+		// Memories are AUTHORED. `mnemex index` rebuilds a store; nothing rebuilds
+		// a memory, so the migration strategy the whole flip rests on (abandon the
+		// old store, rebuild once) does not cover them, and a silent relocation
+		// would strand every one a user has written.
 		const project = makeProject(true);
 		const config = loadMcpConfig(project);
 		expect(config.memoryDir).toBe(join(project, ".mnemex"));
-		expect(config.indexDir).toBe(join(project, ".mnemex"));
+		expect(config.indexDir).toBe(join(project, ".git", "mnemex"));
+		expect(config.memoryDir).not.toBe(config.indexDir);
+		// `edit-history/` is the other authored artifact §2.4 names, and it was
+		// built on `indexDir` until 3c — so it WOULD have moved. It is on
+		// `worktreeDir` now, which is the memories' directory.
+		expect(config.worktreeDir).toBe(join(project, ".mnemex"));
 	});
 
 	test("MNEMEX_INDEX_DIR: memories follow the variable, as they always did, to where it NAMES", () => {
@@ -506,14 +534,6 @@ const PATH_RULE_OWNERS = new Set([
  * one of these without deleting its entry.
  */
 const STORE_PATH_RESIDUALS: Record<string, string> = {
-	"src/hooks/handlers/pre-tool-use.ts":
-		"Claude Code hook probe on <cwd>/.mnemex. Not owned by I-8; owed to 3c (architecture §9).",
-	"src/hooks/handlers/session-start.ts":
-		"Claude Code hook probe on <cwd>/.mnemex. Not owned by I-8; owed to 3c (architecture §9).",
-	"src/hooks/handlers/interaction-logger.ts":
-		"Claude Code hook writer on <cwd>/.mnemex. Not owned by I-8; owed to 3c (architecture §9).",
-	"src/benchmark/evaluators/test-case-selector.ts":
-		"Benchmark evaluator. Not owned by I-8; owed to 3c (architecture §9).",
 	"src/cloud/overlay.ts":
 		"The cloud overlay's OWN scratch LanceDB under <worktree>/.mnemex/overlay (§2.4), not the index store.",
 	"src/mcp/completion-detector.ts":
@@ -1235,14 +1255,19 @@ const SEAM_FILE = "src/core/store-location.ts";
  * STORE_PATH_RESIDUALS above, which sees the plain `join` form.
  */
 const MNEMEX_STORE_PATH_ALLOWLIST: Record<string, string> = {
-	"src/hooks/handlers/pre-tool-use.ts":
-		"Claude Code hook: probes <cwd>/.mnemex/index.db. Not owned by I-8; owed to 3c (architecture §9).",
-	"src/hooks/handlers/session-start.ts":
-		"Claude Code hook: probes <cwd>/.mnemex/index.db. Not owned by I-8; owed to 3c (architecture §9).",
-	"src/hooks/handlers/interaction-logger.ts":
-		"Claude Code hook: WRITES <cwd>/.mnemex/index.db. Not owned by I-8; owed to 3c (architecture §9).",
-	"src/benchmark/evaluators/test-case-selector.ts":
-		"Benchmark evaluator: reads <project>/.mnemex/index.db. Not owned by I-8; owed to 3c (architecture §9).",
+	// EMPTY, and that is Phase 3c's gate (`phase-3b-inputs.md` §6, §10).
+	//
+	// It held four entries until 3c: two Claude Code hooks that PROBED
+	// `<cwd>/.mnemex/index.db`, one that WROTE it, and the benchmark evaluator.
+	// Each reason read "not owned by I-8; owed to 3c", which §7 classifies as a
+	// deferral rather than a justification — acceptable only because §6 recorded
+	// it as a precondition some later phase must clear. This is that phase. All
+	// four now resolve through the seam and their entries are DELETED, not
+	// reworded.
+	//
+	// Keep it empty. A new entry means some file builds a store path by hand
+	// again, and from 3c on that path is the pre-3c location for every user, not
+	// only for the ones with an override.
 };
 
 /**
@@ -1276,14 +1301,6 @@ const MNEMEX_DIR_MINTERS: Record<string, string> = {
 		"`.mnemex` as a directory NAME in the default ignore list.",
 	"src/tui/hooks/useActivityMonitor.ts":
 		"Watches <project>/.mnemex for activity.jsonl: per-worktree data (§2.4), not the store.",
-	"src/hooks/handlers/pre-tool-use.ts":
-		"Claude Code hook: <cwd>/.mnemex. Owed to 3c; see MNEMEX_STORE_PATH_ALLOWLIST.",
-	"src/hooks/handlers/session-start.ts":
-		"Claude Code hook: <cwd>/.mnemex. Owed to 3c; see MNEMEX_STORE_PATH_ALLOWLIST.",
-	"src/hooks/handlers/interaction-logger.ts":
-		"Claude Code hook: <cwd>/.mnemex. Owed to 3c; see MNEMEX_STORE_PATH_ALLOWLIST.",
-	"src/hooks/handlers/post-tool-use.ts":
-		"Claude Code hook: <cwd>/.mnemex for .reindex-timestamp and .reindex-lock. Owed to 3c (architecture §9).",
 	"src/benchmark-v2/index.ts":
 		"Benchmark scratch: creates <project>/.mnemex for benchmark.db and its reports. Not the store.",
 };

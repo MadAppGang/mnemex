@@ -12,6 +12,7 @@
  *   duration_ms=3200
  */
 
+import { branchHintForAgent } from "../core/branch-notices.js";
 import type {
 	EnrichedIndexResult,
 	IndexStatus,
@@ -99,6 +100,31 @@ function indexComplete(result: EnrichedIndexResult): void {
 		console.log(
 			`upgraded_from_index_version=${result.upgradedFromIndexVersion}`,
 		);
+	}
+	// ── §6.3's store-location report (Phase 3c) ──────────────────────────────
+	//
+	// `store_dir` is what V1.1 and the FR-3 behavioural sweep assert on, and it
+	// is emitted UNCONDITIONALLY so a consumer can rely on the key. The flip
+	// makes it load-bearing rather than informational: the store is no longer
+	// somewhere a user would find by looking next to their code.
+	if (result.storeDir !== undefined) {
+		console.log(`store_dir=${result.storeDir}`);
+		if (result.storeKind !== undefined) {
+			console.log(`store_kind=${result.storeKind}`);
+		}
+	}
+	// The store this run REPLACED, when it was somewhere else — i.e. the 3c
+	// migration, seen by the user. It is left on disk; this is how they learn it
+	// is there, and it is the only channel that says so, because the two entry
+	// points above render nothing.
+	if (result.abandonedStoreDir !== undefined) {
+		console.log(`abandoned_store_dir=${result.abandonedStoreDir}`);
+	}
+	if (result.degradedReason !== undefined) {
+		console.log(`degraded_reason=${result.degradedReason}`);
+	}
+	if (result.ignoredLegacyIndexDir === true) {
+		console.log("ignored_legacy_index_dir=1");
 	}
 	// Files whose rows were rolled back because at least one chunk came back
 	// with no vector, and whose tracker stamp was withheld so the next run
@@ -203,6 +229,18 @@ function searchResults(
 		configuredModel?: string;
 		/** D1 (§4.4.2): HEAD has no registry entry, so the branch filter was dropped. */
 		branchUnknown?: boolean;
+		/**
+		 * Decision I-17 item 2: the registry KNOWS this branch and the store holds
+		 * no row for it. A different state from `branch_unknown` with a different
+		 * cause, and until 3c `search` reported neither of them — it returned an
+		 * empty list, which is what D1 exists to say is not good enough.
+		 */
+		branchEmpty?: boolean;
+		/**
+		 * V1.7 / §4.5: the store was rebuilt whole after this branch was last
+		 * indexed. The REASON `branch_empty` is 1, never a substitute for it.
+		 */
+		storeRebuiltElsewhere?: boolean;
 		/** The HEAD label this search resolved; absent outside a repository. */
 		branch?: string | null;
 	},
@@ -210,10 +248,28 @@ function searchResults(
 	console.log(`query=${query}`);
 	console.log(`result_count=${results.length}`);
 	// D1's response-level flag. Emitted on EVERY search, so a consumer can rely
-	// on the key rather than on its absence meaning "known".
-	console.log(`branch_unknown=${meta?.branchUnknown ? 1 : 0}`);
+	// on the key rather than on its absence meaning "known". `branch_empty` is
+	// emitted the same way and for the same reason.
+	const branchState = {
+		branchUnknown: meta?.branchUnknown === true,
+		branchEmpty: meta?.branchEmpty === true,
+	};
+	console.log(`branch_unknown=${branchState.branchUnknown ? 1 : 0}`);
+	console.log(`branch_empty=${branchState.branchEmpty ? 1 : 0}`);
+	// V1.7. Absent unless true, unlike the two above: it is an EXPLANATION of
+	// `branch_empty=1`, so a `0` on every ordinary search would be a key that
+	// only ever says "nothing to explain".
+	if (meta?.storeRebuiltElsewhere === true) {
+		console.log("store_rebuilt_elsewhere=1");
+	}
 	if (meta?.branch) {
 		console.log(`branch=${meta.branch}`);
+	}
+	// The SAME sentence the CLI's graph commands and the MCP tools render, from
+	// the one declaration in `src/core/branch-state.ts`.
+	const hint = branchHintForAgent(branchState, meta?.branch ?? null, "search");
+	if (hint !== null) {
+		console.log(`branch_hint=${hint}`);
 	}
 	// Only present when the query was embedded with the model the INDEX was
 	// built with rather than the configured one. An agent that gets results back
