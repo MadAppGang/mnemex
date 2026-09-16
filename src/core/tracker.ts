@@ -56,6 +56,39 @@ export interface FileChanges {
 export type EnrichmentStateMap = Partial<Record<DocumentType, EnrichmentState>>;
 
 /**
+ * The key one enrichment record is filed under (architecture §4.6).
+ *
+ * BOTH halves are part of the key, and the path half is the correction §4.6
+ * needs — see `ENRICHMENT_BY_CONTENT_TABLE_DDL` for the measurement.
+ */
+export interface EnrichmentContentKey {
+	pathKind: PathKind;
+	/** The STORED path: repo-relative, POSIX separators, as `chunk_index` holds it. */
+	path: string;
+	/** sha256 of the FILE CONTENT that was enriched — not of the summary. */
+	contentHash: string;
+}
+
+/** One summary `enrichment_by_content` remembers, with what adopting it needs. */
+export interface EnrichmentRecord {
+	documentType: DocumentType;
+	/** The LanceDB row id of the summary. */
+	summaryId: string;
+	state: EnrichmentState;
+	/** The chunk ids the summary was derived from, for the `documents` row. */
+	sourceIds: string[];
+	createdAt: string | null;
+	enrichedAt: string;
+	/** AUDIT ONLY: the `provider/model` that produced it. Never part of the key. */
+	producer: string | null;
+}
+
+/** The map key `enrichmentByContent` returns, so a caller can look a key up. */
+export function enrichmentContentKeyId(key: EnrichmentContentKey): string {
+	return `${key.pathKind}\u0000${key.path}\u0000${key.contentHash}`;
+}
+
+/**
  * Which producer wrote a stored row (architecture §3.2.1, §4.1.1's table).
  *
  * The narrow step runs ONCE PER CLASS, each immediately after that class's
@@ -325,6 +358,19 @@ export interface IFileTracker {
 		branchId: number,
 		documentType: DocumentType,
 	): string[];
+	/**
+	 * §4.6's reuse table. NO `branchId`, and that is the point: a summary is a
+	 * function of the text it was derived from, so the record exists once for
+	 * the store and `chunk_branches` decides who can see the row it names. The
+	 * same shape and the same reason as `knownChunkRows` / `findByContentKey`.
+	 */
+	enrichmentByContent(
+		keys: readonly EnrichmentContentKey[],
+	): Map<string, EnrichmentRecord[]>;
+	recordEnrichmentByContent(
+		key: EnrichmentContentKey,
+		records: readonly EnrichmentRecord[],
+	): void;
 	trackDocument(branchId: number, doc: TrackedDocument): void;
 	trackDocuments(branchId: number, docs: TrackedDocument[]): void;
 	getDocumentsForFile(branchId: number, filePath: string): TrackedDocument[];
@@ -753,6 +799,60 @@ const CHUNK_INDEX_TABLE_DDL = `CREATE TABLE IF NOT EXISTS chunk_index (
 ) WITHOUT ROWID`;
 
 /**
+ * ENRICHMENT REUSE, keyed on CONTENT (architecture §4.6, decision I-15).
+ *
+ * WHY IT CARRIES NO `branch_id` — I-15's FOURTH case, stated here because "an
+ * exclusion with no stated reason is indistinguishable from an oversight". A
+ * row here describes a SUMMARY THAT EXISTS, keyed by the source text it was
+ * derived from; which branches can see that summary is `chunk_branches`'
+ * business, exactly as for `chunk_index`. So it is out of `BRANCH_ID_TABLES`,
+ * out of `trackerNeedsV4Schema`, out of `highestBranchId()` and out of
+ * V3.11b's table lists, and it is NOT a tree-scoped table (`TreeScopedTable`):
+ * a branch sweep must not delete it, because the row it names may still be
+ * held by three other branches.
+ *
+ * WHERE THIS DEVIATES FROM §4.6's LITERAL DDL, which is
+ * `(content_hash PRIMARY KEY, state, summary_id, enriched_at)`. Measured, not
+ * assumed — see the implementation log for phase 3b-4:
+ *
+ *   - `path` is IN THE KEY. §4.6 says enrichment "is a function of file
+ *     content, not of which branch happened to be checked out", and the first
+ *     half of that is false in this tree: `buildFileSummaryPrompt(filePath,
+ *     …)` puts the path in the PROMPT, `buildContent(filePath, response)` puts
+ *     it in the stored summary TEXT, and `generateId(content, filePath)` puts
+ *     it in the summary's ID. A content-only key therefore hands `src/b.ts`
+ *     the summary of an identical `src/a.ts` — a summary that NAMES a
+ *     different file, under an id whose `chunk_index` row says `src/a.ts`, so
+ *     NARROW_SUMMARIES for `src/b.ts` could never collect it again. Path in
+ *     the key is what makes the key cover every input the value depends on,
+ *     which is CLAUDE.md #31's rule for a content-addressed cache.
+ *   - `summary_id` is in the key rather than a single column: one pass over
+ *     one file produces one `file_summary` AND up to 20 `symbol_summary`
+ *     documents. One column cannot hold them, and a JSON list would invent an
+ *     encoding where a row per summary needs none.
+ *   - `source_ids` / `created_at` are carried because ADOPTING a summary has
+ *     to reconstruct the `documents` row for the adopting branch without
+ *     reading another branch's rows (every `documents` statement is
+ *     branch-scoped — V3.11b).
+ *   - `producer` is an AUDIT column, deliberately NOT in the key: see
+ *     `enrichmentProducer()` in `enricher.ts` for the policy and
+ *     the reason it matches today's per-branch behaviour exactly.
+ */
+const ENRICHMENT_BY_CONTENT_TABLE_DDL = `CREATE TABLE IF NOT EXISTS enrichment_by_content (
+	path_kind TEXT NOT NULL,
+	path TEXT NOT NULL,
+	content_hash TEXT NOT NULL,
+	document_type TEXT NOT NULL,
+	summary_id TEXT NOT NULL,
+	state TEXT NOT NULL,
+	source_ids TEXT NOT NULL DEFAULT '[]',
+	created_at TEXT,
+	enriched_at TEXT NOT NULL,
+	producer TEXT,
+	PRIMARY KEY (path_kind, path, content_hash, summary_id)
+) WITHOUT ROWID`;
+
+/**
  * The crash-recovery journal and the widening backlog (architecture §4.1.4,
  * §4.1.3b).
  *
@@ -786,6 +886,14 @@ const CHUNK_MEMBERSHIP_INDEX_DDL: readonly string[] = [
 	 * semantics.
 	 */
 	"CREATE INDEX IF NOT EXISTS idx_chunk_write_intent_kind ON chunk_write_intent(kind, chunk_id)",
+	/**
+	 * `enrichment_by_content`'s primary key leads with `(path_kind, path,
+	 * content_hash)`, which is the LOOKUP. This index serves the other
+	 * direction: the narrow step deletes records BY SUMMARY ID, and without it
+	 * that delete is a full scan of the table inside a bounded region (R-txn)
+	 * — a table that grows with every revision of every enriched file.
+	 */
+	"CREATE INDEX IF NOT EXISTS idx_enrichment_by_content_summary ON enrichment_by_content(summary_id)",
 ];
 
 const FILES_INDEX_DDL: readonly string[] = [
@@ -895,10 +1003,10 @@ const INDEXED_DOCS_INDEX_DDL: readonly string[] = [
 ];
 
 /**
- * The core tables and their indexes: 8 CREATE TABLE + 10 CREATE INDEX.
+ * The core tables and their indexes: 9 CREATE TABLE + 11 CREATE INDEX.
  *
- * The three membership tables are NEW in index version 4 and are therefore
- * created by this ordinary pass, as §3.5.1 says ("`chunk_branches` /
+ * The four membership/reuse tables are NEW in index version 4 and are
+ * therefore created by this ordinary pass, as §3.5.1 says ("`chunk_branches` /
  * `chunk_index` / `chunk_write_intent` / `enrichment_by_content` are new
  * tables, so the ordinary constructor pass creates them"). They are not in the
  * §3.5.1 DROP list: no pre-v4 database has them, and dropping them on an
@@ -913,6 +1021,7 @@ const CORE_SCHEMA_DDL: readonly string[] = [
 	CHUNK_BRANCHES_TABLE_DDL,
 	CHUNK_INDEX_TABLE_DDL,
 	CHUNK_WRITE_INTENT_TABLE_DDL,
+	ENRICHMENT_BY_CONTENT_TABLE_DDL,
 	"CREATE INDEX IF NOT EXISTS idx_commits_ordinal ON commits(ordinal)",
 	...FILES_INDEX_DDL,
 	...DOCUMENTS_INDEX_DDL,
@@ -1352,9 +1461,10 @@ export interface TrackerRegion extends SyncRegion {
  *
  *    2   PRAGMA journal_mode = WAL, and its read-back when the switch is contended
  *    1   PRAGMA database_list — the memo key; measured lock-free, counted anyway
- *   16   CORE_SCHEMA_DDL.length: 8 CREATE TABLE + 8 CREATE INDEX. 3b-2 added the
+ *   18   CORE_SCHEMA_DDL.length: 9 CREATE TABLE + 9 CREATE INDEX. 3b-2 added the
  *          three membership tables (`chunk_branches`, `chunk_index`,
- *          `chunk_write_intent`) and their four indexes; 3b-1 had 9 here
+ *          `chunk_write_intent`) and their four indexes; 3b-4 added
+ *          `enrichment_by_content` (§4.6) and its one index; 3b-1 had 9 here
  *    3   SYMBOL_GRAPH_DDL.length — the 3 CREATE TABLEs
  *    2   ACTIVITY_LOG_DDL.length
  *    4   PRAGMA table_info — BRANCH_INDEXED_TABLES
@@ -1365,7 +1475,7 @@ export interface TrackerRegion extends SyncRegion {
  *    6   ALTER TABLE, at most — COLUMN_MIGRATIONS
  *    2   MIGRATION_INDEXES
  *   --
- *   52   → floor(250 / 52) = 4 ms per statement; 52 × 4 = 208 ms ≤ BUSY_TIMEOUT_MS
+ *   54   → floor(250 / 54) = 4 ms per statement; 54 × 4 = 216 ms ≤ BUSY_TIMEOUT_MS
  *
  * The architecture's table says 15 ("the 14 constructor DDL execs + the
  * pragma"). That counted `exec` CALLS; the DDL was then three batched execs
@@ -1398,7 +1508,7 @@ const R0_BLOCKING_STATEMENTS =
  * it.
  *
  *   region    what runs                                   blocking   on contention
- *   R0        WAL pragma, memo key, schema pass           45         fail the open
+ *   R0        WAL pragma, memo key, schema pass           54         fail the open
  *   R1        getChanges' one SELECT over `files`         1          retry once
  *   R-read    n read-only statements (`reads(n)`)         n          retry once
  *   R-write   ONE autocommit write statement              1          fail
@@ -2112,6 +2222,12 @@ export class FileTracker implements IFileTracker {
 		// content would be permanently unsearchable while every probe reported
 		// health. A surviving journal would likewise ask recovery to finish a
 		// removal against a dataset that no longer has the rows.
+		//
+		// `enrichment_by_content` goes with them for the same reason (§4.6):
+		// every record names a summary ROW, and after a whole-store clear there
+		// are none. Adoption re-verifies liveness and would refuse them all, so
+		// keeping them would not be a correctness bug — it would be a table of
+		// records that can never be used again, growing across rebuilds.
 		this.withRegion(TRACKER_REGIONS.txn, () => {
 			this.db.exec("DELETE FROM files");
 			this.db.exec("DELETE FROM metadata");
@@ -2120,6 +2236,7 @@ export class FileTracker implements IFileTracker {
 			this.db.exec("DELETE FROM chunk_branches");
 			this.db.exec("DELETE FROM chunk_index");
 			this.db.exec("DELETE FROM chunk_write_intent");
+			this.db.exec("DELETE FROM enrichment_by_content");
 		});
 	}
 
@@ -2511,8 +2628,8 @@ export class FileTracker implements IFileTracker {
 	/**
 	 * R7 (§4.1.1 M4): ONE transaction that drops this branch's membership for
 	 * `chunkIds`, deletes the `chunk_index` rows of the ids that became orphans
-	 * (their LanceDB rows are already gone — W1), and clears the `'remove'`
-	 * intents.
+	 * (their LanceDB rows are already gone — W1), forgets any `§4.6` enrichment
+	 * record naming those orphans, and clears the `'remove'` intents.
 	 *
 	 * The ONLY `DELETE FROM chunk_index` in `src/` (§3.5, W1's allowlist).
 	 */
@@ -2541,6 +2658,20 @@ export class FileTracker implements IFileTracker {
 				this.db
 					.prepare(
 						`DELETE FROM chunk_index WHERE chunk_id IN (${FileTracker.placeholders(batch.length)})`,
+					)
+					.run(...batch);
+				// §4.6: an enrichment record names a summary ROW. The row behind
+				// these ids has just been deleted (no branch pointed at it any
+				// more), so the record can never be adopted again — adoption
+				// refuses an id `existingIds` does not return. Deleting it here,
+				// in the same transaction and in W1's order (LanceDB first, the
+				// SQLite state that makes it findable second), is what stops the
+				// table growing with every revision of every file ever enriched.
+				// Served by `idx_enrichment_by_content_summary`; without that
+				// index this is a full scan inside a bounded region.
+				this.db
+					.prepare(
+						`DELETE FROM enrichment_by_content WHERE summary_id IN (${FileTracker.placeholders(batch.length)})`,
 					)
 					.run(...batch);
 			}
@@ -2978,6 +3109,140 @@ export class FileTracker implements IFileTracker {
 		}
 
 		return needsEnrichment;
+	}
+
+	// ========================================================================
+	// Enrichment reuse by CONTENT (architecture §4.6, decision I-15)
+	// ========================================================================
+
+	/**
+	 * What this STORE already holds for each `(path, content)`, whichever branch
+	 * paid for it.
+	 *
+	 * NO `branchId`, for the reason `knownChunkRows` takes none: the record
+	 * describes a row that exists once for the store. Adoption is what makes a
+	 * branch able to SEE it, and adoption goes through the membership path like
+	 * every other row (§4.1.3a).
+	 *
+	 * The statement filters on `(path_kind, path)` — the primary key's leading
+	 * columns — and the content hash is compared here rather than in SQL. A
+	 * composite `IN` over three columns is either a cross product (which
+	 * over-matches across keys) or a row-value `IN`, whose support differs
+	 * between the two SQLite backends this tree runs on. The rows per path are
+	 * bounded by the revisions whose summaries are still live, because
+	 * `finishNarrowBatch` forgets a record when the row it names is deleted.
+	 */
+	enrichmentByContent(
+		keys: readonly EnrichmentContentKey[],
+	): Map<string, EnrichmentRecord[]> {
+		const out = new Map<string, EnrichmentRecord[]>();
+		if (keys.length === 0) return out;
+		const wanted = new Set(keys.map(enrichmentContentKeyId));
+		const byKind = new Map<PathKind, string[]>();
+		for (const key of keys) {
+			const paths = byKind.get(key.pathKind);
+			if (paths === undefined) byKind.set(key.pathKind, [key.path]);
+			else paths.push(key.path);
+		}
+		const statements: Array<{ pathKind: PathKind; paths: string[] }> = [];
+		for (const [pathKind, paths] of byKind) {
+			for (const batch of FileTracker.chunk(
+				[...new Set(paths)],
+				FileTracker.ID_BATCH_SIZE,
+			)) {
+				statements.push({ pathKind, paths: batch });
+			}
+		}
+		return this.withRegion(reads(statements.length), () => {
+			for (const statement of statements) {
+				const rows = this.db
+					.prepare(
+						`SELECT path, content_hash, document_type, summary_id, state, source_ids, created_at, enriched_at, producer
+						   FROM enrichment_by_content
+						  WHERE path_kind = ? AND path IN (${FileTracker.placeholders(statement.paths.length)})`,
+					)
+					.all(statement.pathKind, ...statement.paths) as Array<{
+					path: string;
+					content_hash: string;
+					document_type: string;
+					summary_id: string;
+					state: string;
+					source_ids: string;
+					created_at: string | null;
+					enriched_at: string;
+					producer: string | null;
+				}>;
+				for (const row of rows) {
+					const id = enrichmentContentKeyId({
+						pathKind: statement.pathKind,
+						path: row.path,
+						contentHash: row.content_hash,
+					});
+					if (!wanted.has(id)) continue;
+					let sourceIds: string[] = [];
+					try {
+						const parsed = JSON.parse(row.source_ids);
+						if (Array.isArray(parsed)) sourceIds = parsed.map(String);
+					} catch {
+						sourceIds = [];
+					}
+					const record: EnrichmentRecord = {
+						documentType: row.document_type as DocumentType,
+						summaryId: row.summary_id,
+						state: row.state as EnrichmentState,
+						sourceIds,
+						createdAt: row.created_at,
+						enrichedAt: row.enriched_at,
+						producer: row.producer,
+					};
+					const existing = out.get(id);
+					if (existing === undefined) out.set(id, [record]);
+					else existing.push(record);
+				}
+			}
+			return out;
+		});
+	}
+
+	/**
+	 * Record what one enrichment pass produced for one `(path, content)`.
+	 *
+	 * `INSERT OR REPLACE`, because re-enriching the same content at the same
+	 * path (after a `--force`, or after a failure part-way) must overwrite its
+	 * own record rather than abort the run on the primary key — the same reason
+	 * `commitAddBatch` registers `chunk_index` rows that way.
+	 *
+	 * It is NOT the thing that makes a summary reusable: a record whose row
+	 * LanceDB no longer holds is refused at adoption (`existingIds`), which is
+	 * what keeps this table an optimisation rather than a second source of
+	 * truth about what the store contains.
+	 */
+	recordEnrichmentByContent(
+		key: EnrichmentContentKey,
+		records: readonly EnrichmentRecord[],
+	): void {
+		if (records.length === 0) return;
+		this.withRegion(TRACKER_REGIONS.txn, () => {
+			const stmt = this.db.prepare(
+				`INSERT OR REPLACE INTO enrichment_by_content
+				 (path_kind, path, content_hash, document_type, summary_id, state, source_ids, created_at, enriched_at, producer)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			);
+			for (const record of records) {
+				stmt.run(
+					key.pathKind,
+					key.path,
+					key.contentHash,
+					record.documentType,
+					record.summaryId,
+					record.state,
+					JSON.stringify(record.sourceIds),
+					record.createdAt,
+					record.enrichedAt,
+					record.producer,
+				);
+			}
+		});
 	}
 
 	// ========================================================================

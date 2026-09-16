@@ -410,14 +410,24 @@ describe("V2.9 — src/core/sqlite.ts sets no pragma", () => {
 
 describe("the clamp, as the tracker's regions apply it", () => {
 	test("per-statement busy_timeout: the shared clamp, DIVIDED — literal values", () => {
-		// R0: 52 statements → floor(250 / 52). It gained `idx_files_path`
+		// R0: 54 statements → floor(250 / 54). It gained `idx_files_path`
 		// (I-12 Ruling 2), the four `PRAGMA table_info` probes that decide
 		// whether a branch-leading index can be created at all, the 14
-		// branch-leading indexes themselves, and — in Phase 3b-2 — the three
+		// branch-leading indexes themselves, in Phase 3b-2 the three
 		// membership tables (`chunk_branches`, `chunk_index`,
-		// `chunk_write_intent`) with their four indexes.
-		expect(TRACKER_REGIONS.open.blockingStatements).toBe(52);
+		// `chunk_write_intent`) with their four indexes, and in Phase 3b-4
+		// `enrichment_by_content` (§4.6) with its one index.
+		//
+		// THE ARITHMETIC, REDONE (CLAUDE.md #31): 54 × floor(250 / 54) = 54 × 4
+		// = 216 ms ≤ BUSY_TIMEOUT_MS (250). The per-statement value is unchanged
+		// at 4 ms, because floor(250/52) and floor(250/54) are both 4 — the
+		// region's whole busy-wait grew by 8 ms and stays inside the bound.
+		expect(TRACKER_REGIONS.open.blockingStatements).toBe(54);
 		expect(trackerBusyTimeoutMs(TRACKER_REGIONS.open, 0)).toBe(4);
+		expect(
+			TRACKER_REGIONS.open.blockingStatements *
+				trackerBusyTimeoutMs(TRACKER_REGIONS.open, 0),
+		).toBe(216);
 		// Reads retry once, so 1 statement is 2 chances to wait → floor(250 / 2)
 		expect(trackerBusyTimeoutMs(TRACKER_REGIONS.changes, 0)).toBe(125);
 		expect(trackerBusyTimeoutMs(TRACKER_REGIONS.read, 0)).toBe(125);

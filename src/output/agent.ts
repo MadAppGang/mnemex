@@ -43,6 +43,25 @@ function indexComplete(result: EnrichedIndexResult): void {
 		if (result.enrichment.cost !== undefined) {
 			console.log(`enrichment_cost_usd=${result.enrichment.cost.toFixed(6)}`);
 		}
+		// §4.6's reuse, in DATA. Emitted whenever enrichment ran at all,
+		// including as all-zeros: a consumer has to be able to tell "nothing was
+		// reusable" from "this build does not reuse". `enrichment_files_refused`
+		// is the one to act on — non-zero means a record named a summary row the
+		// store no longer holds, and this run bought that summary again.
+		if (result.enrichment.reuse) {
+			console.log(
+				`enrichment_files_reused=${result.enrichment.reuse.filesReused}`,
+			);
+			console.log(
+				`enrichment_docs_reused=${result.enrichment.reuse.documentsReused}`,
+			);
+			console.log(
+				`enrichment_files_enriched=${result.enrichment.reuse.filesEnriched}`,
+			);
+			console.log(
+				`enrichment_files_refused=${result.enrichment.reuse.filesRefused}`,
+			);
+		}
 	}
 	if (result.embeddingModel) {
 		console.log(`embedding_model=${result.embeddingModel}`);
@@ -153,6 +172,19 @@ function indexComplete(result: EnrichedIndexResult): void {
 			`branch_sweep_finalized=${result.branch.sweepBranchesFinalized}`,
 		);
 		console.log(`branch_sweep_remaining=${result.branch.sweepRemaining}`);
+		// §4.5 / D3. Emitted only when a force ran, because its absence is the
+		// fact ("this run forced nothing") and a `force_scope=none` would read as
+		// a force that chose no scope. `branch` means every OTHER branch kept its
+		// rows; `store` means none of them did.
+		if (result.branch.forceScope !== undefined) {
+			console.log(`force_scope=${result.branch.forceScope}`);
+			if (result.branch.forceRowsDeleted !== undefined) {
+				console.log(`force_rows_deleted=${result.branch.forceRowsDeleted}`);
+			}
+			if (result.branch.forceRowsNarrowed !== undefined) {
+				console.log(`force_rows_narrowed=${result.branch.forceRowsNarrowed}`);
+			}
+		}
 	}
 	if (result.errors.length > 0) {
 		console.log(`errors=${result.errors.length}`);

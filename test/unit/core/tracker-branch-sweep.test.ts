@@ -72,6 +72,14 @@ const TABLE_GROUPS = {
 	 * which rows the STORE holds, independent of branch (§3.5), so it carries no
 	 * `branch_id` column at all and there is nothing for a statement on it to
 	 * name. Adding it here would demand a `branch_id` that does not exist.
+	 *
+	 * `enrichment_by_content` (§4.6, phase 3b-4) is absent for the SAME reason —
+	 * I-15's fourth case, a table that describes rows rather than trees. A
+	 * record says "this text, at this path, produced these summary rows"; which
+	 * branches can see those rows is `chunk_branches`' business, and a branch
+	 * predicate here would make the reuse per-branch, i.e. delete the feature.
+	 * The reason is also written in its DDL comment, which is what makes the
+	 * exclusion auditable rather than an oversight.
 	 */
 	"chunk membership": ["chunk_branches", "chunk_write_intent"],
 } as const;
@@ -387,6 +395,8 @@ describe("V3.11b — the v4 DDL declares what the predicates rely on", () => {
 				"the NARROW step's work list is `chunk_index` joined to `chunk_branches` (§4.1.1); the branch predicate is on the JOINED table, and `chunk_index` carries no branch id.",
 			idx_chunk_write_intent_kind:
 				"a `'widen'` intent is BRANCH-AGNOSTIC work (§4.1.3b): the drain recomputes the mirror from the chunk's whole membership, so an intent left by one branch is completed correctly by a run on any other. Leading with `branch_id` would index the one column the drain must not filter on.",
+			idx_enrichment_by_content_summary:
+				"§4.6's reuse table carries no branch id at all (I-15's fourth case): a record describes a summary that EXISTS, keyed by the text it came from, and `chunk_branches` decides who can see it. This index serves the narrow step's delete BY SUMMARY ID, which is branch-agnostic for the same reason.",
 		};
 		const offenders: string[] = [];
 		for (const { sql } of indexes) {

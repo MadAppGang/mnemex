@@ -37,7 +37,7 @@
  *   W-R3  `stamp`                  headSha / lastIndexedAt at the end of a run
  *   W-R4  `markNeedsReindex`       HEAD moved mid-run (§4.1.5)
  *   W-R5  `finalizeTombstone`      rule C's compaction, after the sweep drained
- *   W-R6  `clearIndexStamp`        NOT BUILT — `--force`'s `narrowBranch` (§4.5)
+ *   W-R6  `clearIndexStamp`        `--force`'s `narrowBranch` (§4.5)
  *
  * RULE R (§3.4). A label matching only a TOMBSTONED or UNCONFIRMED entry is
  * RESURRECTED: both fields are cleared, `lastSeen` refreshes and the SAME id
@@ -271,6 +271,24 @@ export interface BranchRegistry {
 	 */
 	stamp(branchId: number, headSha: string | null, indexedAt: string): void;
 	/**
+	 * W-R6 (§4.5): `--force` is about to remove every row this branch holds, so
+	 * the record of when it was last indexed stops being true BEFORE the removal
+	 * rather than after it.
+	 *
+	 * It clears BOTH fields `stamp` writes. §4.5's pseudocode names
+	 * `lastIndexedAt` alone, but the two are written together by W-R3 and mean
+	 * one thing between them — "this branch was indexed, at that commit, at that
+	 * time". Leaving `headSha` behind makes `mnemex branches` print a commit for
+	 * a branch that holds nothing, which is the half-true state this call exists
+	 * to avoid. `needsReindex` is NOT touched: it is a separate instruction from
+	 * §4.1.5 and the run's own `stamp` clears it on success.
+	 *
+	 * Like every other stamp it waits for `flush()`. A crash between here and
+	 * the re-stamp loses the clear, which costs a stale line in one listing and
+	 * nothing else: no decision in this design reads either field.
+	 */
+	clearIndexStamp(branchId: number): void;
+	/**
 	 * W-R4 (§4.1.5): HEAD moved during the run, so this branch's rows describe a
 	 * mixture of two trees. Nothing is rolled back and nothing needs to be — the
 	 * tracker rows record the content hash of what was actually read, so the
@@ -499,6 +517,14 @@ export function openRegistry(
 			// A completed run is the only thing that clears it: the re-index the
 			// flag asked for has now happened.
 			entry.needsReindex = false;
+			dirty = true;
+		},
+
+		clearIndexStamp(branchId: number): void {
+			assertHeld("clearIndexStamp");
+			const entry = entryById(file, branchId);
+			entry.headSha = null;
+			entry.lastIndexedAt = null;
 			dirty = true;
 		},
 

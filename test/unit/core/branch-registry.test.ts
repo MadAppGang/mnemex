@@ -410,6 +410,107 @@ describe("rule C (§3.4): finalizeTombstone drops the entry and leaves nextId al
 	});
 });
 
+describe("W-R6 (§4.5): clearIndexStamp un-records an index that no longer exists", () => {
+	test("both fields `stamp` writes go to null, on the bytes, and nothing else moves", () => {
+		writeRegistry({
+			formatVersion: 1,
+			nextId: 3,
+			branches: [
+				entry(1, "main", {
+					headSha: "a".repeat(40),
+					lastIndexedAt: new Date(T0).toISOString(),
+					needsReindex: true,
+				}),
+				entry(2, "other", {
+					headSha: "b".repeat(40),
+					lastIndexedAt: new Date(T0).toISOString(),
+				}),
+			],
+		});
+		const registry = openRegistry(loc, lock, noRows);
+		registry.clearIndexStamp(1);
+		registry.flush();
+
+		const file = onDisk();
+		const main = file.branches.find((b) => b.id === 1);
+		// `--force` is about to remove every row this branch holds, so the record
+		// of when and at which commit it was indexed stops being true. BOTH go:
+		// leaving `headSha` behind makes `mnemex branches` print a commit for a
+		// branch that holds nothing.
+		expect(main?.lastIndexedAt).toBeNull();
+		expect(main?.headSha).toBeNull();
+		// `needsReindex` is §4.1.5's instruction and is NOT this call's business:
+		// the run's own `stamp` clears it, on success.
+		expect(main?.needsReindex).toBe(true);
+		// The entry survives with its id — `--force` is not the tombstone path.
+		expect(main?.deletedAt).toBeNull();
+		expect(file.nextId).toBe(3);
+		// No other branch is touched. A force on one branch changes one entry.
+		expect(file.branches.find((b) => b.id === 2)).toEqual(
+			entry(2, "other", {
+				headSha: "b".repeat(40),
+				lastIndexedAt: new Date(T0).toISOString(),
+			}),
+		);
+	});
+
+	test("it is a registry MUTATOR: the lock is checked, and an unknown id throws", () => {
+		writeRegistry({
+			formatVersion: 1,
+			nextId: 2,
+			branches: [entry(1, "main")],
+		});
+		const registry = openRegistry(loc, lock, noRows);
+		expect(() => registry.clearIndexStamp(99)).toThrow();
+		lock.release();
+		expect(() => registry.clearIndexStamp(1)).toThrow(RegistryNotLockedError);
+		// afterEach releases again; a second release is a no-op.
+	});
+});
+
+describe("V3.19's falsifier, executed: the route `--force` must NOT take", () => {
+	// §7's V3.19 says it is "falsified by routing `--force` through the tombstone
+	// path — B's id changes", and §4.5 gives the reason: ids are never reused, so
+	// a tombstone-then-reallocate silently changes the branch's id and orphans
+	// every `chunk_branches` row and cached memo written before it.
+	//
+	// AS WORDED IT NO LONGER FIRES, because phase 3b-3 built rule R after §7 was
+	// written. Both halves are driven here so the criterion pins the route that
+	// IS dangerous rather than the one that reads as dangerous.
+
+	test("tombstoning alone does NOT change the id — rule R resurrects it", () => {
+		writeRegistry({
+			formatVersion: 1,
+			nextId: 2,
+			branches: [
+				entry(1, "main", { deletedAt: new Date(T0 - 1000).toISOString() }),
+			],
+		});
+		const registry = openRegistry(loc, lock, noRows);
+		expect(registry.resolveId(branch("main"))).toBe(1);
+		expect(registry.resolved).toEqual({ id: 1, resurrected: true });
+	});
+
+	test("tombstoning AND FINALISING does: the id changes and the old one is dead", () => {
+		writeRegistry({
+			formatVersion: 1,
+			nextId: 2,
+			branches: [
+				entry(1, "main", { deletedAt: new Date(T0 - 1000).toISOString() }),
+			],
+		});
+		const registry = openRegistry(loc, lock, noRows);
+		// Rule C, which is what a tombstone route reaches once the sweep drains.
+		registry.finalizeTombstone(1, 0);
+		// A fresh allocation, because nothing names the label any more. Every row
+		// still carrying `,1,` is now unreachable from every branch: that is the
+		// cost §4.5 refuses, and it is why `--force` narrows a LIVE entry.
+		expect(registry.resolveId(branch("main"))).toBe(2);
+		expect(registry.resolved).toEqual({ id: 2, resurrected: false });
+		expect(onDisk().branches.map((b) => b.id)).toEqual([2]);
+	});
+});
+
 describe("a failed allocation rename is undone in memory", () => {
 	test("the failed label's id is issued to the next allocation, not skipped or published", () => {
 		if (process.getuid?.() === 0) return; // root ignores directory permissions

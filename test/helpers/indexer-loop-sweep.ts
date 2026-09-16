@@ -294,6 +294,23 @@ export function sweepIndexerLoops(
 
 	// ── 1. Tracker handles and derived handles ──────────────────────────────
 	const trackerAliases = new Set<string>();
+	/**
+	 * `this.<name>` fields that HOLD a tracker.
+	 *
+	 * `"fileTracker"` is seeded because `indexer.ts` declares it as
+	 * `private fileTracker: IFileTracker | null = null` and assigns it from a
+	 * factory call, so neither rule below reaches it.
+	 *
+	 * The rest are found by TYPE (`private tracker: IFileTracker;`), which is
+	 * how `enricher.ts` declares its own. Recognising the field by its NAME
+	 * alone is what made this sweep BLIND over that file: measured before the
+	 * fix, `enricher.ts` gave `regionLoops: 0, regionCallsInLoops: 0` while
+	 * `narrowSummaries` was calling `this.tracker.chunkIdsForPath(...)` inside a
+	 * `for` loop. A sweep that reports PASS over a file it cannot see is the
+	 * failure CLAUDE.md #32 is about, so the census below is asserted non-empty
+	 * for every file in the list.
+	 */
+	const trackerFields = new Set<string>(["fileTracker"]);
 	const derivedLocals = new Set<string>();
 	const derivedFields = new Set<string>();
 	const unsupported: LoopFinding[] = [];
@@ -313,12 +330,32 @@ export function sweepIndexerLoops(
 				trackerAliases.add(pattern.text);
 			}
 		}
+		// `private tracker: IFileTracker;` — a FIELD whose declared type is a
+		// tracker. Also covers a parameter property (`constructor(private
+		// tracker: IFileTracker)`), which tree-sitter reports as a parameter
+		// carrying an accessibility modifier: the parameter rule above adds the
+		// local name and this one adds the field.
+		if (
+			node.type === "public_field_definition" ||
+			node.type === "required_parameter" ||
+			node.type === "optional_parameter"
+		) {
+			const name =
+				node.childForFieldName("name") ?? node.childForFieldName("pattern");
+			const type = node.childForFieldName("type");
+			if (name?.type === "identifier" && type && TRACKER_TYPE.test(type.text)) {
+				trackerFields.add(name.text);
+			}
+		}
 		return undefined;
 	});
 
 	const isTrackerHandle = (node: Node): boolean => {
 		const n = unwrap(node);
-		if (isThisMember(n, "fileTracker")) return true;
+		if (isThisMember(n)) {
+			const prop = unwrap(n).childForFieldName("property")?.text ?? "";
+			if (trackerFields.has(prop)) return true;
+		}
 		return n.type === "identifier" && trackerAliases.has(n.text);
 	};
 	const isDerivedHandle = (node: Node): boolean => {
@@ -391,6 +428,14 @@ export function sweepIndexerLoops(
 	}
 
 	// Every `this.fileTracker` must be somewhere the recogniser understands.
+	//
+	// The name-`"fileTracker"` half is UNCHANGED, including the destructuring
+	// and shorthand-pattern shapes, so `indexer.ts` keeps exactly the guarantee
+	// it had. The second half extends the MEMBER-EXPRESSION case to every other
+	// field that holds a tracker (`this.tracker` in `enricher.ts`), and only
+	// that case: a bare identifier named `tracker` is a constructor parameter in
+	// those files, which this sweep has never checked and which flagging would
+	// make a false finding out of.
 	walk(root, (node) => {
 		const text = node.text;
 		if (
@@ -413,6 +458,21 @@ export function sweepIndexerLoops(
 				rule: "UNSUPPORTED",
 				line: node.startPosition.row + 1,
 				text: firstLine(parent ?? node),
+				method: enclosingMethod(node),
+				callee: null,
+			});
+		} else if (
+			node.type === "property_identifier" &&
+			text !== "fileTracker" &&
+			trackerFields.has(text) &&
+			node.parent?.type === "member_expression" &&
+			node.parent.childForFieldName("object")?.type === "this" &&
+			!trackerPositionOk(node.parent)
+		) {
+			unsupported.push({
+				rule: "UNSUPPORTED",
+				line: node.startPosition.row + 1,
+				text: firstLine(node.parent),
 				method: enclosingMethod(node),
 				callee: null,
 			});

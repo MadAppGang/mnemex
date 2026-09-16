@@ -44,11 +44,22 @@ const INDEXER_SOURCE = join(REPO, "src", "core", "indexer.ts");
  * modules are free functions taking the tracker explicitly rather than classes
  * holding a differently-named field — a field the recogniser does not know is
  * a handle would pass this sweep by being invisible to it.
+ *
+ * `enricher.ts` was THAT FILE, and it is the reason the sentence above could
+ * not be trusted. It is a class holding `private tracker: IFileTracker`, it has
+ * driven tracker regions in a loop since phase 3b-2 (`narrowSummaries`), and it
+ * was never in this list. Adding it without touching the recogniser would have
+ * been WORSE than leaving it out: measured before the fix, the sweep reported
+ * `findings: 0` over the file with `regionLoops: 0, regionCallsInLoops: 0` —
+ * a PASS over 1 100 lines it could not see. The recogniser now finds a field by
+ * its declared TYPE, and the census test below is what keeps this honest: it
+ * fails if any listed file reports no region loops at all.
  */
 const REGION_DRIVING_SOURCES: readonly string[] = [
 	INDEXER_SOURCE,
 	join(REPO, "src", "core", "branch-membership.ts"),
 	join(REPO, "src", "core", "branch-sweep.ts"),
+	join(REPO, "src", "core", "enrichment", "enricher.ts"),
 ];
 
 /**
@@ -123,7 +134,8 @@ describe("the caller-side SR-2 sweep over src/core/indexer.ts", () => {
 			regionLoops += census.regionLoops;
 		}
 		// `branch-membership.ts`'s narrow, drain and recovery; `branch-sweep.ts`'s
-		// page loop and its tree-scoped tail.
+		// page loop and its tree-scoped tail; `enricher.ts`'s narrow, its
+		// adoption batches and its per-file state writes (§4.6).
 		for (const callee of [
 			"beginRemoveIntents",
 			"finishNarrowBatch",
@@ -132,10 +144,34 @@ describe("the caller-side SR-2 sweep over src/core/indexer.ts", () => {
 			"pendingIntents",
 			"membershipPage",
 			"deleteBranchTreeRows",
+			"chunkIdsForPath",
+			"setEnrichmentState",
+			"recordEnrichmentByContent",
 		]) {
 			expect([...callees]).toContain(callee);
 		}
 		expect(regionLoops).toBeGreaterThanOrEqual(5);
+	});
+
+	/**
+	 * EVERY listed file must be VISIBLE to the sweep, one by one.
+	 *
+	 * The test above aggregates, so a file the recogniser cannot see contributes
+	 * nothing and disappears into the others' numbers — which is exactly how
+	 * `enricher.ts` would have been added: `findings: 0` over a file with
+	 * `regionLoops: 0`, reported as a pass. A per-file floor is what makes
+	 * "finds nothing" mean something.
+	 */
+	test("no listed file is INVISIBLE to the sweep", () => {
+		for (const source of REGION_DRIVING_SOURCES) {
+			const { census } = sweepIndexerLoops(
+				readFileSync(source, "utf8"),
+				parser,
+				[],
+			);
+			expect(census.regionLoops, source).toBeGreaterThan(0);
+			expect(census.regionCallsInLoops, source).toBeGreaterThan(0);
+		}
 	});
 
 	test("is not vacuous: it recognised the loops the tracker residue named", () => {
@@ -177,6 +213,64 @@ describe("the caller-side SR-2 sweep over src/core/indexer.ts", () => {
 		}
 		expect(census.regionLoops).toBeGreaterThanOrEqual(9);
 		expect(census.yieldStatements).toBeGreaterThanOrEqual(10);
+	});
+});
+
+describe("a tracker held under ANOTHER field name (the enricher's shape)", () => {
+	/** `enricher.ts`: a class whose handle is `this.tracker`, typed. */
+	const enricherShape = (body: string) =>
+		`class Enricher {\n\tprivate tracker: IFileTracker;\n\tconstructor(tracker: IFileTracker) {\n\t\tthis.tracker = tracker;\n\t}\n${body}\n}`;
+
+	test("THE BLIND SPOT: an unyielded loop on `this.tracker` is a finding", () => {
+		// Before phase 3b-4 this returned [] — the handle was recognised by the
+		// NAME `this.fileTracker`, so a class calling its own `this.tracker` was
+		// invisible and the sweep reported PASS over every loop in it.
+		expect(
+			rulesOf(
+				enricherShape(`
+	async narrow(paths: string[]) {
+		for (const p of paths) this.tracker.chunkIdsForPath(1, "repo", p);
+	}`),
+			),
+		).toEqual(["SR-2-caller"]);
+	});
+
+	test("and it is satisfied by the same yield the other files use", () => {
+		expect(
+			rulesOf(
+				enricherShape(`
+	async narrow(paths: string[]) {
+		for (const p of paths) {
+			this.tracker.chunkIdsForPath(1, "repo", p);
+			await yieldToEventLoop();
+		}
+	}`),
+			),
+		).toEqual([]);
+	});
+
+	test("the handle cannot escape into a position the analysis does not model", () => {
+		// Into a container, where the analysis loses it. Passing it as a call
+		// ARGUMENT is deliberately fine — T3 makes the callee a region-reaching
+		// call — and this is the same rule `this.fileTracker` already lives
+		// under, now applied to the other field names too.
+		expect(
+			rulesOf(
+				enricherShape(`
+	leak() {
+		const bag = { held: this.tracker };
+		return bag;
+	}`),
+			),
+		).toEqual(["UNSUPPORTED"]);
+	});
+
+	test("a constructor PARAMETER named like the field is not itself a finding", () => {
+		// The escape check covers `this.<field>` member expressions only. A bare
+		// identifier `tracker` is the constructor parameter every one of these
+		// classes has, and flagging it would make a false finding out of the
+		// shape this rule exists to support.
+		expect(rulesOf(enricherShape("\tnoop() {}"))).toEqual([]);
 	});
 });
 

@@ -42,6 +42,13 @@ export const LIFECYCLE_CHILD = join(
 	"helpers",
 	"branch-lifecycle-child.ts",
 );
+/** V3.19's force-scope child (§4.5 / D3). */
+export const FORCE_SCOPE_CHILD = join(
+	REPO_ROOT,
+	"test",
+	"helpers",
+	"force-scope-child.ts",
+);
 export const DIST_ENTRY = join(REPO_ROOT, "dist", "index.js");
 
 /** Project config that keeps a run in BM25 mode: no network, no keychain. */
@@ -177,6 +184,37 @@ export function runLifecycleChild(
 				projectDir,
 				String(runs),
 				String(clockOffsetMs),
+			],
+			{
+				cwd: projectDir,
+				env: sandboxEnv(scratch, extra),
+				stdin: "ignore",
+				stdout: "pipe",
+				stderr: "pipe",
+			},
+		),
+	);
+}
+
+/**
+ * V3.19: one real `index(force, forceAll)` in a child, or the corruption
+ * repair's signal (§4.5 / D3). See `force-scope-child.ts` for why the
+ * corruption case produces the SIGNAL rather than a `FixedSizeList[0]` fixture.
+ */
+export function runForceScopeChild(
+	mode: "force" | "force-all" | "corrupt",
+	projectDir: string,
+	scratch: string,
+	extra?: Record<string, string>,
+): Promise<ChildRun> {
+	return collect(
+		Bun.spawn(
+			[
+				process.execPath,
+				"--env-file=/dev/null",
+				FORCE_SCOPE_CHILD,
+				mode,
+				projectDir,
 			],
 			{
 				cwd: projectDir,

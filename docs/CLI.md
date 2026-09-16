@@ -75,7 +75,8 @@ mnemex index [path]
 **Options:**
 | Flag | Description |
 |------|-------------|
-| `-f, --force` | Force re-index all files (ignore cache) |
+| `-f, --force` | Re-index every file of **this branch**; other branches keep their rows |
+| `--force-all` | Rebuild the whole store, **every branch** — each one must index again |
 | `--no-llm` | Disable LLM enrichment (faster, code-only) |
 
 **Examples:**
@@ -86,12 +87,23 @@ mnemex index
 # Index specific path
 mnemex index /path/to/project
 
-# Force full re-index
+# Re-index this branch from scratch (other branches are untouched)
 mnemex index --force
+
+# Rebuild the entire store, every branch
+mnemex index --force-all
 
 # Fast index without LLM summaries
 mnemex index --no-llm
 ```
+
+One index is shared by every branch and worktree of a repository. `--force`
+therefore rebuilds **only the branch you are on**: a row another branch still
+holds is kept and simply stops being yours. `--force-all` is the deliberate
+whole-store rebuild; after it, every other branch reports itself empty until it
+is indexed again. A model change, an index-version upgrade and a corrupt vector
+column rebuild the whole store on their own, because each of those is a property
+of the store rather than of one branch.
 
 ### `search` - Semantic Search
 

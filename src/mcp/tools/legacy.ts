@@ -105,7 +105,12 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 			force: z
 				.boolean()
 				.optional()
-				.describe("Force re-index all files, ignoring cached state"),
+				.describe(
+					"Re-index every file of the CURRENT BRANCH, ignoring cached state. " +
+						"Other branches of this repository keep their rows. There is no " +
+						"whole-store rebuild here on purpose: that is `mnemex index " +
+						"--force-all` at a terminal, because it empties every branch.",
+				),
 			model: z.string().optional().describe("Embedding model to use"),
 			enableEnrichment: z
 				.boolean()

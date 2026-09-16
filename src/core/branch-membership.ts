@@ -90,11 +90,20 @@ export function canonicalBranchIds(ids: readonly number[]): string {
  * that `--force` is the way out. A rebuild is the honest repair here: the
  * disagreement is between the LanceDB rows and the SQLite membership, and
  * `--force` rebuilds this branch's half of both from the working tree.
+ *
+ * IT NOW NAMES THE ESCALATION TOO. `--force` is branch-scoped since §4.5 / D3
+ * landed, so a disagreement that is NOT confined to this branch survives it —
+ * and the user has no way to know which they have. `--force-all` is the bigger
+ * hammer and it exists (`branch-force-scope.test.ts` drives it end to end), so
+ * naming it no longer sends anyone to an "unknown option" error, which is the
+ * reason it was left out before.
  */
 export const MEMBERSHIP_INTEGRITY_REMEDY =
-	"This run changed nothing further. Run `mnemex index --force` to rebuild the index from " +
-	"the working tree; that is what clears the disagreement. If it recurs on a fresh " +
-	"--force, report it with this message — repeating the rebuild will not help.";
+	"This run changed nothing further. Run `mnemex index --force` to rebuild THIS BRANCH from " +
+	"the working tree; that is what clears the disagreement, and it leaves every other branch's " +
+	"rows alone. If it recurs on a fresh --force, the disagreement is not confined to this " +
+	"branch: `mnemex index --force-all` rebuilds the whole store, after which every branch has " +
+	"to index itself again. If it survives that too, report it with this message.";
 
 export class MembershipIntegrityError extends Error {
 	constructor(

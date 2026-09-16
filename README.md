@@ -435,7 +435,22 @@ immediate form of the same thing, and you never have to run it.
 
 If a command answers with nothing on a branch you have just created, that is
 because the branch has not been indexed yet. Every command says so rather than
-looking like an empty result: run `mnemex index`.
+looking like an empty result: run `mnemex index`. The same is said for a branch
+the index knows but holds no rows for, which is what a whole-store rebuild
+elsewhere leaves behind.
+
+**Rebuilding: `--force` is one branch, `--force-all` is all of them.**
+```
+mnemex index --force       # rebuild THIS branch; other branches keep their rows
+mnemex index --force-all   # rebuild the whole store; every branch must index again
+```
+`--force` re-indexes every file of the branch you are on. A row another branch
+still holds is kept and simply stops being yours, so forcing your branch cannot
+empty a colleague's — or your own other branch's — index. `--force-all` is the
+deliberate whole-store rebuild, and after it every branch reports itself empty
+until it is indexed again. A model change, an index-version upgrade and a
+corrupt vector column rebuild the whole store on their own, because each of
+those is a property of the store rather than of one branch.
 
 ### API keys and the macOS Keychain
 ```

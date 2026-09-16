@@ -255,6 +255,112 @@ function tombstonedMembership(
 	return total;
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// narrowBranch — `--force`, scoped to ONE LIVE branch (§4.5 / D3, I-16)
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface NarrowBranchResult {
+	/** `chunk_branches` rows removed for this branch. */
+	readonly membershipRowsRemoved: number;
+	/** LanceDB rows deleted because no branch pointed at them any more. */
+	readonly rowsDeleted: number;
+	/** LanceDB rows another branch still holds, whose mirror was rewritten. */
+	readonly rowsNarrowed: number;
+	/** Tree-scoped SQLite rows deleted, per table. */
+	readonly treeRowsDeleted: Record<TreeScopedTable, number>;
+}
+
+/**
+ * Remove every row ONE LIVE branch holds, leaving every other branch's alone.
+ *
+ * ── WHY `--force` NEEDED THIS ───────────────────────────────────────────────
+ * `indexInternal`'s `if (force)` called `vectorStore.clear()` (a `dropTable`)
+ * plus `fileTracker.clear()`. Neither takes a branch, so a store holding
+ * several branches lost ALL of them to a `--force` on any one — silently, since
+ * the destroyed branches stay in `branches.json` and `branchUnknown` therefore
+ * never fires (decision I-16). One worktree that has indexed two branches is
+ * already exposed; it is not a multi-worktree problem.
+ *
+ * ── THE SAME MACHINERY AS THE SWEEP, NOT A SECOND IMPLEMENTATION ────────────
+ * S0–S3 are `narrowIds`, exactly as in `sweepTombstonedBranches`. What differs
+ * is deliberate and is §4.5's: the branch is LIVE, keeps its registry entry and
+ * its id, is about to be re-indexed by the same run, and the work runs to
+ * COMPLETION rather than to a budget — same region sizes, same yields, more
+ * iterations. There is no cursor, because there is no next run to resume in.
+ *
+ * ── ORDER: THE TREE-SCOPED TABLES GO FIRST HERE, AND LAST IN THE SWEEP ──────
+ * §4.5's pseudocode puts the `files|documents|symbols|symbol_references|
+ * graph_metadata` deletes after the membership loop, which is the sweep's
+ * order. For a FORCE that order reintroduces the defect phase 3b-3 found and
+ * fixed for the sweep (`completeInterruptedSweep`): a run killed mid-narrow
+ * leaves `files` rows whose `content_hash` still matches the working tree, so
+ * the next ordinary `mnemex index` finds nothing to do and the chunk rows this
+ * call already removed never come back — a silently half-empty branch, for
+ * ever. MEASURED, by swapping the two loops below and running
+ * `branch-force-interrupted.test.ts` against it: 21 of 22 membership rows come
+ * back and the 22nd never does. That test is the assertion; the swapped run is
+ * recorded in `implementation-log.md`.
+ *
+ * Reversing it is safe because W1's reason for the sweep's order is about
+ * `chunk_branches`, not about `files`: the work list is `chunk_branches`, this
+ * function never reads `files` to find anything, and no consistency check in
+ * this design reaches a chunk row through a `files` row. What `files` decides
+ * is whether the NEXT run re-indexes the file, and after a force it always
+ * must.
+ *
+ * The sweep keeps its order for the reason it always had: a tombstoned branch
+ * has no next run of its own, so its `files` rows are the only record the
+ * resurrection path has, and rule R's `completeInterruptedSweep` consumes them.
+ */
+export async function narrowBranch(
+	tracker: IFileTracker,
+	store: IVectorStore,
+	branchId: number,
+	options: {
+		readonly pageSize?: number;
+		readonly onProgress?: SweepProgress;
+	} = {},
+): Promise<NarrowBranchResult> {
+	const pageSize = options.pageSize ?? SWEEP_CHUNK;
+	const treeRowsDeleted = emptyTreeCounts();
+	let rowsDeleted = 0;
+	let rowsNarrowed = 0;
+	let membershipRowsRemoved = 0;
+
+	// ── The tree-scoped tables, FIRST (see the header) ────────────────────────
+	for (;;) {
+		const deleted = tracker.deleteBranchTreeRows(branchId, pageSize);
+		await yieldToEventLoop();
+		let total = 0;
+		for (const table of Object.keys(deleted) as TreeScopedTable[]) {
+			treeRowsDeleted[table] += deleted[table];
+			total += deleted[table];
+		}
+		if (total === 0) break;
+		options.onProgress?.(membershipRowsRemoved);
+		await yieldToEventLoop();
+	}
+
+	// ── S0..S3, one page at a time, to COMPLETION ─────────────────────────────
+	let last = "";
+	for (;;) {
+		const ids = tracker.membershipPage(branchId, last, pageSize);
+		await yieldToEventLoop();
+		if (ids.length === 0) break;
+		const narrowed = await narrowIds(tracker, store, branchId, ids);
+		rowsDeleted += narrowed.rowsDeleted;
+		rowsNarrowed += narrowed.rowsNarrowed;
+		membershipRowsRemoved += ids.length;
+		// KEYSET, and it advances only after the delete: the rows in this page
+		// are gone, so an OFFSET would skip exactly as many as it removed.
+		last = ids[ids.length - 1];
+		options.onProgress?.(membershipRowsRemoved);
+		await yieldToEventLoop();
+	}
+
+	return { membershipRowsRemoved, rowsDeleted, rowsNarrowed, treeRowsDeleted };
+}
+
 /**
  * Finish an interrupted sweep's TREE-SCOPED deletion for a branch that is live
  * again (rule R).

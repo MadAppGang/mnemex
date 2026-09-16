@@ -456,6 +456,26 @@ export interface IndexBranchResult {
 	sweepBranchesFinalized: number;
 	/** Membership rows tombstoned branches still hold. Non-zero means another run is needed. */
 	sweepRemaining: number;
+	/**
+	 * §4.5 / D3: what this run's force CLEARED, when it forced at all.
+	 *
+	 * - `"branch"` — `--force`: this branch's rows only, `narrowBranch`. A row
+	 *   another branch still holds survived, narrowed rather than deleted.
+	 * - `"store"` — every branch's rows: `--force-all`, or one of the three
+	 *   repairs that are store-wide by nature (a 0-dimension or placeholder
+	 *   vector column, a model change, an index-version upgrade).
+	 * - absent — no force ran.
+	 *
+	 * It is DATA rather than a progress line for the reason
+	 * `upgradedFromIndexVersion` is: the git post-commit hook and the MCP
+	 * auto-reindex pass no `onProgress` at all, and "how much did that just
+	 * destroy" is precisely what a caller must be able to read afterwards.
+	 */
+	forceScope?: "branch" | "store";
+	/** Rows a branch-scoped force deleted because nobody else held them. */
+	forceRowsDeleted?: number;
+	/** Rows a branch-scoped force left in place for another branch, mirror rewritten. */
+	forceRowsNarrowed?: number;
 }
 
 /** Embedding-cache accounting for one index run, as rendered by the CLI. */
@@ -1429,6 +1449,34 @@ export interface EnrichmentResult {
 	};
 	/** Total LLM tokens used */
 	totalTokens?: number;
+	/** What §4.6's content-keyed reuse decided this run. Always present. */
+	reuse?: EnrichmentReuse;
+}
+
+/**
+ * §4.6's reuse accounting, as DATA.
+ *
+ * It is reported rather than logged for the reason `upgradedFromIndexVersion`
+ * is: two of the four entry points that call `index()` render no progress at
+ * all. And it carries the REFUSALS as well as the hits, because a reuse path
+ * that reuses everything is indistinguishable from one broken in the expensive
+ * direction — the lesson CLAUDE.md #31's twice-deleted seeding pass left, where
+ * a cheerful "seeded N vectors" line covered an index built from placeholders.
+ */
+export interface EnrichmentReuse {
+	/** Files whose summaries were adopted from the store: no LLM call at all. */
+	filesReused: number;
+	/** Summary rows those files adopted — the ids this branch gained. */
+	documentsReused: number;
+	/** Files this pass sent to the LLM. */
+	filesEnriched: number;
+	/**
+	 * Files that HAD a usable-looking record and were enriched anyway, because
+	 * at least one summary row it named is no longer in LanceDB (P1's belt).
+	 * Non-zero means the store and the record table disagreed and this run
+	 * repaired it by paying for the summary again.
+	 */
+	filesRefused: number;
 }
 
 /** Extended index result with enrichment stats */

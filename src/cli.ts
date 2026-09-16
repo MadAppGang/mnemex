@@ -46,6 +46,7 @@ import {
 	resolveBranchScopeForProject,
 	SCOPE_ALL,
 } from "./core/branch-scope.js";
+import { resolveBranchReadState } from "./core/branch-state.js";
 import { canChunkFile, chunkFileByPath } from "./core/chunker.js";
 // Note: createIndexer imports store.js which loads LanceDB - made lazy to avoid startup errors
 // Use: const { createIndexer } = await import("./core/indexer.js");
@@ -897,7 +898,18 @@ export function formatDeferredFilesLine(
 
 async function handleIndex(args: string[]): Promise<void> {
 	// Parse arguments
-	const force = args.includes("--force") || args.includes("-f");
+	//
+	// TWO forces, and the difference between them is a data-loss path (§4.5 /
+	// D3, decision I-16). `--force` rebuilds THIS BRANCH: rows another branch
+	// still holds survive. `--force-all` rebuilds the whole store, every branch,
+	// which is what `--force` used to do to everyone silently.
+	//
+	// Exact-string membership, so no spelling of one is the other: `--force-all`
+	// is not `--force` (CLAUDE.md #30's failure mode is a typo that means the
+	// opposite, and both typo directions here fail towards the SMALLER blast
+	// radius — `--force-al` forces nothing, `--force` alone narrows one branch).
+	const forceAll = args.includes("--force-all");
+	const force = forceAll || args.includes("--force") || args.includes("-f");
 	const noLlm = args.includes("--no-llm") || args.includes("--no-enrichment");
 	const forceUnlock = args.includes("--force-unlock");
 	// --wait: wait for the per-project lock. --if-idle: try-acquire-bail on the
@@ -1037,7 +1049,7 @@ async function handleIndex(args: string[]): Promise<void> {
 	});
 
 	try {
-		const result = await indexer.index(force);
+		const result = await indexer.index(force, forceAll);
 
 		// Show final state and stop progress renderer
 		if (progress) progress.finish();
@@ -4842,27 +4854,53 @@ function readBranchId(projectPath: string): number {
  * Call it AFTER resolving the tracker and BEFORE the query, because several of
  * these handlers `process.exit(1)` on an empty result ("Symbol not found") and
  * a notice printed after that never runs.
+ *
+ * ── TWO STATES, NOT ONE (decision I-16's related gap) ──────────────────────
+ * `branch_unknown` is "the registry has never seen this branch". `branch_empty`
+ * is "the registry knows this branch and the store holds no row for it" — the
+ * state a whole-store rebuild from another worktree leaves behind, and the one
+ * an interrupted `--force` or a partly-drained sweep can leave. They are
+ * separate keys because the remedies differ in nothing but the reason, and a
+ * user who is told "not indexed" about a branch they indexed yesterday will go
+ * looking for a bug in the registry instead of re-indexing. See
+ * `src/core/branch-state.ts` for what "empty" is computed from.
  */
 function reportBranchState(projectPath: string, command: string): void {
-	const resolution = resolveBranchScopeForProject(projectPath);
+	const { resolution, branchEmpty } = resolveBranchReadState(projectPath);
 	if (agentMode) {
 		// Emitted on EVERY one of these commands, including as 0, so a consumer
 		// can rely on the key rather than on its absence meaning "known".
 		console.log(`branch_unknown=${resolution.branchUnknown ? 1 : 0}`);
+		console.log(`branch_empty=${branchEmpty ? 1 : 0}`);
 		if (resolution.label !== null) console.log(`branch=${resolution.label}`);
 		if (resolution.branchUnknown) {
 			console.log(
 				`branch_hint=branch '${resolution.label}' is not indexed; ${command} answers for this branch only. Run: mnemex index`,
 			);
+		} else if (branchEmpty) {
+			console.log(
+				`branch_hint=branch '${resolution.label}' is known but the index holds no rows for it; ${command} answers for this branch only. Run: mnemex index`,
+			);
 		}
 		return;
 	}
-	if (!resolution.branchUnknown) return;
-	console.error(
-		`\n⚠️  Branch '${resolution.label}' has not been indexed, so \`${command}\` has nothing to answer from.\n` +
-			"    This is NOT the same as 'nothing found' — no symbol of this branch is in the index yet.\n" +
-			"    Run: mnemex index\n",
-	);
+	if (resolution.branchUnknown) {
+		console.error(
+			`\n⚠️  Branch '${resolution.label}' has not been indexed, so \`${command}\` has nothing to answer from.\n` +
+				"    This is NOT the same as 'nothing found' — no symbol of this branch is in the index yet.\n" +
+				"    Run: mnemex index\n",
+		);
+		return;
+	}
+	if (branchEmpty) {
+		console.error(
+			`\n⚠️  Branch '${resolution.label}' is in this index, but the index holds no rows for it, so\n` +
+				`    \`${command}\` has nothing to answer from. This is NOT the same as 'nothing found'.\n` +
+				"    The store was rebuilt (\`mnemex index --force-all\`, a model change or a version\n" +
+				"    upgrade), or a run was interrupted — every branch has to index itself again.\n" +
+				"    Run: mnemex index\n",
+		);
+	}
 }
 
 function getFileTracker(projectPath: string): FileTracker | null {
@@ -7582,7 +7620,8 @@ ${c.yellow}${c.bold}KEYCHAIN SUBCOMMANDS${c.reset} ${c.dim}(macOS only; nothing 
   ${c.dim}Opt out entirely: MNEMEX_DISABLE_KEYCHAIN=1 or "keychain": false in ~/.mnemex/config.json${c.reset}
 
 ${c.yellow}${c.bold}INDEX OPTIONS${c.reset}
-  ${c.cyan}-f, --force${c.reset}            Force re-index all files
+  ${c.cyan}-f, --force${c.reset}            Re-index every file of ${c.bold}this branch${c.reset} ${c.dim}(other branches keep their rows)${c.reset}
+  ${c.cyan}--force-all${c.reset}            Rebuild the whole store, ${c.bold}every branch${c.reset} ${c.dim}(each one must re-index)${c.reset}
   ${c.cyan}-m, --model${c.reset} <model>    Rebuild with this embedding model ${c.dim}(overrides onModelMismatch)${c.reset}
   ${c.cyan}-w, --wait${c.reset}             Wait for another indexer to finish instead of failing
   ${c.cyan}--if-idle${c.reset}              Skip if a machine-wide index is already running ${c.dim}(background reindex)${c.reset}

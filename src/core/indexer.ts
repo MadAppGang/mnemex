@@ -85,6 +85,8 @@ import {
 } from "./branch-scope.js";
 import {
 	completeInterruptedSweep,
+	type NarrowBranchResult,
+	narrowBranch,
 	type SweepResult,
 	sweepTombstonedBranches,
 } from "./branch-sweep.js";
@@ -997,9 +999,18 @@ export class Indexer {
 	private static readonly FILES_PER_BATCH = 500;
 
 	/**
-	 * Index the codebase
+	 * Index the codebase.
+	 *
+	 * `force` rebuilds THIS BRANCH (§4.5 / D3): every row the current branch
+	 * holds is narrowed out of it and re-indexed, and a row another branch still
+	 * holds survives, narrowed rather than deleted. `forceAll` is the deliberate
+	 * whole-store rebuild — the old meaning of `force`, which destroyed every
+	 * branch's rows silently (decision I-16).
+	 *
+	 * `forceAll` implies `force`: there is no whole-store rebuild that does not
+	 * also re-index this branch.
 	 */
-	async index(force = false): Promise<EnrichedIndexResult> {
+	async index(force = false, forceAll = false): Promise<EnrichedIndexResult> {
 		const startTime = Date.now();
 
 		// Ensure project directory exists before acquiring lock
@@ -1095,7 +1106,7 @@ export class Indexer {
 		}
 
 		try {
-			return await this.indexInternal(force, startTime);
+			return await this.indexInternal(force, forceAll, startTime);
 		} finally {
 			// Always release locks when done, in REVERSE acquire order:
 			// per-project first, then machine-global.
@@ -1176,8 +1187,13 @@ export class Indexer {
 	 */
 	private async indexInternal(
 		force: boolean,
+		forceAll: boolean,
 		startTime: number,
 	): Promise<EnrichedIndexResult> {
+		// `--force-all` is `--force` plus a whole-store rebuild, so everything
+		// below that reads `force` sees it. The two stay separate variables
+		// because the SCOPE of the clear is what they disagree about (§4.5).
+		if (forceAll) force = true;
 		// What the CALLER asked for, captured before the corruption branch below
 		// sets `force` for its own reasons. `--force` is an explicit instruction to
 		// rebuild, so it decides the model the same way an explicit `--model` does
@@ -1420,6 +1436,26 @@ export class Indexer {
 		// clear", never on "was there a reason to" — adopting clears nothing, and
 		// a `--force` run that skipped its clear would re-index into a non-empty
 		// table.
+		//
+		// ── WHY THESE THREE CALL `rebuildStore()` AND NOT `clear()` ──────────
+		//
+		// §4.5's producer table routes every whole-store producer through
+		// `rebuildStore()`, and until this phase these three called
+		// `vectorStore.clear()` + `fileTracker.clear()` instead. MEASURED: on a
+		// store holding two branches, a model change emptied every branch's
+		// chunks, membership and `files` and left the SIBLING branch holding 7
+		// `symbols` rows — `clear()` is a `DELETE FROM` over seven tables and
+		// `symbols`, `symbol_references` and `graph_metadata` are not among
+		// them. The current branch does not show it, because
+		// `extractSymbolGraph(force)` calls `clearSymbolGraph()` for ITS branch;
+		// every other branch keeps a symbol graph whose chunks no longer exist,
+		// so `map` and `dead-code` there answer from rows `search` cannot see.
+		//
+		// `rebuildStore()` drops both halves — `dropTable` on LanceDB and
+		// §3.5.1's DROP pass on the five tree-scoped tables — which is also what
+		// stops a zombie v3 schema surviving a repair (§4.5). Its first action is
+		// the same `store.clear()`, which still bypasses `ensureTableOpen()`, so
+		// CLAUDE.md #15's repair path stays reachable.
 		let alreadyCleared = false;
 
 		if (placeholderStore) {
@@ -1428,8 +1464,7 @@ export class Indexer {
 				0,
 				"[repairing] this index was built with vectors disabled, so every row holds a placeholder — rebuilding it with embeddings now",
 			);
-			await this.vectorStore!.clear();
-			this.fileTracker!.clear();
+			await this.rebuildStore();
 			alreadyCleared = true;
 			force = true;
 		}
@@ -1442,8 +1477,7 @@ export class Indexer {
 				0,
 				"[repairing] the vector index had a 0-dimension vector column, so no query could read it — rebuilding it now",
 			);
-			await this.vectorStore!.clear();
-			this.fileTracker!.clear();
+			await this.rebuildStore();
 			alreadyCleared = true;
 			force = true;
 		}
@@ -1458,8 +1492,7 @@ export class Indexer {
 				`[model] ${previousModel} → ${this.model}: the stored vectors came from the old model, rebuilding the whole index`,
 			);
 			if (!alreadyCleared) {
-				await this.vectorStore!.clear();
-				this.fileTracker!.clear();
+				await this.rebuildStore();
 				alreadyCleared = true;
 			}
 			force = true; // Treat as force reindex
@@ -1553,6 +1586,33 @@ export class Indexer {
 			force = true;
 		}
 
+		// ── `--force-all`: the DELIBERATE whole-store rebuild (§4.5 / D3) ─────
+		//
+		// The one whole-store clear a user asks for BY NAME. The four above it
+		// are repairs and migrations — a 0-dimension vector column, a
+		// placeholder-vector store, a model change, an index version bump — and
+		// each of those is a property of the STORE rather than of a tree, which
+		// is why none of them narrows either.
+		//
+		// `rebuildStore()`, not `clear()`: a `DELETE FROM` leaves the tree-scoped
+		// SCHEMA behind (§4.5), and a `clear()` leaves `symbols`,
+		// `symbol_references` and `graph_metadata` untouched for every branch —
+		// which is how the old `--force` left a sibling branch holding a symbol
+		// graph whose chunks it had just destroyed.
+		//
+		// `alreadyCleared` guards it in both directions: an upgrade that already
+		// rebuilt does not rebuild twice, and the `if (force)` block below does
+		// not then narrow a branch out of a store that no longer holds anything.
+		if (forceAll && !alreadyCleared) {
+			this.onProgress?.(
+				0,
+				0,
+				"[rebuilding] --force-all: rebuilding the whole store, every branch",
+			);
+			await this.rebuildStore();
+			alreadyCleared = true;
+		}
+
 		// ── R-recovery (§4.1.4): re-drive whatever a crashed run left ─────────
 		//
 		// Inside the store lock, BEFORE any write of this run. `'add'` residue is
@@ -1606,15 +1666,61 @@ export class Indexer {
 		let filesToIndex: string[];
 		let deletedFiles: string[] = [];
 		let manifestFilesChanged = force; // Always refresh docs on force reindex
+		/** What a branch-scoped `--force` removed, for the result and for M5. */
+		let forceNarrow: NarrowBranchResult | null = null;
 
 		if (force) {
 			// Force re-index all files
 			filesToIndex = allFiles;
-			// Clear existing data (skip if the corruption or model-change branch
-			// above already did it)
+			// Clear existing data (skip if one of the four whole-store producers
+			// above already did it: corruption repair, placeholder-vector repair,
+			// a model change, an index-version upgrade, or `--force-all`).
 			if (!alreadyCleared) {
-				await this.vectorStore!.clear();
-				this.fileTracker!.clear();
+				if (registry !== null && branchId !== BRANCH_ID_SHARED) {
+					// ── D3 (§4.5): `--force` narrows THIS BRANCH ─────────────────
+					//
+					// The old code here was `vectorStore.clear()` (a `dropTable`)
+					// plus `fileTracker.clear()`, neither of which takes a branch —
+					// so one worktree that had indexed two branches lost BOTH to a
+					// `--force` on either, and lost them silently, because the
+					// destroyed branch keeps its registry entry and `branchUnknown`
+					// therefore never fires (decision I-16).
+					//
+					// W-R6 FIRST: the record of when this branch was last indexed
+					// stops being true before the rows go, not after.
+					registry.clearIndexStamp(branchId);
+					this.reportPhase("branch-force");
+					forceNarrow = await narrowBranch(
+						this.fileTracker!,
+						this.vectorStore!,
+						branchId,
+						{
+							// CLAUDE.md #20: `reportProgress` advances `lastProgressAt`,
+							// the SOLE input to the hung/stale decision, and this loop
+							// can run for as long as the branch is large. A pass that
+							// stamps only at the end is the silent-but-healthy run #20
+							// was written about.
+							onProgress: (rows) => {
+								this.reportProgress();
+								this.onProgress?.(
+									rows,
+									rows,
+									`[branch-force] ${rows} membership row(s) cleared for this branch`,
+								);
+							},
+						},
+					);
+				} else {
+					// No git layout: every row of this store carries the shared
+					// marker (§3.2.1), so there is exactly one tree and "this
+					// branch" and "the whole store" are the same set of rows.
+					// `clear()` is that set, reached far more cheaply than by
+					// paging every id through `narrowIds` — and it is the path
+					// CLAUDE.md #15's repair depends on, because it does not go
+					// through `ensureTableOpen()`.
+					await this.vectorStore!.clear();
+					this.fileTracker!.clear();
+				}
 			}
 		} else {
 			// Incremental indexing
@@ -2875,10 +2981,15 @@ export class Indexer {
 		//
 		// The SWEEP's narrow rewrites mirrors through the same `mergeInsert`, so
 		// its rows leave the FTS index in exactly the same way and are folded
-		// back in by the same call.
+		// back in by the same call. So does `--force`'s `narrowBranch` (§4.5),
+		// which is the same `narrowIds` over a live branch — a force that
+		// narrowed a shared row and was not folded back would leave that row out
+		// of the filtered FTS index until some later run happened to optimize.
 		if (
 			widenDrain.rowsWidened > 0 ||
-			(sweep !== null && sweep.rowsNarrowed + sweep.rowsDeleted > 0)
+			(sweep !== null && sweep.rowsNarrowed + sweep.rowsDeleted > 0) ||
+			(forceNarrow !== null &&
+				forceNarrow.rowsNarrowed + forceNarrow.rowsDeleted > 0)
 		) {
 			this.reportPhase("branch-membership:optimize");
 			await this.vectorStore!.optimize();
@@ -3058,6 +3169,17 @@ export class Indexer {
 				sweepRowsNarrowed: sweep?.rowsNarrowed ?? 0,
 				sweepBranchesFinalized: sweep?.branchesFinalized.length ?? 0,
 				sweepRemaining: sweep?.remaining ?? 0,
+				// §4.5 / D3. WHICH force this run performed, in DATA: a user who
+				// typed `--force` and a repair that rebuilt the store both arrive
+				// here as `force === true`, and the blast radius is the difference.
+				// Absent when no force happened at all.
+				forceScope: force
+					? forceNarrow !== null
+						? "branch"
+						: "store"
+					: undefined,
+				forceRowsDeleted: forceNarrow?.rowsDeleted,
+				forceRowsNarrowed: forceNarrow?.rowsNarrowed,
 			},
 			cost: totalCost > 0 ? totalCost : undefined,
 			totalTokens: totalTokens > 0 ? totalTokens : undefined,

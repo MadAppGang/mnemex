@@ -168,10 +168,20 @@ describe("MembershipIntegrityError names the remedy (I-15)", () => {
 		expect(error.message).toContain(MEMBERSHIP_INTEGRITY_REMEDY);
 	});
 
-	test("it does not advertise a flag this build does not have", () => {
-		// `--force-all` is §4.5's, and §4.5 is not built. A remedy naming a flag
-		// that does not exist is worse than no remedy: it sends the user to an
-		// error message about an unknown option.
-		expect(MEMBERSHIP_INTEGRITY_REMEDY).not.toContain("--force-all");
+	test("it names the ESCALATION, now that --force is branch-scoped", () => {
+		// This assertion is the INVERSION of the one phase 3b-3 wrote, and the
+		// reason it inverted is in the diff: 3b-3 refused to name `--force-all`
+		// because §4.5 was not built, and a remedy naming a flag that does not
+		// exist sends the user to an "unknown option" error. §4.5 is built now
+		// (phase 3b-3b), `--force` no longer rebuilds the store, and a
+		// disagreement outside this branch therefore survives the first remedy.
+		// A user told to run `--force` twice and then give up would be stuck on a
+		// store a single flag repairs.
+		expect(MEMBERSHIP_INTEGRITY_REMEDY).toContain("mnemex index --force-all");
+		// The branch-scoped one is still FIRST: it is the smaller blast radius
+		// and it is the one that fixes the common case.
+		expect(MEMBERSHIP_INTEGRITY_REMEDY.indexOf("--force`")).toBeLessThan(
+			MEMBERSHIP_INTEGRITY_REMEDY.indexOf("--force-all"),
+		);
 	});
 });
