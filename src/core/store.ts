@@ -784,9 +784,18 @@ export interface IVectorStore {
 		scope: BranchScope,
 		options?: SearchOptions,
 	): Promise<SearchResult[]>;
-	/** Rows actually deleted (LanceDB's `numDeletedRows`); 0 on no match or failure. */
+	/**
+	 * Rows actually deleted (LanceDB's `numDeletedRows`); 0 on no match or failure.
+	 *
+	 * THE ONLY surviving unscoped delete-by-path, and it survives for the docs
+	 * row class alone (§3.2.1: docs rows are neither widened nor swept). Its four
+	 * callers all render `docs:<package>`, which no repository row can equal, so
+	 * it cannot reach a row `chunk_index` registered. `deleteByFileHash`,
+	 * `deleteByDocumentType` and `deleteAllByFile` were retired in Phase 3b-3
+	 * (§3.5): they had no caller in `src/` and each deleted across every branch
+	 * of a shared store.
+	 */
 	deleteByFile(filePath: string): Promise<number>;
-	deleteByFileHash(fileHash: string): Promise<number>;
 	getChunksWithVectors(filePath: string): Promise<ChunkWithEmbedding[]>;
 	/**
 	 * Membership by id (§4.1). These take NO `BranchScope`: they are write-path
@@ -818,8 +827,6 @@ export interface IVectorStore {
 		documents: DocumentWithEmbedding[],
 		membership: RowMembership,
 	): Promise<void>;
-	deleteByDocumentType(documentType: DocumentType): Promise<number>;
-	deleteAllByFile(filePath: string): Promise<number>;
 	getDocumentsByFile(
 		scope: BranchScope,
 		filePath: string,
@@ -1594,27 +1601,6 @@ export class VectorStore implements IVectorStore {
 	}
 
 	/**
-	 * Delete chunks by file hash
-	 */
-	async deleteByFileHash(fileHash: string): Promise<number> {
-		// Same lazy-open bug, same deliberate connect-on-delete behaviour change,
-		// and same literal escaping as deleteByFile above; see the notes there.
-		try {
-			const table = await this.ensureTableOpen();
-			if (!table) {
-				return 0;
-			}
-
-			await table.delete(`fileHash = '${escapeSqlLiteral(fileHash)}'`);
-			// Still a constant, unlike deleteByFile: this member has no caller in
-			// src/ and is retired with its tests in Phase 3b (architecture §3.5).
-			return 1;
-		} catch {
-			return 0;
-		}
-	}
-
-	/**
 	 * Get all code chunks for a file with their vectors (for incremental diffing)
 	 * Returns chunks with contentHash and vector for reuse during smart reindexing
 	 */
@@ -2132,63 +2118,6 @@ export class VectorStore implements IVectorStore {
 	}
 
 	/**
-	 * Delete all documents of a specific type
-	 */
-	async deleteByDocumentType(documentType: DocumentType): Promise<number> {
-		// Same lazy-open bug, same deliberate connect-on-delete behaviour change
-		// as deleteByFile above; see the notes there.
-		//
-		// `documentType` is interpolated RAW and must stay that way. It is the
-		// closed `DocumentType` union (`code_chunk`, `file_summary`,
-		// `session_observation`, ...), so no member carries a quote and there is
-		// nothing for `escapeSqlLiteral` to do. Applying the LIKE escaper
-		// (`escapeFilterValue`) here would actively BREAK it: nearly every member
-		// contains an underscore, which that escaper backslash-escapes, and in an
-		// equality literal DataFusion takes the backslash literally — so the
-		// predicate would match no row and the delete would silently no-op.
-		try {
-			const table = await this.ensureTableOpen();
-			if (!table) {
-				return 0;
-			}
-
-			await table.delete(`documentType = '${documentType}'`);
-			return 1;
-		} catch {
-			return 0;
-		}
-	}
-
-	/**
-	 * Delete all documents (code chunks and enriched) for a specific file
-	 */
-	async deleteAllByFile(filePath: string): Promise<number> {
-		// Same lazy-open bug, same deliberate connect-on-delete behaviour change
-		// as deleteByFile above; see the notes there.
-		try {
-			const table = await this.ensureTableOpen();
-			if (!table) {
-				return 0;
-			}
-			const storedPath = this.storedPathArg(filePath);
-			if (storedPath === null) {
-				return 0;
-			}
-
-			// The value was interpolated raw. That is data loss, not a syntax
-			// hazard: `x' OR filePath LIKE '%` renders the well-formed predicate
-			// `filePath = 'x' OR filePath LIKE '%'`, which matches every row —
-			// so a delete aimed at one file empties the table. Equality, so the
-			// escape is quote doubling only (`escapeSqlLiteral`); the LIKE
-			// escaper would break ordinary `my_file.ts` paths instead.
-			await table.delete(`filePath = '${escapeSqlLiteral(storedPath)}'`);
-			return 1;
-		} catch {
-			return 0;
-		}
-	}
-
-	/**
 	 * Get all documents for a specific file
 	 */
 	async getDocumentsByFile(
@@ -2206,10 +2135,11 @@ export class VectorStore implements IVectorStore {
 		}
 
 		try {
-			// Same raw interpolation as `deleteAllByFile` had: a quote in the
-			// path made LanceDB reject the statement (caught below, reported as
-			// "no documents"), and a crafted path widened the predicate to every
-			// row. Equality, so quote doubling only.
+			// This used to interpolate the path raw, as the now-retired
+			// `deleteAllByFile` did: a quote in the path made LanceDB reject the
+			// statement (caught below, reported as "no documents"), and a crafted
+			// path widened the predicate to every row. Equality, so quote
+			// doubling only.
 			let filter = `filePath = '${escapeSqlLiteral(storedPath)}'`;
 			const branchFilter = branchMembershipFilter(scope);
 			if (branchFilter !== null) filter += ` AND ${branchFilter}`;

@@ -26,19 +26,31 @@
  * allocation whose rename was lost after all.
  * ─────────────────────────────────────────────────────────────────────────────
  *
- * THE FORMAT IS FINAL (formatVersion 1). Every field the design gives an entry
- * is written, including the tombstone fields (`deletedAt`, `unconfirmedSince`)
- * and the run stamps (`headSha`, `lastIndexedAt`, `needsReindex`), although
- * this build never sets them. A later field would be a format change, and a
- * format change after the v4 bump is what this file is laid out to avoid.
+ * THE FORMAT IS FINAL (formatVersion 1). 3a-2 wrote all eleven fields while
+ * setting only some of them, deliberately, so that the lifecycle could be built
+ * without an on-disk format change. It was: this phase writes `deletedAt` and
+ * `unconfirmedSince` and needs no twelfth field.
  *
- * NOT IN THIS BUILD (Phase 3b): rule R (resurrecting a tombstone), rule C
- * (compaction), the confirm pass (W-R2), the run stamp (W-R3/W-R4) and
- * `--force`'s `clearIndexStamp` (W-R6). A label that matches a tombstoned or
- * unconfirmed entry is REFUSED with `BranchResurrectionUnsupportedError`. This
- * build never writes such an entry, so the refusal is reachable only from a
- * file written by a later build or by hand. A wrong resolution there would
- * strand rows or leak them across branches.
+ * THE WRITE PATHS, and where each of them is (§3.4's table):
+ *   W-R1  `resolveId`              allocate, or RESURRECT (rule R)
+ *   W-R2  `applyBranchDecisions`   the confirm pass's decisions (§4.3 Phase B)
+ *   W-R3  `stamp`                  headSha / lastIndexedAt at the end of a run
+ *   W-R4  `markNeedsReindex`       HEAD moved mid-run (§4.1.5)
+ *   W-R5  `finalizeTombstone`      rule C's compaction, after the sweep drained
+ *   W-R6  `clearIndexStamp`        NOT BUILT — `--force`'s `narrowBranch` (§4.5)
+ *
+ * RULE R (§3.4). A label matching only a TOMBSTONED or UNCONFIRMED entry is
+ * RESURRECTED: both fields are cleared, `lastSeen` refreshes and the SAME id
+ * comes back. Allocating a fresh id instead would strand every row the sweep
+ * had not yet reached under an id nothing resolves to, which no pass in this
+ * design can recover. It is safe because of REG-1: W-R1, W-R2 and W-R5 are all
+ * inside one lock acquisition, so a sweep cannot be in flight for a label
+ * `resolveId` is resolving.
+ *
+ * RULE C (§3.4). `finalizeTombstone` DROPS a tombstoned entry once its sweep
+ * has drained, leaving `nextId` untouched — "never reused" is a property of
+ * `nextId` alone. Without it every CI checkout and every bisect step leaves a
+ * permanent record in a file that is read on the search path.
  *
  * Time comes from `./clock.js`, never from `Date.now()` or an argument-less
  * `new Date()` (swept).
@@ -46,6 +58,7 @@
 
 import { readFileSync } from "node:fs";
 import { writeFileAtomicallySync } from "./atomic-file.js";
+import type { BranchDecision } from "./branch-lifecycle.js";
 import { now } from "./clock.js";
 import type { GitHead, HeadKind } from "./git-layout.js";
 import {
@@ -88,9 +101,9 @@ export interface BranchEntry {
 	lastSeen: string;
 	/** W-R3 (3b). */
 	lastIndexedAt: string | null;
-	/** Tombstone (3b's confirm pass). Never set by this build. */
+	/** Tombstone: W-R2 stamped it, and the sweep is reclaiming this branch's rows. */
 	deletedAt: string | null;
-	/** First confirm-pass miss (3b). Never set by this build. */
+	/** The FIRST confirm-pass miss. The grace is measured from here, never re-stamped. */
 	unconfirmedSince: string | null;
 	/** W-R4 (3b): HEAD moved mid-run. */
 	needsReindex: boolean;
@@ -155,6 +168,19 @@ export function combineBranchIdSources(
 	};
 }
 
+/**
+ * W-R2's outcome. `dropped` is not a failure: it is the mechanism that makes a
+ * hoisted, unlocked scan safe, and a caller that reports it can tell a quiet
+ * pass from a contended one.
+ */
+export interface AppliedDecisions {
+	readonly applied: readonly BranchDecision[];
+	readonly dropped: ReadonlyArray<{
+		readonly decision: BranchDecision;
+		readonly why: string;
+	}>;
+}
+
 /** A registry opened, or mutated, without the store lock it was opened under (REG-1). */
 export class RegistryNotLockedError extends Error {
 	constructor(
@@ -185,23 +211,18 @@ export class BranchRegistryCorruptError extends Error {
 	}
 }
 
-/**
- * The current HEAD's label matches only a tombstoned or unconfirmed entry.
- * Rule R (resurrect, keeping the id) is Phase 3b's. Until then this is
- * refused, because neither allocating a new id nor reusing the entry as-is is
- * safe (see the file header).
- */
-export class BranchResurrectionUnsupportedError extends Error {
-	constructor(
-		readonly registryPath: string,
-		readonly label: string,
-		readonly id: number,
-	) {
-		super(
-			`branch registry ${registryPath}: label '${label}' (id ${id}) is tombstoned or unconfirmed, and resurrecting it (rule R) is not part of this build`,
-		);
-		this.name = "BranchResurrectionUnsupportedError";
-	}
+/** What `resolveId` did, for the caller that has to act on it. */
+export interface ResolvedBranch {
+	readonly id: number;
+	/**
+	 * Rule R fired: this entry was tombstoned or unconfirmed and is live again.
+	 *
+	 * The caller MUST then drop any `store.json` sweep cursor naming this id AND
+	 * finish that interrupted sweep's tree-scoped deletion, or the branch keeps
+	 * `files` rows describing chunks the sweep already removed and the ordinary
+	 * diff reports nothing to do. See `Indexer.indexInternal`.
+	 */
+	readonly resurrected: boolean;
 }
 
 /** A registry opened under a held store lock, for one index run. */
@@ -210,9 +231,34 @@ export interface BranchRegistry {
 	/**
 	 * W-R1. The id for `head`'s label. A NEW label is allocated and the file
 	 * renamed before this returns. A known label has its `lastSeen` refreshed,
-	 * which waits for `flush()`.
+	 * which waits for `flush()`. A tombstoned or unconfirmed label is
+	 * RESURRECTED with its own id (rule R).
 	 */
 	resolveId(head: GitHead): number;
+	/**
+	 * `resolveId`'s full answer, for the caller that must react to rule R.
+	 * `null` until `resolveId` has run.
+	 */
+	readonly resolved: ResolvedBranch | null;
+	/**
+	 * W-R2 (§4.3 Phase B). Apply the hoisted scan's decisions, inside the lock,
+	 * against the registry as re-read under it.
+	 *
+	 * Each decision is VALIDATED and dropped rather than forced when the entry
+	 * has moved underneath it. The scan is advisory; this state is authoritative.
+	 */
+	applyBranchDecisions(decisions: readonly BranchDecision[]): AppliedDecisions;
+	/**
+	 * W-R5, rule C. Drop a fully-swept tombstoned entry, leaving `nextId` alone.
+	 *
+	 * `remainingMembershipRows` is the PROOF, not a formality: the caller must
+	 * pass the live `count(*) FROM chunk_branches WHERE branch_id = :id` it just
+	 * read, and a non-zero value throws. A parameter the body ignores is
+	 * CLAUDE.md #32's defect, so this one is compared.
+	 */
+	finalizeTombstone(id: number, remainingMembershipRows: number): void;
+	/** Every entry, live and tombstoned, as a snapshot. Read-only. */
+	entries(): readonly BranchEntry[];
 	/**
 	 * W-R3: record that this branch was indexed at `headSha`, at `indexedAt`.
 	 *
@@ -264,6 +310,19 @@ export function openRegistry(
 
 	const file = readRegistryFile(path);
 	let dirty = false;
+	/**
+	 * D7's fix (§4.3 item 3): an entry THIS run resolved is never tombstoned by
+	 * this run's confirm pass. Never persisted — it is a fact about a process,
+	 * not about a store.
+	 *
+	 * A SET, not the last id. An index run resolves exactly one label today, so
+	 * a single slot would be equivalent — but "the label this process resolved"
+	 * is a claim about every one of them, and a second resolution silently
+	 * un-pinning the first is the kind of thing that only shows up as a deleted
+	 * index. A set costs nothing and cannot get that wrong.
+	 */
+	const pinned = new Set<number>();
+	let resolved: ResolvedBranch | null = null;
 
 	// C1, mechanism 2: never issue an id that a row already carries, nor one an
 	// entry already holds.
@@ -319,15 +378,34 @@ export function openRegistry(
 			);
 			if (live !== undefined) {
 				live.lastSeen = stamp;
+				live.kind = head.kind;
+				pinned.add(live.id);
+				resolved = { id: live.id, resurrected: false };
 				dirty = true;
 				return live.id;
 			}
 			if (matches.length > 0) {
-				throw new BranchResurrectionUnsupportedError(
-					path,
-					head.label,
-					matches[0].id,
-				);
+				// RULE R. The HIGHEST id, because ids are monotonic: if a label
+				// somehow has two entries, the most recently allocated one is the
+				// one whose rows are the most recent. There is normally exactly
+				// one — nothing allocates a second entry for a label while a
+				// tombstoned one survives, precisely because of this branch.
+				const entry = matches.reduce((best, b) => (b.id > best.id ? b : best));
+				const wasResurrected =
+					entry.deletedAt !== null || entry.unconfirmedSince !== null;
+				entry.deletedAt = null;
+				entry.unconfirmedSince = null;
+				entry.lastSeen = stamp;
+				entry.kind = head.kind;
+				pinned.add(entry.id);
+				resolved = { id: entry.id, resurrected: wasResurrected };
+				dirty = true;
+				// Durable AT ONCE, like an allocation and for the same reason: a
+				// crash after this must not leave the entry tombstoned while this
+				// run's rows carry its id, because the sweep would then delete
+				// rows a live branch is pointing at.
+				persist();
+				return entry.id;
 			}
 
 			const id = file.nextId;
@@ -358,7 +436,59 @@ export function openRegistry(
 				file.nextId = id;
 				throw error;
 			}
+			pinned.add(id);
+			resolved = { id, resurrected: false };
 			return id;
+		},
+
+		get resolved(): ResolvedBranch | null {
+			return resolved;
+		},
+
+		applyBranchDecisions(
+			decisions: readonly BranchDecision[],
+		): AppliedDecisions {
+			assertHeld("applyBranchDecisions");
+			const applied: BranchDecision[] = [];
+			const dropped: Array<{ decision: BranchDecision; why: string }> = [];
+			const stamp = isoNow();
+			for (const decision of decisions) {
+				const entry = file.branches.find((b) => b.id === decision.id);
+				const why = dropReason(entry, decision, pinned);
+				if (why !== null || entry === undefined) {
+					dropped.push({ decision, why: why ?? "no such entry" });
+					continue;
+				}
+				if (decision.set === "unconfirmedSince") entry.unconfirmedSince = stamp;
+				else entry.deletedAt = stamp;
+				applied.push(decision);
+				dirty = true;
+			}
+			return { applied, dropped };
+		},
+
+		finalizeTombstone(id: number, remainingMembershipRows: number): void {
+			assertHeld("finalizeTombstone");
+			const entry = entryById(file, id);
+			if (entry.deletedAt === null) {
+				throw new RangeError(
+					`branch registry ${path}: entry ${id} ('${entry.label}') is not tombstoned, so rule C does not apply to it`,
+				);
+			}
+			// The proof, COMPARED. A parameter a body ignores is checked by the
+			// compiler at call sites only (CLAUDE.md #32), so this one decides.
+			if (remainingMembershipRows !== 0) {
+				throw new RangeError(
+					`branch registry ${path}: entry ${id} ('${entry.label}') still has ${remainingMembershipRows} chunk_branches row(s); rule C drops an entry only once its sweep has drained`,
+				);
+			}
+			file.branches = file.branches.filter((b) => b.id !== id);
+			// `nextId` is untouched, which is the whole of "ids are never reused".
+			dirty = true;
+		},
+
+		entries(): readonly BranchEntry[] {
+			return file.branches.map((entry) => ({ ...entry }));
 		},
 
 		stamp(branchId: number, headSha: string | null, indexedAt: string): void {
@@ -383,6 +513,47 @@ export function openRegistry(
 			if (dirty) persist();
 		},
 	};
+}
+
+/**
+ * Why a decision must not be applied, or `null` when it may be.
+ *
+ * Phase A read the registry without a lock and Phase B holds one, so every
+ * reason here is "the registry moved between the two". Forcing any of them is
+ * how a hoisted scan turns into a lost update.
+ */
+function dropReason(
+	entry: BranchEntry | undefined,
+	decision: BranchDecision,
+	pinned: ReadonlySet<number>,
+): string | null {
+	if (entry === undefined) return "no such entry";
+	if (entry.label !== decision.label) {
+		return `entry ${entry.id} is now '${entry.label}', not '${decision.label}'`;
+	}
+	if (pinned.has(entry.id)) {
+		// D7. The label this process just resolved is checked out RIGHT HERE.
+		return "this run resolved this entry (pinnedThisRun)";
+	}
+	if (entry.lastSeen !== decision.observedLastSeen) {
+		return "lastSeen moved since the scan";
+	}
+	if (entry.deletedAt !== null) return "already tombstoned";
+	if (decision.set === "unconfirmedSince" && entry.unconfirmedSince !== null) {
+		// Re-stamping would push the grace out by a whole period every time two
+		// processes scanned at once, so the tombstone would recede for ever.
+		return "unconfirmedSince is already set";
+	}
+	if (
+		decision.set === "deletedAt" &&
+		decision.reason === "grace-expired" &&
+		entry.unconfirmedSince === null
+	) {
+		// Resurrected, or confirmed present, since the scan: the grace has not
+		// run at all, so there is nothing to have expired.
+		return "unconfirmedSince was cleared since the scan";
+	}
+	return null;
 }
 
 function entryById(file: BranchRegistryFile, branchId: number): BranchEntry {

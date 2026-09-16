@@ -39,7 +39,25 @@ const LOCK_HELD_METHODS: Record<string, { method: string; reason: string }[]> =
 					"entered only from Indexer.index(), after createStoreLock(loc).acquire() succeeded, and left before release()",
 			},
 		],
+		"src/core/branch-sweep.ts": [
+			{
+				method: "sweepTombstonedBranches",
+				reason:
+					"it does not OPEN a registry, it is HANDED one: the `registry: BranchRegistry` parameter can only come from `openRegistry`, which refuses unless the store lock is held, and every mutation on the handle re-checks that lock's ownership token at runtime (RegistryNotLockedError). Both of its callers pass a handle opened inside a lock — `Indexer.indexInternal` and `branches prune`'s `withStoreLock` callback, each of which this sweep checks independently. Pinned below: the function really does take a BranchRegistry parameter and really does call openRegistry nowhere",
+			},
+		],
 	};
+
+/**
+ * A file+function allowlisted BECAUSE it receives a `BranchRegistry` must
+ * actually do so, and must not open one of its own. Without this the entry
+ * would be a hole: rename the parameter to something else, or add an
+ * `openRegistry` call inside, and the reason above stops being true while the
+ * sweep keeps passing.
+ */
+const HANDED_A_REGISTRY: ReadonlyArray<{ file: string; method: string }> = [
+	{ file: "src/core/branch-sweep.ts", method: "sweepTombstonedBranches" },
+];
 
 /** Every mutation `BranchRegistry` has or will have (W-R1..W-R6). */
 const MUTATOR_NAMES =
@@ -49,6 +67,17 @@ const MUTATOR_NAMES =
  * Blank out comments and the CONTENTS of string and template literals, keeping
  * every newline and every other character's offset, so indices and brace
  * matching still line up with the original.
+ *
+ * A `'` OR `"` IS LINE-BOUNDED (Phase 3b-3). A JavaScript single- or
+ * double-quoted string cannot contain a raw newline, but a REGEX LITERAL can
+ * contain a quote — `store.ts:417` is `.replace(/'/g, "''")` — and a scanner
+ * that pairs that apostrophe with the next one anywhere in the file runs off
+ * the end of the line and blanks whatever it crosses. MEASURED on this tree:
+ * the unbounded form blanked 1 178 of `store.ts`'s 3 136 code-bearing lines and
+ * 1 155 of `cli.ts`'s 8 437, so every rule below was blind over them — a sweep
+ * that passes by seeing nothing. Treating a partnerless quote as an ordinary
+ * character bounds the damage to its own line. Backticks stay multi-line,
+ * because template literals genuinely are.
  */
 function codeOnly(source: string): string {
 	const out = source.split("");
@@ -70,17 +99,37 @@ function codeOnly(source: string): string {
 			blank(i, stop);
 			i = stop;
 		} else if (c === '"' || c === "'" || c === "`") {
-			let j = i + 1;
-			while (j < source.length && source[j] !== c) {
-				j += source[j] === "\\" ? 2 : 1;
+			const close = closingQuote(source, i);
+			if (close === null) {
+				i++;
+				continue;
 			}
-			blank(i + 1, j);
-			i = j + 1;
+			blank(i + 1, close);
+			i = close + 1;
 		} else {
 			i++;
 		}
 	}
 	return out.join("");
+}
+
+/**
+ * The index of the quote closing the one at `open`, or `null` when there is
+ * none before the end of the line (a backtick may cross lines; the other two
+ * may not).
+ */
+function closingQuote(source: string, open: number): number | null {
+	const quote = source[open];
+	for (let j = open + 1; j < source.length; j++) {
+		const ch = source[j];
+		if (ch === "\\") {
+			j++;
+			continue;
+		}
+		if (ch === quote) return j;
+		if (ch === "\n" && quote !== "`") return null;
+	}
+	return null;
 }
 
 function matchingClose(code: string, openIndex: number): number {
@@ -105,7 +154,7 @@ function lockHeldSpans(file: string, code: string): Array<[number, number]> {
 		// indexer.ts is the CALL inside index(), and a span built from that is
 		// the call's argument list, which holds nothing.
 		const header = new RegExp(
-			`^[ \\t]*(?:private |public |protected )?(?:async )?${method}\\s*\\(`,
+			`^[ \\t]*(?:export )?(?:private |public |protected )?(?:async )?(?:function )?${method}\\s*\\(`,
 			"m",
 		).exec(code);
 		if (header === null) continue;
@@ -194,6 +243,30 @@ describe("REG-1, statically: branches.json is mutated only under the store lock"
 		const registry = srcFiles().find((f) => f.file === REGISTRY_FILE);
 		expect(registry).toBeDefined();
 		expect(clockReads(registry?.source ?? "")).toEqual([]);
+	});
+
+	test("an allowlisted callee really is HANDED a registry, and opens none", () => {
+		const files = srcFiles();
+		for (const { file, method } of HANDED_A_REGISTRY) {
+			const source = files.find((f) => f.file === file)?.source;
+			expect(source, `${file} is not in src/`).toBeDefined();
+			const code = codeOnly(source ?? "");
+			const header = new RegExp(
+				`^[ \\t]*(?:export )?(?:async )?(?:function )?${method}\\s*\\(`,
+				"m",
+			).exec(code);
+			expect(header, `${file} has no ${method}`).not.toBeNull();
+			const params = code.indexOf("(", header?.index ?? 0);
+			const signature = code.slice(params, matchingClose(code, params) + 1);
+			expect(signature).toContain("BranchRegistry");
+			// It may not construct one: a callee that opens its own handle is not
+			// "handed" anything and the reason on its entry would be false.
+			const body = (() => {
+				const open = code.indexOf("{", matchingClose(code, params));
+				return code.slice(open, matchingClose(code, open));
+			})();
+			expect(body).not.toMatch(/\bopenRegistry\s*\(/);
+		}
 	});
 
 	test("rule 3: only the registry module and the seam name the registry's path", () => {

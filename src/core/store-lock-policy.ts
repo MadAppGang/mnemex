@@ -21,7 +21,7 @@
  * the policy can be tested without LanceDB, config or a credential read.
  */
 
-import { createStoreLock, type IIndexLock, type LockResult } from "./lock.js";
+import { createStoreLock, type IndexLock, type LockResult } from "./lock.js";
 import type { StoreLocation } from "./store-location.js";
 
 /** D5: `observe` waits this long, then skips the append rather than hang. */
@@ -55,11 +55,18 @@ export type StoreLockOutcome<T> =
  * The lock is released in a `finally`, including when `fn` throws; the error
  * then propagates. `fn` receives the lock so a longer write can stamp
  * `recordProgress()` per unit of work (CLAUDE.md #20).
+ *
+ * The callback's parameter is the CONCRETE `IndexLock`, not `IIndexLock`,
+ * because `openRegistry` needs the two members that prove a lock is held right
+ * now — `path` and `ownershipToken` (REG-1, §3.4). `createStoreLock` has always
+ * returned that class; widening the parameter type is what lets W-R7
+ * (`mnemex branches prune`) open the registry through this seam instead of
+ * re-implementing the acquire/release around it.
  */
 export async function withStoreLock<T>(
 	loc: StoreLocation,
 	policy: StoreLockPolicy,
-	fn: (lock: IIndexLock) => Promise<T>,
+	fn: (lock: IndexLock) => Promise<T>,
 ): Promise<StoreLockOutcome<T>> {
 	const lock = createStoreLock(loc);
 	const result = await lock.acquire({

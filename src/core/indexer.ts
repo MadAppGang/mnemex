@@ -57,6 +57,13 @@ import {
 	createCodeUnitExtractor,
 } from "./ast/code-unit-extractor.js";
 import {
+	BRANCH_SOFT_LIMIT,
+	type ConfirmScanResult,
+	confirmScan,
+	isLiveEntry,
+	shouldConfirmBranches,
+} from "./branch-lifecycle.js";
+import {
 	canonicalBranchIds,
 	describeRemoval,
 	drainWidenIntents,
@@ -69,12 +76,18 @@ import {
 	type BranchRegistry,
 	combineBranchIdSources,
 	openRegistry,
+	readBranchRegistry,
 } from "./branch-registry.js";
 import {
 	graphBranchIdForRead,
 	labelBranchIds,
 	resolveBranchScopeForRead,
 } from "./branch-scope.js";
+import {
+	completeInterruptedSweep,
+	type SweepResult,
+	sweepTombstonedBranches,
+} from "./branch-sweep.js";
 import {
 	CachingEmbeddingsClient,
 	createCachingEmbeddingsClient,
@@ -118,7 +131,12 @@ import {
 	type RowMembership,
 } from "./store.js";
 import { resolveStoreLocation, type StoreLocation } from "./store-location.js";
-import { probeOldStore } from "./store-meta.js";
+import {
+	probeOldStore,
+	readStoreState,
+	type SweepCursor,
+	writeStoreState,
+} from "./store-meta.js";
 import { createSymbolExtractor } from "./symbol-extractor.js";
 import { yieldToEventLoop } from "./sync-region.js";
 import {
@@ -332,6 +350,21 @@ function asEmbeddingProvider(
 		"voyage",
 	];
 	return providers.find((p) => p === value);
+}
+
+/**
+ * Decisions of one kind that W-R2 actually APPLIED.
+ *
+ * Applied, never proposed: a decision the lock-held registry dropped did not
+ * happen, and a report that counted proposals would tell the user a branch was
+ * tombstoned when it was not.
+ */
+function countDecisions(
+	confirmation: { applied: readonly { set: string }[] } | null,
+	set: "unconfirmedSince" | "deletedAt",
+): number {
+	if (confirmation === null) return 0;
+	return confirmation.applied.filter((decision) => decision.set === set).length;
 }
 
 /**
@@ -597,6 +630,25 @@ export class Indexer {
 	 * that arithmetic. Hoisting is a bonus here, not the guarantee.
 	 */
 	private docsConfigPreLock: ReturnType<typeof getDocsConfig> | null = null;
+	/**
+	 * §4.3 Phase A, hoisted out of BOTH locks and out of every `SyncRegion`.
+	 *
+	 * `null` means the pass is not running in this index run: no git layout, the
+	 * interval has not come round, or the registry could not be read (which the
+	 * lock-held open reports properly, with the remedy). A non-null value is a
+	 * DECISION LIST and nothing more — `applyBranchDecisions` re-reads the
+	 * registry under the lock and drops any decision the registry has outgrown.
+	 *
+	 * The split is REG-1's (§3.4). Revision 1 of the design hoisted the writes
+	 * with the reads and all five round-2 reviewers raised it: `branches.json`
+	 * is written only while the store lock is held, and the `packed-refs` read
+	 * is the one part that must stay out of it.
+	 *
+	 * Reset at the start of every run: one `Indexer` serves more than one run
+	 * (the MCP auto-reindex reuses one), and a stale scan describes a registry
+	 * that has since been written.
+	 */
+	private confirmScanPreLock: ConfirmScanResult | null = null;
 	private codeUnitExtractor: CodeUnitExtractor | null = null;
 
 	/**
@@ -984,6 +1036,18 @@ export class Indexer {
 				? null
 				: openEmbedCache();
 
+		// ── §4.3 Phase A: the branch-confirmation scan, HOISTED ────────────────
+		//
+		// A bounded directory walk plus a capped stream of `packed-refs`. It runs
+		// here, before either lock and outside every `SyncRegion`, for the reason
+		// §2.2 gives: it is a cold-path read whose duration is not
+		// constant-bounded, and inside the lock that is time the 1 s heartbeat
+		// cannot fire in. It WRITES NOTHING — what it returns is a decision list
+		// that `applyBranchDecisions` validates and applies under the lock
+		// (REG-1). Hoisting the writes with the reads is what revision 1 of the
+		// design did, and it put three `branches.json` writes outside the lock.
+		this.confirmScanPreLock = await this.scanBranchesPreLock();
+
 		// LOCK ORDERING (deadlock-safe): ALWAYS acquire the MACHINE-GLOBAL lock
 		// FIRST, then the PER-PROJECT lock; release in REVERSE (project first, then
 		// global). Because every indexer follows the same global-before-project
@@ -1039,6 +1103,38 @@ export class Indexer {
 			this.indexLock = null;
 			this.globalLock.release();
 			this.globalLock = null;
+		}
+	}
+
+	/**
+	 * §4.3 Phase A, and the decision of whether to run it at all.
+	 *
+	 * Reads only, and NEVER throws: a registry this cannot parse is reported by
+	 * `openRegistry` under the lock, where the error carries the store path and
+	 * the remedy. Failing here would replace that with a failure from a pass the
+	 * user did not ask for.
+	 */
+	private async scanBranchesPreLock(): Promise<ConfirmScanResult | null> {
+		const loc = resolveStoreLocation(this.projectPath);
+		if (loc.gitLayout === null) return null;
+		try {
+			const entries = readBranchRegistry(loc).branches;
+			const live = entries.filter(isLiveEntry);
+			// The counter is what this run WILL write, so the run that takes it to
+			// a multiple of the interval is the one that scans.
+			const runNumber = readStoreState(loc).confirmRunCounter + 1;
+			if (
+				!shouldConfirmBranches(
+					runNumber,
+					live.length,
+					live.filter((entry) => entry.ephemeral).length,
+				)
+			) {
+				return null;
+			}
+			return await confirmScan(loc.gitLayout, entries);
+		} catch {
+			return null;
 		}
 	}
 
@@ -1140,6 +1236,57 @@ export class Indexer {
 		}
 		/** Every repo row this run writes: a repo path, under this run's branch. */
 		const repoRows: RowMembership = { pathKind: "repo", branchId };
+
+		// ── §4.3 Phase B (W-R2), immediately after W-R1 ───────────────────────
+		//
+		// The hoisted scan's decisions, applied against the registry AS RE-READ
+		// UNDER THIS LOCK. Each one is validated and DROPPED if its entry has
+		// moved since the scan — a different `lastSeen`, already tombstoned,
+		// already unconfirmed, or resolved by this very run (D7's `pinnedThisRun`,
+		// which is why this must come after `resolveId` and not before).
+		const confirmation =
+			registry !== null && this.confirmScanPreLock !== null
+				? registry.applyBranchDecisions(this.confirmScanPreLock.decisions)
+				: null;
+
+		// `store.json`'s lifecycle state, read under the lock. The pre-lock read
+		// in `scanBranchesPreLock` decided only WHETHER to scan; this one is the
+		// authoritative copy that the sweep resumes from and that this run writes
+		// back before `release()`.
+		const storeState = registry === null ? null : readStoreState(loc);
+		let sweepCursor: SweepCursor | null = storeState?.sweep ?? null;
+
+		// ── Rule R's other half ───────────────────────────────────────────────
+		//
+		// A branch that was tombstoned and is now checked out again keeps its id
+		// (rule R, in `resolveId`). §3.4 says the rows the sweep already removed
+		// are rebuilt by this run "because a branch whose `files` rows were
+		// deleted reports every file NEW". Under §4.3's order that is not yet
+		// true: the sweep deletes `files` LAST, once membership has drained, so a
+		// HALF-swept branch still has `files` rows whose content hash matches the
+		// tree. `getChanges` would then report nothing to do and the chunk rows
+		// the sweep deleted would never come back.
+		//
+		// So the interrupted operation is FINISHED here, and only when the cursor
+		// names this branch — a tombstone the sweep never reached costs nothing.
+		if (
+			registry?.resolved?.resurrected === true &&
+			sweepCursor?.branchId === branchId
+		) {
+			this.reportPhase("branch-sweep:resurrect");
+			const cleared = await completeInterruptedSweep(
+				this.fileTracker!,
+				branchId,
+				{ onProgress: () => this.reportProgress() },
+			);
+			sweepCursor = null;
+			this.onProgress?.(
+				0,
+				0,
+				`[branch] '${headLabelAtStart}' was being reclaimed and is checked out again; ` +
+					`${cleared.files} file record(s) were dropped so this run rebuilds what the sweep removed`,
+			);
+		}
 
 		// Resolve the commit anchor ONCE for the whole run. Everything written
 		// below (files via markIndexed, documents via the enricher) is stamped
@@ -2675,13 +2822,64 @@ export class Indexer {
 		duplicateChunkRows += widenDrain.duplicateRows;
 		totalIdsDemoted += widenDrain.missingRows;
 
+		// ── THE ORPHAN SWEEP (§4.3) ───────────────────────────────────────────
+		//
+		// AFTER the drain, deliberately. The drain rewrites the mirror of every
+		// row this run widened; a sweep that ran first could delete a row the
+		// drain still had an intent for, which the drain would then report as an
+		// M3 miss — true, reported, and pure noise.
+		//
+		// Bounded by `ORPHAN_SWEEP_BUDGET` and resumable from `store.json`, so a
+		// store with a million rows to reclaim gives back a slice per run instead
+		// of one very long run. Nothing here is gated on a change set: a branch
+		// is reclaimed by whatever run comes next, on whatever branch.
+		let sweep: SweepResult | null = null;
+		if (registry !== null) {
+			this.reportPhase("branch-sweep");
+			sweep = await sweepTombstonedBranches(
+				this.fileTracker!,
+				this.vectorStore!,
+				registry,
+				{
+					cursor: sweepCursor,
+					// CLAUDE.md #20: `reportProgress` advances `lastProgressAt`, the
+					// SOLE input to the hung/stale decision. A pass that stamps only
+					// at the end is the silent-but-healthy run #20 was written about.
+					onProgress: (rows) => {
+						this.reportProgress();
+						this.onProgress?.(
+							rows,
+							rows,
+							`[branch-sweep] ${rows} membership row(s) reclaimed`,
+						);
+					},
+				},
+			);
+			sweepCursor = sweep.cursor;
+			if (sweep.branchesFinalized.length > 0 || sweep.rowsDeleted > 0) {
+				this.onProgress?.(
+					0,
+					0,
+					`[branch-sweep] reclaimed ${sweep.rowsDeleted} row(s) from ` +
+						`${sweep.branchesDrained.length} deleted branch(es)`,
+				);
+			}
+		}
+
 		// M5 (I-7 FINAL) — ONE optimize() at the END of the drain, never per
 		// batch. Every row a merge rewrites leaves the FTS index; recall is NOT
 		// lost (`fullTextSearch` scans the unindexed tail, 982/982 measured), but
 		// filtered FTS goes from 0.7 ms to 60-72 ms and rewritten rows' BM25
 		// scores shift by up to 5 %. Fusion is rank-only, so a 5 % shift can
 		// reorder results — an NFR-5 exposure closed inside the same run.
-		if (widenDrain.rowsWidened > 0) {
+		//
+		// The SWEEP's narrow rewrites mirrors through the same `mergeInsert`, so
+		// its rows leave the FTS index in exactly the same way and are folded
+		// back in by the same call.
+		if (
+			widenDrain.rowsWidened > 0 ||
+			(sweep !== null && sweep.rowsNarrowed + sweep.rowsDeleted > 0)
+		) {
 			this.reportPhase("branch-membership:optimize");
 			await this.vectorStore!.optimize();
 			this.reportProgress();
@@ -2773,6 +2971,37 @@ export class Indexer {
 		// for it, because W-R1 renamed that before any row carried the id.
 		registry?.flush();
 
+		// `store.json`'s lifecycle fields, once, before `release()`. The counter
+		// advances only on a run that reached here: a run that threw has not
+		// confirmed anything, and counting it would skip a pass.
+		if (storeState !== null) {
+			writeStoreState(loc, {
+				confirmRunCounter: storeState.confirmRunCounter + 1,
+				sweep: sweepCursor,
+			});
+		}
+
+		/**
+		 * Live entries, for the soft-limit warning. Read from the registry rather
+		 * than counted during the run: entries come and go by four different
+		 * paths in one run (allocate, resurrect, tombstone, rule C), and a
+		 * running total would be four places to forget.
+		 */
+		const liveBranches =
+			registry?.entries().filter((entry) => entry.deletedAt === null).length ??
+			0;
+		if (liveBranches > BRANCH_SOFT_LIMIT) {
+			// A WARNING, never a failure (§4.3: "Ceiling: none"). The registry is
+			// read on every search, so a large one is a latency question, not a
+			// correctness one.
+			this.onProgress?.(
+				0,
+				0,
+				`[branch] this store holds ${liveBranches} branches (soft limit ${BRANCH_SOFT_LIMIT}) — ` +
+					"run `mnemex branches prune` to reclaim the ones git no longer has",
+			);
+		}
+
 		const durationMs = Date.now() - startTime;
 
 		return {
@@ -2807,6 +3036,28 @@ export class Indexer {
 				duplicateRows: duplicateChunkRows > 0 ? duplicateChunkRows : undefined,
 				idsDemoted: totalIdsDemoted > 0 ? totalIdsDemoted : undefined,
 				headChangedDuringRun: headChangedDuringRun ? true : undefined,
+				// I-15: the cheapest LIVE check that I-14 worked. Expected 0 on
+				// every ordinary run — a non-zero reading is a 64-bit id collision
+				// or a crash between a refresh and its registration. An internal
+				// counter cannot be read from a user's machine.
+				unitsRefreshed: totalUnitsRefreshed,
+				// §4.3's lifecycle accounting. Emitted whenever there is a registry
+				// at all, including as zeros, so a consumer can rely on the keys.
+				branchCount: liveBranches,
+				confirmationRan: confirmation !== null,
+				confirmationDeferred:
+					this.confirmScanPreLock?.deferred === true ? true : undefined,
+				branchesUnconfirmed: countDecisions(confirmation, "unconfirmedSince"),
+				branchesTombstoned: countDecisions(confirmation, "deletedAt"),
+				missingBranchRefs:
+					this.confirmScanPreLock !== null &&
+					this.confirmScanPreLock.missingRefs.length > 0
+						? [...this.confirmScanPreLock.missingRefs]
+						: undefined,
+				sweepRowsDeleted: sweep?.rowsDeleted ?? 0,
+				sweepRowsNarrowed: sweep?.rowsNarrowed ?? 0,
+				sweepBranchesFinalized: sweep?.branchesFinalized.length ?? 0,
+				sweepRemaining: sweep?.remaining ?? 0,
 			},
 			cost: totalCost > 0 ? totalCost : undefined,
 			totalTokens: totalTokens > 0 ? totalTokens : undefined,

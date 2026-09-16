@@ -420,6 +420,23 @@ mnemex hooks uninstall   # remove the hook
 mnemex hooks status      # check if hook is installed
 ```
 
+### Branches
+One index is shared by every worktree of a repository, and each branch sees its
+own rows. These are the commands that make that visible.
+```
+mnemex branches                  # what the store holds: id, label, state, row counts
+mnemex branches prune --dry-run  # what a prune would reclaim; writes nothing
+mnemex branches prune            # reclaim branches your repository no longer has
+```
+A branch whose ref has disappeared is marked unconfirmed first and tombstoned 24
+hours later, so a mid-rebase moment cannot destroy an index. Its rows are then
+reclaimed a slice at a time by ordinary `mnemex index` runs — `prune` is the
+immediate form of the same thing, and you never have to run it.
+
+If a command answers with nothing on a branch you have just created, that is
+because the branch has not been indexed yet. Every command says so rather than
+looking like an empty result: run `mnemex index`.
+
 ### API keys and the macOS Keychain
 ```
 mnemex keychain status               # what is stored where, and whether the backend works

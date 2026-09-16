@@ -4,8 +4,8 @@
  * `VectorStore` opens the LanceDB table LAZILY: `initialize()` only connects
  * the database, and `this.table` stays null until some call runs
  * `ensureTableOpen()`. Every read path does that (`getChunksWithVectors`,
- * `getStats`, `search`, ...), but `deleteByFile` / `deleteByFileHash` used to
- * test the raw `this.table` field:
+ * `getStats`, `search`, ...), but `deleteByFile` used to test the raw
+ * `this.table` field:
  *
  *     if (!this.db || !this.table) return 0;
  *
@@ -21,14 +21,20 @@
  *   - table exists on disk, never opened => the delete really deletes
  *   - no table at all                    => 0, and no throw
  *   - table already open (post-search)   => unchanged behaviour
- *   - `deleteByFileHash` matches `deleteByFile` on all of the above
- *   - `deleteByDocumentType` / `deleteAllByFile` match them too
  *
  * `deleteByFile` returns LanceDB's real `numDeletedRows` (Phase 3a). Each seed
  * here puts ONE row per file, so a successful delete reads 1 and a matchless
- * one 0; `store-delete-count.test.ts` covers multi-row files. `deleteByFileHash`
- * still returns a constant 1 (no caller in src/, retired in 3b) and is asserted
- * as-is.
+ * one 0; `store-delete-count.test.ts` covers multi-row files.
+ *
+ * PHASE 3b-3 RETIRED THREE SIBLINGS, and their cases went with them.
+ * `deleteByFileHash`, `deleteByDocumentType` and `deleteAllByFile` had no
+ * caller in `src/` and each deleted across every branch of a shared store
+ * (architecture §3.5, decision I-15). The lazy-open guard they were asserted
+ * against is `ensureTableOpen()`, which the surviving `deleteByFile` still
+ * exercises on every case below, so nothing about the guard is now untested —
+ * what is gone is the duplicate coverage of three methods that no longer exist.
+ * `test/unit/core/store-delete-allowlist.test.ts` is what stops them coming
+ * back.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -37,11 +43,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SCOPE_ALL } from "../../../src/core/branch-scope.js";
 import { createVectorStore } from "../../../src/core/store.js";
-import type {
-	ChunkWithEmbedding,
-	DocumentType,
-	DocumentWithEmbedding,
-} from "../../../src/types.js";
+import type { ChunkWithEmbedding } from "../../../src/types.js";
 
 const DIM = 8;
 
@@ -62,23 +64,6 @@ function chunk(id: string, seed = 1): ChunkWithEmbedding {
 		chunkType: "function",
 		name: id,
 		fileHash: `file-${id}`,
-		vector: vec(seed),
-	};
-}
-
-function doc(
-	marker: string,
-	filePath: string,
-	documentType: DocumentType,
-	seed = 3,
-): DocumentWithEmbedding {
-	return {
-		id: `doc-${marker}`,
-		content: `Summary of parseConfig behaviour. // MARKER:${marker}`,
-		documentType,
-		filePath,
-		fileHash: `file-${marker}`,
-		createdAt: new Date().toISOString(),
 		vector: vec(seed),
 	};
 }
@@ -162,33 +147,12 @@ describe("deleteByFile — table not yet opened on this instance", () => {
 	});
 });
 
-describe("deleteByFileHash — table not yet opened on this instance", () => {
-	test("deletes the hash's chunks instead of silently no-opping", async () => {
-		await seed([chunk("alpha", 1), chunk("beta", 2)]);
-
-		const deleted = await withFreshStore((store) =>
-			store.deleteByFileHash("file-alpha"),
-		);
-
-		expect(deleted).toBe(1);
-		expect(await remainingIds()).toEqual(["beta"]);
-	});
-});
-
 describe("deletes on a store with no table at all", () => {
 	test("deleteByFile returns 0 and does not throw", async () => {
 		// Nothing was ever indexed, so `ensureTableOpen()` returns null: there is
 		// no table to open. A no-op is genuinely correct here.
 		const deleted = await withFreshStore((store) =>
 			store.deleteByFile("src/alpha.ts"),
-		);
-
-		expect(deleted).toBe(0);
-	});
-
-	test("deleteByFileHash returns 0 and does not throw", async () => {
-		const deleted = await withFreshStore((store) =>
-			store.deleteByFileHash("file-alpha"),
 		);
 
 		expect(deleted).toBe(0);
@@ -204,7 +168,6 @@ describe("deletes on a store with no table at all", () => {
 
 		await withFreshStore(async (store) => {
 			expect(await store.deleteByFile("src/alpha.ts")).toBe(0);
-			expect(await store.deleteByFileHash("file-alpha")).toBe(0);
 		});
 	});
 });
@@ -220,21 +183,6 @@ describe("deletes on a store whose table is already open", () => {
 				keywordOnly: true,
 			});
 			return store.deleteByFile("src/alpha.ts");
-		});
-
-		expect(deleted).toBe(1);
-		expect(await remainingIds()).toEqual(["beta"]);
-	});
-
-	test("deleteByFileHash after a search behaves exactly as before", async () => {
-		await seed([chunk("alpha", 1), chunk("beta", 2)]);
-
-		const deleted = await withFreshStore(async (store) => {
-			await store.search("parseConfig", undefined, SCOPE_ALL, {
-				limit: 10,
-				keywordOnly: true,
-			});
-			return store.deleteByFileHash("file-alpha");
 		});
 
 		expect(deleted).toBe(1);
@@ -257,148 +205,5 @@ describe("deletes on a store whose table is already open", () => {
 		// `numDeletedRows`; an open table no longer makes a no-op look like work.
 		expect(deleted).toBe(0);
 		expect(await remainingIds()).toEqual(["alpha"]);
-	});
-});
-
-// ============================================================================
-// The same guard, two methods that were outside the original fix
-// ============================================================================
-
-/** Seed enriched documents on their own instance, as `seed` does for chunks. */
-async function seedDocs(docs: DocumentWithEmbedding[]): Promise<void> {
-	await withFreshStore((store) =>
-		store.addDocuments(docs, { pathKind: "repo", branchId: 0 }),
-	);
-}
-
-/**
- * Every MARKER still in the store, read with NO predicate at all.
- *
- * `remainingIds` above goes through `getChunksWithVectors`, which only sees
- * `documentType = 'code_chunk'` rows. These two methods delete across types, so
- * the oracle has to be an unfiltered scan.
- */
-async function markers(): Promise<string[]> {
-	return withFreshStore(async (store) => {
-		const contents = await store.getChunkContents();
-		return contents
-			.map((c) => c.match(/MARKER:(\S+)/)?.[1])
-			.filter((m): m is string => m !== undefined)
-			.sort();
-	});
-}
-
-describe("deleteByDocumentType — table not yet opened on this instance", () => {
-	test("deletes that type's documents instead of silently no-opping", async () => {
-		await seedDocs([
-			doc("summary", "src/alpha.ts", "file_summary", 3),
-			doc("idiom", "src/beta.ts", "idiom", 4),
-		]);
-
-		const deleted = await withFreshStore((store) =>
-			// No read first: `this.table` is null here, only `this.db` is set.
-			store.deleteByDocumentType("file_summary"),
-		);
-
-		expect(deleted).toBe(1);
-		expect(await markers()).toEqual(["idiom"]);
-	});
-
-	test("leaves the other document types in place", async () => {
-		await seed([chunk("alpha", 1)]);
-		await seedDocs([doc("summary", "src/alpha.ts", "file_summary", 3)]);
-
-		await withFreshStore((store) => store.deleteByDocumentType("file_summary"));
-
-		expect(await markers()).toEqual(["alpha"]);
-	});
-
-	test("returns 0 and does not throw when there is no table at all", async () => {
-		const deleted = await withFreshStore((store) =>
-			store.deleteByDocumentType("file_summary"),
-		);
-
-		expect(deleted).toBe(0);
-	});
-
-	test("returns 0 rather than throwing when the table cannot be opened", async () => {
-		mkdirSync(join(dbPath, "code_chunks.lance"), { recursive: true });
-
-		await withFreshStore(async (store) => {
-			expect(await store.deleteByDocumentType("file_summary")).toBe(0);
-		});
-	});
-
-	test("after a search behaves exactly as before", async () => {
-		await seedDocs([
-			doc("summary", "src/alpha.ts", "file_summary", 3),
-			doc("idiom", "src/beta.ts", "idiom", 4),
-		]);
-
-		const deleted = await withFreshStore(async (store) => {
-			await store.search("parseConfig", undefined, SCOPE_ALL, {
-				limit: 10,
-				keywordOnly: true,
-			});
-			return store.deleteByDocumentType("file_summary");
-		});
-
-		expect(deleted).toBe(1);
-		expect(await markers()).toEqual(["idiom"]);
-	});
-});
-
-describe("deleteAllByFile — table not yet opened on this instance", () => {
-	test("deletes every row for the file, chunk and enriched alike", async () => {
-		await seed([chunk("alpha", 1), chunk("beta", 2)]);
-		await seedDocs([doc("alpha-summary", "src/alpha.ts", "file_summary", 3)]);
-
-		const deleted = await withFreshStore((store) =>
-			store.deleteAllByFile("src/alpha.ts"),
-		);
-
-		expect(deleted).toBe(1);
-		expect(await markers()).toEqual(["beta"]);
-	});
-
-	test("reports the delete rather than an ambiguous 0", async () => {
-		await seed([chunk("alpha", 1)]);
-
-		const deleted = await withFreshStore((store) =>
-			store.deleteAllByFile("src/alpha.ts"),
-		);
-
-		expect(deleted).toBe(1);
-	});
-
-	test("returns 0 and does not throw when there is no table at all", async () => {
-		const deleted = await withFreshStore((store) =>
-			store.deleteAllByFile("src/alpha.ts"),
-		);
-
-		expect(deleted).toBe(0);
-	});
-
-	test("returns 0 rather than throwing when the table cannot be opened", async () => {
-		mkdirSync(join(dbPath, "code_chunks.lance"), { recursive: true });
-
-		await withFreshStore(async (store) => {
-			expect(await store.deleteAllByFile("src/alpha.ts")).toBe(0);
-		});
-	});
-
-	test("after a search behaves exactly as before", async () => {
-		await seed([chunk("alpha", 1), chunk("beta", 2)]);
-
-		const deleted = await withFreshStore(async (store) => {
-			await store.search("parseConfig", undefined, SCOPE_ALL, {
-				limit: 10,
-				keywordOnly: true,
-			});
-			return store.deleteAllByFile("src/alpha.ts");
-		});
-
-		expect(deleted).toBe(1);
-		expect(await markers()).toEqual(["beta"]);
 	});
 });

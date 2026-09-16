@@ -27,7 +27,6 @@ import { join } from "node:path";
 import {
 	type BranchEntry,
 	BranchRegistryCorruptError,
-	BranchResurrectionUnsupportedError,
 	openRegistry,
 	RegistryNotLockedError,
 } from "../../../src/core/branch-registry.js";
@@ -313,22 +312,102 @@ describe("a registry that cannot be trusted is REFUSED, never reset", () => {
 	}
 });
 
-describe("rule R is Phase 3b's: a label matching only a tombstoned or unconfirmed entry is refused", () => {
+describe("rule R (§3.4): a tombstoned or unconfirmed label is RESURRECTED, keeping its id", () => {
 	for (const field of ["deletedAt", "unconfirmedSince"] as const) {
-		test(`${field} set: refused, nothing allocated`, () => {
-			const before = writeRegistry({
+		test(`${field} set: the same id comes back, both fields cleared`, () => {
+			writeRegistry({
 				formatVersion: 1,
 				nextId: 2,
-				branches: [entry(1, "main", { [field]: new Date(T0).toISOString() })],
+				branches: [
+					entry(1, "main", {
+						deletedAt: new Date(T0 - 1000).toISOString(),
+						unconfirmedSince: new Date(T0 - 2000).toISOString(),
+						[field]: new Date(T0).toISOString(),
+					}),
+				],
 			});
 			const registry = openRegistry(loc, lock, noRows);
-			expect(() => registry.resolveId(branch("main"))).toThrow(
-				BranchResurrectionUnsupportedError,
-			);
-			registry.flush();
-			expect(readFileSync(registryPath(), "utf8")).toBe(before);
+
+			// Allocating a FRESH id here would strand every row the sweep had not
+			// reached under an id nothing resolves to — unrecoverable by any pass
+			// in this design.
+			expect(registry.resolveId(branch("main"))).toBe(1);
+			expect(registry.resolved).toEqual({ id: 1, resurrected: true });
+
+			// Durable AT ONCE, before the flush: a crash here must not leave the
+			// entry tombstoned while this run's rows carry its id.
+			const entryOnDisk = onDisk().branches[0];
+			expect(entryOnDisk.deletedAt).toBeNull();
+			expect(entryOnDisk.unconfirmedSince).toBeNull();
+			expect(entryOnDisk.lastSeen).toBe(new Date(T0).toISOString());
+			expect(onDisk().nextId).toBe(2);
 		});
 	}
+
+	test("an ORDINARY live label reports resurrected: false", () => {
+		const registry = openRegistry(loc, lock, noRows);
+		expect(registry.resolveId(branch("main"))).toBe(1);
+		expect(registry.resolved).toEqual({ id: 1, resurrected: false });
+		expect(registry.resolveId(branch("main"))).toBe(1);
+		expect(registry.resolved).toEqual({ id: 1, resurrected: false });
+	});
+
+	test("resurrection reuses the HIGHEST id when a label somehow has two entries", () => {
+		// Not reachable through this build's own writes — nothing allocates a
+		// second entry for a label while a tombstoned one survives, because of
+		// rule R itself. Pinned so a hand-edited or future-build file resolves to
+		// the most recently allocated rows rather than the oldest.
+		writeRegistry({
+			formatVersion: 1,
+			nextId: 9,
+			branches: [
+				entry(3, "main", { deletedAt: new Date(T0 - 5000).toISOString() }),
+				entry(7, "main", { deletedAt: new Date(T0 - 1000).toISOString() }),
+			],
+		});
+		const registry = openRegistry(loc, lock, noRows);
+		expect(registry.resolveId(branch("main"))).toBe(7);
+	});
+});
+
+describe("rule C (§3.4): finalizeTombstone drops the entry and leaves nextId alone", () => {
+	test("a drained tombstone is dropped; nextId does not move", () => {
+		writeRegistry({
+			formatVersion: 1,
+			nextId: 3,
+			branches: [
+				entry(1, "main"),
+				entry(2, "gone", { deletedAt: new Date(T0).toISOString() }),
+			],
+		});
+		const registry = openRegistry(loc, lock, noRows);
+		registry.finalizeTombstone(2, 0);
+		registry.flush();
+
+		const file = onDisk();
+		expect(file.branches.map((b) => b.id)).toEqual([1]);
+		// "Never reused" is a property of nextId alone.
+		expect(file.nextId).toBe(3);
+	});
+
+	test("it REFUSES an entry whose membership has not drained", () => {
+		writeRegistry({
+			formatVersion: 1,
+			nextId: 3,
+			branches: [entry(2, "gone", { deletedAt: new Date(T0).toISOString() })],
+		});
+		const registry = openRegistry(loc, lock, noRows);
+		// The proof is COMPARED, not merely declared (CLAUDE.md #32).
+		expect(() => registry.finalizeTombstone(2, 1)).toThrow(/still has 1/);
+		registry.flush();
+		expect(onDisk().branches).toHaveLength(1);
+	});
+
+	test("it REFUSES a live entry", () => {
+		const registry = openRegistry(loc, lock, noRows);
+		registry.resolveId(branch("main"));
+		expect(() => registry.finalizeTombstone(1, 0)).toThrow(/not tombstoned/);
+	});
 });
 
 describe("a failed allocation rename is undone in memory", () => {

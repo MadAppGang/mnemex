@@ -29,6 +29,29 @@ const REPO = join(import.meta.dir, "..", "..", "..");
 const INDEXER_SOURCE = join(REPO, "src", "core", "indexer.ts");
 
 /**
+ * Every file in `src/` that drives tracker regions in a loop.
+ *
+ * `indexer.ts` was the only one when this sweep was written. It stopped being
+ * so in Phase 3b-2, when `branch-membership.ts` took the widen drain, the
+ * narrow and the recovery loops out of it — and that file's own header says it
+ * "is swept by the same caller-side sweep that covers `indexer.ts`", which was
+ * not true: nothing pointed the sweep at it. Phase 3b-3 makes it true, and adds
+ * `branch-sweep.ts`, which has the same shape again.
+ *
+ * The rule for adding to this list: if a file calls a method on an
+ * `IFileTracker` inside a loop, it belongs here. The sweep's own handle
+ * recogniser (T1) sees a parameter typed `IFileTracker`, which is why these
+ * modules are free functions taking the tracker explicitly rather than classes
+ * holding a differently-named field — a field the recogniser does not know is
+ * a handle would pass this sweep by being invisible to it.
+ */
+const REGION_DRIVING_SOURCES: readonly string[] = [
+	INDEXER_SOURCE,
+	join(REPO, "src", "core", "branch-membership.ts"),
+	join(REPO, "src", "core", "branch-sweep.ts"),
+];
+
+/**
  * Loops that may keep an unyielded shape. One line of reason each; an entry
  * that stops matching fails the suite, so this cannot rot into a blanket pass.
  */
@@ -70,6 +93,49 @@ describe("the caller-side SR-2 sweep over src/core/indexer.ts", () => {
 		);
 		expect(result.findings).toEqual([]);
 		expect(result.unusedAllowances).toEqual([]);
+	});
+
+	test("the membership and sweep modules are swept too, with NO allowances", () => {
+		// They were written after this sweep existed, and each of them exists to
+		// hold a loop that drives tracker regions. An allowance here would need
+		// the same one-line reason the indexer's does; there is none, because
+		// every loop in both files yields.
+		for (const source of REGION_DRIVING_SOURCES.slice(1)) {
+			const result = sweepIndexerLoops(
+				readFileSync(source, "utf8"),
+				parser,
+				[],
+			);
+			expect(result.findings, source).toEqual([]);
+		}
+	});
+
+	test("that is not vacuous: both modules really do drive regions in loops", () => {
+		const callees = new Set<string>();
+		let regionLoops = 0;
+		for (const source of REGION_DRIVING_SOURCES.slice(1)) {
+			const { census } = sweepIndexerLoops(
+				readFileSync(source, "utf8"),
+				parser,
+				[],
+			);
+			for (const callee of census.calleesInLoops) callees.add(callee);
+			regionLoops += census.regionLoops;
+		}
+		// `branch-membership.ts`'s narrow, drain and recovery; `branch-sweep.ts`'s
+		// page loop and its tree-scoped tail.
+		for (const callee of [
+			"beginRemoveIntents",
+			"finishNarrowBatch",
+			"takeWidenIntents",
+			"clearWidenIntents",
+			"pendingIntents",
+			"membershipPage",
+			"deleteBranchTreeRows",
+		]) {
+			expect([...callees]).toContain(callee);
+		}
+		expect(regionLoops).toBeGreaterThanOrEqual(5);
 	});
 
 	test("is not vacuous: it recognised the loops the tracker residue named", () => {

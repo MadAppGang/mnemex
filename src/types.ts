@@ -415,6 +415,47 @@ export interface IndexBranchResult {
 	 * NOT stamped as indexed and the registry entry carries `needsReindex`.
 	 */
 	headChangedDuringRun?: boolean;
+	/**
+	 * Code units whose id was known but whose stored content hash disagreed, so
+	 * the row was rewritten in place instead of widened (I-15).
+	 *
+	 * EXPECTED 0 since I-14 put the content hash into the unit id, and that is
+	 * what makes it useful: it is the cheapest live check that I-14 works on a
+	 * real machine. A non-zero reading is a 64-bit id collision, or a crash
+	 * between a refresh and the second transaction that registers its hash.
+	 */
+	unitsRefreshed: number;
+	/**
+	 * LIVE registry entries after this run (§4.3). Above `BRANCH_SOFT_LIMIT` the
+	 * run warns; it never fails, because there is no ceiling.
+	 */
+	branchCount: number;
+	/** The confirmation pass ran in this run (§4.3's interval or a size trigger). */
+	confirmationRan: boolean;
+	/**
+	 * A ref source was over its cap, so the pass decided NOTHING. A partial ref
+	 * set makes live branches look deleted, and the decision that follows from
+	 * that is a tombstone.
+	 */
+	confirmationDeferred?: boolean;
+	/** Entries this run marked `unconfirmedSince` — the first of the two passes to a tombstone. */
+	branchesUnconfirmed: number;
+	/** Entries this run tombstoned: the grace expired, or an ephemeral was evicted. */
+	branchesTombstoned: number;
+	/**
+	 * Live branch labels whose ref is in NEITHER `refs/heads/**` nor
+	 * `packed-refs` (§4.3). Reported whether or not a decision followed, because
+	 * a vanished ref is a fact worth acting on before the grace expires.
+	 */
+	missingBranchRefs?: string[];
+	/** Rows the sweep deleted because no branch pointed at them any more. */
+	sweepRowsDeleted: number;
+	/** Rows the sweep narrowed: another branch still holds them. */
+	sweepRowsNarrowed: number;
+	/** Tombstoned entries rule C dropped from `branches.json` this run. */
+	sweepBranchesFinalized: number;
+	/** Membership rows tombstoned branches still hold. Non-zero means another run is needed. */
+	sweepRemaining: number;
 }
 
 /** Embedding-cache accounting for one index run, as rendered by the CLI. */

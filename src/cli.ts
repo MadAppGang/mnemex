@@ -134,7 +134,7 @@ function isAgentMode(): boolean {
 function printCompactHelp(): void {
 	console.log(`mnemex v${VERSION} - Semantic code search with AST analysis`);
 	console.log(
-		"Commands: index index --cloud search status clear map symbol callers callees context dead-code test-gaps impact pack watch hooks hook install rg docs feedback learn update team keychain",
+		"Commands: index index --cloud search status clear map symbol callers callees context dead-code test-gaps impact branches pack watch hooks hook install rg docs feedback learn update team keychain",
 	);
 	console.log(
 		"Use: mnemex --agent <cmd> | Docs: https://github.com/MadAppGang/mnemex",
@@ -432,6 +432,20 @@ export async function runCli(args: string[]): Promise<void> {
 			// agent consumer ends up parsing half a line. A failed migration or an
 			// aborted prune must not exit 0.
 			const code = await handleKeychainCommand(args.slice(1), {
+				agent: agentMode,
+			});
+			if (code !== 0) process.exitCode = code;
+			break;
+		}
+		// Branch lifecycle — the only way to see what the store holds (§4.3)
+		case "branches": {
+			const { handleBranchesCommand } = await import(
+				"./cli/commands/branches.js"
+			);
+			// The handler RETURNS its status rather than exiting: exiting mid-render
+			// truncates buffered stdout, which is how an agent consumer parses half
+			// a line. A refused prune must not exit 0.
+			const code = await handleBranchesCommand(args.slice(1), {
 				agent: agentMode,
 			});
 			if (code !== 0) process.exitCode = code;
@@ -2227,8 +2241,15 @@ async function handleStatus(args: string[]): Promise<void> {
 		// Agent mode: structured key=value output
 		if (agentMode) {
 			agentOutput.statusOutput(status);
+			reportBranchState(projectPath, "status");
 			return;
 		}
+
+		// V3.21. `status` reports FILES and CHUNKS, which are store-wide, so an
+		// index full of another branch's rows looks healthy from here. Said in
+		// the human output too, right after the counts, because that is the
+		// command a user runs to find out why a search came back empty.
+		reportBranchState(projectPath, "status");
 
 		if (status.corrupt) {
 			console.log(
@@ -4799,6 +4820,51 @@ function readBranchId(projectPath: string): number {
 	return graphBranchIdForRead(resolveBranchScopeForProject(projectPath));
 }
 
+/**
+ * V3.21 (decision I-13): say so when this branch has never been indexed.
+ *
+ * ── WHY EVERY GRAPH COMMAND NEEDS THIS AND `search` DOES NOT ───────────────
+ * D1 lets `search` drop the branch filter and return the SUPERSET, flagged,
+ * because a search RETRIEVES: every row it returns is real code and the caller
+ * can judge it. The graph commands ANALYSE — `dead-code` asks which symbols
+ * have zero callers, `impact` walks transitive callers, `map` ranks by PageRank
+ * — and pooling rows from several branches would not widen those answers, it
+ * would FALSIFY them. So their unknown-branch answer is the EMPTY graph, which
+ * is the truthful one.
+ *
+ * Truthful, and indistinguishable from a clean repository. `mnemex dead-code`
+ * on a branch that has never been indexed prints "no dead code found", which is
+ * exactly what it prints on a repository that has none. That is D1's own
+ * invisible-failure argument, applied to the commands D1 did not cover — so the
+ * answer stays empty and a line beside it says why, in the human output AND as
+ * a field under `--agent`.
+ *
+ * Call it AFTER resolving the tracker and BEFORE the query, because several of
+ * these handlers `process.exit(1)` on an empty result ("Symbol not found") and
+ * a notice printed after that never runs.
+ */
+function reportBranchState(projectPath: string, command: string): void {
+	const resolution = resolveBranchScopeForProject(projectPath);
+	if (agentMode) {
+		// Emitted on EVERY one of these commands, including as 0, so a consumer
+		// can rely on the key rather than on its absence meaning "known".
+		console.log(`branch_unknown=${resolution.branchUnknown ? 1 : 0}`);
+		if (resolution.label !== null) console.log(`branch=${resolution.label}`);
+		if (resolution.branchUnknown) {
+			console.log(
+				`branch_hint=branch '${resolution.label}' is not indexed; ${command} answers for this branch only. Run: mnemex index`,
+			);
+		}
+		return;
+	}
+	if (!resolution.branchUnknown) return;
+	console.error(
+		`\n⚠️  Branch '${resolution.label}' has not been indexed, so \`${command}\` has nothing to answer from.\n` +
+			"    This is NOT the same as 'nothing found' — no symbol of this branch is in the index yet.\n" +
+			"    Run: mnemex index\n",
+	);
+}
+
 function getFileTracker(projectPath: string): FileTracker | null {
 	const dbPath = getIndexDbPath(projectPath);
 
@@ -4910,6 +4976,7 @@ async function handleMap(args: string[]): Promise<void> {
 	}
 
 	try {
+		reportBranchState(projectPath, "map");
 		const repoMapGen = createRepoMapGenerator(
 			tracker,
 			readBranchId(projectPath),
@@ -4974,6 +5041,7 @@ async function handleSymbol(args: string[]): Promise<void> {
 	}
 
 	try {
+		reportBranchState(projectPath, "symbol");
 		const graphManager = createReferenceGraphManager(
 			tracker,
 			readBranchId(projectPath),
@@ -5122,6 +5190,7 @@ async function handleCallers(args: string[]): Promise<void> {
 	}
 
 	try {
+		reportBranchState(projectPath, "callers");
 		const graphManager = createReferenceGraphManager(
 			tracker,
 			readBranchId(projectPath),
@@ -5271,6 +5340,7 @@ async function handleCallees(args: string[]): Promise<void> {
 	}
 
 	try {
+		reportBranchState(projectPath, "callees");
 		const graphManager = createReferenceGraphManager(
 			tracker,
 			readBranchId(projectPath),
@@ -5355,6 +5425,7 @@ async function handleContext(args: string[]): Promise<void> {
 	}
 
 	try {
+		reportBranchState(projectPath, "context");
 		const graphManager = createReferenceGraphManager(
 			tracker,
 			readBranchId(projectPath),
@@ -5465,6 +5536,7 @@ async function handleDeadCode(args: string[]): Promise<void> {
 	}
 
 	try {
+		reportBranchState(projectPath, "dead-code");
 		const { createCodeAnalyzer } = await import("./core/analysis/index.js");
 		const analyzer = createCodeAnalyzer(tracker, readBranchId(projectPath));
 
@@ -5535,6 +5607,7 @@ async function handleTestGaps(args: string[]): Promise<void> {
 	}
 
 	try {
+		reportBranchState(projectPath, "test-gaps");
 		const { createCodeAnalyzer } = await import("./core/analysis/index.js");
 		const analyzer = createCodeAnalyzer(tracker, readBranchId(projectPath));
 
@@ -5620,6 +5693,7 @@ async function handleImpact(args: string[]): Promise<void> {
 	}
 
 	try {
+		reportBranchState(projectPath, "impact");
 		const { createCodeAnalyzer } = await import("./core/analysis/index.js");
 		const analyzer = createCodeAnalyzer(tracker, readBranchId(projectPath));
 
@@ -7473,6 +7547,7 @@ ${c.yellow}${c.bold}DEVELOPER EXPERIENCE${c.reset}
   ${c.green}watch${c.reset}                  Watch for changes and auto-reindex ${c.dim}(daemon mode)${c.reset}
   ${c.green}hooks${c.reset} <subcommand>     Manage git hooks ${c.dim}(install|uninstall|status)${c.reset}
   ${c.green}keychain${c.reset} <subcommand>  Manage API keys in the macOS Keychain ${c.dim}(status|migrate|prune|rm)${c.reset}
+  ${c.green}branches${c.reset} [prune]       Show which branches this store holds; reclaim deleted ones ${c.dim}(--dry-run)${c.reset}
   ${c.green}hook${c.reset}                   Claude Code hook handler ${c.dim}(reads JSON from stdin)${c.reset}
   ${c.green}install${c.reset} <tool>         Install integration ${c.dim}(opencode|claude-code)${c.reset}
   ${c.green}pack${c.reset} [path]            Pack codebase into a single file ${c.dim}(for AI analysis)${c.reset}

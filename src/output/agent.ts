@@ -124,6 +124,35 @@ function indexComplete(result: EnrichedIndexResult): void {
 		if (result.branch.headChangedDuringRun) {
 			console.log("head_changed_during_run=1");
 		}
+		// I-15. Expected 0 on every ordinary run since I-14 put the content hash
+		// into the code-unit id; a non-zero reading is a 64-bit id collision or a
+		// crash between a refresh and its registration. Emitted ALWAYS, including
+		// as 0, because "0 was observed" and "this build does not report it" must
+		// not look the same to a consumer checking that I-14 works.
+		console.log(`branch_units_refreshed=${result.branch.unitsRefreshed}`);
+		// §4.3's lifecycle. `branch_sweep_remaining` is the one to act on:
+		// non-zero means deleted branches still hold rows and another
+		// `mnemex index` (or `mnemex branches prune`) will reclaim them.
+		console.log(`branch_count=${result.branch.branchCount}`);
+		console.log(
+			`branch_confirmation_ran=${result.branch.confirmationRan ? 1 : 0}`,
+		);
+		if (result.branch.confirmationDeferred) {
+			console.log("branch_confirmation_deferred=1");
+		}
+		console.log(`branches_unconfirmed=${result.branch.branchesUnconfirmed}`);
+		console.log(`branches_tombstoned=${result.branch.branchesTombstoned}`);
+		for (const label of result.branch.missingBranchRefs ?? []) {
+			console.log(`missing_branch_ref=${label}`);
+		}
+		console.log(`branch_sweep_rows_deleted=${result.branch.sweepRowsDeleted}`);
+		console.log(
+			`branch_sweep_rows_narrowed=${result.branch.sweepRowsNarrowed}`,
+		);
+		console.log(
+			`branch_sweep_finalized=${result.branch.sweepBranchesFinalized}`,
+		);
+		console.log(`branch_sweep_remaining=${result.branch.sweepRemaining}`);
 	}
 	if (result.errors.length > 0) {
 		console.log(`errors=${result.errors.length}`);

@@ -269,6 +269,30 @@ export interface IFileTracker {
 	takeWidenIntents(limit: number): string[];
 	clearWidenIntents(chunkIds: string[]): void;
 	countWidenIntents(): number;
+	/**
+	 * The §4.3 sweep's S0: one page of a tombstoned branch's membership, in
+	 * `chunk_id` order, starting strictly above `afterChunkId`.
+	 */
+	membershipPage(
+		branchId: number,
+		afterChunkId: string,
+		limit: number,
+	): string[];
+	/** `count(*) FROM chunk_branches WHERE branch_id = ?` — rule C's proof. */
+	countMembership(branchId: number): number;
+	/** Every branch id that holds at least one row, with its row count. */
+	membershipCounts(): Map<number, number>;
+	/**
+	 * Delete up to `limit` rows PER TABLE from the five tree-scoped tables for
+	 * one branch, returning what each one removed. The caller loops until every
+	 * count is 0, yielding between calls (SR-2).
+	 */
+	deleteBranchTreeRows(
+		branchId: number,
+		limit: number,
+	): Record<TreeScopedTable, number>;
+	/** Rows each tree-scoped table holds for one branch. For `mnemex branches`. */
+	countBranchTreeRows(branchId: number): Record<TreeScopedTable, number>;
 	pendingIntents(
 		kind: "add" | "remove",
 		limit: number,
@@ -1088,6 +1112,73 @@ export const BRANCH_ID_TABLES = [
 	"chunk_branches",
 	"chunk_write_intent",
 ] as const;
+
+/**
+ * The tables a BRANCH's sweep reclaims (§4.3, §4.5's `narrowBranch`).
+ *
+ * `indexed_docs` is in `BRANCH_ID_TABLES` and deliberately NOT here. Its rows
+ * are not tree-scoped: they record which external package documentation this
+ * STORE has fetched, every statement carries `BRANCH_ID_SHARED` literally
+ * (I-13's third case), and no branch id other than 0 can ever appear in it. A
+ * per-branch delete would be a no-op on a correct store and would destroy the
+ * repository's docs bookkeeping on a corrupt one.
+ *
+ * The three membership tables are not here either: `chunk_branches` is the
+ * sweep's WORK LIST and is emptied by `narrowIds` batch by batch (W1), and
+ * `chunk_index`/`chunk_write_intent` describe rows rather than trees.
+ */
+export const TREE_SCOPED_TABLES = [
+	"files",
+	"documents",
+	"symbols",
+	"symbol_references",
+	"graph_metadata",
+] as const;
+
+export type TreeScopedTable = (typeof TREE_SCOPED_TABLES)[number];
+
+/**
+ * Each tree-scoped table's per-branch statements, as LITERALS.
+ *
+ * Written out rather than interpolated from the table name for the same reason
+ * `BRANCH_ID_PROBES` is: a table name assembled at runtime is one refactor away
+ * from being a value, and a value in a SQL string is CLAUDE.md #22's trap. The
+ * `rowid IN (SELECT … LIMIT ?)` form is how a bounded delete is written in
+ * SQLite without `SQLITE_ENABLE_UPDATE_DELETE_LIMIT`; all five of these tables
+ * have rowids (only the three membership tables are `WITHOUT ROWID`).
+ */
+const TREE_SCOPED_STATEMENTS: Readonly<
+	Record<
+		TreeScopedTable,
+		{ readonly deletePage: string; readonly count: string }
+	>
+> = {
+	files: {
+		deletePage:
+			"DELETE FROM files WHERE rowid IN (SELECT rowid FROM files WHERE branch_id = ? LIMIT ?)",
+		count: "SELECT COUNT(*) AS n FROM files WHERE branch_id = ?",
+	},
+	documents: {
+		deletePage:
+			"DELETE FROM documents WHERE rowid IN (SELECT rowid FROM documents WHERE branch_id = ? LIMIT ?)",
+		count: "SELECT COUNT(*) AS n FROM documents WHERE branch_id = ?",
+	},
+	symbols: {
+		deletePage:
+			"DELETE FROM symbols WHERE rowid IN (SELECT rowid FROM symbols WHERE branch_id = ? LIMIT ?)",
+		count: "SELECT COUNT(*) AS n FROM symbols WHERE branch_id = ?",
+	},
+	symbol_references: {
+		deletePage:
+			"DELETE FROM symbol_references WHERE rowid IN (SELECT rowid FROM symbol_references WHERE branch_id = ? LIMIT ?)",
+		count: "SELECT COUNT(*) AS n FROM symbol_references WHERE branch_id = ?",
+	},
+	graph_metadata: {
+		deletePage:
+			"DELETE FROM graph_metadata WHERE rowid IN (SELECT rowid FROM graph_metadata WHERE branch_id = ? LIMIT ?)",
+		count: "SELECT COUNT(*) AS n FROM graph_metadata WHERE branch_id = ?",
+	},
+};
 
 /** Each listed table's two probes, written as literals: no interpolated SQL. */
 const BRANCH_ID_PROBES: Readonly<
@@ -2525,6 +2616,100 @@ export class FileTracker implements IFileTracker {
 				)
 				.get() as { n: number };
 			return row.n;
+		});
+	}
+
+	/**
+	 * S0 of the §4.3 sweep: one page of a tombstoned branch's membership.
+	 *
+	 * KEYSET, not OFFSET. The rows in the page are deleted before the next page
+	 * is asked for, so an OFFSET would skip exactly as many rows as it had just
+	 * removed. `idx_chunk_branches_branch` is `(branch_id)` over a
+	 * `WITHOUT ROWID` table keyed `(chunk_id, branch_id)`, so SQLite appends the
+	 * key columns and this reads as a range on `(branch_id, chunk_id)` with no
+	 * sort — pinned with EXPLAIN QUERY PLAN in `branch-sweep-plan.test.ts`,
+	 * because a sort here would re-read the whole branch once per page.
+	 */
+	membershipPage(
+		branchId: number,
+		afterChunkId: string,
+		limit: number,
+	): string[] {
+		assertBranchId(branchId);
+		return this.withRegion(TRACKER_REGIONS.read, () => {
+			const rows = this.db
+				.prepare(
+					`SELECT chunk_id FROM chunk_branches
+					  WHERE branch_id = ? AND chunk_id > ?
+					  ORDER BY chunk_id LIMIT ?`,
+				)
+				.all(branchId, afterChunkId, limit) as Array<{ chunk_id: string }>;
+			return rows.map((row) => row.chunk_id);
+		});
+	}
+
+	/** Rule C's proof: rows still carrying this branch id. */
+	countMembership(branchId: number): number {
+		assertBranchId(branchId);
+		return this.withRegion(TRACKER_REGIONS.read, () => {
+			const row = this.db
+				.prepare("SELECT COUNT(*) AS n FROM chunk_branches WHERE branch_id = ?")
+				.get(branchId) as { n: number };
+			return row.n;
+		});
+	}
+
+	/** Every branch id that holds a row, with its count. `mnemex branches`. */
+	membershipCounts(): Map<number, number> {
+		return this.withRegion(TRACKER_REGIONS.read, () => {
+			const rows = this.db
+				.prepare(
+					"SELECT branch_id, COUNT(*) AS n FROM chunk_branches GROUP BY branch_id",
+				)
+				.all() as Array<{ branch_id: number; n: number }>;
+			return new Map(rows.map((row) => [row.branch_id, row.n]));
+		});
+	}
+
+	/**
+	 * The §4.3 sweep's tail, and §4.5's: drop up to `limit` rows PER TABLE of
+	 * one branch's tree-scoped state.
+	 *
+	 * ONE region, so one `BEGIN IMMEDIATE` covers all five tables and a reader
+	 * never sees a branch whose `symbols` are gone but whose `files` are not.
+	 * Bounded per call so the caller can yield between pages (SR-2): a branch
+	 * with 20 000 files inside one region is the event-loop block CLAUDE.md #31
+	 * exists to prevent.
+	 */
+	deleteBranchTreeRows(
+		branchId: number,
+		limit: number,
+	): Record<TreeScopedTable, number> {
+		assertBranchId(branchId);
+		return this.withRegion(TRACKER_REGIONS.txn, () => {
+			const deleted = {} as Record<TreeScopedTable, number>;
+			for (const table of TREE_SCOPED_TABLES) {
+				const result = this.db
+					.prepare(TREE_SCOPED_STATEMENTS[table].deletePage)
+					.run(branchId, limit);
+				deleted[table] = Number(result.changes ?? 0);
+			}
+			return deleted;
+		});
+	}
+
+	/** What each tree-scoped table holds for one branch. `mnemex branches`. */
+	countBranchTreeRows(branchId: number): Record<TreeScopedTable, number> {
+		assertBranchId(branchId);
+		return this.withRegion(reads(TREE_SCOPED_TABLES.length), () => {
+			const counts = {} as Record<TreeScopedTable, number>;
+			for (const table of TREE_SCOPED_TABLES) {
+				const row = this.db
+					.prepare(TREE_SCOPED_STATEMENTS[table].count)
+					.get(branchId) as { n: number };
+				counts[table] = row.n;
+			}
+			return counts;
 		});
 	}
 

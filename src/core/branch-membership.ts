@@ -83,13 +83,27 @@ export function canonicalBranchIds(ids: readonly number[]): string {
  * A membership write did not do what the read it was computed from said it
  * would (M4). Never ignored, never retried: the two stores disagree, and
  * carrying on would write more state on top of a disagreement.
+ *
+ * IT NAMES THE REMEDY (I-15, 3b-2's finding 8). Aborting is right — I-7 says a
+ * mismatch is never ignored — but a store that has genuinely diverged then
+ * cannot be indexed AT ALL, and the counts alone leave the user to work out
+ * that `--force` is the way out. A rebuild is the honest repair here: the
+ * disagreement is between the LanceDB rows and the SQLite membership, and
+ * `--force` rebuilds this branch's half of both from the working tree.
  */
+export const MEMBERSHIP_INTEGRITY_REMEDY =
+	"This run changed nothing further. Run `mnemex index --force` to rebuild the index from " +
+	"the working tree; that is what clears the disagreement. If it recurs on a fresh " +
+	"--force, report it with this message — repeating the rebuild will not help.";
+
 export class MembershipIntegrityError extends Error {
 	constructor(
 		readonly operation: string,
 		detail: string,
 	) {
-		super(`branch membership (${operation}): ${detail}`);
+		super(
+			`branch membership (${operation}): ${detail}. ${MEMBERSHIP_INTEGRITY_REMEDY}`,
+		);
 		this.name = "MembershipIntegrityError";
 	}
 }

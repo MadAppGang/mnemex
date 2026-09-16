@@ -1,8 +1,7 @@
 /**
  * Delete predicates must escape their values.
  *
- * `deleteByFile` / `deleteByFileHash` interpolated straight into a DataFusion
- * predicate:
+ * `deleteByFile` interpolated straight into a DataFusion predicate:
  *
  *     await table.delete(`filePath = '${filePath}'`);
  *
@@ -26,6 +25,11 @@
  * equality literal, where DataFusion takes the backslash literally and the row
  * stops matching. The `my_file.ts` / `100%report.ts` / backslash cases below
  * pin that distinction: they are ordinary paths that must keep working.
+ *
+ * `deleteByFileHash`'s cases were removed with the method in Phase 3b-3 (§3.5,
+ * decision I-15): it had no caller in `src/` and deleted across every branch of
+ * a shared store. The escaping property is unchanged and is asserted here on
+ * the surviving `deleteByFile`.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -144,35 +148,6 @@ describe("deleteByFile with a quote in the path", () => {
 	});
 });
 
-describe("deleteByFileHash with a quote in the hash", () => {
-	test("deletes the chunks whose file hash contains a single quote", async () => {
-		await seed([
-			chunk("quoted", "src/quoted.ts", "file-o'brien", 1),
-			chunk("plain", "src/plain.ts", "file-plain", 2),
-		]);
-
-		const deleted = await withFreshStore((store) =>
-			store.deleteByFileHash("file-o'brien"),
-		);
-
-		expect(deleted).toBe(1);
-		expect(await survivors()).toEqual(["plain"]);
-	});
-
-	test("a hash that closes the quote cannot delete unrelated rows", async () => {
-		await seed([
-			chunk("alpha", "src/alpha.ts", "file-alpha", 1),
-			chunk("beta", "src/beta.ts", "file-beta", 2),
-		]);
-
-		await withFreshStore((store) =>
-			store.deleteByFileHash("x' OR fileHash LIKE '%"),
-		);
-
-		expect(await survivors()).toEqual(["alpha", "beta"]);
-	});
-});
-
 describe("ordinary paths keep working", () => {
 	// These are the cases that reject `escapeFilterValue` as the escape: its
 	// `%` / `_` / backslash handling is for LIKE patterns, and an equality
@@ -192,17 +167,6 @@ describe("ordinary paths keep working", () => {
 		const deleted = await withFreshStore((store) => store.deleteByFile(target));
 
 		expect(deleted).toBe(1);
-		expect(await survivors()).toEqual(["other"]);
-	});
-
-	test("deleteByFileHash removes a hash with LIKE metacharacters", async () => {
-		await seed([
-			chunk("target", "src/target.ts", "hash_with%meta", 1),
-			chunk("other", "src/other.ts", "file-other", 2),
-		]);
-
-		await withFreshStore((store) => store.deleteByFileHash("hash_with%meta"));
-
 		expect(await survivors()).toEqual(["other"]);
 	});
 

@@ -9,11 +9,12 @@
  * Fields this build writes: `formatVersion`, `indexVersion`, `gitCommonDir`,
  * `firstIndexedFrom`, `updatedAt`. `firstIndexedFrom` is DIAGNOSTIC ONLY and
  * no code may read it (§3.6, V1.5). The write that creates the file sets it,
- * and later writes carry it forward without looking at it. Phase 3b adds
- * `confirmRunCounter`, `sweep` and `widen`, and `journalMode` and
- * `storeRebuildAt` arrive with the code that reads them. A reader treats an
- * absent field as its default, so adding them is not a format change and
- * `formatVersion` stays 1.
+ * and later writes carry it forward without looking at it.
+ *
+ * `confirmRunCounter` and `sweep` are Phase 3b-3's, written by
+ * `writeStoreState` below; `journalMode` and `storeRebuildAt` arrive with the
+ * code that reads them. A reader treats an absent field as its default, so
+ * adding them is not a format change and `formatVersion` stays 1.
  *
  * `pathRoot` is deliberately NOT here (§3.6). A shared file can hold only one
  * worktree's root, so every consumer takes it from its own
@@ -91,6 +92,116 @@ export function writeStoreMeta(
 	next.indexVersion = update.indexVersion;
 	next.updatedAt = new Date(now()).toISOString();
 	writeFileAtomicallySync(path, `${JSON.stringify(next, null, 2)}\n`);
+}
+
+/**
+ * The sweep's resumable cursor (§4.3). `null` when no branch is being swept.
+ *
+ * ITS PRESENCE IS ALSO A CLAIM: a cursor naming `branchId` means at least one
+ * batch of that branch's membership has already been removed. Rule R reads it
+ * to decide whether a resurrected branch needs its tree-scoped rows cleared, so
+ * it is written only after work has actually happened — never speculatively at
+ * the start of a branch.
+ */
+export interface SweepCursor {
+	/** The tombstoned branch being reclaimed. */
+	readonly branchId: number;
+	/** The last `chunk_id` this branch's sweep removed; the next batch starts above it. */
+	readonly lastChunkId: string;
+	/** `chunk_branches` rows still carrying `branchId` when the run stopped. Diagnostic. */
+	readonly remaining: number;
+}
+
+/** The store-scoped state this build reads and writes beside `indexVersion`. */
+export interface StoreState {
+	/**
+	 * Index runs completed against this store. The confirmation pass fires when
+	 * it reaches a multiple of `BRANCH_CONFIRM_INTERVAL` (§4.3).
+	 */
+	readonly confirmRunCounter: number;
+	readonly sweep: SweepCursor | null;
+}
+
+const DEFAULT_STATE: StoreState = { confirmRunCounter: 0, sweep: null };
+
+/**
+ * `store.json`'s lifecycle fields, or their defaults.
+ *
+ * READ ANYWHERE (§3.6): the hoisted confirm scan needs the counter BEFORE the
+ * store lock is taken, which is the whole reason it is in this file rather than
+ * in the registry. Absent, unreadable and malformed all read as the default —
+ * a counter that restarts costs at most one deferred confirmation pass, and a
+ * cursor that is lost costs one re-driven sweep batch, which is idempotent.
+ */
+export function readStoreState(loc: StoreLocation): StoreState {
+	const raw = readJsonRecord(getStoreMetaPathFor(loc));
+	if (raw === null) return DEFAULT_STATE;
+	const counter = raw.confirmRunCounter;
+	return {
+		confirmRunCounter:
+			typeof counter === "number" &&
+			Number.isSafeInteger(counter) &&
+			counter >= 0
+				? counter
+				: 0,
+		sweep: parseSweepCursor(raw.sweep),
+	};
+}
+
+/**
+ * Write the lifecycle fields back. Call ONLY while holding the store lock.
+ *
+ * Read-modify-write against the CURRENT bytes, not against whatever the caller
+ * read at the start of its run: `writeStoreMeta` may have stamped
+ * `indexVersion` in between, and a write built from a stale snapshot would take
+ * it back out. Unknown fields are carried forward for the same reason.
+ */
+export function writeStoreState(loc: StoreLocation, state: StoreState): void {
+	const path = getStoreMetaPathFor(loc);
+	const existing = readJsonRecord(path) ?? {
+		formatVersion: STORE_META_FORMAT_VERSION,
+		gitCommonDir: loc.gitLayout?.gitCommonDir ?? null,
+		firstIndexedFrom: loc.pathRoot,
+	};
+	const next: Record<string, unknown> = {
+		...existing,
+		formatVersion: STORE_META_FORMAT_VERSION,
+		confirmRunCounter: state.confirmRunCounter,
+		updatedAt: new Date(now()).toISOString(),
+	};
+	// An absent cursor is the ABSENCE of the key, not `null` in the file: a
+	// reader defaults an absent field, and writing `null` would make "no sweep
+	// in flight" and "this build does not know about sweeps" look different on
+	// disk for no gain.
+	if (state.sweep === null) delete next.sweep;
+	else next.sweep = { ...state.sweep };
+	writeFileAtomicallySync(path, `${JSON.stringify(next, null, 2)}\n`);
+}
+
+function parseSweepCursor(value: unknown): SweepCursor | null {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return null;
+	}
+	const raw = value as Record<string, unknown>;
+	const branchId = raw.branchId;
+	const lastChunkId = raw.lastChunkId;
+	const remaining = raw.remaining;
+	if (
+		typeof branchId !== "number" ||
+		!Number.isSafeInteger(branchId) ||
+		branchId < 1 ||
+		typeof lastChunkId !== "string"
+	) {
+		return null;
+	}
+	return {
+		branchId,
+		lastChunkId,
+		remaining:
+			typeof remaining === "number" && Number.isSafeInteger(remaining)
+				? remaining
+				: 0,
+	};
 }
 
 /** A parsed JSON object, or null when the file is absent, unreadable or not an object. */

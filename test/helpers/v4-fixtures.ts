@@ -35,6 +35,13 @@ export const RACE_CHILD = join(
 	"helpers",
 	"registry-race-child.ts",
 );
+/** V3.8's N-runs-with-an-injected-clock child (§4.3). */
+export const LIFECYCLE_CHILD = join(
+	REPO_ROOT,
+	"test",
+	"helpers",
+	"branch-lifecycle-child.ts",
+);
 export const DIST_ENTRY = join(REPO_ROOT, "dist", "index.js");
 
 /** Project config that keeps a run in BM25 mode: no network, no keychain. */
@@ -146,6 +153,39 @@ export function runCli(
 			stdout: "pipe",
 			stderr: "pipe",
 		}),
+	);
+}
+
+/**
+ * V3.8: `runs` real index runs in ONE child, with the registry's clock moved
+ * forward by `clockOffsetMs`. See `branch-lifecycle-child.ts` for why the clock
+ * is injected inside the child rather than passed through the environment.
+ */
+export function runLifecycleChild(
+	projectDir: string,
+	runs: number,
+	clockOffsetMs: number,
+	scratch: string,
+	extra?: Record<string, string>,
+): Promise<ChildRun> {
+	return collect(
+		Bun.spawn(
+			[
+				process.execPath,
+				"--env-file=/dev/null",
+				LIFECYCLE_CHILD,
+				projectDir,
+				String(runs),
+				String(clockOffsetMs),
+			],
+			{
+				cwd: projectDir,
+				env: sandboxEnv(scratch, extra),
+				stdin: "ignore",
+				stdout: "pipe",
+				stderr: "pipe",
+			},
+		),
 	);
 }
 
