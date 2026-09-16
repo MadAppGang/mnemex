@@ -235,5 +235,27 @@ describe("§6.3 B(a) — an all-hits embed() through the proxy", () => {
 		expect(probed.heartbeatGapMs).toBeLessThan(HEARTBEAT_GAP_BOUND_MS);
 		// The sensitive form of the same property.
 		expect(probed.fineGapMs).toBeLessThan(FINE_GAP_BOUND_MS);
-	});
+
+		// WHY THIS TEST CARRIES AN EXPLICIT TIMEOUT.
+		//
+		// Nothing above asserts on wall time — the two assertions are the gap
+		// between TIMER TICKS, which is what "the event loop stays live" means.
+		// The wall clock is dominated by the fixture instead: 2 000 entries of
+		// 4 000 characters written through `putMany`, then a 100 000-element
+		// array. Measured in isolation on an idle machine, the whole test takes
+		// 4.58 s — 92% of bun's 5 000 ms default — so ANY contention times it
+		// out, and it did, on a full-suite run at load 3.63:
+		//
+		//   (fail) the event loop stays live through 100 000 cache lookups
+		//          [5001.01ms]  ^ this test timed out after 5000ms.
+		//
+		// That failure was first read as the load-sensitivity this file's
+		// liveness tests are known for. It is not: it is a fixture that outgrew
+		// the default. Raising the limit cannot weaken either assertion, because
+		// neither is a deadline — a genuinely blocked event loop still fails on
+		// the gap, and a true hang still fails here. Do NOT shrink `DISTINCT` or
+		// `REPEATS` to fit a smaller timeout: the header above derives n =
+		// 100 000 as the smallest size with a 2.0x signal, and 60 000 is called
+		// out there as "too thin for a faster machine".
+	}, 60_000);
 });
