@@ -190,7 +190,16 @@ describe("§6.3 B(b) — a large write, chunked at WRITE_CHUNK", () => {
 		expect(probed.heartbeatGapMs).toBeLessThan(HEARTBEAT_GAP_BOUND_MS);
 		// The sensitive form of the same property.
 		expect(probed.fineGapMs).toBeLessThan(FINE_GAP_BOUND_MS);
-	});
+		// TIMEOUT, NOT A BOUND — the pre-release measurement pass, applying I-21's
+		// audit to the three liveness tests that were not fixed alongside B(a).
+		// Isolated on a quiet machine: 1.36-1.42 s over 5 runs, already 28 % of bun's 5 000 ms
+		// default. Under a deliberate load spike to load average 18.6: 4.61 s, i.e. 92 % of it.
+		// The ASSERTIONS never came close — `fineGapMs` kept a 5.9x margin on its
+		// 400 ms bound throughout. So the first thing to fail under load is the
+		// DEADLINE, not the property, which is the same diagnosis I-21 reached for
+		// B(a) and takes the same fix. Nothing here is asserted on wall time, so a
+		// longer limit cannot weaken an assertion; a true hang still fails.
+	}, 60_000);
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -221,7 +230,16 @@ describe("§6.3 B(c) — eviction on an over-cap cache", () => {
 
 		expect(probed.heartbeatGapMs).toBeLessThan(HEARTBEAT_GAP_BOUND_MS);
 		expect(probed.fineGapMs).toBeLessThan(FINE_GAP_BOUND_MS);
-	});
+		// TIMEOUT, NOT A BOUND — the pre-release measurement pass, applying I-21's
+		// audit to the three liveness tests that were not fixed alongside B(a).
+		// Isolated on a quiet machine: 2.25-2.42 s over 3 `bun test` runs, already 48 % of bun's 5 000 ms
+		// default. Under a deliberate load spike to load average 18.6: the blocking grew 1.6x.
+		// The ASSERTIONS never came close — `fineGapMs` kept a 4.5x margin on its
+		// 400 ms bound throughout. So the first thing to fail under load is the
+		// DEADLINE, not the property, which is the same diagnosis I-21 reached for
+		// B(a) and takes the same fix. Nothing here is asserted on wall time, so a
+		// longer limit cannot weaken an assertion; a true hang still fails.
+	}, 60_000);
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -260,7 +278,16 @@ describe("R1 — a long lookup scan, chunked at LOOKUP_CHUNK", () => {
 		expect(cache.stats().hits).toBe(80_000);
 		expect(probed.heartbeatGapMs).toBeLessThan(HEARTBEAT_GAP_BOUND_MS);
 		expect(probed.fineGapMs).toBeLessThan(FINE_GAP_BOUND_MS);
-	});
+		// TIMEOUT, NOT A BOUND — the pre-release measurement pass, applying I-21's
+		// audit to the three liveness tests that were not fixed alongside B(a).
+		// Isolated on a quiet machine: 2.55-2.65 s over 3 `bun test` runs, already 53 % of bun's 5 000 ms
+		// default. Under a deliberate load spike to load average 18.6: 3.54 s, i.e. 71 % of it.
+		// The ASSERTIONS never came close — `fineGapMs` kept a 8.0x margin on its
+		// 400 ms bound throughout. So the first thing to fail under load is the
+		// DEADLINE, not the property, which is the same diagnosis I-21 reached for
+		// B(a) and takes the same fix. Nothing here is asserted on wall time, so a
+		// longer limit cannot weaken an assertion; a true hang still fails.
+	}, 60_000);
 });
 
 // ════════════════════════════════════════════════════════════════════════════
