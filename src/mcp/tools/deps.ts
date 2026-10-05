@@ -6,13 +6,12 @@
  */
 
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 import type {
 	ICloudIndexClient,
 	IOverlayIndex,
 	TeamConfig,
 } from "../../cloud/types.js";
-import { isLearningEnabled } from "../../config.js";
+import { getIndexDbPath, isLearningEnabled } from "../../config.js";
 import { FileTracker } from "../../core/tracker.js";
 import type { SymbolEditor } from "../../editor/editor.js";
 import {
@@ -58,9 +57,13 @@ export interface ToolDeps {
 /**
  * Open the project's file tracker, or null when the project has no index db.
  * Caller owns the handle and must `close()` it.
+ *
+ * The path comes from `getIndexDbPath`, i.e. the store-location seam, so it is
+ * the store the lock guards (decision I-8). It used to be a hardcoded
+ * `<projectPath>/.mnemex/index.db`, which ignored both index-dir overrides.
  */
 export function getFileTracker(projectPath: string): FileTracker | null {
-	const dbPath = join(projectPath, ".mnemex", "index.db");
+	const dbPath = getIndexDbPath(projectPath);
 	if (!existsSync(dbPath)) {
 		return null;
 	}

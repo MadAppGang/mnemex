@@ -70,7 +70,12 @@ class InMemoryFileTracker implements IFileTracker {
 	getChanges(_currentFiles: string[]) {
 		return { added: [], modified: [], deleted: [], unchanged: [] };
 	}
-	markIndexed(_filePath: string, _contentHash: string, _chunkIds: string[]) {}
+	markIndexed(
+		_branchId: number,
+		_filePath: string,
+		_contentHash: string,
+		_chunkIds: string[],
+	) {}
 	getChunkIds(_filePath: string): string[] {
 		return [];
 	}

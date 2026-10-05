@@ -14,8 +14,8 @@ describe("SymbolLocator E2E", () => {
 		);
 		await ws.index();
 
-		const { graphManager, tracker } = await ws.getCache().get();
-		const locator = new SymbolLocator(graphManager, tracker);
+		const { graphManager, tracker, branchId } = await ws.getCache().get();
+		const locator = new SymbolLocator(graphManager, tracker, branchId);
 
 		const result = locator.locate("add");
 		expect(result).not.toBeNull();
@@ -32,8 +32,8 @@ describe("SymbolLocator E2E", () => {
 		);
 		await ws.index();
 
-		const { graphManager, tracker } = await ws.getCache().get();
-		const locator = new SymbolLocator(graphManager, tracker);
+		const { graphManager, tracker, branchId } = await ws.getCache().get();
+		const locator = new SymbolLocator(graphManager, tracker, branchId);
 
 		const result = locator.locate("nonExistent");
 		expect(result).toBeNull();
@@ -49,8 +49,8 @@ describe("SymbolLocator E2E", () => {
 		);
 		await ws.index();
 
-		const { graphManager, tracker } = await ws.getCache().get();
-		const locator = new SymbolLocator(graphManager, tracker);
+		const { graphManager, tracker, branchId } = await ws.getCache().get();
+		const locator = new SymbolLocator(graphManager, tracker, branchId);
 
 		const results = locator.locateByFile("src/math.ts");
 		expect(results.length).toBeGreaterThanOrEqual(2);

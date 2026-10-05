@@ -12,7 +12,6 @@ import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { INDEX_DB_FILE } from "../config.js";
 
-const LOCK_FILENAME = ".indexing.lock";
 const MAX_WAIT_MS = 300_000; // 5 minutes
 
 /**
@@ -21,9 +20,18 @@ const MAX_WAIT_MS = 300_000; // 5 minutes
 export class CompletionDetector {
 	private pollTimer: ReturnType<typeof setInterval> | null = null;
 
+	/**
+	 * @param indexDir        where `index.db` is watched for a newer mtime.
+	 * @param pollIntervalMs  how often to look.
+	 * @param lockPath        the STORE lock, `getLockPathFor(loc)`: the file the
+	 *                        spawned `mnemex index` actually holds. Rebuilding it
+	 *                        from `indexDir` watched the wrong file for any store
+	 *                        whose location is overridden.
+	 */
 	constructor(
 		private indexDir: string,
 		private pollIntervalMs: number,
+		private lockPath: string,
 	) {}
 
 	/**
@@ -34,7 +42,7 @@ export class CompletionDetector {
 		// Stop any existing poll
 		this.stop();
 
-		const lockPath = join(this.indexDir, LOCK_FILENAME);
+		const lockPath = this.lockPath;
 		const dbPath = join(this.indexDir, INDEX_DB_FILE);
 		const startMtime = this.getMtime(dbPath);
 		const deadline = Date.now() + MAX_WAIT_MS;
@@ -70,7 +78,7 @@ export class CompletionDetector {
 	 * Returns true if completed, false if timed out.
 	 */
 	async waitForCompletion(timeoutMs = MAX_WAIT_MS): Promise<boolean> {
-		const lockPath = join(this.indexDir, LOCK_FILENAME);
+		const lockPath = this.lockPath;
 		const dbPath = join(this.indexDir, INDEX_DB_FILE);
 		const startMtime = this.getMtime(dbPath);
 		const deadline = Date.now() + timeoutMs;

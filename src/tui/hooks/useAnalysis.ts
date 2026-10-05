@@ -36,7 +36,10 @@ export interface UseAnalysisReturn {
 // Hook
 // ============================================================================
 
-export function useAnalysis(tracker: FileTracker): UseAnalysisReturn {
+export function useAnalysis(
+	tracker: FileTracker,
+	branchId: number,
+): UseAnalysisReturn {
 	const [deadCode, setDeadCode] = useState<DeadCodeResult[]>([]);
 	const [testGaps, setTestGaps] = useState<TestGapResult[]>([]);
 	const [impact, setImpact] = useState<ImpactAnalysis | null>(null);
@@ -51,7 +54,7 @@ export function useAnalysis(tracker: FileTracker): UseAnalysisReturn {
 		setLoading(true);
 		setError(null);
 		try {
-			const analyzer = createCodeAnalyzer(tracker);
+			const analyzer = createCodeAnalyzer(tracker, branchId);
 			const results = analyzer.findDeadCode({ limit: 100 });
 			setDeadCode(results);
 		} catch (err) {
@@ -66,7 +69,7 @@ export function useAnalysis(tracker: FileTracker): UseAnalysisReturn {
 		setLoading(true);
 		setError(null);
 		try {
-			const analyzer = createCodeAnalyzer(tracker);
+			const analyzer = createCodeAnalyzer(tracker, branchId);
 			const results = analyzer.findTestGaps({ limit: 50 });
 			setTestGaps(results);
 		} catch (err) {
@@ -89,7 +92,7 @@ export function useAnalysis(tracker: FileTracker): UseAnalysisReturn {
 			setLoading(true);
 			setError(null);
 			try {
-				const analyzer = createCodeAnalyzer(tracker);
+				const analyzer = createCodeAnalyzer(tracker, branchId);
 				// Find the symbol first, then analyze impact
 				const symbol = analyzer.findSymbolForImpact(symbolName);
 				if (!symbol) {

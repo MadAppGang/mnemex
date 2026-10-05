@@ -16,7 +16,15 @@ import type {
 export class LocationBackend implements ISearchBackend {
 	readonly name = "location" as const;
 
-	constructor(private tracker: IFileTracker) {}
+	/**
+	 * `branchId` is taken at construction because a backend is built per query
+	 * in `mcp/tools/search.ts` (§2.5). An unscoped `getAllFiles()` here mixed
+	 * every branch's paths into one file list.
+	 */
+	constructor(
+		private tracker: IFileTracker,
+		private branchId: number,
+	) {}
 
 	async search(
 		query: string,
@@ -37,7 +45,7 @@ export class LocationBackend implements ISearchBackend {
 		if (!pattern) return [];
 
 		// Get all indexed files
-		const allFiles = this.tracker.getAllFiles();
+		const allFiles = this.tracker.getAllFiles(this.branchId);
 		if (signal.aborted) return [];
 
 		// Filter by pattern

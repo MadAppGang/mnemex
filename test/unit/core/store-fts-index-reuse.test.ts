@@ -28,6 +28,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { SCOPE_ALL } from "../../../src/core/branch-scope.js";
 import type { ChunkWithEmbedding } from "../../../src/types.js";
 
 // ── Module mock ─────────────────────────────────────────────────────────────
@@ -125,6 +126,15 @@ beforeEach(() => {
 
 afterEach(() => {
 	rmSync(dir, { recursive: true, force: true });
+	// `mock.module` is PROCESS-WIDE and outlives this file: every store any
+	// later test file opens goes through `countingTable`. The last test here
+	// leaves `createIndexError` set, so without this reset every later
+	// `createIndex` threw, `ensureFtsIndex` swallowed it, and the rest of the
+	// suite ran BM25 on LanceDB's index-less flat scan (different scores, no
+	// FTS index on disk). Found by N-2 (`store-search-n2-snapshot.test.ts`),
+	// whose frozen BM25 ranks moved only in the full run.
+	createIndexError = null;
+	createIndexCalls = [];
 });
 
 /** Open a store the way a search does: fresh instance, initialize, use, close. */
@@ -140,7 +150,7 @@ async function withFreshStore<T>(
 }
 
 async function makeStore() {
-	const store = createVectorStore(dbPath);
+	const store = createVectorStore({ vectorsDir: dbPath, pathRoot: dir });
 	await store.initialize();
 	return store;
 }
@@ -148,7 +158,7 @@ async function makeStore() {
 /** Seed a corpus, then forget the index calls that seeding caused. */
 async function seed(chunks: ChunkWithEmbedding[]): Promise<void> {
 	await withFreshStore(async (store) => {
-		await store.addChunks(chunks);
+		await store.addChunks(chunks, { pathKind: "repo", branchId: 0 });
 	});
 }
 
@@ -159,7 +169,7 @@ async function seed(chunks: ChunkWithEmbedding[]): Promise<void> {
  */
 const searchFor = (text: string) =>
 	withFreshStore((store) =>
-		store.search(text, undefined, { limit: 10, keywordOnly: true }),
+		store.search(text, undefined, SCOPE_ALL, { limit: 10, keywordOnly: true }),
 	);
 
 const idsOf = (results: Array<{ chunk: { id: string } }>) =>

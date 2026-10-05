@@ -70,7 +70,7 @@ describe("inspectLock", () => {
 	// R1: no lock file => { present: false }
 	test("R1: returns { present: false } when no lock file exists", () => {
 		const dir = makeTempDir();
-		const result = inspectLock(dir);
+		const result = inspectLock(join(dir, LOCK_FILENAME));
 		expect(result.present).toBe(false);
 	});
 
@@ -78,7 +78,7 @@ describe("inspectLock", () => {
 	test("R2: returns { present: false } for corrupt JSON", () => {
 		const dir = makeTempDir();
 		writeFileSync(join(dir, LOCK_FILENAME), "{ this is not json");
-		const result = inspectLock(dir);
+		const result = inspectLock(join(dir, LOCK_FILENAME));
 		expect(result.present).toBe(false);
 	});
 
@@ -89,7 +89,7 @@ describe("inspectLock", () => {
 			join(dir, LOCK_FILENAME),
 			JSON.stringify({ pid: process.pid, startTime: Date.now() }),
 		);
-		const result = inspectLock(dir);
+		const result = inspectLock(join(dir, LOCK_FILENAME));
 		expect(result.present).toBe(false);
 	});
 
@@ -97,7 +97,7 @@ describe("inspectLock", () => {
 	test("R2c: returns { present: false } for empty object {}", () => {
 		const dir = makeTempDir();
 		writeFileSync(join(dir, LOCK_FILENAME), "{}");
-		const result = inspectLock(dir);
+		const result = inspectLock(join(dir, LOCK_FILENAME));
 		expect(result.present).toBe(false);
 	});
 
@@ -105,7 +105,7 @@ describe("inspectLock", () => {
 	test("R3: live pid + fresh heartbeat => present, pidAlive, fresh, elapsed>=0", () => {
 		const dir = makeTempDir();
 		writeLock(dir, { pid: process.pid });
-		const result = inspectLock(dir);
+		const result = inspectLock(join(dir, LOCK_FILENAME));
 		expect(result.present).toBe(true);
 		if (result.present) {
 			expect(result.pidAlive).toBe(true);
@@ -119,7 +119,7 @@ describe("inspectLock", () => {
 	test("R4: dead pid => pidAlive false", () => {
 		const dir = makeTempDir();
 		writeLock(dir, { pid: 2_000_000_000 });
-		const result = inspectLock(dir);
+		const result = inspectLock(join(dir, LOCK_FILENAME));
 		expect(result.present).toBe(true);
 		if (result.present) {
 			expect(result.pidAlive).toBe(false);
@@ -133,7 +133,7 @@ describe("inspectLock", () => {
 			pid: process.pid,
 			heartbeat: Date.now() - 60_000, // 60s old
 		});
-		const result = inspectLock(dir, 30_000);
+		const result = inspectLock(join(dir, LOCK_FILENAME), 30_000);
 		expect(result.present).toBe(true);
 		if (result.present) {
 			expect(result.pidAlive).toBe(true);
@@ -145,7 +145,7 @@ describe("inspectLock", () => {
 	test("R7: exposes lastProgressAt + isProgressing=true for fresh progress", () => {
 		const dir = makeTempDir();
 		writeLock(dir, { pid: process.pid });
-		const result = inspectLock(dir);
+		const result = inspectLock(join(dir, LOCK_FILENAME));
 		expect(result.present).toBe(true);
 		if (result.present) {
 			expect(typeof result.lastProgressAt).toBe("number");
@@ -162,7 +162,7 @@ describe("inspectLock", () => {
 			heartbeat: Date.now(), // timer still stamping (looks alive)
 			lastProgressAt: Date.now() - 600_000, // no real work for 10 min
 		});
-		const result = inspectLock(dir, 30_000, 300_000);
+		const result = inspectLock(join(dir, LOCK_FILENAME), 30_000, 300_000);
 		expect(result.present).toBe(true);
 		if (result.present) {
 			expect(result.pidAlive).toBe(true);
@@ -180,7 +180,7 @@ describe("inspectLock", () => {
 			heartbeat: now,
 			omitLastProgressAt: true,
 		});
-		const result = inspectLock(dir);
+		const result = inspectLock(join(dir, LOCK_FILENAME));
 		expect(result.present).toBe(true);
 		if (result.present) {
 			// lastProgressAt mirrors heartbeat, so it is a usable timestamp.
@@ -199,27 +199,29 @@ describe("inspectLock", () => {
 		const dir = makeTempDir();
 		const lockPath = writeLock(dir, { pid: 2_000_000_000 }); // dead pid (stale-looking)
 		expect(existsSync(lockPath)).toBe(true);
-		inspectLock(dir);
+		inspectLock(join(dir, LOCK_FILENAME));
 		// A naive cleanup would unlink a stale lock; inspectLock must not.
 		expect(existsSync(lockPath)).toBe(true);
 		// Inspect again to be sure repeated reads are non-destructive.
-		inspectLock(dir);
+		inspectLock(join(dir, LOCK_FILENAME));
 		expect(existsSync(lockPath)).toBe(true);
 	});
 
-	// R6: custom index dir (simulating MNEMEX_INDEX_DIR) — no double-join / basename assumption
+	// R6: custom index dir (simulating MNEMEX_INDEX_DIR) — inspectLock reads the
+	// exact lock path it is given (the caller derives it from the resolved store
+	// location), with no double-join and no basename assumption.
 	test("R6: resolves lock under a custom (non-.mnemex) index dir", () => {
 		const dir = makeTempDir();
 		const customIndexDir = join(dir, "custom-index-dir");
 		require("node:fs").mkdirSync(customIndexDir, { recursive: true });
 		writeLock(customIndexDir, { pid: process.pid });
-		const result = inspectLock(customIndexDir);
+		const result = inspectLock(join(customIndexDir, LOCK_FILENAME));
 		expect(result.present).toBe(true);
 		if (result.present) {
 			expect(result.pid).toBe(process.pid);
 		}
 		// And the SAME basename under a different parent must NOT be found.
-		const empty = inspectLock(dir);
+		const empty = inspectLock(join(dir, LOCK_FILENAME));
 		expect(empty.present).toBe(false);
 	});
 });

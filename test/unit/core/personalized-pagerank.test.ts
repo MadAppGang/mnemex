@@ -70,6 +70,9 @@ function makeReference(
 	};
 }
 
+/** The one branch every fixture in this file lives on. */
+const BRANCH = 1;
+
 interface Fixture {
 	manager: ReferenceGraphManager;
 	symbols: SymbolDefinition[];
@@ -88,18 +91,21 @@ function makeGraph(nodes: string[], edgeSpecs: Edge[]): Fixture {
 	const dir = mkdtempSync(join(tmpdir(), "mnemex-ppr-test-"));
 	const tracker = new FileTracker(join(dir, "index.db"), dir);
 
+	// One branch: every symbol-graph statement is scoped, and the handle is the
+	// only way to reach one (§4.4.1).
+	const graph = tracker.graph(BRANCH);
 	const symbols = nodes.map((id, i) => makeSymbol(id, i));
-	tracker.insertSymbols(symbols);
+	graph.insertSymbols(symbols);
 
 	const edges = edgeSpecs.map(
 		(spec) => spec.split("->") as unknown as [string, string],
 	);
-	tracker.insertReferences(
+	graph.insertReferences(
 		edges.map(([from, to], i) => makeReference(from, to, i + 1)),
 	);
 
 	return {
-		manager: new ReferenceGraphManager(tracker),
+		manager: new ReferenceGraphManager(tracker, BRANCH),
 		symbols,
 		edges,
 		cleanup: () => {

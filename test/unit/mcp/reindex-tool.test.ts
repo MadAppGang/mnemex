@@ -12,7 +12,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { resolveStoreLocation } from "../../../src/core/store-location.js";
 import { IndexStateManager } from "../../../src/mcp/state-manager.js";
 import type { ToolDeps } from "../../../src/mcp/tools/deps.js";
 import { registerReindexTools } from "../../../src/mcp/tools/reindex.js";
@@ -76,7 +77,10 @@ async function makeDeps(
 	indexDir: string,
 	overrides: Partial<ToolDeps> = {},
 ): Promise<ToolDeps> {
-	const stateManager = new IndexStateManager(indexDir);
+	const stateManager = new IndexStateManager(
+		indexDir,
+		resolveStoreLocation(dirname(indexDir)),
+	);
 	await stateManager.initialize();
 	const cache = {
 		get: async () => ({

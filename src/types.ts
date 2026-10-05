@@ -147,6 +147,13 @@ export interface CodeUnit {
 export interface CodeUnitWithEmbedding extends CodeUnit {
 	/** Vector embedding */
 	vector: number[];
+	/**
+	 * Embedding-cache key for `vector` — `EmbedResult.keys` at the same slot.
+	 * `""`/absent when the vector did not come through the caching seam (BM25
+	 * placeholder, cache off, dimension unknown). Stored as
+	 * `StoredChunk.embedKey`; see index version 3.
+	 */
+	embedKey?: string;
 }
 
 // ============================================================================
@@ -230,6 +237,13 @@ export interface FormattedContext {
 export interface ChunkWithEmbedding extends CodeChunk {
 	/** Vector embedding */
 	vector: number[];
+	/**
+	 * Embedding-cache key for `vector` — `EmbedResult.keys` at the same slot.
+	 * `""`/absent when the vector did not come through the caching seam (BM25
+	 * placeholder, cache off, dimension unknown). Stored as
+	 * `StoredChunk.embedKey`; see index version 3.
+	 */
+	embedKey?: string;
 }
 
 // ============================================================================
@@ -255,6 +269,43 @@ export interface SearchResult {
 	documentType?: DocumentType;
 	/** Observation metadata (only for session_observation results) */
 	observationMetadata?: Record<string, unknown>;
+	/**
+	 * D1's per-row attribution (architecture §4.4.2), as stored: the branch ids
+	 * this row is visible from. `0` is the shared marker (docs, observations).
+	 *
+	 * Set by `VectorStore.search`, which has no registry and so cannot name
+	 * branches. Absent from stores and code paths that predate the branch model.
+	 */
+	branchIds?: number[];
+	/**
+	 * The same attribution as LABELS, resolved through the branch registry by
+	 * `Indexer.searchScoped`. This is what D1 requires a caller to be able to
+	 * show: per-row attribution is what lets an agent discount a foreign row
+	 * instead of discarding the whole response.
+	 */
+	branches?: string[];
+	/**
+	 * Set by `Indexer.searchScoped` when the dead-code penalty demoted this row:
+	 * the symbol IN THIS ROW'S OWN FILE has no callers and negligible PageRank
+	 * (R1). Absent otherwise — including when no same-file symbol was found,
+	 * which applies no penalty at all.
+	 */
+	penalty?: "dead";
+	/**
+	 * Where the row came from, when it was not the local index.
+	 *
+	 * - `"dirty"` — this worktree's LOCAL dirty overlay (step 3, R3), set by
+	 *   `VectorStore.search`: uncommitted content the index does not hold yet.
+	 *   Such a row has no `branchIds`, no summary and no symbol graph (R3.8).
+	 * - `"cloud"` / `"overlay"` — the CLOUD path's `OverlayMerger`
+	 *   (`MergedSearchResult`, `src/cloud/merger.ts`), which hands its rows to
+	 *   the same `SearchResult` consumers. A different mechanism; its
+	 *   `"overlay"` is not the local `"dirty"`, and a consumer that marks local
+	 *   overlay rows must test for `"dirty"` only.
+	 *
+	 * Absent on local index rows.
+	 */
+	source?: "dirty" | "cloud" | "overlay";
 }
 
 export interface SearchOptions {
@@ -270,6 +321,13 @@ export interface SearchOptions {
 	useCase?: SearchUseCase;
 	/** Use keyword search only (no embedding API call, faster but less semantic) */
 	keywordOnly?: boolean;
+	/**
+	 * The local dirty overlay (step 3, R3.1). `undefined` = `"auto"`: on when
+	 * the worktree is dirty, unless `dirtyOverlay: false` in config. `"off"` is
+	 * `--no-dirty`, and what `mnemex rg` passes (its output is byte-for-byte
+	 * ripgrep's, CLAUDE.md #14).
+	 */
+	overlay?: "auto" | "off";
 }
 
 // ============================================================================
@@ -303,6 +361,213 @@ export interface IndexResult {
 	adoptedIndexedModel?: boolean;
 	/** The configured model that was set aside (only when adoptedIndexedModel) */
 	configuredModel?: string;
+	/**
+	 * Files whose tracker stamp was DEFERRED because at least one of their
+	 * chunks came back with an empty vector, and whose rows were removed again
+	 * so the next run redoes them from scratch.
+	 *
+	 * A provider outage mid-run used to be fatal for the whole batch; the
+	 * embedding cache downgrades it to "serve the hits, skip the misses", which
+	 * would otherwise stamp the file at its current hash and drop those chunks
+	 * from the index permanently — no later incremental run looks at an
+	 * unchanged file again.
+	 */
+	filesDeferred?: string[];
+	/**
+	 * The index version this run rebuilt FROM, when it rebuilt because the
+	 * on-disk table predates the current schema.
+	 *
+	 * The authoritative channel, deliberately. `index()` is not always driven by
+	 * a human: the git post-commit hook passes no `onProgress`, and neither does
+	 * the MCP search tool's auto-reindex, so the `[migrating]` progress notice
+	 * reaches at most two of the four entry points.
+	 */
+	upgradedFromIndexVersion?: number;
+	/**
+	 * WHERE this run wrote (architecture §6.3). Absolute, realpath spelling.
+	 *
+	 * Built in Phase 3c, because the flip is the moment a user can no longer
+	 * guess it. Until 3c the store was `<project>/.mnemex` for everyone without
+	 * an override, so "where is my index?" had an answer you could type; from 3c
+	 * it is `<gitCommonDir>/mnemex`, which is inside `.git` and which nothing
+	 * else would lead you to. §6.3 names it as the field V1.1 and the FR-3
+	 * behavioural sweep assert on, and it was the one §6.3 field with no
+	 * producer — `mnemex branches --agent` emitted `store_dir=` and `index` did
+	 * not, so the command that MOVES a store could not say where it moved it.
+	 *
+	 * DATA, not a progress line, for the reason `upgradedFromIndexVersion` is:
+	 * the git post-commit hook and the MCP search tool's auto-reindex pass no
+	 * `onProgress`, so a rendered notice reaches at most two of four entry
+	 * points.
+	 */
+	storeDir?: string;
+	/** Which precedence row chose {@link storeDir} (§2.3's `StoreKind`). */
+	storeKind?: string;
+	/**
+	 * The store this run REPLACED, when it was in a different directory —
+	 * §6.1's migration report, and the half deferred to 3c because before the
+	 * flip the probed directory and `storeDir` were always the same one.
+	 *
+	 * It is left exactly where it is: not moved, not merged, not deleted (§6.1;
+	 * the finding's §6.2 proves an N-to-1 rename of non-portable rows has no
+	 * correct form). Reported so the user can delete it themselves, and so
+	 * "my index got smaller" has a visible cause.
+	 */
+	abandonedStoreDir?: string;
+	/** Why the seam fell back inside something that looked like a repository. */
+	degradedReason?: string;
+	/** D2: `ProjectConfig.indexDir` held the literal `".mnemex"` and was ignored. */
+	ignoredLegacyIndexDir?: boolean;
+	/** What the embedding cache did this run. Absent when it never ran. */
+	embedCache?: IndexEmbedCacheStats;
+	/** Branch membership, when the store has a branch model (architecture §4.1). */
+	branch?: IndexBranchResult;
+}
+
+/**
+ * What one run did to branch membership.
+ *
+ * DATA, not a progress line, for the reason `upgradedFromIndexVersion` is: two
+ * of the four entry points that call `index()` pass no `onProgress` at all
+ * (the git post-commit hook and the MCP search tool's auto-reindex), so a
+ * notice reaches at most two of them.
+ */
+export interface IndexBranchResult {
+	/** The registry id this run's rows were written under. */
+	branchId: number;
+	/** The HEAD label that id belongs to, as read at the start of the run. */
+	label: string | null;
+	/**
+	 * Ids this branch gained by MEMBERSHIP alone — a tier-1 hit test hit: no
+	 * embedding request, no new row, one `chunk_branches` row and one drain
+	 * intent. On a second worktree of an indexed tree this is nearly every id.
+	 */
+	idsWidened: number;
+	/**
+	 * LanceDB rows whose `branchIds` mirror the drain actually rewrote. Lower
+	 * than `idsWidened` when a row's mirror was already exact (the conditional
+	 * merge skips it) and higher when it drains an EARLIER run's backlog.
+	 */
+	rowsWidened: number;
+	/**
+	 * `'widen'` intents still outstanding when the run finished.
+	 *
+	 * Expected 0 on every completed run since the per-run budget became a FLOOR
+	 * over the backlog read at drain entry (`WIDEN_BUDGET`). It used to read
+	 * 5 614 after a second worktree's first index of this repository — 22 % of
+	 * the store invisible from the new branch until another run happened — which
+	 * is the defect that change closes. A non-zero reading now means a run
+	 * crashed or aborted mid-drain; searches from this branch see a subset of the
+	 * store until the next `mnemex index` finishes it.
+	 */
+	widenRemaining: number;
+	/**
+	 * The `'widen'` backlog the drain STARTED with: this run's own widened ids
+	 * plus anything an earlier run left behind.
+	 *
+	 * Emitted so that a complete drain is a positive fact a consumer can read
+	 * — `widenBacklog: 26288, widenRemaining: 0` — rather than an absence. The
+	 * git post-commit hook and the MCP auto-reindex render no progress line, so
+	 * an absence is all they would otherwise have to go on.
+	 */
+	widenBacklog?: number;
+	/**
+	 * What a crashed previous run left, and this run re-drove (§4.1.4).
+	 * `added` rows were deleted (an interrupted append refers to nothing);
+	 * `removed` removals were FINISHED (the decision to remove had been made).
+	 */
+	recoveredCrashResidue?: { added: number; removed: number };
+	/**
+	 * M2 (decision I-7): rows read beyond the distinct ids read. Non-zero means
+	 * a crash left a DUPLICATE row for some id. It is reported, never repaired
+	 * inline — recovery owns cleanup, and a delete-then-add repair here is the
+	 * non-atomic shape that lost rows in `updateUnitSummary`.
+	 */
+	duplicateRows?: number;
+	/**
+	 * Ids the tracker had registered that LanceDB did not hold, demoted from
+	 * WIDEN to INSERT by the existence projection. Non-zero means P1 had been
+	 * broken and this run repaired it.
+	 */
+	idsDemoted?: number;
+	/**
+	 * §4.1.5: HEAD moved while this run was reading the tree, so the branch was
+	 * NOT stamped as indexed and the registry entry carries `needsReindex`.
+	 */
+	headChangedDuringRun?: boolean;
+	/**
+	 * Code units whose id was known but whose stored content hash disagreed, so
+	 * the row was rewritten in place instead of widened (I-15).
+	 *
+	 * EXPECTED 0 since I-14 put the content hash into the unit id, and that is
+	 * what makes it useful: it is the cheapest live check that I-14 works on a
+	 * real machine. A non-zero reading is a 64-bit id collision, or a crash
+	 * between a refresh and the second transaction that registers its hash.
+	 */
+	unitsRefreshed: number;
+	/**
+	 * LIVE registry entries after this run (§4.3). Above `BRANCH_SOFT_LIMIT` the
+	 * run warns; it never fails, because there is no ceiling.
+	 */
+	branchCount: number;
+	/** The confirmation pass ran in this run (§4.3's interval or a size trigger). */
+	confirmationRan: boolean;
+	/**
+	 * A ref source was over its cap, so the pass decided NOTHING. A partial ref
+	 * set makes live branches look deleted, and the decision that follows from
+	 * that is a tombstone.
+	 */
+	confirmationDeferred?: boolean;
+	/** Entries this run marked `unconfirmedSince` — the first of the two passes to a tombstone. */
+	branchesUnconfirmed: number;
+	/** Entries this run tombstoned: the grace expired, or an ephemeral was evicted. */
+	branchesTombstoned: number;
+	/**
+	 * Live branch labels whose ref is in NEITHER `refs/heads/**` nor
+	 * `packed-refs` (§4.3). Reported whether or not a decision followed, because
+	 * a vanished ref is a fact worth acting on before the grace expires.
+	 */
+	missingBranchRefs?: string[];
+	/** Rows the sweep deleted because no branch pointed at them any more. */
+	sweepRowsDeleted: number;
+	/** Rows the sweep narrowed: another branch still holds them. */
+	sweepRowsNarrowed: number;
+	/** Tombstoned entries rule C dropped from `branches.json` this run. */
+	sweepBranchesFinalized: number;
+	/** Membership rows tombstoned branches still hold. Non-zero means another run is needed. */
+	sweepRemaining: number;
+	/**
+	 * §4.5 / D3: what this run's force CLEARED, when it forced at all.
+	 *
+	 * - `"branch"` — `--force`: this branch's rows only, `narrowBranch`. A row
+	 *   another branch still holds survived, narrowed rather than deleted.
+	 * - `"store"` — every branch's rows: `--force-all`, or one of the three
+	 *   repairs that are store-wide by nature (a 0-dimension or placeholder
+	 *   vector column, a model change, an index-version upgrade).
+	 * - absent — no force ran.
+	 *
+	 * It is DATA rather than a progress line for the reason
+	 * `upgradedFromIndexVersion` is: the git post-commit hook and the MCP
+	 * auto-reindex pass no `onProgress` at all, and "how much did that just
+	 * destroy" is precisely what a caller must be able to read afterwards.
+	 */
+	forceScope?: "branch" | "store";
+	/** Rows a branch-scoped force deleted because nobody else held them. */
+	forceRowsDeleted?: number;
+	/** Rows a branch-scoped force left in place for another branch, mirror rewritten. */
+	forceRowsNarrowed?: number;
+}
+
+/** Embedding-cache accounting for one index run, as rendered by the CLI. */
+export interface IndexEmbedCacheStats {
+	/** `"sqlite"` persistent, `"l0"` in-process only (degraded), `"none"` off. */
+	tier: "sqlite" | "l0" | "none";
+	/** Slots served from the cache instead of the provider. */
+	hits: number;
+	/** Slots that reached the provider. */
+	misses: number;
+	/** Vectors handed to the cache to store. */
+	writes: number;
 }
 
 export interface IndexStatus {
@@ -355,6 +620,16 @@ export type EmbeddingProgressCallback = (
 	total: number,
 	/** Number of items currently being processed (for animation) */
 	inProgress?: number,
+	/**
+	 * Slots served from the persistent embedding cache so far, so a renderer can
+	 * say "(N cached)". Optional and last, so every existing 3-parameter callback
+	 * stays assignable to this type — nothing has to change to be passed in.
+	 *
+	 * A caching proxy may skip the inner call entirely, so an all-hits run emits
+	 * progress that no provider request corresponds to; this parameter is what
+	 * makes that visible instead of looking like a stalled or free run.
+	 */
+	cachedHits?: number,
 ) => void;
 
 /** Result of embedding operation with usage stats */
@@ -370,6 +645,65 @@ export interface EmbedResult {
 	latencyMs?: number;
 	/** Throughput in tokens/second (totalTokens / latencyMs * 1000) */
 	throughputTokensPerSec?: number;
+	/**
+	 * The embedding-cache key per input slot, in input order — the audit column
+	 * stored as `StoredChunk.embedKey`.
+	 *
+	 * Present only when the embedding dimension was known or learned during the
+	 * call; absent otherwise, because the key is `sha256(model \0 dimension \0
+	 * text)` and a key computed without a dimension would address nothing.
+	 * Producers that do not cache leave it undefined.
+	 */
+	keys?: string[];
+	/**
+	 * How many slots were served from the embedding cache rather than the
+	 * provider. `cost` and `totalTokens` fall to 0 on a warm run, which looks
+	 * like a bug; this is what says otherwise.
+	 */
+	cacheHits?: number;
+}
+
+/**
+ * A per-CALL policy for `IEmbeddingsClient.embed`, for a caller whose time is
+ * bounded by someone else's budget — the dirty overlay on the SEARCH path
+ * (CLAUDE.md #33 d). Absent, a client behaves exactly as it always has: its
+ * own retry ladder, its own per-request timeout. That default is what indexing
+ * and the query embedding use, and no field here may change it.
+ *
+ * The shared raw client is the reason this is a parameter and not a client
+ * option: the overlay embeds with the SAME instance that embedded the query
+ * (#16), and inside the MCP server that instance also indexes. A setting on
+ * the instance would leak into indexing; a parameter cannot.
+ */
+export interface EmbedCallOptions {
+	/**
+	 * Cancels the call. An abort ends the in-flight request AND any back-off
+	 * sleep, and `embed` rejects — it never resolves with `[]` slots for the
+	 * texts it did not reach, and nothing it did not finish is retried. The
+	 * caller owns the signal, so the caller tells an abort from a failure by
+	 * reading `signal.aborted`.
+	 */
+	readonly signal?: AbortSignal;
+	/**
+	 * Attempts per provider request, including the first. `1` = no retry at
+	 * all. Absent = the client's own ladder. A client may use FEWER (its ladder
+	 * is the ceiling), never more.
+	 */
+	readonly maxAttempts?: number;
+	/**
+	 * Called once per text the provider answered with a vector, AS IT LANDS —
+	 * before the call resolves OR rejects. `index` is into the `texts` of this
+	 * call. A client that sends one request per text calls it after each
+	 * success; a sub-batching client calls it for each text of each completed
+	 * sub-batch response.
+	 *
+	 * Why (iteration 2, O3): an abort rejects the whole call, and the vectors
+	 * the provider had already returned were dropped with it — sent, paid for,
+	 * uncounted in `overlay_embedded`, uncached, and sent again next pass. The
+	 * caching client collects them through this callback and salvages them
+	 * when the call is aborted.
+	 */
+	readonly onAnswered?: (index: number, vector: readonly number[]) => void;
 }
 
 /**
@@ -377,10 +711,16 @@ export interface EmbedResult {
  * All embedding providers must implement this interface
  */
 export interface IEmbeddingsClient {
-	/** Generate embeddings for multiple texts */
+	/**
+	 * Generate embeddings for multiple texts. `options` bounds THIS call only
+	 * (see {@link EmbedCallOptions}); every production client honours it —
+	 * pinned per client, because a method that omits the parameter still
+	 * type-checks (CLAUDE.md #32).
+	 */
 	embed(
 		texts: string[],
 		onProgress?: EmbeddingProgressCallback,
+		options?: EmbedCallOptions,
 	): Promise<EmbedResult>;
 	/** Generate embedding for a single text */
 	embedOne(text: string): Promise<number[]>;
@@ -503,6 +843,25 @@ export interface GlobalConfig {
 	 * Equivalent to exporting `MNEMEX_DISABLE_KEYCHAIN=1`.
 	 */
 	keychain?: boolean;
+
+	// ─── Embedding Cache ───
+	/**
+	 * User-facing opt-out for the machine-global persistent embedding cache
+	 * (default: enabled). Set to `false` to recompute every vector.
+	 * Equivalent to exporting `MNEMEX_DISABLE_EMBED_CACHE=1`.
+	 *
+	 * Read with `=== false`, never for falsiness, and never written unless the
+	 * user set it — an absent field means "untouched", not "off".
+	 */
+	embedCache?: boolean;
+
+	// ─── Dirty Overlay ───
+	/**
+	 * Include uncommitted work (modified tracked + untracked files) in local
+	 * search (default: true). A project's `dirtyOverlay` wins over this one.
+	 * Equivalent per search: `mnemex search --no-dirty`.
+	 */
+	dirtyOverlay?: boolean;
 }
 
 export interface ProjectConfig {
@@ -554,6 +913,11 @@ export interface ProjectConfig {
 	 * - 'include': Treat test files normally (no special handling)
 	 */
 	testFiles?: "downrank" | "exclude" | "include";
+	/**
+	 * Include uncommitted work in search (default: true). Overrides the global
+	 * `dirtyOverlay`. Equivalent per search: `mnemex search --no-dirty`.
+	 */
+	dirtyOverlay?: boolean;
 
 	// ─── Self-Learning Settings ───
 	/**
@@ -833,6 +1197,10 @@ export interface SymbolGraphStats {
 /** All document types in the enriched index */
 export type DocumentType =
 	| "code_chunk"
+	// A hierarchical code unit (`storedRowsForUnits`). It often covers the SAME
+	// span as a `code_chunk` row; ranked search collapses such twins to one
+	// slot (`collapseSpanTwins`, R2).
+	| "code_unit"
 	| "file_summary"
 	| "symbol_summary"
 	| "idiom"
@@ -1227,6 +1595,34 @@ export interface EnrichmentResult {
 	};
 	/** Total LLM tokens used */
 	totalTokens?: number;
+	/** What §4.6's content-keyed reuse decided this run. Always present. */
+	reuse?: EnrichmentReuse;
+}
+
+/**
+ * §4.6's reuse accounting, as DATA.
+ *
+ * It is reported rather than logged for the reason `upgradedFromIndexVersion`
+ * is: two of the four entry points that call `index()` render no progress at
+ * all. And it carries the REFUSALS as well as the hits, because a reuse path
+ * that reuses everything is indistinguishable from one broken in the expensive
+ * direction — the lesson CLAUDE.md #31's twice-deleted seeding pass left, where
+ * a cheerful "seeded N vectors" line covered an index built from placeholders.
+ */
+export interface EnrichmentReuse {
+	/** Files whose summaries were adopted from the store: no LLM call at all. */
+	filesReused: number;
+	/** Summary rows those files adopted — the ids this branch gained. */
+	documentsReused: number;
+	/** Files this pass sent to the LLM. */
+	filesEnriched: number;
+	/**
+	 * Files that HAD a usable-looking record and were enriched anyway, because
+	 * at least one summary row it named is no longer in LanceDB (P1's belt).
+	 * Non-zero means the store and the record table disagreed and this run
+	 * repaired it by paying for the summary again.
+	 */
+	filesRefused: number;
 }
 
 /** Extended index result with enrichment stats */

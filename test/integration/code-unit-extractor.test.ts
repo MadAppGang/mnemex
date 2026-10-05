@@ -3,16 +3,28 @@
  *
  * Tests:
  * - Hierarchical extraction (file -> class -> method)
- * - Parent-child ID consistency (the critical bug we fixed)
+ * - Parent-child KEY consistency (the critical bug we fixed)
  * - Multi-language support
  * - Metadata extraction
+ *
+ * SINCE DECISION I-14 A UNIT HAS TWO KEYS, and this suite joins on the right
+ * one. `unit.id` is `codeUnitRowId` — position AND the unit's content hash, so
+ * that two branches' revisions of one function are two rows. `unit.parentId` is
+ * the parent's `codeUnitParentKey` — position only, so that an edit inside a
+ * parent does not move the reference to it. They are different namespaces, and
+ * every assertion below that used to read `parent.id` now reads
+ * `codeUnitParentKeyOf(parent)`. Joining on `parent.id` makes every non-null
+ * link dangle, which is what this suite would report.
  */
 
 import { beforeAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CodeUnitExtractor } from "../../src/core/ast/code-unit-extractor.js";
+import {
+	CodeUnitExtractor,
+	codeUnitParentKeyOf,
+} from "../../src/core/ast/code-unit-extractor.js";
 import type { CodeUnit } from "../../src/types.js";
 import { samplePythonSource } from "../testdata/sample-python-source.ts";
 
@@ -62,7 +74,9 @@ describe("CodeUnitExtractor", () => {
 			);
 
 			expect(classUnit).toBeDefined();
-			expect(classUnit?.parentId).toBe(fileUnit?.id);
+			expect(classUnit?.parentId).toBe(
+				fileUnit ? codeUnitParentKeyOf(fileUnit) : "",
+			);
 			expect(classUnit?.depth).toBe(1);
 		});
 
@@ -70,8 +84,9 @@ describe("CodeUnitExtractor", () => {
 			const classUnit = units.find(
 				(u) => u.unitType === "class" && u.name === "UserService",
 			);
+			const classKey = classUnit ? codeUnitParentKeyOf(classUnit) : "";
 			const methods = units.filter(
-				(u) => u.unitType === "method" && u.parentId === classUnit?.id,
+				(u) => u.unitType === "method" && u.parentId === classKey,
 			);
 
 			expect(methods.length).toBeGreaterThanOrEqual(4); // createUser, getUser, deleteUser, listUsers
@@ -91,7 +106,9 @@ describe("CodeUnitExtractor", () => {
 			const fileUnit = units.find((u) => u.unitType === "file");
 
 			expect(validateEmail).toBeDefined();
-			expect(validateEmail?.parentId).toBe(fileUnit?.id);
+			expect(validateEmail?.parentId).toBe(
+				fileUnit ? codeUnitParentKeyOf(fileUnit) : "",
+			);
 			expect(validateEmail?.depth).toBe(1);
 		});
 
@@ -127,8 +144,8 @@ describe("CodeUnitExtractor", () => {
 		});
 	});
 
-	describe("Parent-child ID consistency", () => {
-		test("child parentId matches parent id exactly", async () => {
+	describe("Parent-child KEY consistency", () => {
+		test("child parentId matches the parent's POSITION KEY exactly", async () => {
 			const source = readFileSync(
 				join(TESTDATA_DIR, "sample-typescript.ts"),
 				"utf-8",
@@ -144,13 +161,14 @@ describe("CodeUnitExtractor", () => {
 				fileHash,
 			);
 
-			// Build a map of all unit IDs
-			const unitIds = new Set(units.map((u) => u.id));
+			// Build a map of all unit POSITION KEYS — the namespace a link lives
+			// in. A set of `u.id` here would be empty of every link (I-14).
+			const unitKeys = new Set(units.map(codeUnitParentKeyOf));
 
 			// Check that every non-null parentId exists in the unit set
 			for (const unit of units) {
 				if (unit.parentId !== null) {
-					expect(unitIds.has(unit.parentId)).toBe(true);
+					expect(unitKeys.has(unit.parentId)).toBe(true);
 				}
 			}
 		});
@@ -171,7 +189,7 @@ describe("CodeUnitExtractor", () => {
 				fileHash,
 			);
 
-			const unitMap = new Map(units.map((u) => [u.id, u]));
+			const unitMap = new Map(units.map((u) => [codeUnitParentKeyOf(u), u]));
 
 			for (const unit of units) {
 				if (unit.parentId !== null) {
@@ -209,9 +227,13 @@ describe("CodeUnitExtractor", () => {
 				throw new Error("Expected UserService class unit to exist");
 			}
 
-			const children = extractor.getChildren(units, classUnit.id);
+			const classKey = codeUnitParentKeyOf(classUnit);
+			const children = extractor.getChildren(units, classKey);
 			expect(children.length).toBeGreaterThan(0);
-			expect(children.every((c) => c.parentId === classUnit.id)).toBe(true);
+			expect(children.every((c) => c.parentId === classKey)).toBe(true);
+			// Non-vacuity against the namespace mistake: passing the ROW id here
+			// returns nothing, which is why `getChildren` documents its argument.
+			expect(extractor.getChildren(units, classUnit.id)).toEqual([]);
 		});
 	});
 
@@ -244,8 +266,9 @@ describe("CodeUnitExtractor", () => {
 			const productRepo = units.find(
 				(u) => u.unitType === "class" && u.name === "ProductRepository",
 			);
+			const repoKey = productRepo ? codeUnitParentKeyOf(productRepo) : "";
 			const methods = units.filter(
-				(u) => u.unitType === "method" && u.parentId === productRepo?.id,
+				(u) => u.unitType === "method" && u.parentId === repoKey,
 			);
 
 			const methodNames = methods.map((m) => m.name);

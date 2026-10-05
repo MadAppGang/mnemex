@@ -109,6 +109,12 @@ function accumulate(
 		if (!existing.observationMetadata && result.observationMetadata) {
 			existing.observationMetadata = result.observationMetadata;
 		}
+		// The dirty overlay's marker survives fusion: an uncommitted row merged
+		// with another backend's hit at the same anchor is still uncommitted
+		// text, and must still say so (step 3, R3.9).
+		if (!existing.source && result.source) {
+			existing.source = result.source;
+		}
 		// isDefinitive override — if any backend says definitive, mark it
 		if (result.isDefinitive) {
 			existing.isDefinitive = true;

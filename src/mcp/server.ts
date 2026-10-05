@@ -30,15 +30,19 @@ import {
 	spawnMnemexDetached,
 } from "../core/entry-point-launcher.js";
 import { primeSecrets } from "../core/secrets.js";
+import {
+	getLockPathFor,
+	resolveStoreLocation,
+} from "../core/store-location.js";
 import { SymbolEditor } from "../editor/editor.js";
 import { LspManager } from "../lsp/manager.js";
-import { MemoryStore } from "../memory/store.js";
 import { IndexCache } from "./cache.js";
 import { CompletionDetector } from "./completion-detector.js";
 import { loadMcpConfig } from "./config.js";
 import { createLogger } from "./logger.js";
 import { DebounceReindexer, spawnDetachedReindex } from "./reindexer.js";
 import { IndexStateManager } from "./state-manager.js";
+import { openMcpMemoryStore } from "./stranded-memories.js";
 import {
 	registerAnalysisTools,
 	registerCalleesTools,
@@ -175,7 +179,9 @@ export async function startMcpServer(): Promise<void> {
 	// -------------------------------------------------------------------------
 	// Step 3: Initialize IndexStateManager
 	// -------------------------------------------------------------------------
-	const stateManager = new IndexStateManager(config.indexDir);
+	// The resolved store: where the spawned `mnemex index` takes its lock.
+	const storeLocation = resolveStoreLocation(config.workspaceRoot);
+	const stateManager = new IndexStateManager(config.indexDir, storeLocation);
 	await stateManager.initialize();
 
 	// -------------------------------------------------------------------------
@@ -202,6 +208,7 @@ export async function startMcpServer(): Promise<void> {
 	const completionDetector = new CompletionDetector(
 		config.indexDir,
 		config.completionPollMs,
+		getLockPathFor(storeLocation),
 	);
 
 	// -------------------------------------------------------------------------
@@ -276,7 +283,11 @@ export async function startMcpServer(): Promise<void> {
 	// -------------------------------------------------------------------------
 	// Step 8c: Create MemoryStore
 	// -------------------------------------------------------------------------
-	const memoryStore = new MemoryStore(config.indexDir);
+	// Not `config.indexDir`: memories are authored, per-worktree data and must
+	// not move when the store does. See `memoryDirFor` in ./config.ts.
+	// Also warns ONCE, on stderr, if memories were stranded by the old
+	// MNEMEX_INDEX_DIR double-join (decision I-9). Moves nothing.
+	const memoryStore = openMcpMemoryStore(config, logger);
 
 	// -------------------------------------------------------------------------
 	// Step 9: Build ToolDeps and create McpServer

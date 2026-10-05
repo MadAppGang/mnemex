@@ -24,6 +24,14 @@ import {
 	createFileTracker,
 	type IFileTracker,
 } from "../../src/core/tracker.js";
+
+/**
+ * The branch every workspace this helper builds writes and reads.
+ * These workspaces are plain temp directories with no repository layout, so
+ * `BRANCH_ID_SHARED` is exactly what a real run would stamp on them.
+ */
+const TEST_BRANCH_ID = 0;
+
 import { SymbolEditor } from "../../src/editor/editor.js";
 import type { CachedIndex, IndexCache } from "../../src/mcp/cache.js";
 import type { McpConfig } from "../../src/mcp/config.js";
@@ -55,6 +63,11 @@ export class TestWorkspace {
 		this._config = {
 			workspaceRoot: this.root,
 			indexDir: this.indexDir,
+			// These workspaces are plain directories, not git repositories, so
+			// the store and the per-worktree directory ARE the same path under
+			// every scope (§2.3 row 4). Spelled out rather than shared, so a
+			// reader sees that the two are distinct concepts that coincide here.
+			worktreeDir: join(root, ".mnemex"),
 			debounceMs: 120000,
 			watchPatterns: ["**/*.ts"],
 			ignorePatterns: ["node_modules/**"],
@@ -93,15 +106,22 @@ export class TestWorkspace {
 
 		await this._walkAndIndex(tracker, extractor, pm);
 
-		tracker.resolveReferencesByName();
+		tracker.graph(TEST_BRANCH_ID).resolveReferencesByName();
 
-		const graphManager = createReferenceGraphManager(tracker);
+		const graphManager = createReferenceGraphManager(tracker, TEST_BRANCH_ID);
 
 		const cachedIndex: CachedIndex = {
 			tracker,
 			graphManager,
 			repoMapGen: null!,
 			loadedAt: Date.now(),
+			branchId: TEST_BRANCH_ID,
+			branch: {
+				scope: { kind: "all" },
+				branchUnknown: false,
+				label: null,
+				labels: new Map(),
+			},
 		};
 
 		const cache: IndexCache = {
@@ -263,7 +283,7 @@ export class TestWorkspace {
 
 			const symbols = await extractor.extractSymbols(content, relPath, lang);
 			if (symbols.length > 0) {
-				tracker.insertSymbols(symbols);
+				tracker.graph(TEST_BRANCH_ID).insertSymbols(symbols);
 
 				const refs = await extractor.extractReferences(
 					content,
@@ -272,13 +292,13 @@ export class TestWorkspace {
 					symbols,
 				);
 				if (refs.length > 0) {
-					tracker.insertReferences(refs);
+					tracker.graph(TEST_BRANCH_ID).insertReferences(refs);
 				}
 			}
 
 			// Record file state for TOCTOU hash check in SymbolEditor
 			const hash = createHash("sha256").update(content).digest("hex");
-			tracker.markIndexed(relPath, hash, []);
+			tracker.markIndexed(TEST_BRANCH_ID, relPath, hash, []);
 		}
 	}
 }

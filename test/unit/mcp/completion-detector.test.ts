@@ -115,7 +115,11 @@ describe("CompletionDetector", () => {
 			const oldMtime = createOldDb(indexDir);
 			createLock(indexDir);
 
-			const detector = new CompletionDetector(indexDir, POLL_MS);
+			const detector = new CompletionDetector(
+				indexDir,
+				POLL_MS,
+				join(indexDir, LOCK_FILENAME),
+			);
 			let fired = false;
 			detector.watch(() => {
 				fired = true;
@@ -137,7 +141,11 @@ describe("CompletionDetector", () => {
 			createOldDb(indexDir);
 			createLock(indexDir);
 
-			const detector = new CompletionDetector(indexDir, POLL_MS);
+			const detector = new CompletionDetector(
+				indexDir,
+				POLL_MS,
+				join(indexDir, LOCK_FILENAME),
+			);
 			let fired = false;
 			detector.watch(() => {
 				fired = true;
@@ -160,7 +168,11 @@ describe("CompletionDetector", () => {
 			createLock(indexDir);
 
 			// Start polling - startMtime is captured now
-			const detector = new CompletionDetector(indexDir, POLL_MS);
+			const detector = new CompletionDetector(
+				indexDir,
+				POLL_MS,
+				join(indexDir, LOCK_FILENAME),
+			);
 			let fired = false;
 			detector.watch(() => {
 				fired = true;
@@ -182,7 +194,11 @@ describe("CompletionDetector", () => {
 			createOldDb(indexDir);
 			createLock(indexDir);
 
-			const detector = new CompletionDetector(indexDir, POLL_MS);
+			const detector = new CompletionDetector(
+				indexDir,
+				POLL_MS,
+				join(indexDir, LOCK_FILENAME),
+			);
 			let callCount = 0;
 			detector.watch(() => {
 				callCount++;
@@ -213,7 +229,11 @@ describe("CompletionDetector", () => {
 			// 4. Update db to NEWER mtime -> next poll should fire onComplete
 			createOldDb(indexDir);
 
-			const detector = new CompletionDetector(indexDir, POLL_MS);
+			const detector = new CompletionDetector(
+				indexDir,
+				POLL_MS,
+				join(indexDir, LOCK_FILENAME),
+			);
 			let fired = false;
 			detector.watch(() => {
 				fired = true;
@@ -239,7 +259,11 @@ describe("CompletionDetector", () => {
 			createOldDb(indexDir);
 			createLock(indexDir);
 
-			const detector = new CompletionDetector(indexDir, POLL_MS);
+			const detector = new CompletionDetector(
+				indexDir,
+				POLL_MS,
+				join(indexDir, LOCK_FILENAME),
+			);
 			let fired = false;
 			detector.watch(() => {
 				fired = true;
@@ -267,7 +291,11 @@ describe("CompletionDetector", () => {
 			createOldDb(indexDir);
 			createLock(indexDir);
 
-			const detector = new CompletionDetector(indexDir, POLL_MS);
+			const detector = new CompletionDetector(
+				indexDir,
+				POLL_MS,
+				join(indexDir, LOCK_FILENAME),
+			);
 
 			// Trigger completion after a short delay
 			setTimeout(() => {
@@ -283,7 +311,11 @@ describe("CompletionDetector", () => {
 			createOldDb(indexDir);
 			createLock(indexDir); // lock is never removed
 
-			const detector = new CompletionDetector(indexDir, POLL_MS);
+			const detector = new CompletionDetector(
+				indexDir,
+				POLL_MS,
+				join(indexDir, LOCK_FILENAME),
+			);
 
 			// Very short timeout - lock stays, mtime unchanged
 			const result = await detector.waitForCompletion(POLL_MS * 3);
@@ -299,7 +331,11 @@ describe("CompletionDetector", () => {
 			createOldDb(indexDir);
 			createLock(indexDir);
 
-			const detector = new CompletionDetector(indexDir, POLL_MS);
+			const detector = new CompletionDetector(
+				indexDir,
+				POLL_MS,
+				join(indexDir, LOCK_FILENAME),
+			);
 
 			// Trigger completion after 2 poll cycles
 			setTimeout(() => {

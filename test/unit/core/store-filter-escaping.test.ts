@@ -24,14 +24,22 @@
  * The third failure mode is no escaping at all. `deleteAllByFile` and
  * `getDocumentsByFile` interpolated `filePath` raw. A path is attacker-shaped
  * data as soon as it comes from a repo someone else wrote: `x' OR filePath
- * LIKE '%` renders a VALID predicate matching every row, which turns
+ * LIKE '%` renders a VALID predicate matching every row, which turned
  * `deleteAllByFile` into "delete the whole table".
+ *
+ * `deleteAllByFile` itself was RETIRED in Phase 3b-3 (§3.5, decision I-15) —
+ * no caller in `src/`, and an unscoped delete across every branch of a shared
+ * store. Its three cases are gone with it and nothing is now unpinned: the
+ * `getDocumentsByFile` block below runs the SAME three values (a quoted path,
+ * `INJECTION`, and the underscore/percent pair) against the other raw-
+ * interpolation site, which is the one that still exists.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { SCOPE_ALL } from "../../../src/core/branch-scope.js";
 import {
 	createVectorStore,
 	escapeFilterValue,
@@ -131,7 +139,7 @@ afterEach(() => {
 async function withFreshStore<T>(
 	fn: (store: IVectorStore) => Promise<T>,
 ): Promise<T> {
-	const store = createVectorStore(dbPath);
+	const store = createVectorStore({ vectorsDir: dbPath, pathRoot: dir });
 	await store.initialize();
 	try {
 		return await fn(store);
@@ -141,15 +149,21 @@ async function withFreshStore<T>(
 }
 
 async function seedChunks(chunks: ChunkWithEmbedding[]): Promise<void> {
-	await withFreshStore((store) => store.addChunks(chunks));
+	await withFreshStore((store) =>
+		store.addChunks(chunks, { pathKind: "repo", branchId: 0 }),
+	);
 }
 
 async function seedDocs(docs: DocumentWithEmbedding[]): Promise<void> {
-	await withFreshStore((store) => store.addDocuments(docs));
+	await withFreshStore((store) =>
+		store.addDocuments(docs, { pathKind: "repo", branchId: 0 }),
+	);
 }
 
 async function seedUnits(units: CodeUnitWithEmbedding[]): Promise<void> {
-	await withFreshStore((store) => store.addCodeUnits(units));
+	await withFreshStore((store) =>
+		store.addCodeUnits(units, { pathKind: "repo", branchId: 0 }),
+	);
 }
 
 /** Markers still in the store, read with NO predicate at all. */
@@ -187,7 +201,8 @@ describe("getChunksWithVectors (filePath equality)", () => {
 			store.getChunksWithVectors(target),
 		);
 
-		expect(found.map((c) => c.filePath)).toEqual([target]);
+		// Returned absolute under pathRoot (decision D4); matched by its stored form.
+		expect(found.map((c) => c.filePath)).toEqual([join(dir, target)]);
 		expect(found[0].vector.length).toBe(DIM);
 	});
 
@@ -213,10 +228,15 @@ describe("search language filter (equality)", () => {
 		]);
 
 		const results = await withFreshStore((store) =>
-			store.search("parseConfig", vec(1), { limit: 10, language: "c_sharp" }),
+			store.search("parseConfig", vec(1), SCOPE_ALL, {
+				limit: 10,
+				language: "c_sharp",
+			}),
 		);
 
-		expect(results.map((r) => r.chunk.filePath)).toEqual(["src/a.cs"]);
+		expect(results.map((r) => r.chunk.filePath)).toEqual([
+			join(dir, "src/a.cs"),
+		]);
 	});
 
 	test("searchDocuments matches the same language identifier", async () => {
@@ -226,14 +246,16 @@ describe("search language filter (equality)", () => {
 		]);
 
 		const results = await withFreshStore((store) =>
-			store.searchDocuments("parseConfig", vec(1), {
+			store.searchDocuments("parseConfig", vec(1), SCOPE_ALL, {
 				limit: 10,
 				language: "c_sharp",
 			}),
 		);
 
 		expect(results.length).toBeGreaterThan(0);
-		expect(results.every((r) => r.document.filePath === "src/a.cs")).toBe(true);
+		expect(
+			results.every((r) => r.document.filePath === join(dir, "src/a.cs")),
+		).toBe(true);
 	});
 });
 
@@ -249,7 +271,7 @@ describe("searchDocuments documentType IN (equality semantics)", () => {
 		]);
 
 		const results = await withFreshStore((store) =>
-			store.searchDocuments("parseConfig", vec(1), {
+			store.searchDocuments("parseConfig", vec(1), SCOPE_ALL, {
 				limit: 10,
 				documentTypes: ["file_summary"],
 			}),
@@ -266,7 +288,7 @@ describe("searchDocuments documentType IN (equality semantics)", () => {
 		]);
 
 		const results = await withFreshStore((store) =>
-			store.searchDocuments("parseConfig", vec(1), {
+			store.searchDocuments("parseConfig", vec(1), SCOPE_ALL, {
 				limit: 10,
 				includeCodeChunks: false,
 			}),
@@ -283,7 +305,7 @@ describe("code unit lookups (equality)", () => {
 		await seedUnits([unit("target", path), unit("other", "src/other.ts")]);
 
 		const units = await withFreshStore((store) =>
-			store.getCodeUnitsByFile(path),
+			store.getCodeUnitsByFile(SCOPE_ALL, path),
 		);
 
 		expect(units.map((u) => u.id)).toEqual(["unit-target"]);
@@ -293,7 +315,7 @@ describe("code unit lookups (equality)", () => {
 		await seedUnits([unit("target", path), unit("other", "src/other.ts")]);
 
 		const units = await withFreshStore((store) =>
-			store.getCodeUnitsByDepth(1, path),
+			store.getCodeUnitsByDepth(SCOPE_ALL, 1, path),
 		);
 
 		expect(units.map((u) => u.id)).toEqual(["unit-target"]);
@@ -318,22 +340,21 @@ describe("code unit lookups (equality)", () => {
 
 		const { found, children } = await withFreshStore(async (store) => ({
 			found: await store.getCodeUnit("unit_parent"),
-			children: await store.getChildUnits("unit_parent"),
+			children: await store.getChildUnits(SCOPE_ALL, "unit_parent"),
 		}));
 
 		expect(found?.id).toBe("unit_parent");
 		expect(children.map((c) => c.id)).toEqual(["unit_child"]);
 	});
 
-	// `updateUnitSummary` is deliberately NOT asserted end-to-end here. Its
-	// `id = '...'` predicate does need the equality escaper and now gets it, but
-	// the delete+insert that follows is broken for a separate, pre-existing
-	// reason: it re-adds the row it just read back from Arrow, and LanceDB
-	// rejects that with "Found field not in schema: vector.isValid", leaving the
-	// unit DELETED and the summary lost. Reproduced with a plain hex id, where
-	// both escapers render identically, so it predates this change and is out of
-	// scope for it. `updateDocumentContent` below survives only because it
-	// substitutes a fresh plain-array vector.
+	// `updateUnitSummary` is asserted end-to-end in
+	// `store-update-row-loss.test.ts` ("an underscored id round-trips"), which
+	// has the raw row reader `summary` needs — `rowToCodeUnit` does not map it.
+	// It could not be asserted anywhere while its delete+insert re-added the row
+	// it had just read back from Arrow, which LanceDB rejected with "Found field
+	// not in schema: vector.isValid": the unit was DELETED and the summary lost,
+	// whatever the predicate did. That is fixed at the read boundary
+	// (`toPlainVector`), so the predicate is now observable through it.
 	test("updateDocumentContent rewrites a doc whose id contains an underscore", async () => {
 		await seedDocs([
 			{ ...doc("summary", path, "file_summary", 1), id: "doc_summary" },
@@ -345,7 +366,7 @@ describe("code unit lookups (equality)", () => {
 				"new body",
 				vec(5),
 			),
-			content: (await store.getDocumentsByFile(path))[0]?.content,
+			content: (await store.getDocumentsByFile(SCOPE_ALL, path))[0]?.content,
 		}));
 
 		expect(updated).toBe(true);
@@ -357,55 +378,6 @@ describe("code unit lookups (equality)", () => {
 // Raw interpolation — injection and data loss
 // ============================================================================
 
-describe("deleteAllByFile", () => {
-	// `deleteAllByFile` now routes through `ensureTableOpen()` like every other
-	// method (the lazy-open contract is pinned in
-	// `store-delete-lazy-open.test.ts`). Seeding on the SAME instance is kept
-	// anyway: it isolates these assertions to the predicate, so a regression
-	// here reads as an escaping bug rather than a table-open one.
-	async function deleteAllOnOpenStore(
-		chunks: ChunkWithEmbedding[],
-		target: string,
-	): Promise<void> {
-		await withFreshStore(async (store) => {
-			await store.addChunks(chunks);
-			await store.deleteAllByFile(target);
-		});
-	}
-
-	test("deletes a path containing a single quote, and only that path", async () => {
-		await deleteAllOnOpenStore(
-			[chunk("quoted", "src/o'brien.ts", 1), chunk("plain", "src/plain.ts", 2)],
-			"src/o'brien.ts",
-		);
-
-		expect(await survivors()).toEqual(["plain"]);
-	});
-
-	test("a path that closes the quote cannot delete unrelated rows", async () => {
-		// Raw, this renders `filePath = 'x' OR filePath LIKE '%'` — valid SQL
-		// that matches every row. The whole table goes.
-		await deleteAllOnOpenStore(
-			[chunk("alpha", "src/alpha.ts", 1), chunk("beta", "src/beta.ts", 2)],
-			INJECTION,
-		);
-
-		expect(await survivors()).toEqual(["alpha", "beta"]);
-	});
-
-	test.each([
-		["underscore", "src/my_file.ts"],
-		["percent", "src/100%report.ts"],
-	])("still deletes a %s path", async (_label, target) => {
-		await deleteAllOnOpenStore(
-			[chunk("target", target, 1), chunk("other", "src/other.ts", 2)],
-			target,
-		);
-
-		expect(await survivors()).toEqual(["other"]);
-	});
-});
-
 describe("getDocumentsByFile", () => {
 	test("returns the documents of a path containing a single quote", async () => {
 		await seedDocs([
@@ -414,7 +386,7 @@ describe("getDocumentsByFile", () => {
 		]);
 
 		const found = await withFreshStore((store) =>
-			store.getDocumentsByFile("src/o'brien.ts"),
+			store.getDocumentsByFile(SCOPE_ALL, "src/o'brien.ts"),
 		);
 
 		expect(found.map((d) => d.id)).toEqual(["doc-quoted"]);
@@ -427,7 +399,7 @@ describe("getDocumentsByFile", () => {
 		]);
 
 		const found = await withFreshStore((store) =>
-			store.getDocumentsByFile(INJECTION),
+			store.getDocumentsByFile(SCOPE_ALL, INJECTION),
 		);
 
 		expect(found).toEqual([]);
@@ -443,7 +415,7 @@ describe("getDocumentsByFile", () => {
 		]);
 
 		const found = await withFreshStore((store) =>
-			store.getDocumentsByFile(target),
+			store.getDocumentsByFile(SCOPE_ALL, target),
 		);
 
 		expect(found.map((d) => d.id)).toEqual(["doc-target"]);
@@ -456,7 +428,7 @@ describe("getDocumentsByFile", () => {
 		]);
 
 		const found = await withFreshStore((store) =>
-			store.getDocumentsByFile("src/a.ts", ["file_summary"]),
+			store.getDocumentsByFile(SCOPE_ALL, "src/a.ts", ["file_summary"]),
 		);
 
 		expect(found.map((d) => d.id)).toEqual(["doc-summary"]);
@@ -477,13 +449,15 @@ describe("LIKE patterns keep their wildcard escaping", () => {
 		]);
 
 		const results = await withFreshStore((store) =>
-			store.search("parseConfig", vec(1), {
+			store.search("parseConfig", vec(1), SCOPE_ALL, {
 				limit: 10,
 				pathPattern: "my_file",
 			}),
 		);
 
-		expect(results.map((r) => r.chunk.filePath)).toEqual(["src/my_file.ts"]);
+		expect(results.map((r) => r.chunk.filePath)).toEqual([
+			join(dir, "src/my_file.ts"),
+		]);
 	});
 
 	test("search filePath option treats `%` as a literal", async () => {
@@ -493,13 +467,15 @@ describe("LIKE patterns keep their wildcard escaping", () => {
 		]);
 
 		const results = await withFreshStore((store) =>
-			store.search("parseConfig", vec(1), {
+			store.search("parseConfig", vec(1), SCOPE_ALL, {
 				limit: 10,
 				filePath: "100%report",
 			}),
 		);
 
-		expect(results.map((r) => r.chunk.filePath)).toEqual(["src/100%report.ts"]);
+		expect(results.map((r) => r.chunk.filePath)).toEqual([
+			join(dir, "src/100%report.ts"),
+		]);
 	});
 
 	test("searchDocuments pathPattern treats `_` as a literal", async () => {
@@ -509,16 +485,16 @@ describe("LIKE patterns keep their wildcard escaping", () => {
 		]);
 
 		const results = await withFreshStore((store) =>
-			store.searchDocuments("parseConfig", vec(1), {
+			store.searchDocuments("parseConfig", vec(1), SCOPE_ALL, {
 				limit: 10,
 				pathPattern: "my_file",
 			}),
 		);
 
 		expect(results.length).toBeGreaterThan(0);
-		expect(results.every((r) => r.document.filePath === "src/my_file.ts")).toBe(
-			true,
-		);
+		expect(
+			results.every((r) => r.document.filePath === join(dir, "src/my_file.ts")),
+		).toBe(true);
 	});
 
 	test("searchCodeUnits filePath treats `_` as a literal", async () => {
@@ -528,14 +504,16 @@ describe("LIKE patterns keep their wildcard escaping", () => {
 		]);
 
 		const results = await withFreshStore((store) =>
-			store.searchCodeUnits("parseConfig", vec(2), {
+			store.searchCodeUnits("parseConfig", vec(2), SCOPE_ALL, {
 				limit: 10,
 				filePath: "my_file",
 			}),
 		);
 
 		expect(results.length).toBeGreaterThan(0);
-		expect(results.every((r) => r.filePath === "src/my_file.ts")).toBe(true);
+		expect(
+			results.every((r) => r.filePath === join(dir, "src/my_file.ts")),
+		).toBe(true);
 	});
 });
 
@@ -611,7 +589,7 @@ describe("unitType filters still select the right rows end to end", () => {
 		]);
 
 		const units = await withFreshStore((store) =>
-			store.getCodeUnitsByFile("src/a.ts", ["class", "interface"]),
+			store.getCodeUnitsByFile(SCOPE_ALL, "src/a.ts", ["class", "interface"]),
 		);
 
 		expect(units.map((u) => u.id).sort()).toEqual(["unit-cls", "unit-iface"]);
@@ -624,7 +602,7 @@ describe("unitType filters still select the right rows end to end", () => {
 		]);
 
 		const results = await withFreshStore((store) =>
-			store.searchCodeUnits("parseConfig", vec(2), {
+			store.searchCodeUnits("parseConfig", vec(2), SCOPE_ALL, {
 				limit: 10,
 				unitTypes: ["class"],
 			}),

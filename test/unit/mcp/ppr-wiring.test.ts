@@ -24,8 +24,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { resolveStoreLocation } from "../../../src/core/store-location.js";
 import type { SearchResult } from "../../../src/types.js";
+import { stubOverlayReport } from "../../helpers/overlay-report-stub.js";
 
 // ── Module mocks ────────────────────────────────────────────────────────────
 
@@ -33,9 +35,14 @@ import type { SearchResult } from "../../../src/types.js";
 let indexerResults: SearchResult[] = [];
 
 class FakeIndexLockError extends Error {}
+class FakeIndexedModelUnavailableError extends Error {}
 
+// Every named export an importer of indexer.js asks for must be here.
+// `search.ts` imports IndexedModelUnavailableError, and a factory without it
+// fails at link time with "Export named ... not found", before any test runs.
 mock.module("../../../src/core/indexer.js", () => ({
 	IndexLockError: FakeIndexLockError,
+	IndexedModelUnavailableError: FakeIndexedModelUnavailableError,
 	createIndexer: () => ({
 		index: async () => ({
 			filesIndexed: 0,
@@ -44,6 +51,13 @@ mock.module("../../../src/core/indexer.js", () => ({
 			errors: [],
 		}),
 		search: async () => indexerResults,
+		// `SemanticBackend` calls `searchScoped` (step 3, phase 6).
+		searchScoped: async () => ({
+			results: indexerResults,
+			branchUnknown: false,
+			branchLabel: null,
+			overlay: stubOverlayReport(),
+		}),
 		close: async () => {},
 		getStatus: async () => ({ exists: false }),
 	}),
@@ -178,7 +192,10 @@ async function makeDeps(
 	// biome-ignore lint/suspicious/noExplicitAny: minimal test double
 	cache: any,
 ): Promise<ToolDeps> {
-	const stateManager = new IndexStateManager(ws.indexDir);
+	const stateManager = new IndexStateManager(
+		ws.indexDir,
+		resolveStoreLocation(dirname(ws.indexDir)),
+	);
 	await stateManager.initialize();
 	return {
 		cache,
@@ -269,6 +286,13 @@ function cachedIndex(graphManager: unknown) {
 		graphManager,
 		repoMapGen: null,
 		loadedAt: Date.now(),
+		branchId: 0,
+		branch: {
+			scope: { kind: "all" as const },
+			branchUnknown: false,
+			label: null,
+			labels: new Map<number, string>(),
+		},
 	};
 }
 
@@ -401,7 +425,7 @@ describe("personalized PageRank enabled", () => {
 		tempDirs.push(graphDir);
 		const tracker = new FileTracker(join(graphDir, "index.db"), graphDir);
 		try {
-			const graphManager = createReferenceGraphManager(tracker);
+			const graphManager = createReferenceGraphManager(tracker, 0);
 
 			const run = await runSearch(ws, () => cachedIndex(graphManager));
 
@@ -428,7 +452,7 @@ describe("personalized PageRank enabled", () => {
 		// Never `buildGraph()`ed, and backed by a database with no symbols at all.
 		const tracker = new FileTracker(join(graphDir, "index.db"), graphDir);
 		try {
-			const graphManager = createReferenceGraphManager(tracker);
+			const graphManager = createReferenceGraphManager(tracker, 0);
 
 			const run = await runSearch(ws, () => cachedIndex(graphManager));
 

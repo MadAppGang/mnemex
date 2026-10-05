@@ -111,6 +111,109 @@ const CONTAINER_TYPES = new Set([
 ]);
 
 // ============================================================================
+// The two keys of a code unit (decision I-14)
+// ============================================================================
+
+/**
+ * THE POSITIONAL SOURCE both keys are built from: path, type, name, start row.
+ * `filePath` is the STORED path, because the ids hash it and a stored row is
+ * what a later run compares against.
+ */
+function positionSource(
+	filePath: string,
+	unitType: string,
+	name: string | undefined,
+	startRow: number,
+): string {
+	return `${filePath}:${unitType}:${name || "anon"}:${startRow}`;
+}
+
+const sha16 = (source: string): string =>
+	createHash("sha256").update(source).digest("hex").slice(0, 16);
+
+/**
+ * THE PARENT-LINK KEY — position only, deliberately NO content (I-14).
+ *
+ * It is a REFERENCE, and a reference must survive an edit inside the thing it
+ * points at. It is therefore **not** a row id and must never be compared with
+ * one: `getChildUnits` takes this key, and `CodeUnitExtractor.getChildren` /
+ * `getParent` join on it.
+ *
+ * WHY THE TWO KEYS ARE NOT ONE, measured rather than argued. Before I-14 the
+ * link WAS the parent's row id, and the id namespace and the link namespace
+ * coincided. That looked tidy and degraded in the store: a child whose own
+ * content did not change is a tier-1 hit and is never rewritten, so when its
+ * parent's id moved the child kept pointing at a row that had been narrowed
+ * away. Measured on the real indexer, one in-place body edit in a 7-unit file:
+ * **2 of 6 stored links named no live row** — and the file-level unit, whose id
+ * has always hashed the file hash, is the parent of every top-level unit, so
+ * that decay happened on EVERY edit. Making the link positional removes it by
+ * construction: the key of a unit that did not move does not move.
+ *
+ * The cost I-14 feared — "one keystroke rewrites every unit in the file" —
+ * was never real in either direction: `parentId` is not part of the tier-1 hit
+ * test, so a changed link rewrites nothing. What it changes is whether the
+ * stored link still resolves.
+ */
+export function codeUnitParentKey(
+	filePath: string,
+	unitType: string,
+	name: string | undefined,
+	startRow: number,
+): string {
+	return sha16(positionSource(filePath, unitType, name, startRow));
+}
+
+/**
+ * THE PARENT-LINK KEY of a unit that has already been built or read back.
+ * `startLine` is 1-indexed and the key hashes the 0-indexed start row.
+ *
+ * The `filePath` here must be the STORED path. A `CodeUnit` handed back by
+ * `VectorStore` carries the path a CALLER sees (`fromStoredPath`, D4), so a
+ * caller reading rows out of the store converts before calling this — which is
+ * why `VectorStore.getChildUnits` takes the rendered key rather than a unit.
+ */
+export function codeUnitParentKeyOf(unit: {
+	filePath: string;
+	unitType: string;
+	name?: string;
+	startLine: number;
+}): string {
+	return codeUnitParentKey(
+		unit.filePath,
+		unit.unitType,
+		unit.name,
+		unit.startLine - 1,
+	);
+}
+
+/**
+ * THE ROW ID — position AND content (I-14). Identity, not reference.
+ *
+ * Two revisions of one function at one start line must be able to coexist as
+ * two rows, so that each branch's membership can point at its own. Without the
+ * content hash they collided on one id and the branch that indexed LAST decided
+ * the body every branch saw — a V3.3 violation, which is what I-14 rules out.
+ *
+ * §4.1.1 licenses widening on an id match because "chunk ids are
+ * content+position addressed". That was true of `code_chunk` and false of
+ * `code_unit`; after this it is true of both, and the code-unit special case in
+ * the tier-1 hit test drops to a belt (see `VectorStore.refreshCodeUnits`).
+ */
+export function codeUnitRowId(
+	filePath: string,
+	unitType: string,
+	name: string | undefined,
+	startRow: number,
+	content: string,
+): string {
+	const contentHash = createHash("sha256").update(content).digest("hex");
+	return sha16(
+		`${positionSource(filePath, unitType, name, startRow)}:${contentHash}`,
+	);
+}
+
+// ============================================================================
 // Code Unit Extractor Class
 // ============================================================================
 
@@ -149,7 +252,12 @@ export class CodeUnitExtractor {
 		const ctx: ExtractionContext = { filePath, source, language };
 
 		// Add file-level unit
-		let fileUnitId: string | null = null;
+		//
+		// The children are linked to the file unit's PARENT KEY, not to its row
+		// id (I-14). The file unit's id hashes `fileHash`, so it moves on every
+		// edit anywhere in the file — which is precisely the churn the link must
+		// not inherit, and was the whole of the decay measured before this change.
+		let fileUnitKey: string | null = null;
 		if (includeFile) {
 			const fileUnit = this.createFileUnit(
 				source,
@@ -158,13 +266,13 @@ export class CodeUnitExtractor {
 				fileHash,
 			);
 			units.push(fileUnit);
-			fileUnitId = fileUnit.id;
+			fileUnitKey = codeUnitParentKeyOf(fileUnit);
 		}
 
 		// Extract hierarchical units from AST (now passing filePath and language for consistent ID generation)
 		const extractedUnits = this.walkAndExtract(
 			tree.rootNode,
-			fileUnitId,
+			fileUnitKey,
 			1,
 			maxDepth,
 			source,
@@ -243,8 +351,11 @@ export class CodeUnitExtractor {
 		if (unitType) {
 			// This is a code unit - extract it and use it as parent for children
 			const name = this.extractName(node, language);
-			// Generate ID using same logic as createCodeUnit to ensure parent-child consistency
-			const unitId = this.generateConsistentUnitId(
+			// The children's link is this unit's PARENT KEY (I-14), which is
+			// derivable without its content — deliberately, because the content is
+			// what churns. `createCodeUnit` below gives the unit a DIFFERENT value
+			// for its own row id, and the two must not be confused.
+			const unitKey = codeUnitParentKey(
 				filePath,
 				unitType,
 				name,
@@ -262,7 +373,7 @@ export class CodeUnitExtractor {
 			// Continue extracting children with this unit as parent
 			const childResults = this.extractChildren(
 				node,
-				unitId,
+				unitKey,
 				currentDepth + 1,
 				maxDepth,
 				source,
@@ -387,21 +498,13 @@ export class CodeUnitExtractor {
 	}
 
 	/**
-	 * Generate consistent unit ID matching createCodeUnit logic
-	 * This ensures parentId values match actual unit IDs
-	 */
-	private generateConsistentUnitId(
-		filePath: string,
-		unitType: string,
-		name: string | undefined,
-		startRow: number,
-	): string {
-		const idSource = `${filePath}:${unitType}:${name || "anon"}:${startRow}`;
-		return createHash("sha256").update(idSource).digest("hex").slice(0, 16);
-	}
-
-	/**
 	 * Create a file-level code unit
+	 *
+	 * Its row id has ALWAYS carried content — `fileHash` is the file's content
+	 * hash — so I-14's rule is already satisfied here and the formula is left
+	 * alone. It is the one unit whose row id is not `codeUnitRowId`'s; its
+	 * PARENT KEY is the ordinary `codeUnitParentKey(path, "file", basename, 0)`,
+	 * which is what its children link to.
 	 */
 	private createFileUnit(
 		source: string,
@@ -460,9 +563,17 @@ export class CodeUnitExtractor {
 			metadata,
 		} = data;
 
-		// Create stable ID from file path, name, type, and position
-		const idSource = `${filePath}:${unitType}:${name || "anon"}:${node.startPosition.row}`;
-		const id = createHash("sha256").update(idSource).digest("hex").slice(0, 16);
+		// THE ROW ID: path, type, name, start row AND the unit's own content
+		// (I-14). Without the content two revisions of one function at one start
+		// line collide on a single row, and the branch that indexes last decides
+		// the body every branch sees.
+		const id = codeUnitRowId(
+			filePath,
+			unitType,
+			name,
+			node.startPosition.row,
+			content,
+		);
 
 		return {
 			id,
@@ -623,19 +734,23 @@ export class CodeUnitExtractor {
 	}
 
 	/**
-	 * Get children of a unit
+	 * Get children of a unit.
+	 *
+	 * `parentKey` is `codeUnitParentKeyOf(parent)`, NOT `parent.id` — the two are
+	 * different namespaces since I-14, and passing an id here matches nothing.
 	 */
-	getChildren(units: CodeUnit[], parentId: string): CodeUnit[] {
-		return units.filter((u) => u.parentId === parentId);
+	getChildren(units: CodeUnit[], parentKey: string): CodeUnit[] {
+		return units.filter((u) => u.parentId === parentKey);
 	}
 
 	/**
-	 * Get parent of a unit
+	 * Get parent of a unit. The stored link is the parent's POSITION KEY, so the
+	 * search is over `codeUnitParentKeyOf`, never over `u.id` (I-14).
 	 */
 	getParent(units: CodeUnit[], childId: string): CodeUnit | undefined {
 		const child = units.find((u) => u.id === childId);
 		if (!child?.parentId) return undefined;
-		return units.find((u) => u.id === child.parentId);
+		return units.find((u) => codeUnitParentKeyOf(u) === child.parentId);
 	}
 
 	/**

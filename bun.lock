@@ -13,6 +13,7 @@
         "@opentui/core": "0.5.1",
         "@opentui/react": "0.5.1",
         "@vscode/ripgrep": "^1.18.0",
+        "apache-arrow": "17.0.0",
         "better-sqlite3": "^13.0.3",
         "dotenv": "^17.4.2",
         "minimatch": "^10.2.6",

@@ -31,6 +31,8 @@ import {
 	getContext7ApiKey,
 	getEmbeddingModel,
 	getEmbeddingProvider,
+	getIndexDbPath,
+	getIndexDir,
 	getLLMSpec,
 	getVoyageApiKey,
 	hasValidEmbeddingCredentials,
@@ -39,6 +41,17 @@ import {
 	loadGlobalConfig,
 	saveGlobalConfig,
 } from "./config.js";
+import {
+	branchEmptyNotice,
+	branchHintForAgent,
+	branchUnknownNotice,
+} from "./core/branch-notices.js";
+import {
+	graphBranchIdForRead,
+	resolveBranchScopeForProject,
+	SCOPE_ALL,
+} from "./core/branch-scope.js";
+import { resolveBranchReadState } from "./core/branch-state.js";
 import { canChunkFile, chunkFileByPath } from "./core/chunker.js";
 // Note: createIndexer imports store.js which loads LanceDB - made lazy to avoid startup errors
 // Use: const { createIndexer } = await import("./core/indexer.js");
@@ -48,6 +61,7 @@ import {
 	truncateForModel,
 } from "./core/embeddings.js";
 import { parseIndexLockFlags } from "./core/index-lock-flags.js";
+import { FIRST_EMBED_CACHE_INDEX_VERSION } from "./core/index-version.js";
 import { createReferenceGraphManager } from "./core/reference-graph.js";
 // Note: createVectorStore is imported lazily to avoid loading LanceDB on startup
 // Use: const { createVectorStore } = await import("./core/store.js");
@@ -61,6 +75,7 @@ import {
 	RECOMMENDED_MODELS,
 } from "./models/model-discovery.js";
 import { agentOutput } from "./output/agent.js";
+import type { IndexEmbedCacheStats } from "./types.js";
 // Note: learning module is imported lazily to avoid startup errors
 // Use: const { createLearningSystem } = await import("./learning/index.js");
 import {
@@ -125,7 +140,7 @@ function isAgentMode(): boolean {
 function printCompactHelp(): void {
 	console.log(`mnemex v${VERSION} - Semantic code search with AST analysis`);
 	console.log(
-		"Commands: index index --cloud search status clear map symbol callers callees context dead-code test-gaps impact pack watch hooks hook install rg docs feedback learn update team keychain",
+		"Commands: index index --cloud search status clear map symbol callers callees context dead-code test-gaps impact branches pack watch hooks hook install rg docs feedback learn update team keychain",
 	);
 	console.log(
 		"Use: mnemex --agent <cmd> | Docs: https://github.com/MadAppGang/mnemex",
@@ -220,7 +235,8 @@ function assertValidEmbeddingCredentials(): void {
 async function printVersionWarning(projectPath: string): Promise<void> {
 	try {
 		const { checkIndexVersion } = await import("./core/index-version.js");
-		const warning = checkIndexVersion(projectPath);
+		const { resolveStoreLocation } = await import("./core/store-location.js");
+		const warning = checkIndexVersion(resolveStoreLocation(projectPath));
 		if (warning) {
 			process.stderr.write(`${warning}\n`);
 		}
@@ -422,6 +438,20 @@ export async function runCli(args: string[]): Promise<void> {
 			// agent consumer ends up parsing half a line. A failed migration or an
 			// aborted prune must not exit 0.
 			const code = await handleKeychainCommand(args.slice(1), {
+				agent: agentMode,
+			});
+			if (code !== 0) process.exitCode = code;
+			break;
+		}
+		// Branch lifecycle — the only way to see what the store holds (§4.3)
+		case "branches": {
+			const { handleBranchesCommand } = await import(
+				"./cli/commands/branches.js"
+			);
+			// The handler RETURNS its status rather than exiting: exiting mid-render
+			// truncates buffered stdout, which is how an agent consumer parses half
+			// a line. A refused prune must not exit 0.
+			const code = await handleBranchesCommand(args.slice(1), {
 				agent: agentMode,
 			});
 			if (code !== 0) process.exitCode = code;
@@ -792,9 +822,213 @@ export function reportAdoptedModel(effective: {
 	);
 }
 
+/**
+ * The `index` summary line for the embedding cache, or null when there is
+ * nothing to say.
+ *
+ * Why a line at all: the cache is what makes a warm run fast, and a fast run
+ * with no explanation reads as a run that did nothing. It is also the only
+ * place a user finds out that the persistent tier DEGRADED — §8's three
+ * degradation paths (unwritable directory, corrupt file, SQLITE_BUSY latch)
+ * each emit one stderr line on a path where stderr is routinely nobody's
+ * output, and then keep going at in-process-only speed for ever.
+ *
+ * `tier: "none"` prints nothing: the user switched the cache off and does not
+ * need a line of zeroes about it every run. Machine consumers still get
+ * `embed_cache_tier=none` from --agent, because a control run has to be able to
+ * confirm the cache really was off.
+ *
+ * Pure and exported so a test can assert the wording, as `reportAdoptedModel`
+ * above is.
+ */
+export function formatEmbedCacheLine(
+	stats: IndexEmbedCacheStats | undefined,
+): string | null {
+	if (!stats || stats.tier === "none") return null;
+	const degraded =
+		stats.tier === "l0"
+			? "  (in-process only — the persistent cache could not be used)"
+			: "";
+	return `  Embed cache:    ${stats.hits} cached, ${stats.misses} embedded${degraded}`;
+}
+
+/**
+ * The `index` summary line for a schema rebuild, or null when the run did not
+ * upgrade anything.
+ *
+ * The re-embed is a real cost — time on a local model, money on a paid one —
+ * and it happens once per repository, so it is named rather than left to be
+ * inferred from an unusually long "incremental" run.
+ *
+ * This is the HUMAN surface only, and it is not the authoritative one: the git
+ * post-commit hook and the MCP auto-reindex pass no `onProgress` and print no
+ * summary. `upgraded_from_index_version` on --agent, and
+ * `IndexResult.upgradedFromIndexVersion` in-process, are (§5.3).
+ */
+export function formatIndexUpgradeLine(
+	upgradedFromIndexVersion: number | undefined,
+): string | null {
+	if (upgradedFromIndexVersion === undefined) return null;
+	// The cost depends on where the store came from. From index version 3 on it
+	// was built through the embedding cache, which is keyed on text, not path,
+	// so the rebuild is served from it. An older store never filled the cache,
+	// so it did re-embed.
+	const cost =
+		upgradedFromIndexVersion >= FIRST_EMBED_CACHE_INDEX_VERSION
+			? "(one rebuild, served from the embedding cache)"
+			: "(a one-time full re-embed)";
+	return `  Index upgraded: rebuilt from index version ${upgradedFromIndexVersion} ${cost}`;
+}
+
+/**
+ * The human half of §6.3's store-location report: where this run wrote, and —
+ * the line that matters — which store it walked away from.
+ *
+ * Built in Phase 3c, because the flip is when a user first has an index
+ * somewhere they did not put it. `--agent` gets `store_dir=` and
+ * `abandoned_store_dir=` unconditionally; a human gets the location only when
+ * it is NEWS, so an everyday incremental run does not grow a line nobody reads.
+ *
+ * "News" is exactly two cases:
+ *   - a store was abandoned, i.e. THIS run is the migration. The old directory
+ *     still holds the old index and nothing will ever delete it, so the user is
+ *     told where it is and that removing it is safe;
+ *   - the layout degraded, which means the store is not where the repository
+ *     would suggest and the reason is worth reading.
+ *
+ * Exported and pure, so it can be tested without a run, in the shape
+ * `formatIndexUpgradeLine` already has.
+ */
+export function formatStoreRelocationLines(result: {
+	storeDir?: string;
+	abandonedStoreDir?: string;
+	degradedReason?: string;
+}): string[] {
+	const lines: string[] = [];
+	if (result.abandonedStoreDir !== undefined) {
+		lines.push(`  Index moved to: ${result.storeDir ?? "(unknown)"}`);
+		lines.push(
+			`    One index is now shared by every worktree of this repository.`,
+		);
+		lines.push(
+			`    The old index is still at ${result.abandonedStoreDir} and is no longer used;`,
+		);
+		lines.push(
+			"    it was left in place rather than deleted. You can remove its index files",
+		);
+		lines.push(
+			"    (index.db*, vectors/, docs-cache/) — NOT the directory itself: it still",
+		);
+		lines.push(
+			"    holds your memories, edit history, project config and the dirty overlay.",
+		);
+	}
+	if (result.degradedReason !== undefined) {
+		lines.push(
+			`  Store location: ${result.storeDir ?? "(unknown)"} (${result.degradedReason})`,
+		);
+	}
+	return lines;
+}
+
+/**
+ * The `index` summary line for files that were rolled back, or null when every
+ * file that was indexed made it into the store.
+ *
+ * A deferred file is one where at least one chunk came back with no vector (a
+ * provider outage part-way through a batch): its rows are removed again and its
+ * tracker stamp is withheld, so the next run redoes it from scratch. That is
+ * self-healing but not free — silence here would let a user believe a run
+ * indexed everything when it did not.
+ */
+export function formatDeferredFilesLine(
+	filesDeferred: string[] | undefined,
+): string | null {
+	if (!filesDeferred || filesDeferred.length === 0) return null;
+	const noun = filesDeferred.length === 1 ? "file" : "files";
+	return (
+		`  Deferred:       ${filesDeferred.length} ${noun} ` +
+		"(embedding failed; the next run redoes them)"
+	);
+}
+
+/**
+ * Every flag `mnemex index` accepts. STRICT — see {@link assertKnownFlags}.
+ *
+ * Decision I-17 item 4. 3b-3b measured that both typo directions of
+ * `--force-all` fall towards the smaller blast radius today and declined to add
+ * the table, because "rejecting unknown dash-arguments touches every existing
+ * invocation" — which is exactly why the list below was DERIVED BY SEARCH over
+ * `src/` rather than from the help text. Three internal callers pass flags this
+ * handler never parsed, and a table built from the help text alone would have
+ * broken all three:
+ *
+ *   `--quiet`   `mcp/server.ts:108`, `mcp/reindexer.ts` (REINDEX_ARGS),
+ *               `hooks/handlers/post-tool-use.ts` — the auto-reindex path
+ *   `--if-idle` `mcp/reindexer.ts` — parsed, and in the help
+ *   `--files`   `editor/editor.ts:291` — takes a VALUE, and is in neither
+ *
+ * `--quiet` and `--files` are accepted and IGNORED here exactly as they were
+ * before this table existed. Making them errors would have turned the MCP
+ * server's background reindex and the editor's post-edit reindex into failures
+ * on the day this shipped, which is a far larger regression than the one the
+ * table prevents. They are listed as tolerated rather than silently unlisted,
+ * so the next person sees that the situation is known.
+ *
+ * A trailing `=` means the flag carries `--name=value`; `--files` and `-m`
+ * take a SEPARATE value argument, which `assertKnownFlags` ignores because it
+ * only inspects dash-arguments — a value that itself begins with `-` is
+ * already refused by `--model`'s own check above.
+ */
+const INDEX_FLAGS = [
+	"-f",
+	"--force",
+	"--force-all",
+	"--force-unlock",
+	"--no-llm",
+	"--no-enrichment",
+	"-w",
+	"--wait",
+	"--if-idle",
+	"-m",
+	"--model",
+	"--concurrency=",
+	"--wait-timeout=",
+	// Tolerated, unparsed, and passed by internal callers — see the header.
+	"--quiet",
+	"--files",
+] as const;
+
 async function handleIndex(args: string[]): Promise<void> {
+	// STRICT FLAGS, BEFORE anything destructive and before either lock
+	// (CLAUDE.md #30, decision I-17 item 4). `--force` / `--force-all` is a
+	// destructive pair sharing a prefix, which is the worst possible shape for
+	// membership parsing: `--force-alll` and `--force-al` both matched NEITHER
+	// flag and ran an ordinary incremental index, and that they failed safe was
+	// luck of spelling rather than construction. `--force-al` now refuses and
+	// names `--force-all`, which is the flag the user was reaching for.
+	//
+	// `process.exitCode` and RETURN, never `process.exit()`: exiting mid-write
+	// truncates buffered output, which is how an agent consumer ends up parsing
+	// half a line (the reason `handleKeychainCommand` returns a code instead of
+	// exiting). Nothing has been indexed at this point, so returning is safe.
+	if (!assertKnownFlags("index", args, INDEX_FLAGS)) {
+		process.exitCode = 1;
+		return;
+	}
+
 	// Parse arguments
-	const force = args.includes("--force") || args.includes("-f");
+	//
+	// TWO forces, and the difference between them is a data-loss path (§4.5 /
+	// D3, decision I-16). `--force` rebuilds THIS BRANCH: rows another branch
+	// still holds survive. `--force-all` rebuilds the whole store, every branch,
+	// which is what `--force` used to do to everyone silently.
+	//
+	// Exact-string membership, so no spelling of one is the other: `--force-all`
+	// is not `--force`. A MISSPELLING of either is now an error rather than a
+	// silent incremental index (the strict table above).
+	const forceAll = args.includes("--force-all");
+	const force = forceAll || args.includes("--force") || args.includes("-f");
 	const noLlm = args.includes("--no-llm") || args.includes("--no-enrichment");
 	const forceUnlock = args.includes("--force-unlock");
 	// --wait: wait for the per-project lock. --if-idle: try-acquire-bail on the
@@ -820,8 +1054,38 @@ async function handleIndex(args: string[]): Promise<void> {
 	// The model NAME is a bare word too, so exclude it from the path search.
 	const modelValueIdx = modelIdx >= 0 ? modelIdx + 1 : -1;
 
+	// ── `--files <path>`'s VALUE is a bare word too, and it was being taken as
+	// the PROJECT PATH (found by `index-strict-flags.test.ts`) ────────────────
+	//
+	// `src/editor/editor.ts:291` spawns `index --quiet --files <ABSOLUTE FILE
+	// PATH>` after every applied edit. `--files` is unparsed, so that absolute
+	// path fell through to the positional search and became `projectPath` — the
+	// same defect the `--model` comment above describes, through a second door.
+	// The command therefore tried to index a FILE as if it were a project, and
+	// has never once worked: it dies in `ensureProjectDir` (mkdir under a file:
+	// ENOTDIR) or, with the store resolved elsewhere, in `discoverFiles`
+	// (readdir of a file). Nobody saw it because the child is detached and every
+	// failure there is best-effort.
+	//
+	// It matters MORE from Phase 3c than before it. Pre-flip the run dies in
+	// `ensureProjectDir`, before any lock. Post-flip that directory resolves to
+	// the REAL shared store and succeeds, so the run goes on to take the
+	// machine-global lock and the shared store lock — waiting up to
+	// DEFAULT_GLOBAL_LOCK_WAIT behind a real index run — before failing in
+	// `discoverFiles`. A broken command that used to fail early would start
+	// contending for the store every other worktree shares.
+	//
+	// Excluding the value restores the sane reading: an ordinary incremental
+	// index of the current project, which is what a post-edit reindex wants.
+	// `--files` remains an unimplemented FILTER; it is reported rather than
+	// invented here, because deciding what a file-scoped index means (membership
+	// narrowing? deletion detection over one path?) is a design question and not
+	// an argument-parsing one.
+	const filesIdx = args.indexOf("--files");
+	const filesValueIdx = filesIdx >= 0 ? filesIdx + 1 : -1;
+
 	const pathArg = args.find(
-		(a, i) => !a.startsWith("-") && i !== modelValueIdx,
+		(a, i) => !a.startsWith("-") && i !== modelValueIdx && i !== filesValueIdx,
 	);
 	const projectPath = pathArg ? resolve(pathArg) : process.cwd();
 
@@ -934,7 +1198,7 @@ async function handleIndex(args: string[]): Promise<void> {
 	});
 
 	try {
-		const result = await indexer.index(force);
+		const result = await indexer.index(force, forceAll);
 
 		// Show final state and stop progress renderer
 		if (progress) progress.finish();
@@ -965,6 +1229,14 @@ async function handleIndex(args: string[]): Promise<void> {
 		if (result.cost !== undefined) {
 			console.log(`  Cost:           $${result.cost.toFixed(6)}`);
 		}
+		const upgradeLine = formatIndexUpgradeLine(result.upgradedFromIndexVersion);
+		if (upgradeLine) console.log(upgradeLine);
+		const relocation = formatStoreRelocationLines(result);
+		for (const line of relocation) console.log(line);
+		const cacheLine = formatEmbedCacheLine(result.embedCache);
+		if (cacheLine) console.log(cacheLine);
+		const deferredLine = formatDeferredFilesLine(result.filesDeferred);
+		if (deferredLine) console.log(deferredLine);
 
 		// Show enrichment results if available
 		if (result.enrichment) {
@@ -1316,7 +1588,7 @@ async function handleSync(args: string[]): Promise<void> {
 	// 4. Build cloud client and file tracker
 	const cloudClient = createThinCloudClient({ endpoint, token });
 	const { FileTracker } = await import("./core/tracker.js");
-	const dbPath = join(projectPath, ".mnemex", "index.db");
+	const dbPath = getIndexDbPath(projectPath);
 	const fileTracker = new FileTracker(dbPath, projectPath);
 
 	// 5. Sync graph
@@ -1502,7 +1774,111 @@ async function handleTeam(args: string[]): Promise<void> {
 	}
 }
 
-async function handleSearch(args: string[]): Promise<void> {
+/**
+ * Every flag `mnemex search` accepts. STRICT — see {@link assertKnownFlags}.
+ *
+ * Added with `--no-dirty` (step 3, R3.1): a boolean off-switch parsed by
+ * membership would make every TYPO of it mean "on" (CLAUDE.md #30). The set
+ * was RE-DERIVED BY SEARCH (orchestrator ruling 5), never from the help text,
+ * over `src/`, `test/`, `tests/`, `vscode-extension/`, README and `docs/`,
+ * `ai-skill.ts`, `ai-instructions.ts`, the magus `mnemex`/`code-analysis`/
+ * `code-search` plugin skills and `../mnemex-bench/` — the evidence is in the
+ * step-3 implementation log, phase 6. Real callers pass four flags this
+ * handler never parsed:
+ *
+ *   `--map`               `ai-skill.ts`, code-analysis `codebase-detective.md`
+ *                         and `mnemex-search/SKILL.md` ("Search + include repo
+ *                         map context") — documented, never implemented
+ *   `--page-size`/`--page` code-analysis `codebase-detective.md`,
+ *                         `deep-analysis/SKILL.md`, `mnemex-search/SKILL.md`
+ *   `--raw`               `integrations/opencode/*`, `docs/CLAUDE_CODE_INTEGRATION.md`
+ *
+ * They stay accepted and do nothing, exactly as before this table existed:
+ * rejecting them would break agents following those skills on the day this
+ * shipped. Their values (`--page-size 20`) are positional, as they were.
+ *
+ * `--agent`, `--theme`, `--cloud`, `--help`/`-h`, `--version` and `--models`
+ * are absent on purpose: `runCli` strips or answers them before a handler runs.
+ */
+const SEARCH_ACCEPTED_FLAGS = [
+	"-n",
+	"--limit",
+	"-l",
+	"--language",
+	"-p",
+	"--path",
+	"-m",
+	"--model",
+	"-y",
+	"--yes",
+	"--no-reindex",
+	"--use-case",
+	"-k",
+	"--keyword",
+	"--no-dirty",
+	// Tolerated, unparsed, passed by real callers — see the header.
+	"--map",
+	"--page-size",
+	"--page",
+	"--raw",
+] as const;
+
+/** Search flags that take a SEPARATE value argument. */
+const SEARCH_VALUE_FLAGS: ReadonlySet<string> = new Set([
+	"-n",
+	"--limit",
+	"-l",
+	"--language",
+	"-p",
+	"--path",
+	"-m",
+	"--model",
+	"--use-case",
+]);
+
+/**
+ * `search`'s argv split at the first `--`: everything after it is query text,
+ * even when it begins with `-` (LOW 4). Only the part before it is flags.
+ */
+function splitSearchArgs(args: readonly string[]): {
+	flags: string[];
+	tail: string[];
+} {
+	const end = args.indexOf("--");
+	return end < 0
+		? { flags: [...args], tail: [] }
+		: { flags: args.slice(0, end), tail: args.slice(end + 1) };
+}
+
+/**
+ * The dash-arguments of `flags` the strict check must judge: a value-taking
+ * flag's VALUE is not a flag (`-p -dir`), unless it is itself spelled like a
+ * long flag (`-n --no-dirtyy`), which no real value is.
+ */
+function searchFlagCandidates(flags: readonly string[]): string[] {
+	return flags.filter(
+		(a, i) =>
+			!(i > 0 && SEARCH_VALUE_FLAGS.has(flags[i - 1]) && !a.startsWith("--")),
+	);
+}
+
+async function handleSearch(rawArgs: string[]): Promise<void> {
+	// STRICT FLAGS, BEFORE any work: no version check, no index open, no git,
+	// no embedding, no overlay directory (CLAUDE.md #30). `--no-dirtyy` used to
+	// be impossible to mistype only because `--no-dirty` did not exist; now its
+	// typo would silently mean "include uncommitted work".
+	const { flags: args, tail: queryTail } = splitSearchArgs(rawArgs);
+	if (
+		!assertKnownFlags(
+			"search",
+			searchFlagCandidates(args),
+			SEARCH_ACCEPTED_FLAGS,
+		)
+	) {
+		process.exitCode = 1;
+		return;
+	}
+
 	// Parse arguments
 	const limitIdx = args.findIndex((a) => a === "-n" || a === "--limit");
 	const limit =
@@ -1537,6 +1913,11 @@ async function handleSearch(args: string[]): Promise<void> {
 	// Keyword-only search (skip embedding API call, use BM25 only)
 	const keywordOnly = args.includes("-k") || args.includes("--keyword");
 
+	// The local dirty overlay (step 3, R3.1): on by default when the worktree
+	// is dirty; `--no-dirty` turns it off for this search. Membership is safe
+	// HERE only because the strict check above already refused every typo.
+	const noDirty = args.includes("--no-dirty");
+
 	// Get query (everything that's not a flag)
 	// Only add indices to flagIndices if the flag was actually found (>= 0)
 	const flagIndices = new Set<number>();
@@ -1563,7 +1944,8 @@ async function handleSearch(args: string[]): Promise<void> {
 	const queryParts = args.filter(
 		(_, i) => !flagIndices.has(i) && !args[i].startsWith("-"),
 	);
-	const query = queryParts.join(" ");
+	// After `--`, every word is query text, dashes included.
+	const query = [...queryParts, ...queryTail].join(" ");
 
 	if (!query) {
 		console.error("Error: No search query provided.");
@@ -1783,23 +2165,42 @@ async function handleSearch(args: string[]): Promise<void> {
 			);
 		}
 
-		const results = await indexer.search(query, {
+		// `searchScoped`, not `search`: D1's flag must reach `--agent` as well as
+		// the MCP response.
+		const scoped = await indexer.searchScoped(query, {
 			limit,
 			language,
 			useCase,
 			keywordOnly,
+			overlay: noDirty ? "off" : "auto",
 		});
+		const results = scoped.results;
 
 		// A search adopts the index's model inside initialize(), without ever
 		// running index() — and in --agent mode the auto-reindex is skipped
 		// entirely, so this is the ONLY place the fact can surface there.
 		const effective = indexer.getEffectiveModel();
-		const searchMeta = effective.adopted
-			? {
-					embeddingModel: effective.model,
-					configuredModel: effective.configuredModel,
-				}
-			: undefined;
+		const searchMeta = {
+			...(effective.adopted
+				? {
+						embeddingModel: effective.model,
+						configuredModel: effective.configuredModel,
+					}
+				: {}),
+			branchUnknown: scoped.branchUnknown,
+			// Decision I-17 item 2: `search` was the ONE surface that carried
+			// `branch_unknown` and not `branch_empty`, so a branch emptied by
+			// another worktree's `--force-all` produced a silent `[]` here while
+			// `dead-code` said exactly what had happened.
+			branchEmpty: scoped.branchEmpty,
+			// V1.7 / §4.5: WHY it is empty, when the marker can say.
+			storeRebuiltElsewhere: scoped.storeRebuiltElsewhere,
+			branch: scoped.branchLabel,
+			// R1: what the dead-code penalty did, so a zero is visible.
+			penalty: scoped.penalty,
+			// R3.9: what the dirty overlay did, on every search.
+			overlay: scoped.overlay,
+		};
 		if (!agentMode && !adoptionReported) {
 			reportAdoptedModel(effective);
 			adoptionReported = effective.adopted;
@@ -1809,6 +2210,20 @@ async function handleSearch(args: string[]): Promise<void> {
 			if (agentMode) {
 				agentOutput.searchResults(query, [], searchMeta);
 			} else {
+				// STDERR, through the shared notice, so the two states read the same
+				// on `search` as on the nine graph commands. `branchEmpty` is the
+				// case that used to be indistinguishable from an honest miss.
+				if (scoped.branchUnknown) {
+					console.error(branchUnknownNotice(scoped.branchLabel, "search"));
+				} else if (scoped.branchEmpty) {
+					console.error(
+						branchEmptyNotice(
+							scoped.branchLabel,
+							"search",
+							scoped.storeRebuiltElsewhere,
+						),
+					);
+				}
 				console.log("\nNo results found.");
 				console.log("Make sure the codebase is indexed: mnemex index");
 			}
@@ -1849,10 +2264,19 @@ async function handleSearch(args: string[]): Promise<void> {
 			return;
 		}
 
+		if (scoped.branchUnknown) {
+			// D1 chose the superset BECAUSE it fails visibly. A flag nobody renders
+			// is the invisible failure it exists to avoid.
+			console.log(
+				`Branch '${scoped.branchLabel ?? "?"}' is not in the index; showing results from every indexed branch.\n`,
+			);
+		}
+		const overlayNotice = overlayHumanNotice(scoped.overlay);
+		if (overlayNotice !== null) console.log(`${overlayNotice}\n`);
 		console.log(`Found ${results.length} result(s):\n`);
 
-		// Collect result IDs for feedback hint
-		const resultIds = results.map((r) => r.chunk.id);
+		// Collect result IDs for feedback hint (index rows only; see the helper).
+		const resultIds = feedbackResultIds(results);
 
 		const queryTerms = query.split(/\s+/).filter((t) => t.length > 0);
 
@@ -1861,7 +2285,12 @@ async function handleSearch(args: string[]): Promise<void> {
 			if (r.documentType === "session_observation") {
 				printObservationResult(r);
 			} else {
-				printSearchResult(r.chunk, r.score, queryTerms);
+				printSearchResult(
+					r.chunk,
+					r.score,
+					queryTerms,
+					r.source === "dirty" ? "[uncommitted]" : undefined,
+				);
 			}
 		}
 
@@ -2021,6 +2450,93 @@ function printObservationResult(r: {
 	console.log("");
 }
 
+/**
+ * The ids `mnemex search` offers for `mnemex feedback`: INDEX rows only.
+ * An overlay row's id names uncommitted text that is never in the index, so
+ * feedback on it would be recorded against a row no later search can return
+ * (step 3, R3.9).
+ */
+export function feedbackResultIds(
+	results: readonly Pick<
+		import("./types.js").SearchResult,
+		"chunk" | "source"
+	>[],
+): string[] {
+	return results.filter((r) => r.source !== "dirty").map((r) => r.chunk.id);
+}
+
+/** ` path:start-end`, plus a marker such as `[uncommitted]` when given. */
+export function searchResultLocation(
+	chunk: { filePath: string; startLine: number; endLine: number },
+	marker?: string,
+): string {
+	return ` ${chunk.filePath}:${chunk.startLine}-${chunk.endLine}${marker ? ` ${marker}` : ""}`;
+}
+
+/** The prefix of a failed file's gap token (`file-failed-<failure>`). */
+const FILE_FAILED_TOKEN = "file-failed-";
+
+/**
+ * The one human line about the dirty overlay, or `null` when there is nothing
+ * worth a line: off (the user chose it), `on` with nothing served and nothing
+ * missing, or no git repository at all (a non-git project would otherwise
+ * hear it every search).
+ *
+ * `on` is not "complete" (review 2, MEDIUM 7): a file that failed or is still
+ * pending is NOT in the results — its index rows, if any, are shown instead —
+ * and a search that could not check every recently indexed file may show
+ * stale rows. Each is said, with its reason, so a human is not left trusting
+ * results the agent output already marks as partial.
+ */
+export function overlayHumanNotice(
+	overlay: import("./core/overlay/types.js").SearchOverlayReport,
+): string | null {
+	if (overlay.state === "on") {
+		const plural = (n: number) => (n === 1 ? "file" : "files");
+		const parts: string[] = [];
+		if (overlay.files > 0) {
+			parts.push(
+				`Including ${overlay.files} uncommitted ${plural(overlay.files)} (not yet indexed; marked [uncommitted]).`,
+			);
+		}
+		const missing = overlay.filesFailed + overlay.filesPending;
+		if (missing > 0) {
+			// Tokens only (iteration 2, O4): no prose to re-parse.
+			const kinds = overlay.gaps
+				.filter((gap) => gap.startsWith(FILE_FAILED_TOKEN))
+				.map((gap) => gap.slice(FILE_FAILED_TOKEN.length));
+			const deadline = overlay.gaps.includes("embed-deadline");
+			const why: string[] = [];
+			if (overlay.filesFailed > 0) {
+				why.push(
+					`${overlay.filesFailed} failed${kinds.length > 0 ? `: ${kinds.join(", ")}` : ""}`,
+				);
+			}
+			if (overlay.filesPending > 0) {
+				why.push(
+					`${overlay.filesPending} pending${deadline ? ": embed-deadline" : ""}`,
+				);
+			}
+			parts.push(
+				overlay.files > 0
+					? `Uncommitted changes in ${missing} more ${plural(missing)} are not included (${why.join(", ")}); their indexed versions are shown.`
+					: `Uncommitted changes in ${missing} ${plural(missing)} are not included in these results (${why.join(", ")}); their indexed versions are shown.`,
+			);
+		}
+		if (overlay.filesUnclassified > 0) {
+			const n = overlay.filesUnclassified;
+			parts.push(
+				`At least ${n} recently indexed ${plural(n)} ${n === 1 ? "was" : "were"} not checked against disk in this search; results for them may be stale.`,
+			);
+		}
+		return parts.length === 0 ? null : parts.join(" ");
+	}
+	if (overlay.state === "skipped" && overlay.reason !== "no-git") {
+		return `Uncommitted changes are not included in these results (overlay skipped: ${overlay.reason}).`;
+	}
+	return null;
+}
+
 function printSearchResult(
 	chunk: {
 		filePath: string;
@@ -2033,6 +2549,8 @@ function printSearchResult(
 	},
 	score: number,
 	terms: string[],
+	/** Shown after the range, e.g. `[uncommitted]` for a dirty-overlay row. */
+	marker?: string,
 ): void {
 	const termWidth = process.stdout.columns || 80;
 	const divider = "─".repeat(termWidth);
@@ -2050,7 +2568,7 @@ function printSearchResult(
 	const scoreStr = `${scoreColor}${pct}%${ANSI_RESET}`;
 
 	// Header: path:range on left, name + score on right
-	const leftPart = ` ${chunk.filePath}:${chunk.startLine}-${chunk.endLine}`;
+	const leftPart = searchResultLocation(chunk, marker);
 	const nameScorePart = `${nameLabel}  ${pct}%`; // uncolored for length calc
 	const padding = Math.max(
 		1,
@@ -2113,8 +2631,15 @@ async function handleStatus(args: string[]): Promise<void> {
 		// Agent mode: structured key=value output
 		if (agentMode) {
 			agentOutput.statusOutput(status);
+			reportBranchState(projectPath, "status");
 			return;
 		}
+
+		// V3.21. `status` reports FILES and CHUNKS, which are store-wide, so an
+		// index full of another branch's rows looks healthy from here. Said in
+		// the human output too, right after the counts, because that is the
+		// command a user runs to find out why a search came back empty.
+		reportBranchState(projectPath, "status");
 
 		if (status.corrupt) {
 			console.log(
@@ -2147,17 +2672,43 @@ async function handleStatus(args: string[]): Promise<void> {
 	}
 }
 
+/**
+ * Every flag `mnemex clear` accepts. STRICT — see {@link assertKnownFlags}.
+ *
+ * `--all` and `-f` are a destructive pair that share no prefix, deliberately:
+ * an `--all` that was meant to be `--force` must not be reachable by a typo of
+ * either (CLAUDE.md #30).
+ */
+const CLEAR_FLAGS = ["--all", "--force", "-f"] as const;
+
 async function handleClear(args: string[]): Promise<void> {
 	printLogo();
+
+	// BEFORE anything destructive and before any lock, like `handleKeychainCommand`.
+	if (!assertKnownFlags("clear", args, CLEAR_FLAGS)) {
+		process.exitCode = 1;
+		return;
+	}
 
 	const pathArg = args.find((a) => !a.startsWith("-"));
 	const projectPath = pathArg ? resolve(pathArg) : process.cwd();
 
 	const force = args.includes("--force") || args.includes("-f");
+	// ── D3's rule, applied to `clear` (decision I-17 item 1) ──────────────────
+	//
+	// `clear` used to be whole-store, unconditionally and without a lock. From
+	// Phase 3c the store is shared by every worktree of the repository, so the
+	// DEFAULT shrinks to this branch and the old meaning keeps its own name —
+	// exactly what `--force` / `--force-all` did in 3b-3b. `--force` here is the
+	// confirmation skip and has nothing to do with scope; they are separate
+	// words because they answer separate questions.
+	const wholeStore = args.includes("--all");
 
 	if (!force) {
 		const confirmed = await confirm({
-			message: `Clear index for ${projectPath}?`,
+			message: wholeStore
+				? `Clear the WHOLE store for ${projectPath} — every branch, every worktree?`
+				: `Clear this branch's index for ${projectPath}?`,
 			default: false,
 		});
 
@@ -2167,15 +2718,152 @@ async function handleClear(args: string[]): Promise<void> {
 		}
 	}
 
-	const { createIndexer } = await import("./core/indexer.js");
-	const indexer = createIndexer({ projectPath });
+	const { createIndexer, IndexLockError } = await import("./core/indexer.js");
+	const indexer = createIndexer({
+		projectPath,
+		onWaitingForLock: (holderPid) => {
+			console.log(
+				`⏳ Waiting for an indexing process (PID ${holderPid}) to finish...`,
+			);
+		},
+	});
 
 	try {
-		await indexer.clear();
-		console.log("\n✅ Index cleared.");
+		const result = await indexer.clear({
+			scope: wholeStore ? "store" : "branch",
+		});
+		if (agentMode) {
+			console.log("cleared=1");
+			console.log(`clear_scope=${result.scope}`);
+			if (result.branchLabel) console.log(`branch=${result.branchLabel}`);
+			console.log(`clear_rows_deleted=${result.rowsDeleted}`);
+			if (result.rowsNarrowed !== undefined) {
+				console.log(`clear_rows_narrowed=${result.rowsNarrowed}`);
+			}
+			console.log(`clear_membership_removed=${result.membershipRowsRemoved}`);
+			return;
+		}
+		// What the run DID, not what was asked: a store with no git layout takes
+		// the whole-store path for a branch request, and a user who is not told
+		// that believes a sibling survived.
+		console.log(
+			result.scope === "store"
+				? "\n✅ The whole store is cleared. Every branch has to index itself again."
+				: `\n✅ Branch '${result.branchLabel ?? "?"}' is cleared. Other branches' rows are untouched.`,
+		);
+	} catch (error) {
+		// FAIL CLOSED and say so. Before 3c this command took no lock at all, so
+		// there was nothing to refuse — it simply ran, concurrently with whatever
+		// else held the store.
+		if (error instanceof IndexLockError) {
+			console.error(
+				`\n❌ Another process is indexing this store (PID ${error.holderPid ?? "?"}). Nothing was cleared.`,
+			);
+			process.exitCode = 1;
+			return;
+		}
+		throw error;
 	} finally {
 		await indexer.close();
 	}
+}
+
+/**
+ * STRICT FLAGS, the `handleKeychainCommand` mechanism, for a command that runs
+ * something destructive (CLAUDE.md #30, decision I-17 item 4).
+ *
+ * ── WHY MEMBERSHIP PARSING IS THE BUG AND NOT THE SPELLING ────────────────────
+ * A boolean flag decided with `args.includes("--x")` makes every TYPO of it mean
+ * the OPPOSITE of what was typed, silently. That is not hypothetical here:
+ * `mnemex keychain migrate --dry-runDD` fell through to the destructive default
+ * and ran a real migration on the maintainer's own machine, one day after that
+ * feature shipped — `~/.zsh_history` and the keychain items' `cdat` agree to the
+ * second. The user believed they had run a preview.
+ *
+ * `--force` and `--force-all` on `mnemex index` are the same shape and worse:
+ * a destructive PAIR sharing a prefix. 3b-3b measured which way each typo falls
+ * and pinned it, and reported (its finding 6) that both directions fail safe by
+ * luck of spelling rather than by construction. This is the construction.
+ *
+ * Returns `false` and prints when a dash-argument is not accepted. The near miss
+ * is NAMED, because the failure mode is a typo and asking a user to diff two
+ * strings by eye is how they conclude the tool is broken rather than the flag.
+ *
+ * Callers must run it BEFORE resolving anything, before the lock, and before any
+ * write. `--agent` is absent from every table on purpose: `runCli` strips it
+ * from `args` before a handler sees it.
+ */
+function assertKnownFlags(
+	command: string,
+	args: string[],
+	accepted: readonly string[],
+): boolean {
+	const unknown = args.find(
+		(a) =>
+			a.startsWith("-") &&
+			a !== "-" &&
+			// `--key=value` is matched on its key half, so `--wait-timeout=30` is
+			// checked against `--wait-timeout=` and a typo of the KEY still fires.
+			!accepted.includes(a) &&
+			!accepted.includes(`${a.split("=")[0]}=`),
+	);
+	if (unknown === undefined) return true;
+
+	const key = unknown.split("=")[0];
+	const meant = nearestFlag(key, accepted);
+	console.error(`error=unknown_flag command=${command} value=${unknown}`);
+	if (meant) console.error(`Did you mean ${meant}?`);
+	console.error(
+		`Accepted for '${command}': ${accepted.map((f) => f.replace(/=$/, "")).join(", ")}. Nothing was changed.`,
+	);
+	return false;
+}
+
+/**
+ * The accepted flag a typo most likely meant, or `null` when none is close.
+ *
+ * ── WHY "THE FIRST PREFIX MATCH" IS THE WRONG ANSWER ────────────────────────
+ * `handleKeychainCommand`'s version takes the first entry that is a prefix of
+ * the typo or vice versa. Its tables have four entries and no shared prefixes,
+ * so it never mattered there. On `index` it does: `--force` comes before
+ * `--force-all` in the table, `"--force-alll".startsWith("--force")` is true,
+ * and the first-match rule answers `--force` — pointing a user who typed
+ * `--force-alll` at the flag with the OTHER blast radius. A suggestion that
+ * names the wrong one of a destructive pair is worse than no suggestion, which
+ * is the whole reason this check exists.
+ *
+ * Longest shared prefix wins; ties go to the candidate closest in length, so
+ * `--forceall` (which shares only `--force` with both) resolves to `--force-all`
+ * on the 1-character difference rather than 3.
+ *
+ * A minimum of two real characters past the dashes, so an unrelated flag from
+ * another command (`--dry-run` against `index`'s table) shares only `--` and
+ * gets NO suggestion. Asserted both ways in `index-strict-flags.test.ts`.
+ */
+function nearestFlag(key: string, accepted: readonly string[]): string | null {
+	const dashes = /^-+/.exec(key)?.[0].length ?? 0;
+	let best: string | null = null;
+	let bestShared = 0;
+	let bestDelta = Number.POSITIVE_INFINITY;
+	for (const raw of accepted) {
+		const candidate = raw.replace(/=$/, "");
+		let shared = 0;
+		while (
+			shared < key.length &&
+			shared < candidate.length &&
+			key[shared] === candidate[shared]
+		) {
+			shared++;
+		}
+		if (shared < dashes + 2) continue;
+		const delta = Math.abs(candidate.length - key.length);
+		if (shared > bestShared || (shared === bestShared && delta < bestDelta)) {
+			best = candidate;
+			bestShared = shared;
+			bestDelta = delta;
+		}
+	}
+	return best;
 }
 
 /**
@@ -3791,7 +4479,12 @@ async function handleBenchmark(args: string[]): Promise<void> {
 			}
 
 			const { createVectorStore } = await import("./core/store.js");
-			const store = createVectorStore(tempDbPath);
+			const { resolveStoreLocation } = await import("./core/store-location.js");
+			const { BRANCH_ID_SHARED } = await import("./core/branch-registry.js");
+			const store = createVectorStore({
+				vectorsDir: tempDbPath,
+				pathRoot: resolveStoreLocation(projectPath).pathRoot,
+			});
 			await store.initialize();
 
 			// Add chunks with embeddings (filter out failed ones with empty vectors)
@@ -3819,7 +4512,13 @@ async function handleBenchmark(args: string[]): Promise<void> {
 						: "All chunks failed to embed",
 				);
 			}
-			await store.addChunks(chunksForStore);
+			// A throwaway benchmark store. Its `filePath` is a bare file name, not a
+			// path under any root, and no branch reads it. `synthetic` rows come back
+			// exactly as written, and `,0,` is the shared marker.
+			await store.addChunks(chunksForStore, {
+				pathKind: "synthetic",
+				branchId: BRANCH_ID_SHARED,
+			});
 
 			// Run quality queries
 			let mrrSum = 0;
@@ -3832,9 +4531,15 @@ async function handleBenchmark(args: string[]): Promise<void> {
 
 				// Embed query and search
 				const queryVector = await client.embedOne(tq.query);
-				const searchResults = await store.search(tq.query, queryVector, {
-					limit: 5,
-				});
+				// The benchmark's temp store writes `synthetic` + `,0,` (D-h): every
+				// row carries the shared marker, so the scope that sees all of them
+				// is the one with no predicate.
+				const searchResults = await store.search(
+					tq.query,
+					queryVector,
+					SCOPE_ALL,
+					{ limit: 5 },
+				);
 
 				// Build relevance map
 				const relevanceMap = new Map<string, number>();
@@ -4650,11 +5355,110 @@ function formatSymbolRaw(symbol: {
 }
 
 /**
- * Get file tracker for a project path
+ * Get file tracker for a project path, or null when there is no index.db.
+ *
+ * The path comes from the store-location seam (via `getIndexDbPath`), so it is
+ * the store the lock guards (decision I-8). It used to be a hardcoded
+ * `<projectPath>/.mnemex/index.db`, which ignored both index-dir overrides.
  */
+/**
+ * The branch every symbol-graph and `files` read in this process is scoped to.
+ *
+ * Resolved PER COMMAND, which for the CLI is per process, so §2.5's "never
+ * construction state" holds trivially here. `graphBranchIdForRead` is the one
+ * place that decides what an UNKNOWN branch reads on the SQLite side; see its
+ * doc comment for the part of D1 that is reported rather than settled.
+ */
+function readBranchId(projectPath: string): number {
+	return graphBranchIdForRead(resolveBranchScopeForProject(projectPath));
+}
+
+/**
+ * V3.21 (decision I-13): say so when this branch has never been indexed.
+ *
+ * ── WHY EVERY GRAPH COMMAND NEEDS THIS AND `search` DOES NOT ───────────────
+ * D1 lets `search` drop the branch filter and return the SUPERSET, flagged,
+ * because a search RETRIEVES: every row it returns is real code and the caller
+ * can judge it. The graph commands ANALYSE — `dead-code` asks which symbols
+ * have zero callers, `impact` walks transitive callers, `map` ranks by PageRank
+ * — and pooling rows from several branches would not widen those answers, it
+ * would FALSIFY them. So their unknown-branch answer is the EMPTY graph, which
+ * is the truthful one.
+ *
+ * Truthful, and indistinguishable from a clean repository. `mnemex dead-code`
+ * on a branch that has never been indexed prints "no dead code found", which is
+ * exactly what it prints on a repository that has none. That is D1's own
+ * invisible-failure argument, applied to the commands D1 did not cover — so the
+ * answer stays empty and a line beside it says why, in the human output AND as
+ * a field under `--agent`.
+ *
+ * Call it AFTER resolving the tracker and BEFORE the query, because several of
+ * these handlers `process.exit(1)` on an empty result ("Symbol not found") and
+ * a notice printed after that never runs.
+ *
+ * ── TWO STATES, NOT ONE (decision I-16's related gap) ──────────────────────
+ * `branch_unknown` is "the registry has never seen this branch". `branch_empty`
+ * is "the registry knows this branch and the store holds no row for it" — the
+ * state a whole-store rebuild from another worktree leaves behind, and the one
+ * an interrupted `--force` or a partly-drained sweep can leave. They are
+ * separate keys because the remedies differ in nothing but the reason, and a
+ * user who is told "not indexed" about a branch they indexed yesterday will go
+ * looking for a bug in the registry instead of re-indexing. See
+ * `src/core/branch-state.ts` for what "empty" is computed from.
+ */
+function reportBranchState(projectPath: string, command: string): void {
+	const { resolution, branchEmpty, storeRebuiltElsewhere } =
+		resolveBranchReadState(projectPath);
+	renderBranchState(
+		{ branchUnknown: resolution.branchUnknown, branchEmpty },
+		resolution.label,
+		command,
+		storeRebuiltElsewhere,
+	);
+}
+
+/**
+ * The two states, rendered. 3c's `search` surfaces call this directly, because
+ * they already know both flags (`searchScoped` returns them) and re-resolving
+ * would cost a second HEAD read, a second registry read and a second SQLite
+ * connection to learn what the caller is holding.
+ *
+ * The SENTENCES live in `src/core/branch-state.ts`, not here: there are now four
+ * surfaces (the nine graph commands, `status`, the CLI `search`, and two MCP
+ * tools) and the remedy they name has to change in one place.
+ */
+function renderBranchState(
+	state: { readonly branchUnknown: boolean; readonly branchEmpty: boolean },
+	label: string | null,
+	command: string,
+	/** V1.7 / §4.5: WHY the branch is empty, when the marker can say. */
+	storeRebuiltElsewhere = false,
+): void {
+	if (agentMode) {
+		// Emitted on EVERY one of these commands, including as 0, so a consumer
+		// can rely on the key rather than on its absence meaning "known".
+		console.log(`branch_unknown=${state.branchUnknown ? 1 : 0}`);
+		console.log(`branch_empty=${state.branchEmpty ? 1 : 0}`);
+		if (label !== null) console.log(`branch=${label}`);
+		// V1.7. Absent unless true: it explains `branch_empty=1` and a `0` on
+		// every ordinary run would be a key that only ever says "nothing to
+		// explain".
+		if (storeRebuiltElsewhere) console.log("store_rebuilt_elsewhere=1");
+		const hint = branchHintForAgent(state, label, command);
+		if (hint !== null) console.log(`branch_hint=${hint}`);
+		return;
+	}
+	if (state.branchUnknown) {
+		console.error(branchUnknownNotice(label, command));
+		return;
+	}
+	if (state.branchEmpty) {
+		console.error(branchEmptyNotice(label, command, storeRebuiltElsewhere));
+	}
+}
+
 function getFileTracker(projectPath: string): FileTracker | null {
-	const mnemexDir = join(projectPath, ".mnemex");
-	const dbPath = join(mnemexDir, "index.db");
+	const dbPath = getIndexDbPath(projectPath);
 
 	if (!existsSync(dbPath)) {
 		return null;
@@ -4764,7 +5568,11 @@ async function handleMap(args: string[]): Promise<void> {
 	}
 
 	try {
-		const repoMapGen = createRepoMapGenerator(tracker);
+		reportBranchState(projectPath, "map");
+		const repoMapGen = createRepoMapGenerator(
+			tracker,
+			readBranchId(projectPath),
+		);
 
 		if (agentMode) {
 			// Agent mode: structured key=value output
@@ -4825,7 +5633,11 @@ async function handleSymbol(args: string[]): Promise<void> {
 	}
 
 	try {
-		const graphManager = createReferenceGraphManager(tracker);
+		reportBranchState(projectPath, "symbol");
+		const graphManager = createReferenceGraphManager(
+			tracker,
+			readBranchId(projectPath),
+		);
 		const symbol = graphManager.findSymbol(symbolName, {
 			preferExported: true,
 			fileHint,
@@ -4970,7 +5782,11 @@ async function handleCallers(args: string[]): Promise<void> {
 	}
 
 	try {
-		const graphManager = createReferenceGraphManager(tracker);
+		reportBranchState(projectPath, "callers");
+		const graphManager = createReferenceGraphManager(
+			tracker,
+			readBranchId(projectPath),
+		);
 		const symbol = graphManager.findSymbol(symbolName, {
 			preferExported: true,
 		});
@@ -5116,7 +5932,11 @@ async function handleCallees(args: string[]): Promise<void> {
 	}
 
 	try {
-		const graphManager = createReferenceGraphManager(tracker);
+		reportBranchState(projectPath, "callees");
+		const graphManager = createReferenceGraphManager(
+			tracker,
+			readBranchId(projectPath),
+		);
 		const symbol = graphManager.findSymbol(symbolName, {
 			preferExported: true,
 		});
@@ -5197,7 +6017,11 @@ async function handleContext(args: string[]): Promise<void> {
 	}
 
 	try {
-		const graphManager = createReferenceGraphManager(tracker);
+		reportBranchState(projectPath, "context");
+		const graphManager = createReferenceGraphManager(
+			tracker,
+			readBranchId(projectPath),
+		);
 		const symbol = graphManager.findSymbol(symbolName, {
 			preferExported: true,
 		});
@@ -5304,8 +6128,9 @@ async function handleDeadCode(args: string[]): Promise<void> {
 	}
 
 	try {
+		reportBranchState(projectPath, "dead-code");
 		const { createCodeAnalyzer } = await import("./core/analysis/index.js");
-		const analyzer = createCodeAnalyzer(tracker);
+		const analyzer = createCodeAnalyzer(tracker, readBranchId(projectPath));
 
 		const results = analyzer.findDeadCode({
 			maxPageRank,
@@ -5374,8 +6199,9 @@ async function handleTestGaps(args: string[]): Promise<void> {
 	}
 
 	try {
+		reportBranchState(projectPath, "test-gaps");
 		const { createCodeAnalyzer } = await import("./core/analysis/index.js");
-		const analyzer = createCodeAnalyzer(tracker);
+		const analyzer = createCodeAnalyzer(tracker, readBranchId(projectPath));
 
 		const results = analyzer.findTestGaps({
 			minPageRank,
@@ -5459,8 +6285,9 @@ async function handleImpact(args: string[]): Promise<void> {
 	}
 
 	try {
+		reportBranchState(projectPath, "impact");
 		const { createCodeAnalyzer } = await import("./core/analysis/index.js");
-		const analyzer = createCodeAnalyzer(tracker);
+		const analyzer = createCodeAnalyzer(tracker, readBranchId(projectPath));
 
 		// Find the target symbol
 		const target = analyzer.findSymbolForImpact(symbolName, fileHint);
@@ -5632,12 +6459,15 @@ Subcommands:
 		case "install":
 			try {
 				await hookManager.install();
+				// The path the manager actually wrote. In a linked worktree that
+				// is `<gitCommonDir>/hooks/post-commit`, not `.git/hooks/…`.
+				const installed = await hookManager.status();
 				printLogo();
 				console.log("\n✅ Git hook installed successfully!\n");
 				console.log(
 					"  The post-commit hook will now auto-index changes after each commit.",
 				);
-				console.log("  Location: .git/hooks/post-commit\n");
+				console.log(installed.path ? `  Location: ${installed.path}\n` : "");
 			} catch (error) {
 				console.error(
 					`Error: ${error instanceof Error ? error.message : String(error)}`,
@@ -5666,6 +6496,7 @@ Subcommands:
 			console.log(`  Installed: ${status.installed ? "Yes" : "No"}`);
 			if (status.installed) {
 				console.log(`  Hook type: ${status.hookType}`);
+				if (status.path) console.log(`  Location:  ${status.path}`);
 			}
 			console.log("");
 			break;
@@ -5807,7 +6638,13 @@ async function handleOpenCodeIntegration(
 				// Check if indexed
 				const { createVectorStore } = await import("./core/store.js");
 				const { getVectorStorePath } = await import("./config.js");
-				const store = await createVectorStore(getVectorStorePath(projectPath));
+				const { resolveStoreLocation } = await import(
+					"./core/store-location.js"
+				);
+				const store = createVectorStore({
+					vectorsDir: getVectorStorePath(projectPath),
+					pathRoot: resolveStoreLocation(projectPath).pathRoot,
+				});
 				const stats = await store.getStats();
 				if (stats.totalChunks === 0) {
 					console.log("  ⚠️  Project not indexed. Run: mnemex index\n");
@@ -6048,101 +6885,151 @@ async function handleDocsFetch(
 		return;
 	}
 
-	// Initialize components
+	// The tracker and the vector store are opened INSIDE the store lock, per
+	// library, below: opening index.db runs DDL, which is a write.
 	const indexDbPath = getIndexDbPath(projectPath);
-	const tracker = createFileTracker(indexDbPath, projectPath);
 	const embeddingsClient = createEmbeddingsClient({
 		model: getEmbeddingModel(projectPath),
 	});
-	const vectorStore = createVectorStore(getVectorStorePath(projectPath));
-	await vectorStore.initialize();
+	const { resolveStoreLocation } = await import("./core/store-location.js");
+	const { describeStoreLockRefusal, STORE_WRITER_LOCK_WAIT_MS, withStoreLock } =
+		await import("./core/store-lock-policy.js");
+	const { BRANCH_ID_SHARED } = await import("./core/branch-registry.js");
+	const storeLocation = resolveStoreLocation(projectPath);
 
-	try {
-		let libraries: Array<{ name: string; majorVersion?: string }>;
+	let libraries: Array<{ name: string; majorVersion?: string }>;
 
-		if (specificLibrary) {
-			libraries = [{ name: specificLibrary }];
-		} else {
-			const deps = await fetcher.detectDependencies(projectPath);
-			libraries = deps.map((d) => ({
-				name: d.name,
-				majorVersion: d.majorVersion,
-			}));
-		}
+	if (specificLibrary) {
+		libraries = [{ name: specificLibrary }];
+	} else {
+		const deps = await fetcher.detectDependencies(projectPath);
+		libraries = deps.map((d) => ({
+			name: d.name,
+			majorVersion: d.majorVersion,
+		}));
+	}
 
-		if (libraries.length === 0) {
-			console.log("  No dependencies detected.\n");
-			return;
-		}
+	if (libraries.length === 0) {
+		console.log("  No dependencies detected.\n");
+		return;
+	}
 
-		console.log(
-			`  Found ${libraries.length} ${specificLibrary ? "library" : "dependencies"}\n`,
-		);
+	console.log(
+		`  Found ${libraries.length} ${specificLibrary ? "library" : "dependencies"}\n`,
+	);
 
-		let successCount = 0;
-		for (const lib of libraries) {
-			process.stdout.write(`  Fetching ${lib.name}...`);
+	let successCount = 0;
+	let refused: { detail: string; isError: boolean } | null = null;
+	for (const lib of libraries) {
+		process.stdout.write(`  Fetching ${lib.name}...`);
 
-			try {
-				const chunks = await fetcher.fetchAndChunk(lib.name, {
-					version: lib.majorVersion,
-				});
+		try {
+			// Network phase, WITHOUT the store lock (D5): holding an index lock
+			// across network I/O is unbounded by construction. Only the write
+			// below takes it. Embedding before deleting also means a failed
+			// embed no longer leaves the library's old docs deleted.
+			const chunks = await fetcher.fetchAndChunk(lib.name, {
+				version: lib.majorVersion,
+			});
 
-				if (chunks.length === 0) {
-					console.log(" no docs found");
-					continue;
-				}
-
-				// Delete old docs
-				const docsPath = `docs:${lib.name}`;
-				await vectorStore.deleteByFile(docsPath);
-
-				// Embed and store
-				const texts = chunks.map((c) => c.content);
-				const embedResult = await embeddingsClient.embed(texts);
-
-				const fileHash = computeHash(chunks.map((c) => c.content).join(""));
-				const chunksWithEmbeddings = chunks.map((chunk, idx) => ({
-					id: chunk.id,
-					content: chunk.content,
-					filePath: docsPath,
-					startLine: 0,
-					endLine: 0,
-					language: "markdown",
-					chunkType: "module" as const,
-					contentHash: computeHash(chunk.content),
-					fileHash,
-					vector: embedResult.embeddings[idx],
-					name: chunk.title,
-					signature: chunk.sourceUrl,
-				}));
-
-				await vectorStore.addChunks(chunksWithEmbeddings);
-
-				tracker.markDocsIndexed(
-					lib.name,
-					lib.majorVersion || null,
-					chunks[0].provider,
-					fileHash,
-					chunks.map((c) => c.id),
-				);
-
-				console.log(` ✓ ${chunks.length} chunks`);
-				successCount++;
-			} catch (error) {
-				console.log(` ✗ ${error instanceof Error ? error.message : "failed"}`);
+			if (chunks.length === 0) {
+				console.log(" no docs found");
+				continue;
 			}
-		}
 
-		console.log(`\n  Fetched ${successCount}/${libraries.length} libraries\n`);
-	} finally {
-		tracker.close();
-		await vectorStore.close();
+			const docsPath = `docs:${lib.name}`;
+			const texts = chunks.map((c) => c.content);
+			const embedResult = await embeddingsClient.embed(texts);
+
+			const fileHash = computeHash(chunks.map((c) => c.content).join(""));
+			const chunksWithEmbeddings = chunks.map((chunk, idx) => ({
+				id: chunk.id,
+				content: chunk.content,
+				filePath: docsPath,
+				startLine: 0,
+				endLine: 0,
+				language: "markdown",
+				chunkType: "module" as const,
+				contentHash: computeHash(chunk.content),
+				fileHash,
+				vector: embedResult.embeddings[idx],
+				name: chunk.title,
+				signature: chunk.sourceUrl,
+			}));
+
+			// Write phase: the only part that holds the store lock.
+			const outcome = await withStoreLock(
+				storeLocation,
+				{ waitTimeout: STORE_WRITER_LOCK_WAIT_MS, phase: "docs" },
+				async (lock) => {
+					const tracker = createFileTracker(indexDbPath, projectPath);
+					const vectorStore = createVectorStore({
+						vectorsDir: getVectorStorePath(projectPath),
+						pathRoot: storeLocation.pathRoot,
+					});
+					try {
+						await vectorStore.initialize();
+						// Replace this library's old docs
+						await vectorStore.deleteByFile(docsPath);
+						// External docs are the repository's, not a tree's: shared (§3.2.1).
+						await vectorStore.addChunks(chunksWithEmbeddings, {
+							pathKind: "synthetic",
+							branchId: BRANCH_ID_SHARED,
+						});
+						tracker.markDocsIndexed(
+							lib.name,
+							lib.majorVersion || null,
+							chunks[0].provider,
+							fileHash,
+							chunks.map((c) => c.id),
+						);
+						lock.recordProgress();
+					} finally {
+						tracker.close();
+						await vectorStore.close();
+					}
+				},
+			);
+			if (!outcome.acquired) {
+				console.log(" ✗ store locked");
+				refused = {
+					detail: describeStoreLockRefusal(outcome.refusal, outcome.lockPath),
+					isError: outcome.refusal.reason === "error",
+				};
+				break;
+			}
+
+			console.log(` ✓ ${chunks.length} chunks`);
+			successCount++;
+		} catch (error) {
+			console.log(` ✗ ${error instanceof Error ? error.message : "failed"}`);
+		}
+	}
+
+	console.log(`\n  Fetched ${successCount}/${libraries.length} libraries\n`);
+
+	if (refused !== null) {
+		// Fail closed, and loudly: nothing past this library was written.
+		console.error(`❌ Stopped: ${refused.detail}.`);
+		console.error(
+			refused.isError
+				? "   Nothing more was written."
+				: `   It did not finish within ${STORE_WRITER_LOCK_WAIT_MS / 1000}s. Nothing more was written; run this again once it has.\n`,
+		);
+		process.exit(1);
 	}
 }
 
 /**
- * Force refresh all documentation
+ * Force refresh all documentation: forget which libraries are indexed, so the
+ * next index run fetches them again.
+ *
+ * It WRITES index.db, so it holds the store lock (decision I-8: a fourth
+ * unlocked writer, missed by the design's inventory). Same policy as
+ * `docs clear` (D5): destructive and user-initiated, so it waits
+ * STORE_WRITER_LOCK_WAIT_MS, then REFUSES loudly and exits non-zero, having
+ * changed nothing. The tracker is opened INSIDE the lock, because opening
+ * index.db runs DDL, which is itself a write.
  */
 async function handleDocsRefresh(projectPath: string): Promise<void> {
 	const { createFileTracker } = await import("./core/tracker.js");
@@ -6155,19 +7042,54 @@ async function handleDocsRefresh(projectPath: string): Promise<void> {
 		return;
 	}
 
-	const tracker = createFileTracker(indexDbPath, projectPath);
+	const { resolveStoreLocation } = await import("./core/store-location.js");
+	const { describeStoreLockRefusal, STORE_WRITER_LOCK_WAIT_MS, withStoreLock } =
+		await import("./core/store-lock-policy.js");
+	let waitingShown = false;
+	const outcome = await withStoreLock(
+		resolveStoreLocation(projectPath),
+		{
+			waitTimeout: STORE_WRITER_LOCK_WAIT_MS,
+			phase: "docs:refresh",
+			onWaiting: (holderPid) => {
+				if (waitingShown) return;
+				waitingShown = true;
+				console.log(
+					`⏳ Waiting up to ${STORE_WRITER_LOCK_WAIT_MS / 1000}s for PID ${holderPid}, which holds the index store lock...`,
+				);
+			},
+		},
+		async (lock) => {
+			const tracker = createFileTracker(indexDbPath, projectPath);
+			try {
+				// Clear all indexed docs to force refresh on next index
+				tracker.clearAllIndexedDocs();
+				lock.recordProgress();
+			} finally {
+				tracker.close();
+			}
+		},
+	);
 
-	try {
-		// Clear all indexed docs to force refresh on next index
-		tracker.clearAllIndexedDocs();
-
-		printLogo();
-		console.log(
-			"\n📚 Documentation cache cleared. Run 'mnemex index' to refresh.\n",
+	if (!outcome.acquired) {
+		console.error(
+			`\n❌ Refusing to refresh documentation: ${describeStoreLockRefusal(outcome.refusal, outcome.lockPath)}.`,
 		);
-	} finally {
-		tracker.close();
+		console.error(
+			outcome.refusal.reason === "error"
+				? "   Nothing was changed."
+				: `   It did not finish within ${STORE_WRITER_LOCK_WAIT_MS / 1000}s. Nothing was changed; run this again once it has.`,
+		);
+		console.error(
+			"   If that process is stuck, 'mnemex index --force-unlock' clears its lock.\n",
+		);
+		process.exit(1);
 	}
+
+	printLogo();
+	console.log(
+		"\n📚 Documentation cache cleared. Run 'mnemex index' to refresh.\n",
+	);
 }
 
 /**
@@ -6221,39 +7143,86 @@ async function handleDocsClear(
 		return;
 	}
 
-	const tracker = createFileTracker(indexDbPath, projectPath);
-	const vectorStore = createVectorStore(getVectorStorePath(projectPath));
-	await vectorStore.initialize();
+	// D5: destructive and user-initiated, so it waits the normal 30 s for the
+	// store lock and then REFUSES loudly. It never deletes without the lock.
+	const { resolveStoreLocation } = await import("./core/store-location.js");
+	const { describeStoreLockRefusal, STORE_WRITER_LOCK_WAIT_MS, withStoreLock } =
+		await import("./core/store-lock-policy.js");
+	const storeLocation = resolveStoreLocation(projectPath);
+	let waitingShown = false;
+	const outcome = await withStoreLock(
+		storeLocation,
+		{
+			waitTimeout: STORE_WRITER_LOCK_WAIT_MS,
+			phase: "docs:clear",
+			onWaiting: (holderPid) => {
+				if (waitingShown) return;
+				waitingShown = true;
+				console.log(
+					`⏳ Waiting up to ${STORE_WRITER_LOCK_WAIT_MS / 1000}s for PID ${holderPid}, which holds the index store lock...`,
+				);
+			},
+		},
+		async (lock) => {
+			const tracker = createFileTracker(indexDbPath, projectPath);
+			const vectorStore = createVectorStore({
+				vectorsDir: getVectorStorePath(projectPath),
+				pathRoot: storeLocation.pathRoot,
+			});
+			await vectorStore.initialize();
 
-	try {
-		if (specificLibrary) {
-			// Clear specific library
-			const state = tracker.getDocsState(specificLibrary);
-			if (!state) {
-				console.log(`\n  No documentation found for '${specificLibrary}'.\n`);
-				return;
+			try {
+				if (specificLibrary) {
+					// Clear specific library
+					const state = tracker.getDocsState(specificLibrary);
+					if (!state) {
+						console.log(
+							`\n  No documentation found for '${specificLibrary}'.\n`,
+						);
+						return;
+					}
+
+					await vectorStore.deleteByFile(`docs:${specificLibrary}`);
+					tracker.deleteIndexedDocs(specificLibrary);
+					lock.recordProgress();
+
+					printLogo();
+					console.log(`\n✓ Cleared documentation for '${specificLibrary}'\n`);
+				} else {
+					// Clear all documentation
+					const docs = tracker.getAllIndexedDocs();
+
+					for (const doc of docs) {
+						await vectorStore.deleteByFile(`docs:${doc.library}`);
+						lock.recordProgress();
+					}
+					tracker.clearAllIndexedDocs();
+
+					printLogo();
+					console.log(
+						`\n✓ Cleared all documentation (${docs.length} libraries)\n`,
+					);
+				}
+			} finally {
+				tracker.close();
+				await vectorStore.close();
 			}
+		},
+	);
 
-			await vectorStore.deleteByFile(`docs:${specificLibrary}`);
-			tracker.deleteIndexedDocs(specificLibrary);
-
-			printLogo();
-			console.log(`\n✓ Cleared documentation for '${specificLibrary}'\n`);
-		} else {
-			// Clear all documentation
-			const docs = tracker.getAllIndexedDocs();
-
-			for (const doc of docs) {
-				await vectorStore.deleteByFile(`docs:${doc.library}`);
-			}
-			tracker.clearAllIndexedDocs();
-
-			printLogo();
-			console.log(`\n✓ Cleared all documentation (${docs.length} libraries)\n`);
-		}
-	} finally {
-		tracker.close();
-		await vectorStore.close();
+	if (!outcome.acquired) {
+		console.error(
+			`\n❌ Refusing to clear documentation: ${describeStoreLockRefusal(outcome.refusal, outcome.lockPath)}.`,
+		);
+		console.error(
+			outcome.refusal.reason === "error"
+				? "   Nothing was deleted."
+				: `   It did not finish within ${STORE_WRITER_LOCK_WAIT_MS / 1000}s. Nothing was deleted; run this again once it has.`,
+		);
+		console.error(
+			"   If that process is stuck, 'mnemex index --force-unlock' clears its lock.\n",
+		);
+		process.exit(1);
 	}
 }
 
@@ -6310,9 +7279,6 @@ async function handleObserve(args: string[]): Promise<void> {
 	const confIdx = args.indexOf("--confidence");
 	const confidence = confIdx >= 0 ? Number.parseFloat(args[confIdx + 1]) : 0.7;
 
-	const { createIndexer } = await import("./core/indexer.js");
-	const indexer = createIndexer({ projectPath });
-
 	try {
 		const embeddingsClient = createEmbeddingsClient();
 
@@ -6343,11 +7309,35 @@ async function handleObserve(args: string[]): Promise<void> {
 			vector: embedding,
 		};
 
-		// Write to LanceDB via vectorStore
-		const { createVectorStore } = await import("./core/store.js");
-		const store = await createVectorStore(projectPath);
-		await store.addDocuments([doc]);
-		await store.close();
+		// Write to LanceDB under the store lock. D5: wait 2 s, then skip the
+		// append and warn; never hang behind an index run. The embedding above is
+		// a network call, made BEFORE the lock is taken on purpose.
+		const { appendObservation } = await import("./core/observation-writer.js");
+		const { OBSERVE_LOCK_WAIT_MS } = await import(
+			"./core/store-lock-policy.js"
+		);
+		const outcome = await appendObservation(projectPath, doc);
+		if (!outcome.recorded) {
+			if (agentMode) {
+				console.log(`observation_id=${id}`);
+				console.log("recorded=false");
+				console.log(`reason=${outcome.reason}`);
+				if (outcome.holderPid !== undefined) {
+					console.log(`holder_pid=${outcome.holderPid}`);
+				}
+			}
+			if (outcome.reason === "lock_error") {
+				// Not contention: the lock could not be taken at all. That is a
+				// failure, not a degraded success.
+				console.error(`Error: observation not recorded: ${outcome.detail}`);
+				process.exit(1);
+			}
+			console.error(
+				`⚠️  Observation not recorded: ${outcome.detail}. ` +
+					`Skipped after ${OBSERVE_LOCK_WAIT_MS / 1000}s rather than wait; run it again once that finishes.`,
+			);
+			return;
+		}
 
 		if (agentMode) {
 			console.log(`observation_id=${id}`);
@@ -6372,8 +7362,6 @@ async function handleObserve(args: string[]): Promise<void> {
 			console.error(`Error: ${String(error)}`);
 		}
 		process.exit(1);
-	} finally {
-		await indexer.close();
 	}
 }
 
@@ -7125,7 +8113,7 @@ ${c.yellow}${c.bold}COMMANDS${c.reset}
   ${c.green}index${c.reset} [path]           Index a codebase (default: current directory)
   ${c.green}search${c.reset} <query>         Search indexed code ${c.dim}(auto-indexes changes)${c.reset}
   ${c.green}status${c.reset} [path]          Show index status
-  ${c.green}clear${c.reset} [path]           Clear the index
+  ${c.green}clear${c.reset} [path]           Clear ${c.bold}this branch's${c.reset} index ${c.dim}(--all for the whole store, every branch; -f to skip the prompt)${c.reset}
   ${c.green}init${c.reset}                   Interactive setup wizard
   ${c.green}models${c.reset}                 List available embedding models
   ${c.green}benchmark${c.reset} <subcommand>  Benchmarking tools ${c.dim}(list|show|llm|embedding|delete; run 'benchmark help')${c.reset}
@@ -7151,6 +8139,7 @@ ${c.yellow}${c.bold}DEVELOPER EXPERIENCE${c.reset}
   ${c.green}watch${c.reset}                  Watch for changes and auto-reindex ${c.dim}(daemon mode)${c.reset}
   ${c.green}hooks${c.reset} <subcommand>     Manage git hooks ${c.dim}(install|uninstall|status)${c.reset}
   ${c.green}keychain${c.reset} <subcommand>  Manage API keys in the macOS Keychain ${c.dim}(status|migrate|prune|rm)${c.reset}
+  ${c.green}branches${c.reset} [prune]       Show which branches this store holds; reclaim deleted ones ${c.dim}(--dry-run)${c.reset}
   ${c.green}hook${c.reset}                   Claude Code hook handler ${c.dim}(reads JSON from stdin)${c.reset}
   ${c.green}install${c.reset} <tool>         Install integration ${c.dim}(opencode|claude-code)${c.reset}
   ${c.green}pack${c.reset} [path]            Pack codebase into a single file ${c.dim}(for AI analysis)${c.reset}
@@ -7185,7 +8174,8 @@ ${c.yellow}${c.bold}KEYCHAIN SUBCOMMANDS${c.reset} ${c.dim}(macOS only; nothing 
   ${c.dim}Opt out entirely: MNEMEX_DISABLE_KEYCHAIN=1 or "keychain": false in ~/.mnemex/config.json${c.reset}
 
 ${c.yellow}${c.bold}INDEX OPTIONS${c.reset}
-  ${c.cyan}-f, --force${c.reset}            Force re-index all files
+  ${c.cyan}-f, --force${c.reset}            Re-index every file of ${c.bold}this branch${c.reset} ${c.dim}(other branches keep their rows)${c.reset}
+  ${c.cyan}--force-all${c.reset}            Rebuild the whole store, ${c.bold}every branch${c.reset} ${c.dim}(each one must re-index)${c.reset}
   ${c.cyan}-m, --model${c.reset} <model>    Rebuild with this embedding model ${c.dim}(overrides onModelMismatch)${c.reset}
   ${c.cyan}-w, --wait${c.reset}             Wait for another indexer to finish instead of failing
   ${c.cyan}--if-idle${c.reset}              Skip if a machine-wide index is already running ${c.dim}(background reindex)${c.reset}
@@ -7201,6 +8191,8 @@ ${c.yellow}${c.bold}SEARCH OPTIONS${c.reset}
   ${c.cyan}--no-reindex${c.reset}           Skip auto-reindexing changed files
   ${c.cyan}--use-case${c.reset} <case>      Search preset: fim | search | navigation (default: search)
   ${c.cyan}-k, --keyword${c.reset}          Keyword-only search (skip embedding, use BM25 only)
+  ${c.cyan}--no-dirty${c.reset}             Leave uncommitted changes out ${c.dim}(default: included when the worktree is dirty; config: dirtyOverlay)${c.reset}
+  ${c.cyan}--${c.reset}                     End of flags: everything after it is query text ${c.dim}(search -- -foo)${c.reset}
 
 ${c.yellow}${c.bold}MODELS OPTIONS${c.reset}
   ${c.cyan}--free${c.reset}                 Show only free models
@@ -8036,6 +9028,9 @@ async function searchMnemex(
 		const searchPromise = indexer.search(pattern, {
 			limit: 30,
 			useCase: "search",
+			// `mnemex rg` is contractually byte-identical to ripgrep (CLAUDE.md
+			// #14) under a 2 s budget: no git status, no overlay build here.
+			overlay: "off",
 		});
 
 		const timeoutPromise = new Promise<never>((_, reject) =>
@@ -8053,8 +9048,10 @@ async function searchMnemex(
 async function handleRgPassthrough(args: string[]): Promise<void> {
 	const { parseRgArgs, mergeResults } = await import("./rg/index.js");
 
-	// Quick check: if no .mnemex/ index, exec bundled rg directly (zero overhead)
-	const mnemexDir = join(process.cwd(), ".mnemex");
+	// Quick check: if there is no store directory, exec bundled rg directly
+	// (zero overhead). Resolved through the seam, so an index that
+	// MNEMEX_INDEX_DIR or ProjectConfig.indexDir moved is still found (I-8).
+	const mnemexDir = getIndexDir(process.cwd());
 	if (!existsSync(mnemexDir)) {
 		await execRgDirect(args);
 		return;

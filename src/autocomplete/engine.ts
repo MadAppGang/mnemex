@@ -5,8 +5,13 @@ import {
 	getIndexDbPath,
 	getVectorStorePath,
 } from "../config.js";
+import {
+	graphBranchIdForRead,
+	resolveBranchScopeForProject,
+} from "../core/branch-scope.js";
 import { createEmbeddingsClient } from "../core/embeddings.js";
 import { createVectorStore, type IVectorStore } from "../core/store.js";
+import { resolveStoreLocation } from "../core/store-location.js";
 import { createFileTracker, type IFileTracker } from "../core/tracker.js";
 import { createLLMClient, type ILLMClient } from "../llm/client.js";
 import { getParserManager } from "../parsers/parser-manager.js";
@@ -144,7 +149,10 @@ export class AutocompleteEngine {
 		await parserManager.initialize();
 
 		const storePath = getVectorStorePath(this.projectPath);
-		this.store = createVectorStore(storePath);
+		this.store = createVectorStore({
+			vectorsDir: storePath,
+			pathRoot: resolveStoreLocation(this.projectPath).pathRoot,
+		});
 		await this.store.initialize();
 
 		const indexDbPath = getIndexDbPath(this.projectPath);
@@ -160,6 +168,7 @@ export class AutocompleteEngine {
 				embeddings,
 				"fim",
 				this.tracker,
+				graphBranchIdForRead(resolveBranchScopeForProject(this.projectPath)),
 			);
 		} catch {
 			// Retrieval is optional for autocomplete; fall back to pure FIM prompting.
@@ -247,6 +256,9 @@ export class AutocompleteEngine {
 		if (this.retriever) {
 			try {
 				retrievedResults = await this.retriever.searchWithContext(fimQuery, {
+					// Per call, from the branch HEAD points at right now: the engine
+					// is long-lived and the user switches branches under it.
+					scope: resolveBranchScopeForProject(this.projectPath).scope,
 					limit: maxContextResults,
 					useCase: "fim",
 					language: language === "unknown" ? undefined : language,

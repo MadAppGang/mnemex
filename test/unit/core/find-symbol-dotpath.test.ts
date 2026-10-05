@@ -114,9 +114,11 @@ describe("ReferenceGraphManager.findSymbol — dot-path resolution", () => {
 			pagerankScore: 0.9, // higher PageRank — wins flat lookup
 		});
 
-		tracker.insertSymbols([tensorClass, realizeMethod, standaloneRealize]);
+		tracker
+			.graph(1)
+			.insertSymbols([tensorClass, realizeMethod, standaloneRealize]);
 
-		const graph = new ReferenceGraphManager(tracker);
+		const graph = new ReferenceGraphManager(tracker, 1);
 
 		// Dot-path lookup must return the method on Tensor, not the standalone fn
 		const result = graph.findSymbol("Tensor.realize");
@@ -161,9 +163,11 @@ describe("ReferenceGraphManager.findSymbol — dot-path resolution", () => {
 			pagerankScore: 0.9,
 		});
 
-		tracker.insertSymbols([tensorClass, realizeMethod, standaloneRealize]);
+		tracker
+			.graph(1)
+			.insertSymbols([tensorClass, realizeMethod, standaloneRealize]);
 
-		const graph = new ReferenceGraphManager(tracker);
+		const graph = new ReferenceGraphManager(tracker, 1);
 
 		// Flat lookup must still return something (we don't care which one)
 		const result = graph.findSymbol("realize");
@@ -183,9 +187,9 @@ describe("ReferenceGraphManager.findSymbol — dot-path resolution", () => {
 			endLine: 5,
 		});
 
-		tracker.insertSymbols([fn]);
+		tracker.graph(1).insertSymbols([fn]);
 
-		const graph = new ReferenceGraphManager(tracker);
+		const graph = new ReferenceGraphManager(tracker, 1);
 
 		// NonExistentClass.bar — class not in index, should return null
 		const result = graph.findSymbol("NonExistentClass.bar");

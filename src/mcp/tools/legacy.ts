@@ -19,6 +19,10 @@ import { appendFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import {
+	branchEmptyNotice,
+	branchUnknownNotice,
+} from "../../core/branch-notices.js";
 import { createIndexer, IndexLockError } from "../../core/indexer.js";
 import { createLearningSystem } from "../../learning/index.js";
 import { discoverEmbeddingModels } from "../../models/model-discovery.js";
@@ -105,7 +109,12 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 			force: z
 				.boolean()
 				.optional()
-				.describe("Force re-index all files, ignoring cached state"),
+				.describe(
+					"Re-index every file of the CURRENT BRANCH, ignoring cached state. " +
+						"Other branches of this repository keep their rows. There is no " +
+						"whole-store rebuild here on purpose: that is `mnemex index " +
+						"--force-all` at a terminal, because it empties every branch.",
+				),
 			model: z.string().optional().describe("Embedding model to use"),
 			enableEnrichment: z
 				.boolean()
@@ -272,11 +281,38 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 					}
 				}
 
-				let results = await indexer.search(query, {
+				// `searchScoped`, not `search`: D1 requires `branch_unknown` to reach
+				// THIS response, and the flag is a property of the response, not of
+				// any row (§4.4.2, required item 2).
+				const scoped = await indexer.searchScoped(query, {
 					limit: limit ?? 10,
 					language,
 					useCase: useCase ?? "search",
 				});
+				let results = scoped.results;
+				/** D1's response fields, on every return path below. */
+				const branchState = {
+					branch_unknown: scoped.branchUnknown,
+					// Decision I-17 item 2: the state D1 does not cover — the registry
+					// KNOWS this branch and the store holds no row for it, which is what
+					// another worktree's `--force-all` leaves behind. Without it an
+					// agent reads the empty result as "this code does not exist" and
+					// writes it again, which is the exact failure D1 was written about.
+					branch_empty: scoped.branchEmpty,
+					// V1.7 / §4.5: WHY it is empty, when the marker can say. Only
+					// ever present alongside `branch_empty: true`.
+					...(scoped.storeRebuiltElsewhere
+						? { store_rebuilt_elsewhere: true }
+						: {}),
+					branch: scoped.branchLabel,
+					// Step 3, R3.9: what the dirty overlay did, on every return path.
+					overlay: scoped.overlay,
+				};
+				// The LEARNING record names index rows only. An overlay row's id
+				// is uncommitted text no later search can return from the index,
+				// so a feedback or activity record against it would teach the
+				// ranker about rows that do not exist (revision 1, LOW 7).
+				const indexResults = () => results.filter((r) => r.source !== "dirty");
 
 				// ONE index-db connection for this request, shared by the learning
 				// system and activity recording. Learning goes through the same
@@ -294,7 +330,7 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 						recordSearchInteraction(session, {
 							query,
 							sessionId,
-							resultCount: results.length,
+							resultCount: indexResults().length,
 							useCase: useCase ?? "search",
 						});
 
@@ -315,19 +351,21 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 							adaptiveApplied = true;
 						}
 
-						// Record activity
+						// Record activity — index rows only (see `indexResults`).
+						const recorded = indexResults();
+						const top = recorded[0];
 						const activityId = tracker.recordActivity("search_code", {
 							query,
-							resultCount: results.length,
-							topScore: results[0]?.score ?? 0,
-							topResult: results[0]
+							resultCount: recorded.length,
+							topScore: top?.score ?? 0,
+							topResult: top
 								? {
-										chunk: results[0].chunk,
-										score: results[0].score,
-										vectorScore: results[0].vectorScore,
-										keywordScore: results[0].keywordScore,
-										summary: results[0].summary,
-										fileSummary: results[0].fileSummary,
+										chunk: top.chunk,
+										score: top.score,
+										vectorScore: top.vectorScore,
+										keywordScore: top.keywordScore,
+										summary: top.summary,
+										fileSummary: top.fileSummary,
 									}
 								: null,
 						});
@@ -349,8 +387,17 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 					const trailer = JSON.stringify({
 						...buildFreshness(stateManager, startTime),
 						...indexState,
+						...branchState,
 					});
-					const emptyResponse = `No results found for "${query}". Make sure the codebase is indexed using \`index_codebase\`.\n${trailer}`;
+					// The prose too, not only the trailer: an agent reads the sentence
+					// and a `branch_empty=true` buried in a JSON tail is exactly the
+					// "flag nobody renders" D1 refuses.
+					const branchNote = scoped.branchUnknown
+						? `\n${branchUnknownNotice(scoped.branchLabel, "search_code")}`
+						: scoped.branchEmpty
+							? `\n${branchEmptyNotice(scoped.branchLabel, "search_code", scoped.storeRebuiltElsewhere)}`
+							: "";
+					const emptyResponse = `No results found for "${query}". Make sure the codebase is indexed using \`index_codebase\`.${branchNote}\n${trailer}`;
 					return {
 						content: [
 							{
@@ -362,11 +409,22 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 				}
 
 				let response = `## Search Results for "${query}"\n\n`;
+				if (scoped.branchUnknown) {
+					// Visible in the prose too, not only in the trailer: D1 chose the
+					// superset BECAUSE it fails visibly, and a flag nobody renders is
+					// the invisible failure it exists to avoid.
+					response += `*Branch \`${scoped.branchLabel ?? "?"}\` is not in the index; showing results from every indexed branch. Each result lists the branches it belongs to.*\n\n`;
+				}
 				if (autoIndexed > 0) {
 					response += `*Auto-indexed ${autoIndexed} changed file(s)*\n\n`;
 				}
 				if (adaptiveApplied) {
 					response += `*Adaptive ranking applied*\n\n`;
+				}
+				if (scoped.overlay.state === "on" && scoped.overlay.files > 0) {
+					response += `*Including ${scoped.overlay.files} uncommitted file(s) from this worktree, marked "Source: uncommitted"*\n\n`;
+				} else if (scoped.overlay.state === "skipped") {
+					response += `*Uncommitted changes are not included (overlay skipped: ${scoped.overlay.reason})*\n\n`;
 				}
 				response += `Found ${results.length} result(s):\n\n`;
 
@@ -381,6 +439,16 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 					if (chunk.parentName) response += ` (in \`${chunk.parentName}\`)`;
 					response += `\n`;
 					response += `Score: ${(r.score * 100).toFixed(1)}% (vector: ${(r.vectorScore * 100).toFixed(0)}%, keyword: ${(r.keywordScore * 100).toFixed(0)}%)\n`;
+					// D1's PER-ROW attribution. It is what lets an agent discount a
+					// foreign row instead of discarding the whole response.
+					if (r.branches && r.branches.length > 0) {
+						response += `Branches: ${r.branches.join(", ")}\n`;
+					}
+					if (r.source === "dirty") {
+						// R3.8: no graph, units or summaries for uncommitted text.
+						response +=
+							"Source: uncommitted (dirty overlay; not yet indexed)\n";
+					}
 					response += `ID: \`${chunk.id.slice(0, 12)}...\`\n\n`;
 					response += `\`\`\`${chunk.language}\n`;
 					response += chunk.content.slice(0, 1000);
@@ -396,6 +464,13 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 				const trailer = JSON.stringify({
 					...buildFreshness(stateManager, startTime),
 					...indexState,
+					...branchState,
+					results: results.map((r) => ({
+						id: r.chunk.id,
+						file: r.chunk.filePath,
+						branches: r.branches ?? [],
+						...(r.source === "dirty" ? { source: "dirty" as const } : {}),
+					})),
 				});
 				response += `\n${trailer}`;
 

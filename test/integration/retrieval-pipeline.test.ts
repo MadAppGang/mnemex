@@ -11,7 +11,10 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CodeUnitExtractor } from "../../src/core/ast/code-unit-extractor.js";
+import {
+	CodeUnitExtractor,
+	codeUnitParentKeyOf,
+} from "../../src/core/ast/code-unit-extractor.js";
 import { ContextFormatter } from "../../src/retrieval/formatting/context-formatter.js";
 import { LLMReranker } from "../../src/retrieval/reranking/llm-reranker.js";
 import { QueryRouter } from "../../src/retrieval/routing/query-router.js";
@@ -151,9 +154,12 @@ describe("Retrieval Pipeline Integration", () => {
 			const files = allUnits.filter((u) => u.unitType === "file");
 			expect(files.length).toBe(3);
 
-			// Each file should have children
+			// Each file should have children. The link is the parent's POSITION
+			// KEY since I-14, never its row id — and the file unit is the case
+			// where that matters most, since its row id hashes the file hash.
 			for (const file of files) {
-				const children = allUnits.filter((u) => u.parentId === file.id);
+				const fileKey = codeUnitParentKeyOf(file);
+				const children = allUnits.filter((u) => u.parentId === fileKey);
 				expect(children.length).toBeGreaterThan(0);
 			}
 		});
@@ -414,13 +420,18 @@ describe("Retrieval Pipeline Integration", () => {
 		test("maintains hierarchical consistency across languages", () => {
 			const files = allUnits.filter((u) => u.unitType === "file");
 
+			// One index from POSITION KEY to unit — the namespace a `parentId`
+			// lives in (I-14). `p.id` would resolve nothing.
+			const byKey = new Map(allUnits.map((u) => [codeUnitParentKeyOf(u), u]));
+
 			for (const file of files) {
+				const fileKey = codeUnitParentKeyOf(file);
 				// Get all descendants
 				const descendants = allUnits.filter((u) => {
 					let current = u;
 					while (current.parentId) {
-						if (current.parentId === file.id) return true;
-						const parent = allUnits.find((p) => p.id === current.parentId);
+						if (current.parentId === fileKey) return true;
+						const parent = byKey.get(current.parentId);
 						if (!parent) break;
 						current = parent;
 					}

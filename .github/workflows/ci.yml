@@ -22,6 +22,10 @@ jobs:
         os: [ubuntu-latest, macos-latest]
 
     runs-on: ${{ matrix.os }}
+    # A hung test once held this job for 50 minutes with no output (a module
+    # mock whose pass-through called itself; JavaScriptCore's proper tail calls
+    # turn that into a silent infinite loop). Healthy runs take ~20 minutes.
+    timeout-minutes: 40
 
     steps:
       - uses: actions/checkout@v5

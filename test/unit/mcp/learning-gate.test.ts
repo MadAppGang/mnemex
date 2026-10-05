@@ -18,11 +18,19 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { loadGlobalConfig } from "../../../src/config.js";
+import { resolveStoreLocation } from "../../../src/core/store-location.js";
 import type { SearchResult } from "../../../src/types.js";
+import { stubOverlayReport } from "../../helpers/overlay-report-stub.js";
 
 // ── Module mocks ────────────────────────────────────────────────────────────
 // The real opener is captured by value BEFORE the mock is registered, so the
@@ -54,9 +62,14 @@ mock.module("../../../src/core/sqlite.js", () => ({
 let indexerResults: SearchResult[] = [];
 
 class FakeIndexLockError extends Error {}
+class FakeIndexedModelUnavailableError extends Error {}
 
+// Every named export an importer of indexer.js asks for must be here.
+// `search.ts` imports IndexedModelUnavailableError, and a factory without it
+// fails at link time with "Export named ... not found", before any test runs.
 mock.module("../../../src/core/indexer.js", () => ({
 	IndexLockError: FakeIndexLockError,
+	IndexedModelUnavailableError: FakeIndexedModelUnavailableError,
 	createIndexer: () => ({
 		index: async () => ({
 			filesIndexed: 0,
@@ -65,6 +78,13 @@ mock.module("../../../src/core/indexer.js", () => ({
 			errors: [],
 		}),
 		search: async () => indexerResults,
+		// D1's flags ride on the response, so `search_code` uses `searchScoped`.
+		searchScoped: async () => ({
+			results: indexerResults,
+			branchUnknown: false,
+			branchLabel: null,
+			overlay: stubOverlayReport(),
+		}),
 		close: async () => {},
 		getStatus: async () => ({ exists: false }),
 	}),
@@ -207,7 +227,10 @@ function seedLearningData(ws: Workspace, boosts: Record<string, number>): void {
 }
 
 async function makeDeps(ws: Workspace): Promise<ToolDeps> {
-	const stateManager = new IndexStateManager(ws.indexDir);
+	const stateManager = new IndexStateManager(
+		ws.indexDir,
+		resolveStoreLocation(dirname(ws.indexDir)),
+	);
 	await stateManager.initialize();
 	// The cache is deliberately unavailable so only the semantic backend
 	// (backed by the mocked indexer) contributes results.
@@ -311,9 +334,24 @@ async function runSearchCode(
 	return { text: result.content[0].text, opens, learningDdl };
 }
 
+/**
+ * Is `path` this workspace's index.db? Compared as FILES, not strings: the MCP
+ * tools resolve the db through the store-location seam, which returns the
+ * realpath spelling (`/private/var/…`), while `mkdtemp` hands out `/var/…` on
+ * macOS (decision I-3).
+ */
+function isWorkspaceDb(ws: Workspace, path: string): boolean {
+	if (path === ws.dbPath) return true;
+	try {
+		return realpathSync(path) === realpathSync(ws.dbPath);
+	} catch {
+		return false;
+	}
+}
+
 /** sqlite opens recorded against this workspace's index.db. */
 function indexDbOpens(ws: Workspace): number {
-	return sqliteOpens.filter((p) => p === ws.dbPath).length;
+	return sqliteOpens.filter((p) => isWorkspaceDb(ws, p)).length;
 }
 
 /**
@@ -324,7 +362,7 @@ function indexDbOpens(ws: Workspace): number {
 function learningDdlStatements(ws: Workspace): number {
 	return sqliteExecs.filter(
 		(e) =>
-			e.path === ws.dbPath &&
+			isWorkspaceDb(ws, e.path) &&
 			e.sql.includes("CREATE TABLE IF NOT EXISTS search_feedback"),
 	).length;
 }

@@ -44,10 +44,31 @@ export const KEYCHAIN_CHILD_GUARD_ENV = {
 } as const;
 
 /**
- * `process.env` plus the two guard variables, with `undefined`s dropped.
+ * The same shape, for the second machine-global user file a child can write.
+ *
+ * `~/.mnemex/embed-cache.db` is shared by every repo on the machine (CLAUDE.md
+ * #31). `src/core/embed-cache.ts` refuses that path by default, but — exactly as
+ * above — a child running the production entry point calls
+ * `enableUserEmbedCachePath()` and lifts its own gate. This sentinel makes that
+ * call a no-op, so a spawned `mnemex index` refuses instead of writing the
+ * developer's real cache.
+ *
+ * A child that legitimately needs a working cache sets `MNEMEX_EMBED_CACHE_PATH`
+ * to a temp file in `extra`. The refusal is deliberately loud, not a redirect.
+ */
+export const EMBED_CACHE_CHILD_GUARD_ENV = {
+	MNEMEX_EMBED_CACHE_TEST_GUARD: "1",
+} as const;
+
+/**
+ * `process.env` plus the guard variables, with `undefined`s dropped.
  *
  * Use this for EVERY `spawn`/`spawnSync` of `bun dist/index.js`, `bun src/index.ts`
  * or an installed `mnemex` binary. `{ ...process.env }` alone is the defect.
+ *
+ * The name is historical — it is THE child environment, and it now carries the
+ * embed-cache sentinel too. Both are guards a child can only lift by running a
+ * production entry point, which is precisely what these spawns do.
  */
 export function keychainSafeChildEnv(
 	extra: Record<string, string | undefined> = {},
@@ -60,5 +81,9 @@ export function keychainSafeChildEnv(
 		if (value !== undefined) env[key] = value;
 	}
 	// Last, so a caller's `extra` can never weaken the guard by accident.
-	return { ...env, ...KEYCHAIN_CHILD_GUARD_ENV };
+	return {
+		...env,
+		...KEYCHAIN_CHILD_GUARD_ENV,
+		...EMBED_CACHE_CHILD_GUARD_ENV,
+	};
 }

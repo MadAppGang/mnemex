@@ -10,6 +10,10 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 import * as readline from "node:readline/promises";
+import {
+	graphBranchIdForRead,
+	resolveBranchScopeForProject,
+} from "../branch-scope.js";
 import type { FileTracker } from "../tracker.js";
 import {
 	gatherProjectContext,
@@ -41,7 +45,12 @@ export async function runGenerator(
 	tracker?: FileTracker | null,
 ): Promise<GeneratedContext> {
 	// Phase 0: Gather project context for smart questions
-	const ctx = gatherProjectContext(projectPath, tracker ?? null, result);
+	const ctx = gatherProjectContext(
+		projectPath,
+		tracker ?? null,
+		graphBranchIdForRead(resolveBranchScopeForProject(projectPath)),
+		result,
+	);
 	const questions = generateSmartQuestions(ctx);
 
 	// Phase 1: Interactive Q&A with smart questions
@@ -140,7 +149,12 @@ export async function runGeneratorAgent(
 	result: DoctorResult,
 	tracker?: FileTracker | null,
 ): Promise<GeneratedContext> {
-	const ctx = gatherProjectContext(projectPath, tracker ?? null, result);
+	const ctx = gatherProjectContext(
+		projectPath,
+		tracker ?? null,
+		graphBranchIdForRead(resolveBranchScopeForProject(projectPath)),
+		result,
+	);
 	const answers: GeneratorAnswers = {
 		nonDiscoverable: [],
 		gotchas: [],

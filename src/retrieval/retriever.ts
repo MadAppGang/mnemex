@@ -6,6 +6,7 @@
  * Now includes structural repo map context for better LLM understanding.
  */
 
+import type { BranchScope } from "../core/branch-scope.js";
 import {
 	createRepoMapGenerator,
 	type RepoMapGenerator,
@@ -28,6 +29,13 @@ import type {
 /**
  * Default weights per document type for each use case.
  * These can be overridden via project config or at search time.
+ *
+ * `code_unit` is listed explicitly in every table (R2.2). 0.1 is the value
+ * `typeAwareRRFFusion`'s `?? 0.1` fallback gave it before, so the entry
+ * changes no ranking; it makes the value a choice. The weight decides which of
+ * a `code_chunk`/`code_unit` twin pair survives the span collapse in
+ * `VectorStore.searchDocuments`. Whether it should equal `code_chunk` is an
+ * eval question (mnemex-bench), not settled here.
  */
 export const DEFAULT_TYPE_WEIGHTS: Record<
 	SearchUseCase,
@@ -36,6 +44,7 @@ export const DEFAULT_TYPE_WEIGHTS: Record<
 	// FIM completion: prioritize code and examples
 	fim: {
 		code_chunk: 0.5,
+		code_unit: 0.1,
 		usage_example: 0.25,
 		idiom: 0.15,
 		symbol_summary: 0.1,
@@ -45,6 +54,7 @@ export const DEFAULT_TYPE_WEIGHTS: Record<
 		file_summary: 0.25,
 		symbol_summary: 0.25,
 		code_chunk: 0.2,
+		code_unit: 0.1,
 		idiom: 0.15,
 		usage_example: 0.1,
 		anti_pattern: 0.05,
@@ -54,6 +64,7 @@ export const DEFAULT_TYPE_WEIGHTS: Record<
 		symbol_summary: 0.35,
 		file_summary: 0.3,
 		code_chunk: 0.2,
+		code_unit: 0.1,
 		idiom: 0.1,
 		project_doc: 0.05,
 	},
@@ -64,6 +75,11 @@ export const DEFAULT_TYPE_WEIGHTS: Record<
 // ============================================================================
 
 export interface RetrieverOptions {
+	/**
+	 * REQUIRED (§4.4). Which branch this retrieval may see. Per call, never
+	 * construction state: this object outlives a branch switch.
+	 */
+	scope: BranchScope;
 	/** Maximum results to return */
 	limit?: number;
 	/** Use case preset (affects type weights) */
@@ -100,12 +116,13 @@ export class EnrichedRetriever {
 		embeddings: IEmbeddingsClient,
 		defaultUseCase: SearchUseCase = "search",
 		fileTracker?: IFileTracker,
+		branchId?: number,
 	) {
 		this.store = store;
 		this.embeddings = embeddings;
 		this.defaultUseCase = defaultUseCase;
-		if (fileTracker) {
-			this.setFileTracker(fileTracker);
+		if (fileTracker && branchId !== undefined) {
+			this.setFileTracker(fileTracker, branchId);
 		}
 	}
 
@@ -113,9 +130,9 @@ export class EnrichedRetriever {
 	 * Set the file tracker for repo map generation
 	 * This enables structural context in search results
 	 */
-	setFileTracker(tracker: IFileTracker): void {
+	setFileTracker(tracker: IFileTracker, branchId: number): void {
 		this.fileTracker = tracker;
-		this.repoMapGenerator = createRepoMapGenerator(tracker);
+		this.repoMapGenerator = createRepoMapGenerator(tracker, branchId);
 	}
 
 	/**
@@ -123,7 +140,7 @@ export class EnrichedRetriever {
 	 */
 	async search(
 		query: string,
-		options: RetrieverOptions = {},
+		options: RetrieverOptions,
 	): Promise<EnrichedSearchResult[]> {
 		const {
 			limit = 10,
@@ -154,7 +171,12 @@ export class EnrichedRetriever {
 		}
 
 		// Execute search
-		return this.store.searchDocuments(query, queryVector, searchOptions);
+		return this.store.searchDocuments(
+			query,
+			queryVector,
+			options.scope,
+			searchOptions,
+		);
 	}
 
 	/**
@@ -166,7 +188,7 @@ export class EnrichedRetriever {
 	 */
 	async searchWithContext(
 		query: string,
-		options: RetrieverOptions = {},
+		options: RetrieverOptions,
 	): Promise<RetrieverSearchResponse> {
 		const startTime = Date.now();
 		const { includeRepoMap = true, repoMapTokens = 500 } = options;
@@ -210,7 +232,7 @@ export class EnrichedRetriever {
 	 */
 	async searchForFIM(
 		query: string,
-		options: Omit<RetrieverOptions, "useCase"> = {},
+		options: Omit<RetrieverOptions, "useCase">,
 	): Promise<EnrichedSearchResult[]> {
 		return this.search(query, { ...options, useCase: "fim" });
 	}
@@ -220,7 +242,7 @@ export class EnrichedRetriever {
 	 */
 	async searchForHuman(
 		query: string,
-		options: Omit<RetrieverOptions, "useCase"> = {},
+		options: Omit<RetrieverOptions, "useCase">,
 	): Promise<EnrichedSearchResult[]> {
 		return this.search(query, { ...options, useCase: "search" });
 	}
@@ -230,7 +252,7 @@ export class EnrichedRetriever {
 	 */
 	async searchForNavigation(
 		query: string,
-		options: Omit<RetrieverOptions, "useCase"> = {},
+		options: Omit<RetrieverOptions, "useCase">,
 	): Promise<EnrichedSearchResult[]> {
 		return this.search(query, { ...options, useCase: "navigation" });
 	}
@@ -248,10 +270,15 @@ export class EnrichedRetriever {
 	 * Get documents by file path
 	 */
 	async getDocumentsByFile(
+		scope: BranchScope,
 		filePath: string,
 		documentTypes?: DocumentType[],
 	): Promise<EnrichedSearchResult[]> {
-		const docs = await this.store.getDocumentsByFile(filePath, documentTypes);
+		const docs = await this.store.getDocumentsByFile(
+			scope,
+			filePath,
+			documentTypes,
+		);
 
 		// Convert to EnrichedSearchResult format
 		return docs.map((doc) => ({
@@ -283,6 +310,13 @@ export function createEnrichedRetriever(
 	embeddings: IEmbeddingsClient,
 	defaultUseCase?: SearchUseCase,
 	fileTracker?: IFileTracker,
+	branchId?: number,
 ): EnrichedRetriever {
-	return new EnrichedRetriever(store, embeddings, defaultUseCase, fileTracker);
+	return new EnrichedRetriever(
+		store,
+		embeddings,
+		defaultUseCase,
+		fileTracker,
+		branchId,
+	);
 }

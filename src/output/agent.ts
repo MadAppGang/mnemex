@@ -12,6 +12,9 @@
  *   duration_ms=3200
  */
 
+import { branchHintForAgent } from "../core/branch-notices.js";
+import type { PenaltyStats } from "../core/indexer.js";
+import type { SearchOverlayReport } from "../core/overlay/types.js";
 import type {
 	EnrichedIndexResult,
 	IndexStatus,
@@ -43,6 +46,25 @@ function indexComplete(result: EnrichedIndexResult): void {
 		if (result.enrichment.cost !== undefined) {
 			console.log(`enrichment_cost_usd=${result.enrichment.cost.toFixed(6)}`);
 		}
+		// §4.6's reuse, in DATA. Emitted whenever enrichment ran at all,
+		// including as all-zeros: a consumer has to be able to tell "nothing was
+		// reusable" from "this build does not reuse". `enrichment_files_refused`
+		// is the one to act on — non-zero means a record named a summary row the
+		// store no longer holds, and this run bought that summary again.
+		if (result.enrichment.reuse) {
+			console.log(
+				`enrichment_files_reused=${result.enrichment.reuse.filesReused}`,
+			);
+			console.log(
+				`enrichment_docs_reused=${result.enrichment.reuse.documentsReused}`,
+			);
+			console.log(
+				`enrichment_files_enriched=${result.enrichment.reuse.filesEnriched}`,
+			);
+			console.log(
+				`enrichment_files_refused=${result.enrichment.reuse.filesRefused}`,
+			);
+		}
 	}
 	if (result.embeddingModel) {
 		console.log(`embedding_model=${result.embeddingModel}`);
@@ -54,6 +76,148 @@ function indexComplete(result: EnrichedIndexResult): void {
 		console.log("embedding_model_adopted=true");
 		if (result.configuredModel) {
 			console.log(`configured_model=${result.configuredModel}`);
+		}
+	}
+	// The embedding cache's own accounting. Emitted whenever the seam ran at
+	// all, INCLUDING `tier=none` (the user's opt-out) and `tier=l0` (degraded to
+	// in-process only): a consumer comparing a cached run against a control run
+	// has to be able to tell "the cache was off" from "the field is missing
+	// because this build has no cache".
+	//
+	// Corroboration, never proof. A cache that wrongly reported a hit would
+	// report it here too — the count that settles it is the provider's own
+	// request log, plus `cost`/`total_tokens` above, which the cache cannot
+	// fabricate.
+	if (result.embedCache) {
+		console.log(`embed_cache_tier=${result.embedCache.tier}`);
+		console.log(`embed_cache_hits=${result.embedCache.hits}`);
+		console.log(`embed_cache_misses=${result.embedCache.misses}`);
+		console.log(`embed_cache_writes=${result.embedCache.writes}`);
+	}
+	// The AUTHORITATIVE upgrade channel (§5.3): two of the four entry points
+	// that call index() render no progress at all, so the `[migrating]` notice
+	// reaches nobody there. A machine consumer that sees this knows the run
+	// rebuilt from scratch and re-embedded the whole repository once.
+	if (result.upgradedFromIndexVersion !== undefined) {
+		console.log(
+			`upgraded_from_index_version=${result.upgradedFromIndexVersion}`,
+		);
+	}
+	// ── §6.3's store-location report (Phase 3c) ──────────────────────────────
+	//
+	// `store_dir` is what V1.1 and the FR-3 behavioural sweep assert on, and it
+	// is emitted UNCONDITIONALLY so a consumer can rely on the key. The flip
+	// makes it load-bearing rather than informational: the store is no longer
+	// somewhere a user would find by looking next to their code.
+	if (result.storeDir !== undefined) {
+		console.log(`store_dir=${result.storeDir}`);
+		if (result.storeKind !== undefined) {
+			console.log(`store_kind=${result.storeKind}`);
+		}
+	}
+	// The store this run REPLACED, when it was somewhere else — i.e. the 3c
+	// migration, seen by the user. It is left on disk; this is how they learn it
+	// is there, and it is the only channel that says so, because the two entry
+	// points above render nothing.
+	if (result.abandonedStoreDir !== undefined) {
+		console.log(`abandoned_store_dir=${result.abandonedStoreDir}`);
+	}
+	if (result.degradedReason !== undefined) {
+		console.log(`degraded_reason=${result.degradedReason}`);
+	}
+	if (result.ignoredLegacyIndexDir === true) {
+		console.log("ignored_legacy_index_dir=1");
+	}
+	// Files whose rows were rolled back because at least one chunk came back
+	// with no vector, and whose tracker stamp was withheld so the next run
+	// redoes them. Silence here means every file that was indexed is in the
+	// store.
+	if (result.filesDeferred && result.filesDeferred.length > 0) {
+		console.log(`files_deferred=${result.filesDeferred.length}`);
+		for (const file of result.filesDeferred) {
+			console.log(`deferred_file=${file}`);
+		}
+	}
+	// Branch membership (architecture §4.1). DATA, for the same reason the
+	// upgrade report is data: the post-commit hook and the MCP auto-reindex pass
+	// no progress callback, so a rendered notice reaches neither.
+	//
+	// `branch_widen_remaining` is the one a consumer must act on: non-zero means
+	// this branch sees a SUBSET of the store until another `mnemex index` runs.
+	// It is emitted whenever the store has a branch model, including as 0, so a
+	// consumer can rely on the key rather than on its absence.
+	if (result.branch) {
+		console.log(`branch_id=${result.branch.branchId}`);
+		if (result.branch.label !== null) {
+			console.log(`branch=${result.branch.label}`);
+		}
+		console.log(`branch_ids_widened=${result.branch.idsWidened}`);
+		console.log(`branch_rows_widened=${result.branch.rowsWidened}`);
+		console.log(`branch_widen_remaining=${result.branch.widenRemaining}`);
+		// The backlog the drain started with. Paired with the line above it, a
+		// complete drain is readable as a fact (`backlog=N remaining=0`) instead
+		// of as the absence of a warning.
+		if (result.branch.widenBacklog !== undefined) {
+			console.log(`branch_widen_backlog=${result.branch.widenBacklog}`);
+		}
+		if (result.branch.recoveredCrashResidue) {
+			console.log(
+				`recovered_crash_residue_added=${result.branch.recoveredCrashResidue.added}`,
+			);
+			console.log(
+				`recovered_crash_residue_removed=${result.branch.recoveredCrashResidue.removed}`,
+			);
+		}
+		if (result.branch.duplicateRows !== undefined) {
+			console.log(`branch_duplicate_rows=${result.branch.duplicateRows}`);
+		}
+		if (result.branch.idsDemoted !== undefined) {
+			console.log(`branch_ids_demoted=${result.branch.idsDemoted}`);
+		}
+		if (result.branch.headChangedDuringRun) {
+			console.log("head_changed_during_run=1");
+		}
+		// I-15. Expected 0 on every ordinary run since I-14 put the content hash
+		// into the code-unit id; a non-zero reading is a 64-bit id collision or a
+		// crash between a refresh and its registration. Emitted ALWAYS, including
+		// as 0, because "0 was observed" and "this build does not report it" must
+		// not look the same to a consumer checking that I-14 works.
+		console.log(`branch_units_refreshed=${result.branch.unitsRefreshed}`);
+		// §4.3's lifecycle. `branch_sweep_remaining` is the one to act on:
+		// non-zero means deleted branches still hold rows and another
+		// `mnemex index` (or `mnemex branches prune`) will reclaim them.
+		console.log(`branch_count=${result.branch.branchCount}`);
+		console.log(
+			`branch_confirmation_ran=${result.branch.confirmationRan ? 1 : 0}`,
+		);
+		if (result.branch.confirmationDeferred) {
+			console.log("branch_confirmation_deferred=1");
+		}
+		console.log(`branches_unconfirmed=${result.branch.branchesUnconfirmed}`);
+		console.log(`branches_tombstoned=${result.branch.branchesTombstoned}`);
+		for (const label of result.branch.missingBranchRefs ?? []) {
+			console.log(`missing_branch_ref=${label}`);
+		}
+		console.log(`branch_sweep_rows_deleted=${result.branch.sweepRowsDeleted}`);
+		console.log(
+			`branch_sweep_rows_narrowed=${result.branch.sweepRowsNarrowed}`,
+		);
+		console.log(
+			`branch_sweep_finalized=${result.branch.sweepBranchesFinalized}`,
+		);
+		console.log(`branch_sweep_remaining=${result.branch.sweepRemaining}`);
+		// §4.5 / D3. Emitted only when a force ran, because its absence is the
+		// fact ("this run forced nothing") and a `force_scope=none` would read as
+		// a force that chose no scope. `branch` means every OTHER branch kept its
+		// rows; `store` means none of them did.
+		if (result.branch.forceScope !== undefined) {
+			console.log(`force_scope=${result.branch.forceScope}`);
+			if (result.branch.forceRowsDeleted !== undefined) {
+				console.log(`force_rows_deleted=${result.branch.forceRowsDeleted}`);
+			}
+			if (result.branch.forceRowsNarrowed !== undefined) {
+				console.log(`force_rows_narrowed=${result.branch.forceRowsNarrowed}`);
+			}
 		}
 	}
 	if (result.errors.length > 0) {
@@ -68,10 +232,69 @@ function indexComplete(result: EnrichedIndexResult): void {
 function searchResults(
 	query: string,
 	results: SearchResult[],
-	meta?: { embeddingModel?: string; configuredModel?: string },
+	meta?: {
+		embeddingModel?: string;
+		configuredModel?: string;
+		/** D1 (§4.4.2): HEAD has no registry entry, so the branch filter was dropped. */
+		branchUnknown?: boolean;
+		/**
+		 * Decision I-17 item 2: the registry KNOWS this branch and the store holds
+		 * no row for it. A different state from `branch_unknown` with a different
+		 * cause, and until 3c `search` reported neither of them — it returned an
+		 * empty list, which is what D1 exists to say is not good enough.
+		 */
+		branchEmpty?: boolean;
+		/**
+		 * V1.7 / §4.5: the store was rebuilt whole after this branch was last
+		 * indexed. The REASON `branch_empty` is 1, never a substitute for it.
+		 */
+		storeRebuiltElsewhere?: boolean;
+		/** The HEAD label this search resolved; absent outside a repository. */
+		branch?: string | null;
+		/** What the dead-code penalty did (R1). Absent = it did not run. */
+		penalty?: PenaltyStats;
+		/**
+		 * What the local dirty overlay did (step 3, R3.9). Absent only on a
+		 * path that never runs it (the cloud search): the keys are still
+		 * emitted, as `overlay=unreported`.
+		 */
+		overlay?: SearchOverlayReport;
+	},
 ): void {
 	console.log(`query=${query}`);
 	console.log(`result_count=${results.length}`);
+	// D1's response-level flag. Emitted on EVERY search, so a consumer can rely
+	// on the key rather than on its absence meaning "known". `branch_empty` is
+	// emitted the same way and for the same reason.
+	const branchState = {
+		branchUnknown: meta?.branchUnknown === true,
+		branchEmpty: meta?.branchEmpty === true,
+	};
+	console.log(`branch_unknown=${branchState.branchUnknown ? 1 : 0}`);
+	console.log(`branch_empty=${branchState.branchEmpty ? 1 : 0}`);
+	// V1.7. Absent unless true, unlike the two above: it is an EXPLANATION of
+	// `branch_empty=1`, so a `0` on every ordinary search would be a key that
+	// only ever says "nothing to explain".
+	if (meta?.storeRebuiltElsewhere === true) {
+		console.log("store_rebuilt_elsewhere=1");
+	}
+	if (meta?.branch) {
+		console.log(`branch=${meta.branch}`);
+	}
+	// R1: what the dead-code penalty did, on EVERY search, zeros included. The
+	// penalty it replaces matched 0 of 217 lookups and nothing printed the 0.
+	console.log(`penalty_lookups=${meta?.penalty?.lookups ?? 0}`);
+	console.log(`penalty_same_file=${meta?.penalty?.sameFile ?? 0}`);
+	console.log(`penalty_applied=${meta?.penalty?.applied ?? 0}`);
+	// R3.9: the dirty overlay's state, on EVERY search, one key per line like
+	// every other header key (revision 1 rejected a compound line, LOW 8).
+	for (const line of overlayHeaderLines(meta?.overlay)) console.log(line);
+	// The SAME sentence the CLI's graph commands and the MCP tools render, from
+	// the one declaration in `src/core/branch-state.ts`.
+	const hint = branchHintForAgent(branchState, meta?.branch ?? null, "search");
+	if (hint !== null) {
+		console.log(`branch_hint=${hint}`);
+	}
 	// Only present when the query was embedded with the model the INDEX was
 	// built with rather than the configured one. An agent that gets results back
 	// otherwise has no way to know a different model answered.
@@ -91,6 +314,20 @@ function searchResults(
 			);
 		} else {
 			let line = `result file=${r.chunk.filePath} line=${r.chunk.startLine} end_line=${r.chunk.endLine} score=${r.score.toFixed(3)} type=${r.chunk.chunkType} name=${r.chunk.name ?? ""}`;
+			// D1's PER-ROW attribution, so an agent can discount a foreign row
+			// instead of discarding the whole response.
+			if (r.branches && r.branches.length > 0) {
+				line += ` branches=${r.branches.join(",")}`;
+			}
+			// BEFORE ` summary=`: parsers read the summary as the free-text tail.
+			// `"dirty"` ONLY: the cloud path's `"cloud"`/`"overlay"` values are a
+			// different mechanism and print nothing here, as before.
+			if (r.source === "dirty") {
+				line += " source=dirty";
+			}
+			if (r.penalty === "dead") {
+				line += " penalty=dead";
+			}
 			if (r.summary) {
 				// Extract first sentence of summary for agent context
 				const summaryMatch = r.summary.match(/Summary:\s*(.+?)(?:\n|$)/);
@@ -101,6 +338,98 @@ function searchResults(
 			console.log(line);
 		}
 	}
+}
+
+/**
+ * One field of an `overlay_gap_details` entry, escaped so the line splits
+ * back into exactly one entry per gap event (outer review 2, LOW 4): `%`
+ * first (so the escape is reversible), then `;` (the entry separator) and,
+ * in a PATH, `:` (the path/message boundary). A message keeps its own `:`
+ * readable — the first `:` after the path ends the path, so later ones are
+ * unambiguous. CR/LF runs become one space: the value is one header line.
+ */
+function gapDetailField(text: string, isPath: boolean): string {
+	const flat = text
+		.replace(/[\r\n]+/g, " ")
+		.replace(/%/g, "%25")
+		.replace(/;/g, "%3B");
+	return isPath ? flat.replace(/:/g, "%3A") : flat;
+}
+
+/**
+ * The overlay's `--agent` header keys (step 3, R3.9), ALWAYS all of them, so a
+ * consumer relies on each key rather than on its absence:
+ *
+ *   overlay                      on | off | skipped | unreported
+ *   overlay_reason               the gate's / the pass's reason
+ *   overlay_files                |served|
+ *   overlay_files_index_current  candidates the index already holds verbatim
+ *   overlay_files_deleted        |staleDeleted| (suppressed, nothing served)
+ *   overlay_files_pending        not reached this pass (index rows visible)
+ *   overlay_files_failed         per-file failures (index rows visible)
+ *   overlay_files_unclassified   tracker candidates the budget did not reach
+ *   overlay_rebuilt              files whose overlay rows were written
+ *   overlay_embedded             texts the provider ACCEPTED (returned a
+ *                                vector for); a refused text is not counted
+ *   overlay_cache_hits           texts the embed cache answered
+ *   overlay_suppressed_rows      index rows the pre-filter hid (R3.3)
+ *   overlay_rebuild_ms           the locked build + write + read section
+ *   overlay_gaps                 `; `-separated MACHINE TOKENS from a closed
+ *                                set (`OVERLAY_GAP_TOKENS`), each once: a skip's
+ *                                cause, `file-failed-<read|too-large|chunk|
+ *                                embed|write|inconsistent>`, a pass event
+ *                                (`embed-deadline`, `unclassified-budget`,
+ *                                `unclassified-watch-capacity`,
+ *                                `embed-cache-over-cap`, `overlay-wiped`,
+ *                                `delete-failed`, `optimize-failed`,
+ *                                `add-failed`) and, when rows are served,
+ *                                R3.8's row gaps (`no-symbol-graph`,
+ *                                `no-code-units`, `no-summaries`,
+ *                                `bm25-unchanged-chunks-only`). Never free text.
+ *                                MCP's `overlay.gaps` matches entry for entry.
+ *   overlay_gap_details          `; `-separated, one per gap EVENT:
+ *                                `token[ path]: message` — the free text behind
+ *                                the tokens (paths, counts, error messages,
+ *                                provider JSON). Always present, empty when
+ *                                there is nothing. MCP: `overlay.gapDetails`.
+ *                                Splittable without ambiguity: `%` and `;` are
+ *                                percent-encoded (`%25`, `%3B`) in path and
+ *                                message, and `:` (`%3A`) in the path; CR/LF
+ *                                runs become one space. So split on `; `, end
+ *                                the token at the first space or `:`, end the
+ *                                path at the first `:`, and percent-decode
+ *                                (`decodeURIComponent`) each field.
+ *
+ * `unreported` is a path that never runs the overlay (the cloud search).
+ */
+export function overlayHeaderLines(
+	overlay: SearchOverlayReport | undefined,
+): string[] {
+	const gaps = overlay?.gaps ?? [];
+	const details = overlay?.gapDetails ?? [];
+
+	return [
+		`overlay=${overlay?.state ?? "unreported"}`,
+		`overlay_reason=${overlay?.reason ?? "not-run"}`,
+		`overlay_files=${overlay?.files ?? 0}`,
+		`overlay_files_index_current=${overlay?.filesIndexCurrent ?? 0}`,
+		`overlay_files_deleted=${overlay?.filesDeleted ?? 0}`,
+		`overlay_files_pending=${overlay?.filesPending ?? 0}`,
+		`overlay_files_failed=${overlay?.filesFailed ?? 0}`,
+		`overlay_files_unclassified=${overlay?.filesUnclassified ?? 0}`,
+		`overlay_rebuilt=${overlay?.rebuilt ?? 0}`,
+		`overlay_embedded=${overlay?.embedded ?? 0}`,
+		`overlay_cache_hits=${overlay?.cacheHits ?? 0}`,
+		`overlay_suppressed_rows=${overlay?.suppressedRows ?? 0}`,
+		`overlay_rebuild_ms=${Math.round(overlay?.rebuildMs ?? 0)}`,
+		`overlay_gaps=${gaps.join("; ")}`,
+		`overlay_gap_details=${details
+			.map(
+				(d) =>
+					`${d.token}${d.path === undefined ? "" : ` ${gapDetailField(d.path, true)}`}: ${gapDetailField(d.message, false)}`,
+			)
+			.join("; ")}`,
+	];
 }
 
 /**

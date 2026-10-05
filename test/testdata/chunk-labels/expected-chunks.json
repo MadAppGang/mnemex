@@ -1,0 +1,114 @@
+[
+	{
+		"name": null,
+		"id": "c9063b7c380c4b55e22c7c3cfcd42b4127adb2222944b1439642084456c35317",
+		"contentHash": "eb45a1224933d204fb4a4f05e730038f08da3aeb4a68c506343c45f17f527123",
+		"startLine": 1,
+		"endLine": 3,
+		"chunkType": "module"
+	},
+	{
+		"name": "method0",
+		"id": "97d07e248d1f9282ff3394aa836e31755f996746eebcac80fe93f53e817b3121",
+		"contentHash": "2128bc2f8942e5dea9d3e0963eecc272c25035c91f277a8976a959d41c3f6a97",
+		"startLine": 4,
+		"endLine": 18,
+		"chunkType": "method"
+	},
+	{
+		"name": "method1",
+		"id": "3f0053a645d128ab6f8bd975b714f2053634b35abd0f60399cefbd7590db409e",
+		"contentHash": "c5850e40cd5166e612a09ee926b77495f4755ccce0a27a75562a51b3fadfaa13",
+		"startLine": 20,
+		"endLine": 28,
+		"chunkType": "method"
+	},
+	{
+		"name": "method2",
+		"id": "8f91bc4655d000a747df0d51cc58219705ff3ed0ce29120b8fca09df48fcb015",
+		"contentHash": "95d890d7c57abeffde5fa585de1737af2c288f4521608f049407cc66971a7a50",
+		"startLine": 30,
+		"endLine": 38,
+		"chunkType": "method"
+	},
+	{
+		"name": "method3",
+		"id": "6c7522a4778de03f953714d5690dd3950c8289e004d31b79204fde31dacc9f96",
+		"contentHash": "1f07fc4d005251f16a23e986f33c7f1a76c62ca5617f69bbbffef81a5475293b",
+		"startLine": 40,
+		"endLine": 48,
+		"chunkType": "method"
+	},
+	{
+		"name": "method4",
+		"id": "0f65be55574919fe8d51b0d8152ccaf86dd19a6dafd28bbaffb10788199e1bd0",
+		"contentHash": "2d23b7320f04de71a82768389ce4fd98d1f550dd9f7f3c4ce243f80908450600",
+		"startLine": 50,
+		"endLine": 61,
+		"chunkType": "method"
+	},
+	{
+		"name": "method5",
+		"id": "df74858c2d72b3451ee9b8f197385e3800d710b6a087a9258e505481523d4fbe",
+		"contentHash": "c5a89a3eae734a4277071559d1b1b0e4fdf9d12e84866e6b7ec0b9d0f4b22ad3",
+		"startLine": 63,
+		"endLine": 71,
+		"chunkType": "method"
+	},
+	{
+		"name": "method6",
+		"id": "6d2e2d40c72e0f21f3930e41d622355cef71f9d47bc3c9d7261c8effeaba94b4",
+		"contentHash": "fbeadd71737a5abc4ecf0d18d79dbbb9d119b3a1afc198a1a78d5b24f084a5a6",
+		"startLine": 73,
+		"endLine": 81,
+		"chunkType": "method"
+	},
+	{
+		"name": "method7",
+		"id": "e5748d18eb9ae03a8ec039483fdd02f49eaf617d5ee0a09febd70dbf90e21acf",
+		"contentHash": "f91cf4a28f0b1f2fa1f2b9c3e381e3f38dc6fb60d5a660b2d5a5b4511a1489d5",
+		"startLine": 83,
+		"endLine": 91,
+		"chunkType": "method"
+	},
+	{
+		"name": "ConfigHolder (fields)",
+		"id": "ebb2cefe71c6031346903e037863b0891b5e6503e38c75a995a62617a581bf18",
+		"contentHash": "d659ca34ce038bb9dc36eb2becdc1e7e34a3aea230017c855d630c1e0a6bb902",
+		"startLine": 93,
+		"endLine": 95,
+		"chunkType": "module"
+	},
+	{
+		"name": null,
+		"id": "d6077fe7531b8ec14c6cbab141b380c28ea495688193180c1166fb029b447038",
+		"contentHash": "d68ed60f545ca1c1b17bee70f0f73250870958e34d7832c53caaf32604e90b43",
+		"startLine": 97,
+		"endLine": 97,
+		"chunkType": "module"
+	},
+	{
+		"name": "handleEverything (part 1/3)",
+		"id": "883f2fa491fc244248bd0239bc96f61caf2c6ac90650d130bc4ca34bdd4dc0b8",
+		"contentHash": "78208f5b47428be76a005f6c2998c479459b20a41add92b0c15aa33c2a909cce",
+		"startLine": 98,
+		"endLine": 127,
+		"chunkType": "function"
+	},
+	{
+		"name": "handleEverything (part 2/3)",
+		"id": "51fde227c02eed12e1869a31101857021cc71266d8ed6afd66b2550b1d6e91ed",
+		"contentHash": "85e001386fed135def84fbbd40b35bbac3db618d3a4b1e20770ba7a42c123214",
+		"startLine": 128,
+		"endLine": 157,
+		"chunkType": "function"
+	},
+	{
+		"name": "handleEverything (part 3/3)",
+		"id": "5179300515adaec1a10907c52eb07d699e099f2d3fa57fa366c6d205f3468aae",
+		"contentHash": "d8e736a38c7ce69bf6a18bff692c95922d1bcd76f3bde31468f8221954124b31",
+		"startLine": 158,
+		"endLine": 191,
+		"chunkType": "function"
+	}
+]

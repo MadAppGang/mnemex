@@ -57,6 +57,12 @@ export type DocumentClass = "derived" | "observed" | "external";
 export const DOCUMENT_CLASS: Record<DocumentType, DocumentClass> = {
 	// Derived from repo source — re-derivable, so safe to supersede.
 	code_chunk: "derived",
+	// Re-derived from source on every index, like `code_chunk`. Code units are
+	// not tracked in the `documents` table, so in practice this classifies a
+	// LanceDB row type rather than driving an UPDATE; before it was listed,
+	// `classifyDocumentType` sent it to the "observed" fallback for strings it
+	// did not know.
+	code_unit: "derived",
 	file_summary: "derived",
 	symbol_summary: "derived",
 	idiom: "derived",
@@ -146,6 +152,7 @@ export interface StalenessReport {
  */
 export function invalidateForChangedFiles(
 	tracker: IFileTracker,
+	branchId: number,
 	options: { changedPaths: string[]; commitSha: string },
 ): InvalidationCounts {
 	const { commitSha } = options;
@@ -168,18 +175,25 @@ export function invalidateForChangedFiles(
 	}
 
 	// DERIVED: supersede and queue re-derivation.
+	// Every one of these is a PATH-keyed UPDATE that `hook-manager` drives on
+	// EVERY commit. Unscoped, a commit on one branch invalidated every other
+	// branch's summaries for the same path — `deleteSymbolsByFile`'s shape, on
+	// the documents side (§4.4.1).
 	counts.derivedInvalidated = tracker.markDocumentsInvalidated(
+		branchId,
 		changedPaths,
 		DERIVED_DOCUMENT_TYPES,
 		commitSha,
 	);
 	counts.filesQueuedForReEnrichment = tracker.queueReEnrichment(
+		branchId,
 		changedPaths,
 		DERIVED_DOCUMENT_TYPES,
 	);
 
 	// OBSERVED: flag, keep, leave invalidated_at_commit NULL.
 	counts.observedFlaggedStale = tracker.markDocumentsStale(
+		branchId,
 		changedPaths,
 		OBSERVED_DOCUMENT_TYPES,
 		commitSha,
@@ -187,6 +201,7 @@ export function invalidateForChangedFiles(
 
 	// EXTERNAL: counted so the exemption is visible in the report, never written.
 	counts.externalSkipped = tracker.countDocumentsForPaths(
+		branchId,
 		changedPaths,
 		EXTERNAL_DOCUMENT_TYPES,
 	);
@@ -208,6 +223,7 @@ export function invalidateForChangedFiles(
 export async function invalidateForCommit(
 	projectPath: string,
 	tracker: IFileTracker,
+	branchId: number,
 	options: { head?: CommitProvenance | null } = {},
 ): Promise<InvalidationCounts | null> {
 	try {
@@ -241,7 +257,7 @@ export async function invalidateForCommit(
 		// resolvable later.
 		tracker.recordCommit(head.sha, head.ordinal, head.committedAt);
 
-		return invalidateForChangedFiles(tracker, {
+		return invalidateForChangedFiles(tracker, branchId, {
 			changedPaths,
 			commitSha: head.sha,
 		});
@@ -263,9 +279,10 @@ export async function invalidateForCommit(
  */
 export function getStalenessReport(
 	tracker: IFileTracker,
+	branchId: number,
 	options: { staleLimit?: number } = {},
 ): StalenessReport {
-	const byType = tracker.getDocumentStatusCounts();
+	const byType = tracker.getDocumentStatusCounts(branchId);
 
 	const empty = (): StalenessClassSummary => ({
 		total: 0,
@@ -292,7 +309,7 @@ export function getStalenessReport(
 	}
 
 	const staleObserved = tracker
-		.getStaleDocuments(options.staleLimit)
+		.getStaleDocuments(branchId, options.staleLimit)
 		.filter((doc) => classifyDocumentType(doc.documentType) === "observed");
 
 	return { byClass, byType, totals, staleObserved };

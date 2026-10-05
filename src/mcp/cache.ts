@@ -9,6 +9,11 @@
 import { existsSync } from "node:fs";
 import { getIndexDbPath } from "../config.js";
 import {
+	type BranchScopeResolution,
+	graphBranchIdForRead,
+	resolveBranchScopeForProject,
+} from "../core/branch-scope.js";
+import {
 	createReferenceGraphManager,
 	type ReferenceGraphManager,
 } from "../core/reference-graph.js";
@@ -24,6 +29,17 @@ export interface CachedIndex {
 	graphManager: ReferenceGraphManager;
 	repoMapGen: RepoMapGenerator;
 	loadedAt: number;
+	/**
+	 * The branch the graph manager and repo map were built for.
+	 *
+	 * `ReferenceGraphManager` and `RepoMapGenerator` hold a branch for ONE run
+	 * (§4.4.1), and this server outlives a `git checkout`. Recording the id here
+	 * is what lets `get()` notice the mismatch and rebuild instead of answering
+	 * the previous branch for the rest of the process's life (V3.10).
+	 */
+	branchId: number;
+	/** Resolved with `branchId`, so a caller can surface D1's flag (§4.4.2). */
+	branch: BranchScopeResolution;
 }
 
 /**
@@ -48,8 +64,22 @@ export class IndexCache {
 	 * Throws if no index exists at the project path.
 	 */
 	async get(): Promise<CachedIndex> {
+		// Re-resolve HEAD on EVERY call: deliberately not memoized, because the
+		// user switches branches underneath a long-lived server (§2.5).
+		const branch = resolveBranchScopeForProject(this.projectPath);
+		const branchId = graphBranchIdForRead(branch);
+
 		if (this.cache) {
-			return this.cache;
+			if (this.cache.branchId === branchId) {
+				// The registry snapshot is re-read per call, so a row indexed under
+				// a branch since this entry was built is still attributed.
+				this.cache.branch = branch;
+				return this.cache;
+			}
+			this.logger.debug(
+				`IndexCache: branch changed (${this.cache.branchId} -> ${branchId}); reloading`,
+			);
+			this.invalidate();
 		}
 
 		// Avoid concurrent loads - reuse an in-flight load promise
@@ -57,7 +87,7 @@ export class IndexCache {
 			return this.loading;
 		}
 
-		this.loading = this.load();
+		this.loading = this.load(branch, branchId);
 		try {
 			this.cache = await this.loading;
 			return this.cache;
@@ -84,7 +114,10 @@ export class IndexCache {
 		this.invalidate();
 	}
 
-	private async load(): Promise<CachedIndex> {
+	private async load(
+		branch: BranchScopeResolution,
+		branchId: number,
+	): Promise<CachedIndex> {
 		const dbPath = getIndexDbPath(this.projectPath);
 		if (!existsSync(dbPath)) {
 			throw new Error(
@@ -95,8 +128,8 @@ export class IndexCache {
 		this.logger.debug(`IndexCache: loading index from ${dbPath}`);
 
 		const tracker = createFileTracker(dbPath, this.projectPath);
-		const graphManager = createReferenceGraphManager(tracker);
-		const repoMapGen = createRepoMapGenerator(tracker);
+		const graphManager = createReferenceGraphManager(tracker, branchId);
+		const repoMapGen = createRepoMapGenerator(tracker, branchId);
 
 		this.logger.debug("IndexCache: index loaded successfully");
 
@@ -105,6 +138,8 @@ export class IndexCache {
 			graphManager,
 			repoMapGen,
 			loadedAt: Date.now(),
+			branchId,
+			branch,
 		};
 	}
 

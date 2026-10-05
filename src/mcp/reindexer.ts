@@ -7,7 +7,8 @@
  */
 
 import { spawnMnemexDetached } from "../core/entry-point-launcher.js";
-import { IndexLock } from "../core/lock.js";
+import { createStoreLock } from "../core/lock.js";
+import { resolveStoreLocation } from "../core/store-location.js";
 import type { IndexCache } from "./cache.js";
 import type { CompletionDetector } from "./completion-detector.js";
 import type { Logger } from "./logger.js";
@@ -139,7 +140,8 @@ export class DebounceReindexer {
 	 * Check whether an indexing lock is currently held (by any process).
 	 */
 	isLocked(): boolean {
-		const lock = new IndexLock(this.workspaceRoot);
+		// The store lock, derived exactly as the spawned `mnemex index` derives it.
+		const lock = createStoreLock(resolveStoreLocation(this.workspaceRoot));
 		return lock.isLocked().locked;
 	}
 

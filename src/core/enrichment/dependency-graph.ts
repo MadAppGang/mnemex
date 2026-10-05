@@ -19,6 +19,10 @@ const DEFAULT_DEPENDENCIES: Record<DocumentType, DocumentType[]> = {
 	// Code chunks are the foundation - no dependencies
 	code_chunk: [],
 
+	// Code units are extracted from the AST alongside chunks, never enriched
+	// as a document type - no dependencies, and nothing depends on them
+	code_unit: [],
+
 	// File summary depends on having code chunks
 	file_summary: ["code_chunk"],
 

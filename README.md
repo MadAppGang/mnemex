@@ -139,7 +139,7 @@ mnemex rg install
 
 Requirements:
 - `~/.local/bin` must be early on your `$PATH`: `export PATH="$HOME/.local/bin:$PATH"`
-- The project needs a `.mnemex/` index for augmentation to kick in. Without one, the shim is a zero-overhead passthrough to the bundled `rg`.
+- The project needs an index for augmentation to kick in (`mnemex index`). Without one, the shim is a zero-overhead passthrough to the bundled `rg`.
 
 How it behaves:
 - **With an index**: runs `rg` + `mnemex search` in parallel (2s cap on mnemex), merges output with semantic hits first, deduplicated by `file:line`.
@@ -209,7 +209,9 @@ This repo also contains an experimental VS Code inline completion extension that
 
 1. **Parses code** with tree-sitter — extracts functions, classes, methods as chunks (not dumb line splits)
 2. **Generates embeddings** via OpenRouter (default: voyage-3.5-lite, best value)
-3. **Stores locally** in LanceDB — everything stays in `.mnemex/` in your project
+3. **Stores locally** in LanceDB — everything stays inside your repository, in
+   `<git-common-dir>/mnemex/` (`.git/mnemex/` in an ordinary checkout), so every git
+   worktree of the repository shares one index
 4. **Hybrid search** — BM25 for exact matches + vector similarity for semantic. Combines both.
 5. **Builds symbol graph** — tracks references between symbols, computes PageRank for importance
 
@@ -258,6 +260,8 @@ mnemex dead-code
 # Finds: symbols with zero callers + low PageRank + not exported
 # Great for: cleaning up unused code
 ```
+
+A type's own declaration does not count as a caller, so `dead-code --include-exported` (and the search dead-code penalty) can report an exported interface or type alias that nothing references. A symbol that references itself, such as a recursive function or a type that names itself in its body, still lists itself under `callers`, and `dead-code` does not report it.
 
 ### Test coverage gaps
 ```bash
@@ -357,11 +361,78 @@ mnemex init              # setup wizard
 mnemex index [path]      # index codebase
 mnemex search <query>    # search (auto-reindexes changed files)
 mnemex status            # what's indexed
-mnemex clear             # nuke the index
+mnemex clear             # clear this branch's rows (--all: the whole shared index)
 mnemex models            # list embedding models
 mnemex benchmark         # benchmark embedding models
 mnemex --mcp             # run as MCP server
 ```
+
+### Search flags
+```
+-n, --limit <n>          # max results (default: 10)
+-l, --language <lang>    # filter by language
+-p, --path <path>        # project path (default: cwd)
+-m, --model <model>      # embedding model (must match the index)
+-k, --keyword            # BM25 only, no embedding call
+--use-case <case>        # fim | search | navigation
+--no-reindex             # skip the auto-reindex before searching
+-y, --yes                # create the index if missing, no prompt
+--no-dirty               # leave uncommitted changes out of this search
+--                       # end of flags: `mnemex search -- -foo`
+```
+
+Flags are checked strictly: a typo such as `--no-dirtyy` exits 1, names the
+flag you probably meant, and runs nothing.
+
+### Uncommitted changes (the dirty overlay)
+
+`search` includes work you have not indexed yet — modified tracked files and
+untracked files that git does not ignore — without running `mnemex index`. The
+changed files are chunked and embedded on the spot (through the same embedding
+cache `index` uses, so only text that actually changed reaches the provider),
+kept in a small per-worktree store, and ranked in the same fusion as indexed
+rows. Index rows of a changed or deleted file are hidden only when the overlay
+replaces them or the file is gone; if the overlay cannot be built, the index's
+own rows are shown and the output says why.
+
+- Off for one search: `mnemex search "q" --no-dirty`. Off for a project:
+  `"dirtyOverlay": false` in `mnemex.json`. Off everywhere: `"dirtyOverlay":
+  false` in `~/.mnemex/config.json` (a project value wins).
+- Each worktree has its own overlay; one worktree never sees another's
+  uncommitted files.
+- Overlay results have no symbol graph (no dead-code penalty), no code units
+  and no summaries, and a changed chunk has no BM25 score of its own. They are
+  marked `[uncommitted]` in human output and `source=dirty` under `--agent`,
+  whose header always carries `overlay=on|off|skipped`, `overlay_reason=…` and
+  the file counts. When files are served, `overlay_gaps` (and MCP's
+  `overlay.gaps`) lists those gaps as tokens: `no-symbol-graph`,
+  `no-code-units`, `no-summaries`, `bm25-unchanged-chunks-only`.
+- `overlay_gaps` holds machine tokens only, from a closed set, each once: a
+  skip's cause (`busy`, `embed-failed`, `too-large`, …), a failed file as
+  `file-failed-<read|too-large|chunk|embed|write|inconsistent>`, the pass
+  events `embed-deadline`, `unclassified-budget`,
+  `unclassified-watch-capacity`, `embed-cache-over-cap`, `overlay-wiped`,
+  `delete-failed`, `optimize-failed`, `add-failed`, and the four row gaps
+  above. The free text — which file, the error message, a provider's error
+  body — is on the next header line, `overlay_gap_details=` (always present;
+  `token[ path]: message` entries joined with `; `), and in MCP's
+  `overlay.gapDetails`. Inside a path or message, `%` and `;` are
+  percent-encoded (`%25`, `%3B`), and so is a path's `:` (`%3A`): split on
+  `; `, end the path at the first `:`, then percent-decode each field.
+- If the embedding provider accepts none of the overlay's texts after the
+  query was embedded, and the overlay has nothing else to show (no file it
+  could still serve, no deleted file to hide), the search reports
+  `overlay=skipped overlay_reason=embed-failed` and shows index rows.
+  Otherwise it stays `overlay=on` and counts the refused files in
+  `overlay_files_failed`; their indexed versions are shown.
+  `overlay_embedded` counts only texts the provider returned a vector for —
+  including those it answered before a slow pass hit its time budget, which
+  are cached so the next search does not send them again.
+- `mnemex rg` never uses the overlay (its output stays exactly ripgrep's).
+- "Dirty" means different from the INDEX, decided by content hash — not
+  merely "git status says modified". Content that git reports as clean but
+  that the index has not caught up with (e.g. after a `git pull` with no
+  reindex) is the index's job: run `mnemex index`.
 
 ### Symbol graph commands (for AI agents)
 ```
@@ -419,6 +490,38 @@ mnemex hooks install     # install git post-commit hook for auto-indexing
 mnemex hooks uninstall   # remove the hook
 mnemex hooks status      # check if hook is installed
 ```
+
+### Branches
+One index is shared by every worktree of a repository, and each branch sees its
+own rows. These are the commands that make that visible.
+```
+mnemex branches                  # what the store holds: id, label, state, row counts
+mnemex branches prune --dry-run  # what a prune would reclaim; writes nothing
+mnemex branches prune            # reclaim branches your repository no longer has
+```
+A branch whose ref has disappeared is marked unconfirmed first and tombstoned 24
+hours later, so a mid-rebase moment cannot destroy an index. Its rows are then
+reclaimed a slice at a time by ordinary `mnemex index` runs — `prune` is the
+immediate form of the same thing, and you never have to run it.
+
+If a command answers with nothing on a branch you have just created, that is
+because the branch has not been indexed yet. Every command says so rather than
+looking like an empty result: run `mnemex index`. The same is said for a branch
+the index knows but holds no rows for, which is what a whole-store rebuild
+elsewhere leaves behind.
+
+**Rebuilding: `--force` is one branch, `--force-all` is all of them.**
+```
+mnemex index --force       # rebuild THIS branch; other branches keep their rows
+mnemex index --force-all   # rebuild the whole store; every branch must index again
+```
+`--force` re-indexes every file of the branch you are on. A row another branch
+still holds is kept and simply stops being yours, so forcing your branch cannot
+empty a colleague's — or your own other branch's — index. `--force-all` is the
+deliberate whole-store rebuild, and after it every branch reports itself empty
+until it is indexed again. A model change, an index-version upgrade and a
+corrupt vector column rebuild the whole store on their own, because each of
+those is a property of the store rather than of one branch.
 
 ### API keys and the macOS Keychain
 ```
@@ -491,6 +594,8 @@ Env vars:
 - `MNEMEX_MODEL` — override embedding model
 - `MNEMEX_ON_MODEL_MISMATCH` — `use-indexed` (default) or `force-model`, see below
 - `CONTEXT7_API_KEY` — for documentation fetching (optional)
+- `MNEMEX_DISABLE_EMBED_CACHE` — set to `1` to recompute every vector instead of reusing the embedding cache
+- `MNEMEX_EMBED_CACHE_PATH` — put the embedding cache somewhere other than `~/.mnemex/embed-cache.db`
 - `MNEMEX_THEME` — `light` or `dark`; mnemex's own theme override
 - `TERM_THEME` — `light` or `dark`; the shared terminal-theme convention, honoured when `MNEMEX_THEME` is unset
 
@@ -500,7 +605,72 @@ Inside tmux or zellij, mnemex asks the multiplexer, not your terminal, for the b
 
 Files:
 - `~/.mnemex/config.json` — global config (provider, model, docs settings)
-- `.mnemex/` — project index (add to .gitignore)
+- `~/.mnemex/embed-cache.db` — embedding cache, shared by every repo on the machine
+- `<git-common-dir>/mnemex/` — **the index**, shared by every worktree of the repository
+  (`.git/mnemex/` in an ordinary checkout; a linked worktree uses the main checkout's).
+  It lives inside `.git/`, so there is nothing to gitignore. Outside a git repository it
+  stays at `<dir>/.mnemex/`
+- `.mnemex/` — per-worktree, and not the index: `memories/`, `edit-history/`,
+  `activity.jsonl` (add to .gitignore)
+
+### One index per repository
+
+Every git worktree of a repository reads and writes one index, and each row records which
+branches it belongs to. A second worktree of a tree you have already indexed costs **zero**
+embedding requests and **zero** LLM calls — the embedding cache is keyed on text and
+summaries are keyed on content, so neither is re-bought. Searching from a branch returns
+that branch's code; switching branches is an incremental re-index of what actually changed,
+not a rebuild.
+
+Upgrading moves the index once. The first `mnemex index` on this version rebuilds into the
+new location and tells you where the old one is — under `--agent` as `abandoned_store_dir=`.
+**The old index files are left in place, never deleted**: you can remove `index.db*`,
+`vectors/` and `docs-cache/` from that directory yourself. **Do not delete the `.mnemex/`
+directory itself** — it still holds your MCP memories (`memories/`), edit history, project
+config and the uncommitted-work overlay.
+
+Coming from 0.36 or earlier, that first rebuild costs real work once: the embedding cache below
+is new and starts empty, so each repository is re-embedded, and with enrichment on (the
+default) every LLM summary is re-generated (`--no-llm` skips that). After it, another worktree
+of the same tree costs no embedding requests and no LLM calls, and later rebuilds take their
+embeddings from the cache.
+
+To keep an index per worktree instead, set `indexDir` in `mnemex.json` to any path other
+than the literal `".mnemex"` — that one string is read as a copied default rather than an
+intent, and `mnemex doctor` tells you when it ignored one.
+
+### Embedding cache
+
+Embedding the same text twice costs the same money and the same minutes as embedding it
+once, so mnemex keeps the vectors it has already paid for in a single SQLite file at
+`~/.mnemex/embed-cache.db`. It is **machine-global**: every repository, every clone and
+every git worktree on the machine reads and writes the same file, which is what makes the
+second worktree of a tree you have already indexed nearly free.
+
+An entry is keyed on the embedding model, the vector dimension and the exact text that was
+embedded — nothing else. Moving a file, switching branches, rebasing or re-cloning does not
+invalidate anything, because none of those change the text. Changing the model does, since
+the model is part of the key; the old entries stay until they are evicted.
+
+The file is capped at 2 GiB and evicts least-recently-used entries when it grows past that.
+Deleting it is always safe — the next index run pays full price once and refills it.
+
+Turn it off with `MNEMEX_DISABLE_EMBED_CACHE=1`, or persistently in `~/.mnemex/config.json`:
+
+```json
+{
+  "embedCache": false
+}
+```
+
+Point it elsewhere with `MNEMEX_EMBED_CACHE_PATH=/path/to/embed-cache.db` (each path is an
+independent cache). Either way search results are unchanged: vectors are cached as float32,
+which is what the index stores regardless, so a served vector is bit-for-bit the one the
+index would have held.
+
+`mnemex index` reports what it did — `Embed cache: 4210 cached, 96 embedded` — and
+`--agent` emits the same numbers as `embed_cache_tier`, `embed_cache_hits`,
+`embed_cache_misses` and `embed_cache_writes`.
 
 ### Changing the embedding model
 

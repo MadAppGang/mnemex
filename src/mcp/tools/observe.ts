@@ -10,7 +10,10 @@ import { createHash } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createEmbeddingsClient } from "../../core/embeddings.js";
-import { createIndexer } from "../../core/indexer.js";
+import {
+	appendObservation,
+	claimObserveSkipWarning,
+} from "../../core/observation-writer.js";
 import type { ToolDeps } from "./deps.js";
 import { buildFreshness, errorResponse } from "./deps.js";
 
@@ -68,21 +71,32 @@ export function registerObserveTools(server: McpServer, deps: ToolDeps): void {
 					vector: embedding,
 				};
 
-				// Write to LanceDB
-				const indexer = createIndexer({
-					projectPath: config.workspaceRoot,
-				});
-				const store = (indexer as any).vectorStore;
-				if (store) {
-					await store.addDocuments([doc]);
-				} else {
-					// Fallback: create store directly
-					const { createVectorStore } = await import("../../core/store.js");
-					const vs = await createVectorStore(config.workspaceRoot);
-					await vs.addDocuments([doc]);
-					await vs.close();
+				// Write to LanceDB under the store lock. D5: wait 2 s, then skip the
+				// append and warn once; never hang the caller behind an index run.
+				const outcome = await appendObservation(config.workspaceRoot, doc);
+				if (!outcome.recorded) {
+					const message = `observe: observation ${id} NOT recorded: ${outcome.detail}`;
+					if (claimObserveSkipWarning()) {
+						logger.warn(message);
+					} else {
+						logger.debug(message);
+					}
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: JSON.stringify({
+									observationId: id,
+									recorded: false,
+									reason: outcome.reason,
+									holderPid: outcome.holderPid,
+									message: `Observation not recorded: ${outcome.detail}. Retry after it finishes.`,
+									...buildFreshness(stateManager, startTime),
+								}),
+							},
+						],
+					};
 				}
-				await indexer.close();
 
 				logger.info(`observe: recorded observation ${id} (${observationType})`);
 

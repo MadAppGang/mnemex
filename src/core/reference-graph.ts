@@ -6,7 +6,7 @@
  */
 
 import type { SymbolDefinition } from "../types.js";
-import type { IFileTracker } from "./tracker.js";
+import type { BranchScopedGraph, IFileTracker } from "./tracker.js";
 
 // ============================================================================
 // Types
@@ -93,11 +93,25 @@ export const DEFAULT_PPR_MAX_NODES = 1000;
 // ============================================================================
 
 export class ReferenceGraphManager {
-	private tracker: IFileTracker;
+	/**
+	 * Every symbol-graph read and write this class makes, through ONE branch.
+	 *
+	 * The branch is taken at construction and held FOR THE DURATION OF ONE RUN
+	 * ONLY — this is not one of §2.5's three long-lived objects. `mcp/cache.ts`
+	 * and the TUI rebuild theirs when the resolved branch changes, which is what
+	 * keeps a branch switch under a long-lived MCP server from being answered by
+	 * the previous branch (V3.10).
+	 */
+	private readonly symbols: BranchScopedGraph;
 	private graph: Map<string, GraphNode> | null = null;
 
-	constructor(tracker: IFileTracker) {
-		this.tracker = tracker;
+	constructor(tracker: IFileTracker, branchId: number) {
+		this.symbols = tracker.graph(branchId);
+	}
+
+	/** Which branch this manager was built for. Diagnostics and cache keys. */
+	get branchId(): number {
+		return this.symbols.scopedBranchId;
 	}
 
 	/**
@@ -112,8 +126,8 @@ export class ReferenceGraphManager {
 	 * the in-memory adjacency structure.
 	 */
 	private loadGraph(): Map<string, GraphNode> {
-		const symbols = this.tracker.getAllSymbols();
-		const references = this.tracker.getAllReferences();
+		const symbols = this.symbols.getAllSymbols();
+		const references = this.symbols.getAllReferences();
 
 		const graph = new Map<string, GraphNode>();
 
@@ -149,10 +163,10 @@ export class ReferenceGraphManager {
 	 */
 	async resolveReferences(): Promise<number> {
 		// Use bulk SQL resolution for efficiency
-		const resolved = this.tracker.resolveReferencesByName();
+		const resolved = this.symbols.resolveReferencesByName();
 
 		// Update degree counts after resolution
-		this.tracker.updateDegreeCounts();
+		this.symbols.updateDegreeCounts();
 
 		return resolved;
 	}
@@ -482,7 +496,7 @@ export class ReferenceGraphManager {
 		line: number,
 		symbolName?: string,
 	): string | null {
-		const symbols = this.tracker.getSymbolsByFile(filePath);
+		const symbols = this.symbols.getSymbolsByFile(filePath);
 		if (symbols.length === 0) return null;
 
 		let best: SymbolDefinition | null = null;
@@ -515,19 +529,19 @@ export class ReferenceGraphManager {
 		dampingFactor?: number,
 	): Promise<void> {
 		const scores = this.computePageRank(iterations, dampingFactor);
-		this.tracker.updatePageRankScores(scores);
+		this.symbols.updatePageRankScores(scores);
 	}
 
 	/**
 	 * Get all symbols that call/reference a given symbol
 	 */
 	getCallers(symbolId: string): SymbolDefinition[] {
-		const refs = this.tracker.getReferencesTo(symbolId);
+		const refs = this.symbols.getReferencesTo(symbolId);
 		const callerIds = new Set(refs.map((r) => r.fromSymbolId));
 
 		const callers: SymbolDefinition[] = [];
 		for (const id of callerIds) {
-			const symbol = this.tracker.getSymbol(id);
+			const symbol = this.symbols.getSymbol(id);
 			if (symbol) {
 				callers.push(symbol);
 			}
@@ -540,14 +554,14 @@ export class ReferenceGraphManager {
 	 * Get all symbols that a given symbol calls/references
 	 */
 	getCallees(symbolId: string): SymbolDefinition[] {
-		const refs = this.tracker.getReferencesFrom(symbolId);
+		const refs = this.symbols.getReferencesFrom(symbolId);
 		const calleeIds = new Set(
 			refs.filter((r) => r.toSymbolId).map((r) => r.toSymbolId!),
 		);
 
 		const callees: SymbolDefinition[] = [];
 		for (const id of calleeIds) {
-			const symbol = this.tracker.getSymbol(id);
+			const symbol = this.symbols.getSymbol(id);
 			if (symbol) {
 				callees.push(symbol);
 			}
@@ -580,7 +594,7 @@ export class ReferenceGraphManager {
 			maxCallees = 10,
 		} = options;
 
-		const symbol = this.tracker.getSymbol(symbolId);
+		const symbol = this.symbols.getSymbol(symbolId);
 
 		return {
 			symbol,
@@ -612,7 +626,7 @@ export class ReferenceGraphManager {
 			const memberName = name.slice(dotIndex + 1);
 
 			// Find the parent class/interface/struct
-			const classCandidates = this.tracker.getSymbolByName(className);
+			const classCandidates = this.symbols.getSymbolByName(className);
 			const classSymbol =
 				classCandidates.find(
 					(s) =>
@@ -621,7 +635,7 @@ export class ReferenceGraphManager {
 
 			if (classSymbol) {
 				// Find children of that class with matching name
-				const memberCandidates = this.tracker.getSymbolByName(memberName);
+				const memberCandidates = this.symbols.getSymbolByName(memberName);
 				const scoped = memberCandidates.filter(
 					(s) => s.parentId === classSymbol.id,
 				);
@@ -642,7 +656,7 @@ export class ReferenceGraphManager {
 			// (which will likely return null, then try the member name alone)
 		}
 
-		const candidates = this.tracker.getSymbolByName(name);
+		const candidates = this.symbols.getSymbolByName(name);
 
 		if (candidates.length === 0) {
 			return null;
@@ -695,6 +709,7 @@ export class ReferenceGraphManager {
  */
 export function createReferenceGraphManager(
 	tracker: IFileTracker,
+	branchId: number,
 ): ReferenceGraphManager {
-	return new ReferenceGraphManager(tracker);
+	return new ReferenceGraphManager(tracker, branchId);
 }

@@ -15,8 +15,12 @@
  */
 
 import { existsSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { inspectLock } from "../core/lock.js";
+import {
+	getIndexDbPathFor,
+	getLockPathFor,
+	resolveStoreLocation,
+} from "../core/store-location.js";
 import type { ToolDeps } from "./tools/deps.js";
 
 /** One of six mutually-exclusive index situations. */
@@ -144,13 +148,14 @@ export async function buildIndexState(
 
 	const freshness = stateManager.getFreshness();
 
-	const indexDbPath = join(config.indexDir, "index.db");
+	// index.db and the lock come from ONE resolved store location, the same
+	// derivation as createStoreLock (decision I-8), so they cannot name two
+	// different stores.
+	const storeLocation = resolveStoreLocation(config.workspaceRoot);
+	const indexDbPath = getIndexDbPathFor(storeLocation);
 	const hasIndex = existsSync(indexDbPath);
-
-	// config.indexDir is already an ABSOLUTE, fully-resolved path (config.ts joins it
-	// onto workspaceRoot and honors MNEMEX_INDEX_DIR). inspectLock takes that directory
-	// directly and resolves join(indexDir, ".indexing.lock") — no double-join.
-	const inspect = inspectLock(config.indexDir, HEARTBEAT_FRESH_TIMEOUT);
+	const lockPath = getLockPathFor(storeLocation);
+	const inspect = inspectLock(lockPath, HEARTBEAT_FRESH_TIMEOUT);
 
 	// ── Read-only stats (mirror status.ts; never throws) ──────────────────────
 	let indexSizeBytes = 0;
@@ -166,8 +171,8 @@ export async function buildIndexState(
 			// Ignore stat errors
 		}
 		try {
-			const { tracker } = await cache.get();
-			const stats = tracker.getStats();
+			const { tracker, branchId } = await cache.get();
+			const stats = tracker.getStats(branchId);
 			indexedFileCount = stats.totalFiles;
 			if (!lastIndexed && stats.lastIndexed) {
 				lastIndexed = stats.lastIndexed;
@@ -221,7 +226,7 @@ export async function buildIndexState(
 				`Lock file present but holder PID ${inspect.pid} is not running — the lock appears stale.`,
 			);
 			recommendations.push(
-				`This is informational; no lock was removed. If you are sure no indexer is running, clear it manually (e.g. run 'mnemex index --force-unlock' or delete ${config.indexDir}/.indexing.lock).`,
+				`This is informational; no lock was removed. If you are sure no indexer is running, clear it manually (e.g. run 'mnemex index --force-unlock' or delete ${lockPath}).`,
 			);
 			if (canReturnCachedResults) {
 				recommendations.push(
@@ -265,7 +270,7 @@ export async function buildIndexState(
 				`Indexer (PID ${inspect.pid}) appears HUNG${inPhase}: it is alive but has made no indexing progress for ~${sinceProgressSec}s.`,
 			);
 			recommendations.push(
-				`It will be reclaimed automatically by the next index run; or force-unlock now (run 'mnemex index --force-unlock' or delete ${config.indexDir}/.indexing.lock).`,
+				`It will be reclaimed automatically by the next index run; or force-unlock now (run 'mnemex index --force-unlock' or delete ${lockPath}).`,
 			);
 			if (canReturnCachedResults) {
 				recommendations.push(

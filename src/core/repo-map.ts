@@ -23,7 +23,7 @@ import type {
 	RepoMapOptions,
 	SymbolDefinition,
 } from "../types.js";
-import type { IFileTracker } from "./tracker.js";
+import type { BranchScopedGraph, IFileTracker } from "./tracker.js";
 
 // ============================================================================
 // Constants
@@ -43,10 +43,17 @@ const MAX_SYMBOLS_PER_FILE = 20;
 // ============================================================================
 
 export class RepoMapGenerator {
-	private tracker: IFileTracker;
+	/**
+	 * `map` answers for ONE branch. The design's documented `--all-branches`
+	 * semantics (a `{ kind: "all" }` scope, each row labelled with its branches)
+	 * belong to the lifecycle sub-phase 3b-3, which owns `mnemex branches`; this
+	 * phase makes the default correct — the branch HEAD points at — rather than
+	 * the sum over every branch in the store.
+	 */
+	private readonly symbols: BranchScopedGraph;
 
-	constructor(tracker: IFileTracker) {
-		this.tracker = tracker;
+	constructor(tracker: IFileTracker, branchId: number) {
+		this.symbols = tracker.graph(branchId);
 	}
 
 	/**
@@ -61,7 +68,7 @@ export class RepoMapGenerator {
 		} = options;
 
 		// Get symbols sorted by PageRank
-		let symbols = this.tracker.getTopSymbols(topNByPagerank || 5000);
+		let symbols = this.symbols.getTopSymbols(topNByPagerank || 5000);
 
 		// Filter by path pattern if provided
 		if (pathPattern) {
@@ -118,7 +125,7 @@ export class RepoMapGenerator {
 	generateStructured(options: RepoMapOptions = {}): RepoMapEntry[] {
 		const { pathPattern, topNByPagerank } = options;
 
-		let symbols = this.tracker.getTopSymbols(topNByPagerank || 5000);
+		let symbols = this.symbols.getTopSymbols(topNByPagerank || 5000);
 
 		if (pathPattern) {
 			const pattern = new RegExp(
@@ -166,7 +173,7 @@ export class RepoMapGenerator {
 			.filter((t) => t.length > 2);
 
 		// Get all symbols and score by relevance
-		const allSymbols = this.tracker.getTopSymbols(10000);
+		const allSymbols = this.symbols.getTopSymbols(10000);
 
 		const scoredSymbols = allSymbols.map((symbol) => {
 			let relevance = 0;
@@ -358,6 +365,7 @@ export class RepoMapGenerator {
  */
 export function createRepoMapGenerator(
 	tracker: IFileTracker,
+	branchId: number,
 ): RepoMapGenerator {
-	return new RepoMapGenerator(tracker);
+	return new RepoMapGenerator(tracker, branchId);
 }

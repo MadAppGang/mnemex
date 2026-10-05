@@ -30,12 +30,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-	createIndexLock,
+	createStoreLock,
 	DEFAULT_PROGRESS_TIMEOUT,
-	IndexLock,
 	inspectLock,
 	isLockStale,
 } from "../../../src/core/lock.js";
+import { resolveStoreLocation } from "../../../src/core/store-location.js";
 
 const LOCK_FILENAME = ".indexing.lock";
 const DEAD_PID = 2_000_000_000; // almost certainly not a live process
@@ -48,6 +48,11 @@ function makeProject(): { projectPath: string; indexDir: string } {
 	const indexDir = join(projectPath, ".mnemex");
 	mkdirSync(indexDir, { recursive: true });
 	return { projectPath, indexDir };
+}
+
+/** The project's store lock, derived exactly as production derives it. */
+function lockAt(projectPath: string) {
+	return createStoreLock(resolveStoreLocation(projectPath));
 }
 
 /** Read the raw lock file JSON for assertions. */
@@ -118,7 +123,7 @@ describe("DEFAULT_PROGRESS_TIMEOUT", () => {
 describe("recordProgress", () => {
 	test("advances lastProgressAt when this process owns the lock", async () => {
 		const { projectPath, indexDir } = makeProject();
-		const lock = createIndexLock(projectPath);
+		const lock = lockAt(projectPath);
 		const acquired = await lock.acquire();
 		expect(acquired.acquired).toBe(true);
 
@@ -143,7 +148,7 @@ describe("recordProgress", () => {
 		const old = Date.now() - 600_000;
 		writeLock(indexDir, { pid: DEAD_PID, lastProgressAt: old });
 
-		const lock = new IndexLock(projectPath);
+		const lock = lockAt(projectPath);
 		lock.recordProgress(); // we don't own it => must not write
 
 		expect(readLock(indexDir).pid).toBe(DEAD_PID);
@@ -249,7 +254,7 @@ describe("acquire() auto-reclaim", () => {
 			startTime: now - 700_000,
 		});
 
-		const lock = createIndexLock(projectPath);
+		const lock = lockAt(projectPath);
 		// Use the default 5-min progress timeout. With waitTimeout:0, a non-stale
 		// live lock would return { acquired:false, reason:"already_running" }.
 		const result = await lock.acquire({ waitTimeout: 0 });
@@ -272,7 +277,7 @@ describe("acquire() auto-reclaim", () => {
 		// Live pid, fresh progress => genuinely indexing => must NOT be reclaimed.
 		writeLock(indexDir, { pid: process.pid, lastProgressAt: Date.now() });
 
-		const lock = createIndexLock(projectPath);
+		const lock = lockAt(projectPath);
 		const result = await lock.acquire({ waitTimeout: 0 });
 
 		expect(result.acquired).toBe(false);
@@ -291,14 +296,14 @@ describe("isLocked()", () => {
 			heartbeat: Date.now(),
 			lastProgressAt: Date.now() - 600_000,
 		});
-		const lock = new IndexLock(projectPath);
+		const lock = lockAt(projectPath);
 		expect(lock.isLocked().locked).toBe(false);
 	});
 
 	test("reports a live, progressing holder as locked", () => {
 		const { projectPath, indexDir } = makeProject();
 		writeLock(indexDir, { pid: process.pid, lastProgressAt: Date.now() });
-		const lock = new IndexLock(projectPath);
+		const lock = lockAt(projectPath);
 		const status = lock.isLocked();
 		expect(status.locked).toBe(true);
 		expect(status.holderPid).toBe(process.pid);
@@ -308,7 +313,7 @@ describe("isLocked()", () => {
 describe("setPhase", () => {
 	test("sets phase + phaseStartedAt when this process owns the lock", async () => {
 		const { projectPath, indexDir } = makeProject();
-		const lock = createIndexLock(projectPath);
+		const lock = lockAt(projectPath);
 		const acquired = await lock.acquire();
 		expect(acquired.acquired).toBe(true);
 
@@ -331,7 +336,7 @@ describe("setPhase", () => {
 
 	test("advancing the phase resets phaseStartedAt (sole writer)", async () => {
 		const { projectPath, indexDir } = makeProject();
-		const lock = createIndexLock(projectPath);
+		const lock = lockAt(projectPath);
 		await lock.acquire();
 
 		try {
@@ -352,7 +357,7 @@ describe("setPhase", () => {
 
 	test("does NOT advance lastProgressAt (phase is reporting, not the hung signal)", async () => {
 		const { projectPath, indexDir } = makeProject();
-		const lock = createIndexLock(projectPath);
+		const lock = lockAt(projectPath);
 		await lock.acquire();
 
 		try {
@@ -370,7 +375,7 @@ describe("setPhase", () => {
 
 	test("recordProgress does NOT reset phaseStartedAt (only setPhase does)", async () => {
 		const { projectPath, indexDir } = makeProject();
-		const lock = createIndexLock(projectPath);
+		const lock = lockAt(projectPath);
 		await lock.acquire();
 
 		try {
@@ -394,7 +399,7 @@ describe("setPhase", () => {
 		const { projectPath, indexDir } = makeProject();
 		writeLock(indexDir, { pid: DEAD_PID, phase: "embedding" });
 
-		const lock = new IndexLock(projectPath);
+		const lock = lockAt(projectPath);
 		lock.setPhase("writing:lance"); // we don't own it => must not write
 
 		const raw = readLock(indexDir);
@@ -413,7 +418,7 @@ describe("inspectLock phase fields", () => {
 			phaseStartedAt: startedAt,
 		});
 
-		const inspect = inspectLock(indexDir);
+		const inspect = inspectLock(join(indexDir, LOCK_FILENAME));
 		expect(inspect.present).toBe(true);
 		if (inspect.present) {
 			expect(inspect.phase).toBe("writing:lance");
@@ -431,7 +436,7 @@ describe("inspectLock phase fields", () => {
 		// No phase / phaseStartedAt written (older binary).
 		writeLock(indexDir, { pid: process.pid });
 
-		const inspect = inspectLock(indexDir);
+		const inspect = inspectLock(join(indexDir, LOCK_FILENAME));
 		expect(inspect.present).toBe(true);
 		if (inspect.present) {
 			expect(inspect.phase).toBeUndefined();

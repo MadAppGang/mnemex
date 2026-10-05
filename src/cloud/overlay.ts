@@ -20,8 +20,11 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { BRANCH_ID_SHARED } from "../core/branch-registry.js";
+import { SCOPE_ALL } from "../core/branch-scope.js";
 import { chunkFileByPath } from "../core/chunker.js";
 import { VectorStore } from "../core/store.js";
+import { resolveStoreLocation } from "../core/store-location.js";
 import { getParserManager } from "../parsers/parser-manager.js";
 import type { IEmbeddingsClient, SearchResult } from "../types.js";
 import type { DirtyFile, IOverlayIndex } from "./types.js";
@@ -59,10 +62,10 @@ export class OverlayIndex implements IOverlayIndex {
 		this.overlayDir = options.overlayDir;
 		this.embeddingsClient = options.embeddingsClient;
 		this.fingerprintPath = join(options.overlayDir, ".fingerprint");
-		this.vectorStore = new VectorStore(
-			join(options.overlayDir, "vectors"),
-			options.projectPath,
-		);
+		this.vectorStore = new VectorStore({
+			vectorsDir: join(options.overlayDir, "vectors"),
+			pathRoot: resolveStoreLocation(options.projectPath).pathRoot,
+		});
 	}
 
 	// --------------------------------------------------------------------------
@@ -164,7 +167,15 @@ export class OverlayIndex implements IOverlayIndex {
 		}));
 
 		// Write to LanceDB
-		await this.vectorStore.addChunks(chunksWithEmbedding);
+		// Outside §3.2.1: this is the cloud overlay's OWN scratch store of dirty
+		// files, rebuilt from a fingerprint and merged with cloud results that
+		// carry the chunker's relative paths. It has no branch registry, so its
+		// rows are shared (`,0,`), and `synthetic` returns their paths exactly as
+		// written, which is the shape that merge already expects.
+		await this.vectorStore.addChunks(chunksWithEmbedding, {
+			pathKind: "synthetic",
+			branchId: BRANCH_ID_SHARED,
+		});
 
 		// Persist fingerprint
 		this.writeFingerprint(dirtyFiles);
@@ -181,7 +192,10 @@ export class OverlayIndex implements IOverlayIndex {
 		limit?: number,
 	): Promise<SearchResult[]> {
 		await this.ensureInitialized();
-		return this.vectorStore.search(queryText, queryVector, {
+		// The overlay is a SCRATCH store: every row it writes carries `,0,`
+		// (D-h), so "no predicate" and "every row" coincide and its ranking is
+		// unchanged by the branch model.
+		return this.vectorStore.search(queryText, queryVector, SCOPE_ALL, {
 			limit: limit ?? 10,
 		});
 	}

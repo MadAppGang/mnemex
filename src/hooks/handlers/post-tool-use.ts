@@ -6,8 +6,15 @@
  * - All tools: Log tool completion for interaction monitoring
  */
 
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { extname, join } from "node:path";
+import { getIndexDbPath, getWorktreeDir } from "../../config.js";
 import {
 	type EntryPointProcess,
 	spawnSelfDetached,
@@ -65,13 +72,53 @@ async function handleAutoReindex(input: HookInput): Promise<HookOutput | null> {
 	const ext = extname(filePath).toLowerCase();
 	if (!CODE_EXTENSIONS.has(ext)) return null;
 
-	// Check if project is indexed
-	const indexDir = join(input.cwd, ".mnemex");
-	if (!existsSync(indexDir)) return null;
+	// Is this project indexed? Through the seam (FR-3), like the other three
+	// hooks: `index.db` is the store's, wherever the store is.
+	if (!existsSync(getIndexDbPath(input.cwd))) return null;
 
-	// Debounce check
-	const debounceFile = join(indexDir, ".reindex-timestamp");
-	const lockFile = join(indexDir, ".reindex-lock");
+	// ── THE THIRD LOCK (phase-3b-inputs.md §6, item 3) ────────────────────────
+	//
+	// JUSTIFIED IN WRITING AS A SEPARATE CONCERN, per §6's second option, and
+	// MOVED to the per-worktree directory (§2.4) so that Phase 3c's flip does not
+	// make it the store's third lock by accident.
+	//
+	// WHAT IT GUARDS, and why it is not the store lock's job. This pair is a
+	// DEBOUNCE over one editor session's keystrokes: "have I already asked for a
+	// reindex in the last 30 seconds, and is the process I asked still alive?".
+	// It protects nothing in the dataset. Its whole purpose is to avoid SPAWNING
+	// a second `mnemex index --quiet`; the store lock's purpose is to make two
+	// index runs that DO start safe against each other, and it does that
+	// correctly whether or not this file exists. Delete this pair and no row is
+	// at risk — you get redundant child processes that then serialise on the real
+	// lock. They are different questions and the answers do not substitute.
+	//
+	// WHY IT MUST NOT BECOME THE STORE LOCK. The store lock is held for the
+	// DURATION of an index run (minutes on a large repository). Taking it here
+	// would block a `PostToolUse` hook — which runs after every Write and Edit —
+	// for that whole time, stalling the editor. Worse, the debounce must answer
+	// "is one already queued?" WITHOUT waiting, and a lock whose contract is to
+	// wait cannot answer that question at all.
+	//
+	// WHY PER-WORKTREE, AND WHY THAT IS THE POINT. The debounce is a property of
+	// ONE checkout's editing session, so two worktrees being edited at once must
+	// each get their own reindex. A shared debounce would let a colleague's edit
+	// suppress yours for 30 s and leave your worktree stale. `getWorktreeDir`
+	// keeps it in `<worktreeRoot>/.mnemex` under both scopes — which is also a
+	// FIX from `join(input.cwd, ".mnemex")`: with the hook's cwd below the root,
+	// the old spelling made a per-SUBDIRECTORY debounce that never saw the
+	// sibling's.
+	//
+	// The store may now live elsewhere, so the per-worktree directory is no
+	// longer guaranteed to exist. Created here; a failure is swallowed, like
+	// every other failure in this best-effort hook.
+	const worktreeDir = getWorktreeDir(input.cwd);
+	try {
+		mkdirSync(worktreeDir, { recursive: true });
+	} catch {
+		return null;
+	}
+	const debounceFile = join(worktreeDir, ".reindex-timestamp");
+	const lockFile = join(worktreeDir, ".reindex-lock");
 
 	if (existsSync(debounceFile)) {
 		try {

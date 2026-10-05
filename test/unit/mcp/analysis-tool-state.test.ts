@@ -9,7 +9,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { resolveStoreLocation } from "../../../src/core/store-location.js";
 import { IndexStateManager } from "../../../src/mcp/state-manager.js";
 import { registerAnalysisTools } from "../../../src/mcp/tools/analysis.js";
 import type { ToolDeps } from "../../../src/mcp/tools/deps.js";
@@ -67,16 +68,24 @@ function writeLiveLock(indexDir: string): void {
 }
 
 async function makeDeps(indexDir: string): Promise<ToolDeps> {
-	const stateManager = new IndexStateManager(indexDir);
+	const stateManager = new IndexStateManager(
+		indexDir,
+		resolveStoreLocation(dirname(indexDir)),
+	);
 	await stateManager.initialize();
 	// Empty-symbol tracker double: analyzer returns empty result sets, which is
 	// fine — we are testing the additive index-state envelope, not analysis logic.
-	const tracker = {
+	// The symbol graph is reached only through `tracker.graph(branchId)` now
+	// (§4.4.1), so the double provides the handle rather than the members.
+	const graph = {
 		getAllSymbols: () => [],
 		getSymbol: () => null,
+	};
+	const tracker = {
+		graph: () => graph,
 		getStats: () => ({ totalFiles: 5, lastIndexed: null }),
 	};
-	const cache = { get: async () => ({ tracker }) };
+	const cache = { get: async () => ({ tracker, branchId: 0 }) };
 	return {
 		// biome-ignore lint/suspicious/noExplicitAny: minimal test double
 		cache: cache as any,

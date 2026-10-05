@@ -51,6 +51,12 @@ export interface BackendResult {
 	backend: BackendName;
 	/** Whether this result is a definitive exact match (LSP flag) */
 	isDefinitive?: boolean;
+	/**
+	 * `"dirty"` for a row of this worktree's uncommitted text, served by the
+	 * local dirty overlay (step 3, R3.9) — set by the semantic backend only.
+	 * Absent for index rows. Carried through `pipeline/merge.ts`.
+	 */
+	source?: "dirty";
 }
 
 export interface MergedResult extends BackendResult {

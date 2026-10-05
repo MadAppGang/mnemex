@@ -52,7 +52,7 @@ export const PROCESS_LAUNCH_ALLOWLIST: Readonly<Record<string, string>> = {
 	"src/cloud/config.ts":
 		"read-only `git remote get-url origin` via promisified exec",
 	"src/cloud/git-diff.ts":
-		"read-only `git diff`/`git log` via promisified exec, with GIT_PAGER=cat",
+		"read-only `git diff`/`git log` via promisified exec, with GIT_PAGER=cat; and the local dirty overlay's `git --no-optional-locks status -z` via execFile (no shell, GIT_* stripped, GIT_OPTIONAL_LOCKS=0) — the overlay reaches git only through this file",
 };
 
 /**

@@ -1,10 +1,22 @@
 # bunfig.toml — `[test] preload` ONLY.
 #
-# Layer 3 of the three independent guards that make a real `/usr/bin/security`
-# spawn impossible in the test suite (architecture D-7 / H3). Deliberately
-# contains nothing else: an unrelated setting here would change `bun` behaviour
-# for every command, and R3's rollback is "delete this file" — which must remain
-# safe because layers 1 and 2 still hold without it.
+# The redundant layer of two independent deny-by-default guards, never the
+# load-bearing one:
+#
+#   keychain-guard.ts    layer 3 of the `/usr/bin/security` guards (architecture
+#                        D-7 / H3). Primary guard: `realAccessEnabled` in
+#                        `src/core/keychain.ts`.
+#   embed-cache-guard.ts the child-process layer of the `~/.mnemex/embed-cache.db`
+#                        guard. Primary guard: `userPathEnabled` in
+#                        `src/core/embed-cache.ts`.
+#
+# Both primaries hold with this file deleted, which is what keeps R3's rollback
+# ("delete this file") safe — and what has to stay true, because `bun` resolves
+# `bunfig.toml` against the CURRENT WORKING DIRECTORY without walking up, so a
+# suite run from a subdirectory gets no preload at all.
+#
+# Deliberately contains nothing else: an unrelated setting here would change
+# `bun` behaviour for every command.
 
 [test]
-preload = ["./test/setup/keychain-guard.ts"]
+preload = ["./test/setup/keychain-guard.ts", "./test/setup/embed-cache-guard.ts"]

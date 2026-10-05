@@ -16,6 +16,8 @@ import type {
 	ILLMClient,
 	LLMMessage,
 } from "../../types.js";
+import { codeUnitParentKeyOf } from "../ast/code-unit-extractor.js";
+import type { BranchScope } from "../branch-scope.js";
 import type { VectorStore } from "../store.js";
 import {
 	buildClassSummaryPrompt,
@@ -32,6 +34,8 @@ import {
 // ============================================================================
 
 export interface SummarizationOptions {
+	/** REQUIRED (§4.4). Which branch's code units this summarises. */
+	scope: BranchScope;
 	/** Maximum concurrent LLM calls */
 	concurrency?: number;
 	/** Progress callback */
@@ -71,13 +75,13 @@ export class BottomUpSummarizer {
 	 */
 	async summarizeFile(
 		filePath: string,
-		options: SummarizationOptions = {},
+		options: SummarizationOptions,
 	): Promise<SummarizationResult> {
 		const startTime = Date.now();
 		const { onProgress, skipExisting = false, concurrency = 5 } = options;
 
 		// Get all units for this file
-		const units = await this.store.getCodeUnitsByFile(filePath);
+		const units = await this.store.getCodeUnitsByFile(options.scope, filePath);
 		if (units.length === 0) {
 			return { summariesGenerated: 0, errors: [], durationMs: 0 };
 		}
@@ -112,11 +116,29 @@ export class BottomUpSummarizer {
 					const unit = batch[j];
 
 					if (result.status === "fulfilled" && result.value) {
-						// Cache the summary for use by parent units
+						// Cache the summary for use by parent units. Kept even if
+						// the write below fails: the parents' prompts still want
+						// the text, and the cache never reaches the index.
 						this.summaryCache.set(unit.id, result.value);
-						// Update in store
-						await this.store.updateUnitSummary(unit.id, result.value);
-						summariesGenerated++;
+						// Update in store.
+						//
+						// A failed write is recorded, not swallowed, and does NOT
+						// count towards `summariesGenerated`. It used to warn to
+						// stderr from inside the store while reporting success —
+						// and because LanceDB has no upsert, the failure had also
+						// deleted the unit's row, so the count claimed a summary
+						// for a code unit that had just vanished from the index.
+						// `VectorStoreUpdateError.rowRestored` says which of the
+						// two happened, so it is carried into the message.
+						try {
+							await this.store.updateUnitSummary(unit.id, result.value);
+							summariesGenerated++;
+						} catch (error) {
+							errors.push({
+								unitId: unit.id,
+								error: error instanceof Error ? error.message : String(error),
+							});
+						}
 					} else if (result.status === "rejected") {
 						errors.push({
 							unitId: unit.id,
@@ -147,7 +169,7 @@ export class BottomUpSummarizer {
 	 */
 	async summarizeFiles(
 		filePaths: string[],
-		options: SummarizationOptions = {},
+		options: SummarizationOptions,
 	): Promise<SummarizationResult> {
 		const startTime = Date.now();
 		let totalGenerated = 0;
@@ -261,8 +283,10 @@ export class BottomUpSummarizer {
 		allUnits: CodeUnit[],
 		metadata: ASTMetadata,
 	): string {
-		// Get child method summaries
-		const children = allUnits.filter((u) => u.parentId === unit.id);
+		// Get child method summaries. The link is the parent's POSITION KEY since
+		// I-14, never its row id — `unit.id` here would match nothing.
+		const parentKey = codeUnitParentKeyOf(unit);
+		const children = allUnits.filter((u) => u.parentId === parentKey);
 		const methodSummaries = children
 			.filter((c) => c.unitType === "method" || c.unitType === "function")
 			.map((c) => ({
@@ -297,8 +321,11 @@ export class BottomUpSummarizer {
 		allUnits: CodeUnit[],
 		metadata: ASTMetadata,
 	): string {
-		// Get top-level children (classes, functions, exports)
-		const children = allUnits.filter((u) => u.parentId === unit.id);
+		// Get top-level children (classes, functions, exports). By POSITION KEY
+		// (I-14): the file unit's row id hashes the file hash and moves on every
+		// edit, so a row id would be the one value guaranteed not to match.
+		const parentKey = codeUnitParentKeyOf(unit);
+		const children = allUnits.filter((u) => u.parentId === parentKey);
 
 		// Build exports list from exported children
 		const exports = children

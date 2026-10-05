@@ -25,6 +25,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { SCOPE_ALL } from "../core/branch-scope.js";
 import { chunkFileByPath } from "../core/chunker.js";
 import type { IVectorStore } from "../core/store.js";
 import { getParserManager } from "../parsers/parser-manager.js";
@@ -388,7 +389,9 @@ export class CloudAwareIndexer {
 
 		for (const filePath of filePaths) {
 			try {
+				// Scratch store, every row `,0,` (D-h): see `cloud/overlay.ts`.
 				const stored = await this.vectorStore.getDocumentsByFile(
+					SCOPE_ALL,
 					filePath,
 					docTypes as unknown as import("../types.js").DocumentType[],
 				);

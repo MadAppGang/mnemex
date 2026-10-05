@@ -286,6 +286,7 @@ function ImpactPane({
 export function AnalysisView() {
 	const {
 		tracker,
+		branchId,
 		inputFocused,
 		setInputFocused,
 		activeTab: currentTab,
@@ -301,7 +302,7 @@ export function AnalysisView() {
 		analyzeImpact,
 		refreshDeadCode,
 		refreshTestGaps,
-	} = useAnalysis(tracker);
+	} = useAnalysis(tracker, branchId);
 
 	const [selectedIndex, setSelectedIndex] = useState(0);
 	const [impactQuery, setImpactQuery] = useState("");

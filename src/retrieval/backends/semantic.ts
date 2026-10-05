@@ -1,11 +1,19 @@
 /**
  * Semantic Backend
  *
- * Wraps the existing Indexer.search() (vector + BM25 hybrid) call.
- * Activated for: semantic, similarity, location
+ * Wraps `Indexer.searchScoped()` (vector + BM25 hybrid, plus the local dirty
+ * overlay). Activated for: semantic, similarity, location
+ *
+ * `searchScoped`, not `search`: the response-level facts — the overlay report
+ * (step 3, R3.9) and `branchUnknown` — are properties of the RESPONSE, and
+ * `ISearchBackend.search()` returns rows only. They leave through the
+ * per-request {@link SemanticBackendHooks.onScoped} sink (revision 1, HIGH 7),
+ * so neither `ISearchBackend` nor the orchestrator changes and nothing is
+ * module-level state: backends are constructed per request.
  */
 
 import type { Indexer } from "../../core/indexer.js";
+import type { SearchOverlayReport } from "../../core/overlay/types.js";
 import type { QueryClassification } from "../../types.js";
 import type {
 	BackendName,
@@ -14,10 +22,27 @@ import type {
 	SearchOptions,
 } from "../pipeline/types.js";
 
+/** What one semantic search learned about the response, for its caller. */
+export interface SemanticScopedReport {
+	readonly overlay: SearchOverlayReport;
+	readonly branchUnknown: boolean;
+}
+
+export interface SemanticBackendHooks {
+	/** Called once per search that reached `searchScoped` and returned. */
+	readonly onScoped?: (report: SemanticScopedReport) => void;
+}
+
+/** The two members this backend uses: a narrow seam a test can satisfy. */
+export type SemanticIndexer = Pick<Indexer, "searchScoped" | "close">;
+
 export class SemanticBackend implements ISearchBackend {
 	readonly name: BackendName = "semantic";
 
-	constructor(private createIndexer: () => Indexer) {}
+	constructor(
+		private createIndexer: () => SemanticIndexer,
+		private readonly hooks: SemanticBackendHooks = {},
+	) {}
 
 	async search(
 		query: string,
@@ -32,12 +57,23 @@ export class SemanticBackend implements ISearchBackend {
 		const backendName = this.name;
 
 		try {
-			const searchResults = await indexer.search(query, {
+			const scoped = await indexer.searchScoped(query, {
 				limit,
 				useCase: "search",
 			});
+			const searchResults = scoped.results;
 
 			if (signal.aborted) return [];
+
+			// AFTER the abort check (review 1, LOW 9c): a report reaches the
+			// response only with the rows it describes. An aborted backend
+			// contributes no rows, so it reports nothing either, and the MCP
+			// response says `unreported` rather than `on, files: N` over a
+			// result list with no `source: "dirty"` row in it.
+			this.hooks.onScoped?.({
+				overlay: scoped.overlay,
+				branchUnknown: scoped.branchUnknown,
+			});
 
 			// Filter by filePattern if provided
 			const filePattern = options.filePattern;
@@ -72,6 +108,8 @@ export class SemanticBackend implements ISearchBackend {
 					backend: backendName,
 					documentType: r.documentType,
 					observationMetadata: r.observationMetadata,
+					// `"dirty"` only; the cloud's values never reach this backend.
+					...(r.source === "dirty" ? { source: "dirty" as const } : {}),
 				};
 			});
 		} finally {

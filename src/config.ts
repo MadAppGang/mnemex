@@ -22,6 +22,10 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
+	loadProjectConfig,
+	onProjectConfigSaved,
+} from "./core/project-config.js";
+import {
 	hydrateSecrets,
 	invalidateSecretSessionCache,
 	persistSecrets,
@@ -30,11 +34,14 @@ import {
 	setKeychainConfigOptOut,
 	setKeychainOptOutProvider,
 } from "./core/secrets.js";
-import type {
-	EmbeddingProvider,
-	GlobalConfig,
-	ProjectConfig,
-} from "./types.js";
+import {
+	getDocsCachePathFor,
+	getIndexDbPathFor,
+	getVectorStorePathFor,
+	getWorktreeDirFor,
+	resolveStoreLocation,
+} from "./core/store-location.js";
+import type { EmbeddingProvider, GlobalConfig } from "./types.js";
 
 // ============================================================================
 // Constants
@@ -46,20 +53,22 @@ export const GLOBAL_CONFIG_DIR = join(homedir(), ".mnemex");
 /** Global config file path */
 export const GLOBAL_CONFIG_PATH = join(GLOBAL_CONFIG_DIR, "config.json");
 
-/** Project config directory name */
-export const PROJECT_CONFIG_DIR = ".mnemex";
-
-/** Project config file name (inside .mnemex/) */
-export const PROJECT_CONFIG_FILE = "config.json";
-
-/** Project config file at root (simpler alternative) */
-export const PROJECT_ROOT_CONFIG_FILE = "mnemex.json";
-
-/** Index database file name */
-export const INDEX_DB_FILE = "index.db";
-
-/** Vector store directory name */
-export const VECTORS_DIR = "vectors";
+/**
+ * The project config names, the index file names and the project config
+ * reader/writer live in `./core/project-config.ts`, so the store-location seam
+ * can read `indexDir` without importing this module (architecture §2.3,
+ * "Circular import"). Re-exported here unchanged, so every existing importer
+ * keeps working.
+ */
+export {
+	INDEX_DB_FILE,
+	loadProjectConfig,
+	PROJECT_CONFIG_DIR,
+	PROJECT_CONFIG_FILE,
+	PROJECT_ROOT_CONFIG_FILE,
+	saveProjectConfig,
+	VECTORS_DIR,
+} from "./core/project-config.js";
 
 /** Embedding models cache file */
 export const MODELS_CACHE_FILE = "embedding-models.json";
@@ -240,6 +249,17 @@ export const ENV = {
 	MNEMEX_ON_MODEL_MISMATCH: "MNEMEX_ON_MODEL_MISMATCH",
 	/** Colour theme override: "light" | "dark" (read pre-dotenv, see src/ui/theme-env.ts) */
 	MNEMEX_THEME: "MNEMEX_THEME",
+	// NOT REGISTERED HERE, deliberately: `MNEMEX_DISABLE_EMBED_CACHE` and
+	// `MNEMEX_EMBED_CACHE_PATH`. `src/core/embed-cache.ts` owns and reads both
+	// (`ENV_DISABLE` / `ENV_PATH` there), because that module may not import
+	// this one — it is a leaf on purpose, so the embedding cache cannot pull
+	// config, keychain or the LLM stack into its graph, and a unit test pins its
+	// import list. Registering the names here would need exactly that import.
+	//
+	// The cost is discoverability, which this comment pays: grep for either name
+	// and land in `embed-cache.ts`. The related config field IS here —
+	// `GlobalConfig.embedCache` — and reaches the cache as a parameter from
+	// `Indexer.index()`, which imports both sides.
 } as const;
 
 /** Context7 API endpoint */
@@ -400,36 +420,6 @@ function normaliseExcludePatterns(patterns: readonly unknown[]): string[] {
 		out.push(pattern);
 	}
 	return out;
-}
-
-/**
- * Load project configuration
- * Checks: 1) mnemex.json (root), 2) .mnemex/config.json
- */
-export function loadProjectConfig(projectPath: string): ProjectConfig | null {
-	// First try mnemex.json at project root (preferred, simpler)
-	const rootConfigPath = join(projectPath, PROJECT_ROOT_CONFIG_FILE);
-	if (existsSync(rootConfigPath)) {
-		try {
-			const content = readFileSync(rootConfigPath, "utf-8");
-			return JSON.parse(content) as ProjectConfig;
-		} catch (error) {
-			console.warn("Failed to load mnemex.json:", error);
-		}
-	}
-
-	// Fall back to .mnemex/config.json
-	const configPath = join(projectPath, PROJECT_CONFIG_DIR, PROJECT_CONFIG_FILE);
-	if (existsSync(configPath)) {
-		try {
-			const content = readFileSync(configPath, "utf-8");
-			return JSON.parse(content) as ProjectConfig;
-		} catch (error) {
-			console.warn("Failed to load .mnemex/config.json:", error);
-		}
-	}
-
-	return null;
 }
 
 /**
@@ -1204,67 +1194,59 @@ export function hardenGlobalConfigFileMode(): boolean {
 	}
 }
 
-/**
- * Save project configuration
- */
-export function saveProjectConfig(
-	projectPath: string,
-	config: Partial<ProjectConfig>,
-): void {
-	const configDir = join(projectPath, PROJECT_CONFIG_DIR);
-	const configPath = join(configDir, PROJECT_CONFIG_FILE);
-
-	// Ensure directory exists
-	if (!existsSync(configDir)) {
-		mkdirSync(configDir, { recursive: true });
-	}
-
-	// Merge with existing config
-	const existing = loadProjectConfig(projectPath) || {
-		excludePatterns: [],
-		includePatterns: [],
-	};
-	const merged = { ...existing, ...config };
-
-	writeFileSync(configPath, JSON.stringify(merged, null, 2), "utf-8");
-
-	// The learning decision is cached per path; a rewrite must be visible.
-	resetLearningEnabledCache();
-}
-
 // ============================================================================
 // Project Paths
 // ============================================================================
 
 /**
- * Get the index directory for a project
- * Respects custom indexDir from project config
+ * The index STORE directory for a project.
+ *
+ * Delegates to the store-location seam, the same function the store lock
+ * derives its path from (`createStoreLock` -> `getLockPathFor`). That is the
+ * point (decision I-8): a lock and the data it protects resolve from ONE
+ * function, so `MNEMEX_INDEX_DIR` or `ProjectConfig.indexDir` moves both
+ * together, and no process can write one store under two locks. This used to
+ * read `ProjectConfig.indexDir` alone and ignore the environment variable,
+ * which the lock honoured.
+ *
+ * Returns the seam's REALPATH spelling, always absolute (`/private/tmp/…` for
+ * `/tmp/…` on macOS). Compare paths with `realpathSync`, never as strings
+ * against a caller's spelling (decision I-3).
+ *
+ * Memoized by the seam on realpath + `MNEMEX_INDEX_DIR`, and reset by every
+ * `saveProjectConfig`. A config file edited by hand or by another process is
+ * seen only after a long-lived process restarts (decision I-5).
  */
 export function getIndexDir(projectPath: string): string {
-	const projectConfig = loadProjectConfig(projectPath);
-	if (projectConfig?.indexDir) {
-		// If indexDir is absolute, use it directly
-		if (projectConfig.indexDir.startsWith("/")) {
-			return projectConfig.indexDir;
-		}
-		// Otherwise, treat as relative to project root
-		return join(projectPath, projectConfig.indexDir);
-	}
-	return join(projectPath, PROJECT_CONFIG_DIR);
+	return resolveStoreLocation(projectPath).storeDir;
 }
 
-/**
- * Get the path to the project's index database
- */
+/** `<storeDir>/index.db`, through the seam. */
 export function getIndexDbPath(projectPath: string): string {
-	return join(getIndexDir(projectPath), INDEX_DB_FILE);
+	return getIndexDbPathFor(resolveStoreLocation(projectPath));
+}
+
+/** `<storeDir>/vectors`, through the seam. */
+export function getVectorStorePath(projectPath: string): string {
+	return getVectorStorePathFor(resolveStoreLocation(projectPath));
 }
 
 /**
- * Get the path to the project's vector store
+ * `<pathRoot>/.mnemex`, through the seam: the PER-WORKTREE directory (§2.4).
+ *
+ * NOT the store. Use this for anything that must stay with the checkout when
+ * Phase 3c moves the store under the git common dir — `memories/`,
+ * `edit-history/`, `activity.jsonl`, the `.reindex-*` debounce pair,
+ * `generated/`. Use {@link getIndexDir} for the store.
+ *
+ * `pathRoot` is the WORKTREE ROOT, not the caller's path, so this is stable
+ * from a subdirectory where `join(projectPath, ".mnemex")` is not, and it does
+ * not move when an override relocates the store (an override relocates the
+ * store, not the path convention — §2.3 step 1). Realpath spelling, like every
+ * other seam result (decision I-3).
  */
-export function getVectorStorePath(projectPath: string): string {
-	return join(getIndexDir(projectPath), VECTORS_DIR);
+export function getWorktreeDir(projectPath: string): string {
+	return getWorktreeDirFor(resolveStoreLocation(projectPath));
 }
 
 /**
@@ -1472,6 +1454,24 @@ export function isEnrichmentEnabled(projectPath?: string): boolean {
 }
 
 /**
+ * Is the local dirty overlay on for this project (step 3, R3.1)?
+ *
+ * Priority: project `dirtyOverlay` > global `dirtyOverlay` > default (true).
+ * Only a boolean `false` turns it off; an absent key means "untouched", which
+ * is ON (the user's Phase 1 decision: automatic when the worktree is dirty).
+ * Read per search, never cached, so an MCP server sees a config edit at once.
+ */
+export function isDirtyOverlayEnabled(projectPath?: string): boolean {
+	if (projectPath) {
+		const projectConfig = loadProjectConfig(projectPath);
+		if (typeof projectConfig?.dirtyOverlay === "boolean") {
+			return projectConfig.dirtyOverlay;
+		}
+	}
+	return loadGlobalConfig().dirtyOverlay !== false;
+}
+
+/**
  * Check if vector embeddings are enabled
  * Priority: project config > default (true)
  * When false, only BM25 keyword search is used - no embedding API needed.
@@ -1556,11 +1556,9 @@ export function getDocsConfig(projectPath?: string): Required<DocsConfig> {
 	};
 }
 
-/**
- * Get path to docs cache directory
- */
+/** `<storeDir>/docs-cache`, through the seam. */
 export function getDocsCachePath(projectPath: string): string {
-	return join(getIndexDir(projectPath), "docs-cache");
+	return getDocsCachePathFor(resolveStoreLocation(projectPath));
 }
 
 // ============================================================================
@@ -1613,6 +1611,14 @@ function asModelMismatchMode(value: unknown): ModelMismatchMode | undefined {
  * in-process rewrite still takes effect.
  */
 const learningEnabledCache = new Map<string, boolean>();
+
+/**
+ * `saveProjectConfig` now lives in `./core/project-config.ts`, which cannot
+ * import this module, so the reset it used to call directly is registered here.
+ * This runs while the module is evaluated, before any lookup can fill the
+ * cache, so no rewrite is missed.
+ */
+onProjectConfigSaved(resetLearningEnabledCache);
 
 /** Cache key for the global-only lookup (no project path given). */
 const GLOBAL_LEARNING_CACHE_KEY = "\0global";

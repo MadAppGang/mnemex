@@ -10,7 +10,6 @@
  */
 
 import { existsSync, mkdirSync, statSync } from "node:fs";
-import { join } from "node:path";
 import {
 	createContext,
 	type ReactNode,
@@ -19,8 +18,16 @@ import {
 	useRef,
 	useState,
 } from "react";
+import {
+	graphBranchIdForRead,
+	resolveBranchScopeForProject,
+} from "../core/branch-scope.js";
 import { getIndexVersion, needsUpgrade } from "../core/index-version.js";
 import { Indexer } from "../core/indexer.js";
+import {
+	getIndexDbPathFor,
+	resolveStoreLocation,
+} from "../core/store-location.js";
 import { FileTracker } from "../core/tracker.js";
 import { ProgressStore } from "../output/progress-store.js";
 import {
@@ -37,6 +44,18 @@ export type TabId = "search" | "map" | "graph" | "analysis" | "doctor";
 export interface AppContextValue {
 	/** FileTracker singleton for the current project */
 	tracker: FileTracker;
+	/**
+	 * The branch every symbol-graph and `files` read in the TUI is scoped to
+	 * (§4.4.1).
+	 *
+	 * DOCUMENTED LIMIT: it is resolved when this context value is rebuilt, not
+	 * on every keystroke — the same lifetime the memoized `tracker` already has.
+	 * A `git checkout` made in another terminal during a TUI session is picked
+	 * up the next time indexing runs or the view remounts, not immediately. The
+	 * per-CALL discipline §2.5 requires is enforced where it matters, on the
+	 * long-lived MCP server (`mcp/cache.ts`) and on every CLI invocation.
+	 */
+	branchId: number;
 	/** The project root path */
 	projectPath: string;
 	/** Currently active tab */
@@ -96,7 +115,8 @@ const AppContext = createContext<AppContextValue | null>(null);
  * Checks for the DB file existence/size and version.
  */
 function checkIndexReason(projectPath: string): "missing" | "outdated" | null {
-	const dbPath = join(projectPath, ".mnemex", "index.db");
+	// The seam's index.db, so an overridden store is found (decision I-8).
+	const dbPath = getIndexDbPathFor(resolveStoreLocation(projectPath));
 	if (!existsSync(dbPath)) return "missing";
 	try {
 		const stat = statSync(dbPath);
@@ -104,7 +124,7 @@ function checkIndexReason(projectPath: string): "missing" | "outdated" | null {
 	} catch {
 		return "missing";
 	}
-	if (needsUpgrade(projectPath)) return "outdated";
+	if (needsUpgrade(resolveStoreLocation(projectPath))) return "outdated";
 	return null;
 }
 
@@ -131,7 +151,7 @@ export function AppProvider({
 	const [showHelp, setShowHelp] = useState(false);
 	const [inputFocused, setInputFocused] = useState(false);
 	const [indexVersion, setIndexVersion] = useState(() =>
-		getIndexVersion(projectPath),
+		getIndexVersion(resolveStoreLocation(projectPath)),
 	);
 	const [lastActivity, setLastActivity] = useState<ActivityRecord | null>(null);
 	const [indexReason, setIndexReason] = useState(() =>
@@ -149,14 +169,23 @@ export function AppProvider({
 	// Without memoization, every state change creates a new tracker instance,
 	// which cascades through useCallback/useEffect dependencies and causes
 	// useActivityMonitor to re-run (truncating JSONL + resetting byte offsets).
+	//
+	// The directory and its index.db come from ONE resolved location, the
+	// seam's, as for every other reader (decision I-8): MNEMEX_INDEX_DIR and
+	// ProjectConfig.indexDir move both. A hand-built `<project>/.mnemex` opened
+	// an EMPTY tracker whenever either was set, and left a stray index.db behind.
 	const [tracker] = useState(() => {
-		const dbDir = join(projectPath, ".mnemex");
-		if (!existsSync(dbDir)) {
-			mkdirSync(dbDir, { recursive: true });
+		const loc = resolveStoreLocation(projectPath);
+		if (!existsSync(loc.storeDir)) {
+			mkdirSync(loc.storeDir, { recursive: true });
 		}
-		const dbPath = join(dbDir, "index.db");
-		return new FileTracker(dbPath, projectPath);
+		return new FileTracker(getIndexDbPathFor(loc), projectPath);
 	});
+
+	// Re-resolved whenever the tracker is (see `AppContextValue.branchId`).
+	const branchId = graphBranchIdForRead(
+		resolveBranchScopeForProject(projectPath),
+	);
 
 	const pushNav = useCallback((symbolName: string) => {
 		setNavHistory((prev: string[]) => [...prev, symbolName]);
@@ -196,7 +225,7 @@ export function AppProvider({
 			.then(() => {
 				store.finish();
 				// Re-read the version from config after indexing completes
-				setIndexVersion(getIndexVersion(projectPath));
+				setIndexVersion(getIndexVersion(resolveStoreLocation(projectPath)));
 				setIndexReason(null);
 				setIndexing(false);
 			})
@@ -217,6 +246,7 @@ export function AppProvider({
 
 	const value: AppContextValue = {
 		tracker,
+		branchId,
 		projectPath,
 		activeTab,
 		setActiveTab,

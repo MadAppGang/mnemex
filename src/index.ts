@@ -16,6 +16,7 @@
  */
 
 import { config } from "dotenv";
+import { enableUserEmbedCachePath } from "./core/embed-cache.js";
 import { enableRealKeychainAccess } from "./core/keychain.js";
 import { runMigrations } from "./migration.js";
 import { captureStartupEnv } from "./ui/theme-env.js";
@@ -45,6 +46,20 @@ config({ quiet: true });
 // It is itself a no-op when MNEMEX_KEYCHAIN_TEST_GUARD=1, so a test that spawns
 // this binary with the inherited environment still cannot reach the keychain.
 enableRealKeychainAccess();
+
+// THE ONLY PLACE the machine-global embedding cache at `~/.mnemex/embed-cache.db`
+// is allowed to be opened.
+//
+// Same shape, same reason: `src/core/embed-cache.ts` refuses that path by
+// default, so a test in any working directory — with no preload, no env var and
+// no cwd involved — cannot create or write the user's real cache file. It is a
+// no-op when MNEMEX_EMBED_CACHE_TEST_GUARD=1, so a test that SPAWNS this binary
+// with a built child environment (test/helpers/child-env.ts) still cannot.
+//
+// The cache is an optimisation, but the file is a user's: a test that meant to
+// point MNEMEX_EMBED_CACHE_PATH at a temp directory and forgot gets a refusal,
+// not a silent redirect.
+enableUserEmbedCachePath();
 
 // Migrate .claudemem/ → .mnemex/ for existing users (silent, non-blocking)
 runMigrations();

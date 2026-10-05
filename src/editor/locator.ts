@@ -6,7 +6,7 @@
  */
 
 import type { ReferenceGraphManager } from "../core/reference-graph.js";
-import type { IFileTracker } from "../core/tracker.js";
+import type { BranchScopedGraph, IFileTracker } from "../core/tracker.js";
 import type { LspManager } from "../lsp/manager.js";
 import type { SymbolDefinition } from "../types.js";
 
@@ -53,9 +53,15 @@ export function byteToUtf16Offset(line: string, byteOffset: number): number {
 export class SymbolLocator {
 	constructor(
 		private graphManager: ReferenceGraphManager,
-		private tracker: IFileTracker,
+		tracker: IFileTracker,
+		branchId: number,
 		private lspManager: LspManager | null = null,
-	) {}
+	) {
+		this.symbols = tracker.graph(branchId);
+	}
+
+	/** Per-call branch scope (§2.5): taken by the caller that built this locator. */
+	private readonly symbols: BranchScopedGraph;
 
 	/**
 	 * Find a symbol by name, optionally scoped to a file.
@@ -88,7 +94,7 @@ export class SymbolLocator {
 	 * Find all symbols in a file.
 	 */
 	locateByFile(filePath: string): SymbolLocation[] {
-		const symbols = this.tracker.getSymbolsByFile(filePath);
+		const symbols = this.symbols.getSymbolsByFile(filePath);
 		return symbols.map((s) => ({
 			filePath: s.filePath,
 			startLine: s.startLine,

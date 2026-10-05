@@ -11,6 +11,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { SCOPE_ALL } from "../../src/core/branch-scope.js";
 import { VectorStore } from "../../src/core/store.js";
 import type {
 	ChunkWithEmbedding,
@@ -90,7 +91,7 @@ describe("Unified Search", () => {
 		rmSync(TEST_DIR, { recursive: true, force: true });
 		mkdirSync(TEST_DIR, { recursive: true });
 
-		store = new VectorStore(VECTORS_DIR, TEST_DIR);
+		store = new VectorStore({ vectorsDir: VECTORS_DIR, pathRoot: TEST_DIR });
 		await store.initialize();
 
 		// Add code chunks
@@ -146,7 +147,7 @@ describe("Unified Search", () => {
 				seed: 5,
 			}),
 		];
-		await store.addChunks(chunks);
+		await store.addChunks(chunks, { pathKind: "repo", branchId: 0 });
 
 		// Add symbol_summary documents linked to code chunks
 		const docs: DocumentWithEmbedding[] = [
@@ -196,7 +197,7 @@ describe("Unified Search", () => {
 				seed: 4.1,
 			}),
 		];
-		await store.addDocuments(docs);
+		await store.addDocuments(docs, { pathKind: "repo", branchId: 0 });
 	});
 
 	afterAll(() => {
@@ -206,9 +207,14 @@ describe("Unified Search", () => {
 	test("returns code chunks (not summary documents) in results", async () => {
 		// Query vector similar to auth chunks
 		const queryVector = makeVector(1);
-		const results = await store.search("authenticate user", queryVector, {
-			limit: 10,
-		});
+		const results = await store.search(
+			"authenticate user",
+			queryVector,
+			SCOPE_ALL,
+			{
+				limit: 10,
+			},
+		);
 
 		// All results should be code chunks, not summary documents
 		for (const r of results) {
@@ -222,7 +228,7 @@ describe("Unified Search", () => {
 	test("attaches summaries from symbol_summary via sourceIds", async () => {
 		// Query vector similar to auth chunk-auth-1
 		const queryVector = makeVector(1);
-		const results = await store.search("authenticate", queryVector, {
+		const results = await store.search("authenticate", queryVector, SCOPE_ALL, {
 			limit: 10,
 		});
 
@@ -237,13 +243,19 @@ describe("Unified Search", () => {
 
 	test("attaches summaries from file_summary via sourceIds", async () => {
 		const queryVector = makeVector(1.5); // Close to file_summary vector
-		const results = await store.search("authentication service", queryVector, {
-			limit: 10,
-		});
+		const results = await store.search(
+			"authentication service",
+			queryVector,
+			SCOPE_ALL,
+			{
+				limit: 10,
+			},
+		);
 
 		// At least one auth chunk should have a summary (from either symbol or file summary)
 		const authChunks = results.filter(
-			(r) => r.chunk.filePath === "src/auth/service.ts",
+			// Returned absolute under pathRoot (decision D4).
+			(r) => r.chunk.filePath === join(TEST_DIR, "src/auth/service.ts"),
 		);
 
 		// The auth chunks should benefit from the file_summary and symbol_summary
@@ -254,9 +266,14 @@ describe("Unified Search", () => {
 
 	test("filters out summary documents from results", async () => {
 		const queryVector = makeVector(1.1); // Close to symbol_summary vector
-		const results = await store.search("user credentials", queryVector, {
-			limit: 10,
-		});
+		const results = await store.search(
+			"user credentials",
+			queryVector,
+			SCOPE_ALL,
+			{
+				limit: 10,
+			},
+		);
 
 		// No result should be a summary document
 		for (const r of results) {
@@ -273,13 +290,13 @@ describe("Unified Search", () => {
 		// which should boost code chunks that have matching summaries
 		const queryVector = makeVector(1);
 
-		const searchResults = await store.search("auth", queryVector, {
+		const searchResults = await store.search("auth", queryVector, SCOPE_ALL, {
 			limit: 5,
 			useCase: "search",
 		});
 
 		// With "fim" use case, code_chunks get highest weight (0.4)
-		const fimResults = await store.search("auth", queryVector, {
+		const fimResults = await store.search("auth", queryVector, SCOPE_ALL, {
 			limit: 5,
 			useCase: "fim",
 		});
@@ -301,7 +318,7 @@ describe("Unified Search", () => {
 
 	test("handles keyword-only search gracefully", async () => {
 		// Keyword-only should still work (even if BM25 returns empty)
-		const results = await store.search("authenticate", undefined, {
+		const results = await store.search("authenticate", undefined, SCOPE_ALL, {
 			limit: 5,
 			keywordOnly: true,
 		});
@@ -316,7 +333,7 @@ describe("Unified Search", () => {
 		// (`filePath`). Verified working on @lancedb/lancedb 0.33; the catch made
 		// this test pass unconditionally and would have hidden a real regression.
 		const queryVector = makeVector(1);
-		const results = await store.search("function", queryVector, {
+		const results = await store.search("function", queryVector, SCOPE_ALL, {
 			limit: 10,
 			pathPattern: "auth",
 		});
@@ -329,7 +346,7 @@ describe("Unified Search", () => {
 
 	test("language filter works", async () => {
 		const queryVector = makeVector(1);
-		const results = await store.search("function", queryVector, {
+		const results = await store.search("function", queryVector, SCOPE_ALL, {
 			limit: 10,
 			language: "typescript",
 		});
@@ -341,7 +358,7 @@ describe("Unified Search", () => {
 
 	test("result has correct score fields", async () => {
 		const queryVector = makeVector(1);
-		const results = await store.search("authenticate", queryVector, {
+		const results = await store.search("authenticate", queryVector, SCOPE_ALL, {
 			limit: 5,
 		});
 
@@ -362,7 +379,7 @@ describe("Unified Search", () => {
 		// The first one encountered in the fused results should win
 
 		const queryVector = makeVector(1);
-		const results = await store.search("authenticate", queryVector, {
+		const results = await store.search("authenticate", queryVector, SCOPE_ALL, {
 			limit: 10,
 		});
 
@@ -376,9 +393,12 @@ describe("Unified Search", () => {
 	test("empty index returns empty results", async () => {
 		const emptyDir = join(TEST_DIR, "empty-vectors");
 		mkdirSync(emptyDir, { recursive: true });
-		const emptyStore = new VectorStore(emptyDir, TEST_DIR);
+		const emptyStore = new VectorStore({
+			vectorsDir: emptyDir,
+			pathRoot: TEST_DIR,
+		});
 
-		const results = await emptyStore.search("test", makeVector(1), {
+		const results = await emptyStore.search("test", makeVector(1), SCOPE_ALL, {
 			limit: 5,
 		});
 		expect(results).toEqual([]);
