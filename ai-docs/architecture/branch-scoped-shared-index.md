@@ -1,12 +1,11 @@
 # Branch-scoped shared index — architecture decisions
 
-**Status:** Built and measured on `worktree-mutlilayer-support` (23 commits from `ec43ed8`). Not merged to `main`.
-**Date:** 2026-09-28
+**Status:** Released in 0.37.0 (steps 1-3 of the multi-layer memory roadmap). Step 4 (cloud) not started.
+**Date:** 2026-09-28, updated 2026-10-05 for step 3 and the release.
 **Amends:** NFR-5 (see D-8). **Corrects:** the feature's design document, §6.1 and §4.4.3 (see "Corrections owed").
-**Traceability:** each entry names the implementation decision (`I-n`) it comes from, in
-`ai-docs/sessions/dev-feature-repo-stable-dataset-20260911-233750-2f49f045/decisions-implementation.md`.
-That file is gitignored and is the full record, with the rejected options and the raw measurements.
-This document holds only what changes the architecture or the project state.
+**Traceability:** the `I-n` tags name implementation decisions from the build's session record,
+which was never committed. **This document is the durable record**: everything that changes the
+architecture or the project state is restated here in full, with the measurement behind it.
 
 ---
 
@@ -424,6 +423,41 @@ unambiguous, and an ambiguous one answers nothing and names the candidates.
 **Surfaced:** `penalty_lookups` / `penalty_same_file` / `penalty_applied` on every `--agent` search,
 and ` penalty=dead` per demoted row — the penalty that matched 0 of 217 printed nothing.
 
+**Label names (validation iteration 2).** A large type or function is chunked under a LABEL —
+`X (fields)`, `X (part n/m)` — and after the twin collapse that label is often the only name a
+result carries. The penalty resolves a label to `X` through the chunker's own label grammar (one
+definition, `src/core/chunker.ts`), and still requires the symbol to overlap the chunk. The displayed
+`name=` is unchanged. Measured on a real clone: 17 of 17 label-named dead symbols penalised, 0 before.
+
+---
+
+## D-14 — A symbol is never its own caller
+
+*(Step 3, found by black-box test TEST-54, not by any white-box test.)*
+
+The reference extractor captured every `type_identifier`, including the name in a type's own
+declaration, so every exported interface and type alias was recorded as a reference to itself.
+`in_degree` was therefore ≥ 1 for every type, and the dead-code rule (`inDegree === 0 &&
+pagerank < 0.001`) could never fire for one. The self-edge also made a PageRank self-loop: an
+unreferenced type scored 6.7× an unreferenced function. Two changes, each needed:
+
+- `updateDegreeCounts` (`src/core/tracker.ts`) excludes self-edges from `in_degree`, branch-scoped
+  as before.
+- `extractReferences` (`src/core/symbol-extractor.ts`) skips a name only when it re-derives to a
+  symbol extracted from the same file — an IDENTITY test, not a position test. A first version that
+  matched on the declaration's line span dropped real references on one-line declarations
+  (`export type User = api.User;`), which would have made `api.User` falsely dead; the identity
+  test keeps them, pinned by TS, Go, Rust and C++ fixtures.
+
+**User-visible:** `dead-code --include-exported`, the MCP dead-code tool and the search penalty can
+report unreferenced exported types (119 more on this repository); `callers <Type>` no longer lists
+the type itself; exported types lose inflated PageRank after the next rebuild, which shifts `map`
+and search ranking. No index-version bump: the change rides the v5 rebuild every user already gets.
+
+**Not changed, by decision:** a self-recursive function, or a type naming itself inside its body,
+still is not reported dead — `dead-code` reads the callers list and the genuine self-loop keeps
+PageRank high. Fixing that re-ranks every recursive symbol.
+
 ---
 
 ## Known limits — these belong in the release note
@@ -481,8 +515,15 @@ and ` penalty=dead` per demoted row — the penalty that matched 0 of 217 printe
    does not judge them, and MCP `search`'s symbol-graph backend still returns the INDEXED lines of
    a dirty file's symbols (neither suppressed nor marked — dropping them would also drop symbols
    that still exist).
+10. **Reference resolution attributes every same-named reference to ONE symbol.** Measured on a
+    real clone of this repository: all 63 references to `SearchResult` resolve to the copy in
+    `eval/`, although 12 `src/` files import the one in `src/types.ts`. So `src/types.ts`'s
+    `SearchResult` is dead by the graph, and live functions such as `handleSearch` can be
+    penalised. D-13 makes the penalty judge the right FILE; the graph's caller attribution is the
+    next defect in the same family (resolve a reference to the symbol it actually imports).
+    Pre-existing: identical in every build measured.
 
-## Open — must be settled before this merges
+## Open items
 
 ### ~~Release blocker: symbol paths are relative, chunk paths are absolute~~ — FIXED in step 3 (D-13)
 
@@ -529,8 +570,9 @@ rather than a missing penalty, which is why it stayed invisible. *(I-23.)*
 1. **Session observations are destroyed by the upgrade rebuild**, and this release makes every
    user go through that rebuild once. Pre-existing — every whole-store rebuild already did this
    — but the `documents` schema calls observations "cannot be re-derived from source". Options:
-   carry them across the rebuild, or accept it with a release-note line. This is authored user
-   data, so the choice is the user's.
+   carry them across the rebuild, or accept it with a release-note line. **Shipped in 0.37.0
+   without a carry-over; the loss is stated in the 0.37.0 upgrade notes in `CHANGELOG.md`.** A
+   carry-over remains possible for a later release, but it can no longer save what 0.37.0 rebuilt.
 2. **`mnemex hooks uninstall` reports success while leaving the hook live** when another tool's
    `post-commit` already existed. Pre-existing, on `main`.
 3. **Something re-embeds this worktree through Voyage on every commit.** The evidence collected
@@ -561,11 +603,13 @@ top-10. Step 3 fixed this only on the local path (D-12), because cloud results a
 which is a wire change (and CLAUDE.md #11's dual-header discipline applies). Step 4 (cloud
 authorization) owns it. Until then `--agent` on the cloud path prints `overlay=unreported`, and a
 sweep (M-5) keeps `OverlayMerger` out of every local search path.
-- **The "two ranking defects"** are cited in four documents and defined in none. The phrase
-  traces to a layering report that is on no disk in either checkout. **Step 3 must establish its
-  own scope by measurement, not by looking for the lost report** — and the roadmap's "two" is an
-  unsourced number, so finding one, three or none are all valid outcomes. D-8's corpus-global
-  BM25 leak is a measured candidate with a rig and a falsifier already attached.
+
+### Resolved by step 3: the "two ranking defects"
+
+They were cited in four documents and defined in none. Step 3 established its scope by
+measurement instead: the two worth building were the dead-code path comparison (D-13) and the twin
+dedup, both shipped. D-8's corpus-global BM25 leak stays accepted; the `limit * 3` candidate cut and
+penalty-before-cut go to an eval in `../mnemex-bench/` before any `src/` change.
 
 ## Corrections owed to the design document
 
@@ -599,6 +643,15 @@ real defects that would have shipped owned by no phase. Every one was caught by 
 instruction. It is not a courtesy to the implementer; it is the control that compensates for a
 summariser who cannot see what the summary dropped.
 
+**Black-box tests written from the requirements alone find what white-box tests cannot.** Step 3's
+56 black-box tests drove the built binary against real git repositories and never read `src/`.
+They found four defects a green white-box suite had missed: prose where the `--agent` contract
+promised tokens, a provider-wide refusal reported as a working overlay, an overlay counter that
+over-reported, and D-14's self-caller. A real-provider rig on a real clone then found two more that
+both suites missed (label-named twins escaping the penalty; a count-based merge cut admitting
+distant overlay rows into slots the index's tie trim had left empty). Each layer of evidence
+caught what the one before could not.
+
 **Where work must survive an interruption, put it somewhere git owns.** A snapshot in a
 session-scoped scratch directory is exactly as durable as the session. When the scratch
 directory was cleared mid-build, the git index was the only holder that survived — it kept a
@@ -620,7 +673,6 @@ Kept in `decisions-implementation.md` because it informs that session only:
 | I-19 | Two phases share one commit because the signing key locked for hours. History, recorded so the commit log is not read as carelessness. |
 | I-21 | A liveness test sat at 92 % of its default timeout and was misfiled as load-sensitive. The fix and its reasoning are in the test file's own header. |
 
-The full record, the rejected options and the raw measurements live in
-`ai-docs/sessions/dev-feature-repo-stable-dataset-20260911-233750-2f49f045/` — 682 lines of
-decisions, a 6 811-line implementation log, and two validation documents. That directory is
-gitignored by `.gitignore:75`.
+The build's full session record (the rejected options, the raw measurements, the per-phase logs)
+was gitignored by `.gitignore:75` and was not carried into the repository. It is not needed to
+read this document: every entry above states its decision and the measurement that decided it.

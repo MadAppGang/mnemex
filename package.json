@@ -1,6 +1,6 @@
 {
 	"name": "mnemex",
-	"version": "0.36.1",
+	"version": "0.37.0",
 	"description": "Seven-layer code memory — benchmarked. AST-aware chunking, symbol graph with PageRank, semantic + BM25 retrieval. Personal, team-shared, offline-first, any embedding or LLM provider. MCP server + CLI.",
 	"type": "module",
 	"main": "./dist/index.js",

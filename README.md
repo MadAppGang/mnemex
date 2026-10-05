@@ -623,9 +623,11 @@ that branch's code; switching branches is an incremental re-index of what actual
 not a rebuild.
 
 Upgrading moves the index once. The first `mnemex index` on this version rebuilds into the
-new location (served from the embedding cache, so no new embedding requests) and tells you
-where the old one is — under `--agent` as `abandoned_store_dir=`. **The old index is left
-in place, never deleted**, so you can check it and remove it yourself.
+new location and tells you where the old one is — under `--agent` as `abandoned_store_dir=`.
+**The old index is left in place, never deleted**, so you can check it and remove it yourself.
+Coming from 0.36 or earlier, the embedding cache below is new and starts empty, so that first
+rebuild re-embeds each repository once; every later rebuild, and every other worktree of the
+same tree, is served from the cache.
 
 To keep an index per worktree instead, set `indexDir` in `mnemex.json` to any path other
 than the literal `".mnemex"` — that one string is read as a copied default rather than an
