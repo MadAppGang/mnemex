@@ -24,6 +24,16 @@ let mockExecImpl: (
 	opts: unknown,
 ) => Promise<{ stdout: string; stderr: string }>;
 
+// The REAL exec, captured as a value BEFORE the mock is installed. After
+// `mock.module`, the `childProcess` namespace is live-bound to the MOCK, so a
+// pass-through written as `childProcess.exec(...)` calls the mock again. That
+// recursion never overflows in Bun: JavaScriptCore implements proper tail calls
+// and `return childProcess.exec(...)` is one, so it became a silent infinite
+// loop — and because a module mock outlives this file, every later test in the
+// process that ran a real `git` hung there. It hung CI's Linux run for 50
+// minutes at tracker-commit-provenance.test.ts's first `resolveHeadCommit`.
+const realExec = childProcess.exec;
+
 mock.module("node:child_process", () => ({
 	...childProcess,
 	exec: (
@@ -36,7 +46,7 @@ mock.module("node:child_process", () => ({
 			typeof opts !== "object" ||
 			(opts as { cwd?: string }).cwd !== "/fake/project"
 		) {
-			return childProcess.exec(
+			return realExec(
 				cmd,
 				opts as childProcess.ExecOptions,
 				cb as childProcess.ExecCallback,
@@ -59,6 +69,17 @@ afterAll(() => {
 const { GitDiffChangeDetector } = await import(
 	"../../../src/cloud/git-diff.js"
 );
+
+// The mock outlives this file, so its pass-through is every later test's exec.
+test("the mock's pass-through runs the REAL exec, not itself", async () => {
+	const cp = await import("node:child_process");
+	const out = await new Promise<string>((resolve, reject) => {
+		cp.exec("git --version", { cwd: "/" }, (error, stdout) =>
+			error ? reject(error) : resolve(String(stdout)),
+		);
+	});
+	expect(out).toContain("git version");
+});
 
 // ============================================================================
 // Helpers
