@@ -22,6 +22,13 @@
  *   MG-4  MG-3 on the BM25 side: an FTS tie straddling `fetchLimit` and a
  *         calibrated twin scoring below the edge
  *
+ * A search that comes back short re-runs deeper (`fetchUntilFilled`, up to
+ * `searchMaxFetchLimit`). MG-3/MG-4's tie groups are therefore deep enough
+ * (`TIE_COUNT`) that EVERY pass up to that cap is full with its tail inside
+ * the group: the trim fires and the gate decides on the final pass too, not
+ * only on the first. With a shallow group the deepened pass would be short,
+ * hence edgeless, and would not exercise the gate at all.
+ *
  * Real LanceDB in `mkdtemp`; no Indexer, HOME, embed cache or lock involved.
  */
 
@@ -331,13 +338,17 @@ function summary(label: string, near: number, content: string) {
 describe("MG-3 — vector channel, the q7 shape: a far unchanged overlay chunk cannot take a slot the tie-tail trim freed", () => {
 	// limit 3 -> fetchLimit 9. With the served file suppressed, the index's
 	// vector list is:
-	//   1-5  summaries (fused, then separated out of the results)
-	//   6    `strong`                      (a visible index chunk)
-	//   7-10 `tie1..tie4` at ONE distance  (a tie group straddling rank 9)
+	//   1-5   summaries (fused, then separated out of the results)
+	//   6     `strong`                       (a visible index chunk)
+	//   7-26  `tie1..tie20` at ONE distance  (a tie group straddling rank 9)
 	// The engine fills 9, the trim drops ranks 7-9: the list is 6 long, 3
-	// slots short of `fetchLimit`. The served file holds `good` (near 7.5,
-	// better than the edge) and `far` (near 100, ~1 000x past it).
+	// slots short of `fetchLimit`. The same holds at every deeper pass up to
+	// `searchMaxFetchLimit(3)` = 24, so the search ends short BY DESIGN: no
+	// depth it may reach cuts outside the tie group. The served file holds
+	// `good` (near 7.5, better than the edge) and `far` (near 100, ~1 000x
+	// past it).
 	const LIMIT = 3;
+	const TIE_COUNT = 20;
 	const PATH = "src/edited.ts";
 	const good = chunk({
 		path: PATH,
@@ -372,7 +383,7 @@ describe("MG-3 — vector channel, the q7 shape: a far unchanged overlay chunk c
 			name: "strong",
 			content: "function strong() { return 1; }",
 		});
-		const ties = [1, 2, 3, 4].map((i) =>
+		const ties = Array.from({ length: TIE_COUNT }, (_, k) => k + 1).map((i) =>
 			chunk({
 				path: `src/tie${i}.ts`,
 				label: `tie${i}`,
@@ -391,15 +402,16 @@ describe("MG-3 — vector channel, the q7 shape: a far unchanged overlay chunk c
 		const engine = await overlayStore.vectorCandidates(vec(1), [], {});
 		expect(engine).toEqual([]); // the overlay store is empty until served
 		const clean = await index.search("zzqqnomatch", vec(1), B1, {
-			limit: fetchLimit,
+			limit: 30,
 		});
-		// Every code row is reachable at depth 27; the ties are bit-identical.
+		// Every code row is reachable at depth 90; the ties are bit-identical.
+		expect(fetchLimit).toBe(9);
 		const tieScores = new Set(
 			clean
 				.filter((r) => r.chunk.name?.startsWith("tie"))
 				.map((r) => r.vectorScore),
 		);
-		expect(tieScores.size).toBe(4); // distinct RANKS, identical distances
+		expect(tieScores.size).toBe(TIE_COUNT); // distinct RANKS, identical distances
 	});
 
 	test("the far chunk is absent; the strictly-better one sits at its twin's clean position", async () => {
@@ -442,11 +454,13 @@ describe("MG-4 — BM25 channel: a calibrated twin scoring below the FTS edge is
 	//   1-5  summaries, lengths 1..5 tokens past the keyword (hidden)
 	//   6    `good` twin (served file),   6 more tokens
 	//   7    `strong`,                     7 more tokens
-	//   8-11 `tie1..tie4`,                 8 more tokens each (one score)
+	//   8-27 `tie1..tie20`,                8 more tokens each (one score)
 	//   far  `far` twin (served file),    40 more tokens
 	// With the served file suppressed the engine fills 9 (5 + strong + 3
-	// ties), the trim drops the ties: 6 rows, 3 slots short.
+	// ties), the trim drops the ties: 6 rows, 3 slots short — and so at every
+	// deeper pass up to `searchMaxFetchLimit(3)` = 24 (see the file header).
 	const LIMIT = 3;
+	const TIE_COUNT = 20;
 	const PATH = "src/edited.ts";
 	const WORDS = [
 		"apple",
@@ -493,7 +507,7 @@ describe("MG-4 — BM25 channel: a calibrated twin scoring below the FTS edge is
 			near: 70,
 			content: padded(7, "st"),
 		});
-		const ties = [1, 2, 3, 4].map((i) =>
+		const ties = Array.from({ length: TIE_COUNT }, (_, k) => k + 1).map((i) =>
 			chunk({
 				path: `src/tie${i}.ts`,
 				label: `tie${i}`,
@@ -517,8 +531,8 @@ describe("MG-4 — BM25 channel: a calibrated twin scoring below the FTS edge is
 			keywordOnly: true,
 		});
 		const tieRows = deep.filter((r) => ties.includes(r.chunk.id));
-		expect(tieRows.length).toBe(4);
-		expect(new Set(tieRows.map((r) => r.score)).size).toBe(4); // rank-only
+		expect(tieRows.length).toBe(TIE_COUNT);
+		expect(new Set(tieRows.map((r) => r.score)).size).toBe(TIE_COUNT); // rank-only
 		const farDeep = deep[at(deep, far.id)];
 		expect(farDeep).toBeDefined();
 

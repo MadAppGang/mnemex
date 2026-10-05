@@ -72,8 +72,16 @@ export interface OverlayCandidates {
 	readonly suppressedPaths: readonly string[];
 	/** `served` (= the BM25 calibration paths), stored spelling. */
 	readonly servedPaths: readonly string[];
-	/** ≤ fetchLimit, id-unique, `(_distance asc, id asc)`. */
+	/** ≤ `vectorFetchLimit`, id-unique, `(_distance asc, id asc)`. */
 	readonly vector: readonly OverlayVectorRow[];
+	/**
+	 * The depth `vector` was cut at (`vectorCandidates`' fetch limit). The
+	 * search cuts it again at each pass's own depth, and never deepens past
+	 * it while `vector` is full (`searchDepthCap` in `store.ts`). Absent:
+	 * `searchFetchLimit(limit)`, the first pass's depth, so a search over
+	 * such a list does not deepen while the list is full.
+	 */
+	readonly vectorFetchLimit?: number;
 	/** Key `${path}\0${contentHash}`; refs in `startLine` order. */
 	readonly chunksByPathHash: ReadonlyMap<string, readonly OverlayChunkRef[]>;
 	/** Every served chunk, for hydrating a BM25-only overlay hit. */

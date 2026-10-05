@@ -81,7 +81,11 @@ import {
 	OverlayLockLostError,
 	processHoldsIndexLock,
 } from "../lock.js";
-import { createVectorStore, type IVectorStore } from "../store.js";
+import {
+	createVectorStore,
+	type IVectorStore,
+	overlayVectorFetchLimit,
+} from "../store.js";
 import {
 	getDirtyOverlayManifestPathFor,
 	getDirtyOverlayVectorsPathFor,
@@ -2196,10 +2200,15 @@ class LockedSection {
 		}
 
 		const ctx = this.pass.context;
+		// As deep as the deepest search pass, so a search that re-runs deeper
+		// (`fetchUntilFilled` in store.ts) cuts this list at its own depth
+		// instead of outrunning it. The first pass cuts it at 3 × limit.
+		const vectorFetchLimit = overlayVectorFetchLimit(ctx.search.limit);
 		const vector = await store.vectorCandidates(
 			[...ctx.queryVector],
 			servedIds,
 			ctx.search,
+			vectorFetchLimit,
 		);
 		const rows = await store.rowsByIds(servedIds);
 		const rowsById = new Map<string, OverlayVectorRow>(
@@ -2215,6 +2224,7 @@ class LockedSection {
 			suppressedPaths: [...suppressed].sort(),
 			servedPaths: served.map((c) => c.storedPath).sort(),
 			vector,
+			vectorFetchLimit,
 			chunksByPathHash,
 			rowsById,
 		};

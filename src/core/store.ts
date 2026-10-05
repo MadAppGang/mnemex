@@ -100,6 +100,91 @@ export function searchFetchLimit(limit: number): number {
 	return limit * 3;
 }
 
+/**
+ * The deepest any ranked search fetches per retriever for a result list of
+ * `limit`: the bound on `fetchUntilFilled`.
+ *
+ * ── WHY A RANKED SEARCH EVER FETCHES DEEPER ─────────────────────────────────
+ * `trimIncompleteTieTail` drops the tie group at the cut of a FULL list, and
+ * `collapseSpanTwins` then folds each span's `code_chunk` / `code_unit` pair
+ * into one slot. A full `3 × limit` list can hold only ~`1.5 × limit` spans,
+ * so trimming its tied tail can leave fewer than `limit` — while the index
+ * holds plenty more. Measured in release 0.37.0's black-box TEST-07 on Linux
+ * x64: `--limit 10` returned 9 rows, `--limit 20` returned 16, because x64
+ * float summation produced an exact tie at rank 30 that arm64 did not. v0.36.1
+ * always returned `limit` rows.
+ *
+ * So when a pass comes back SHORT and a retriever list was cut by count, the
+ * search re-runs at double the depth. Each deeper pass is threshold-bounded
+ * by the same trim, so the answer stays a function of the corpus.
+ *
+ * ── WHY 8 ───────────────────────────────────────────────────────────────────
+ * At most two re-runs for `search` / `searchDocuments` (3× → 6× → 8×) and two
+ * for `searchCodeUnits` (2× → 4× → 8×). A tie group deeper than the cap is
+ * the case where no depth helps (every cut lands inside it), and the search
+ * then returns what it has rather than chasing the corpus. Raising it costs
+ * one more round trip per channel on exactly those queries.
+ */
+export function searchMaxFetchLimit(limit: number): number {
+	return limit * 8;
+}
+
+/**
+ * The depth the dirty overlay materialises its vector list at, for a search
+ * whose `limit` may be unset: `searchMaxFetchLimit` of the limit `search`
+ * itself will use. Deep enough that no deepened pass outruns it.
+ */
+export function overlayVectorFetchLimit(limit: number | undefined): number {
+	return searchMaxFetchLimit(limit ?? DEFAULT_LIMIT);
+}
+
+/**
+ * The next fetch depth after `current`, or `null` when there is none: double,
+ * clamped to `cap`; `null` once `current` has reached the cap or doubling
+ * would not grow it (a zero depth), so the loop cannot spin.
+ */
+export function nextFetchLimit(current: number, cap: number): number | null {
+	const next = Math.min(current * 2, cap);
+	return next > current ? next : null;
+}
+
+/** One ranked pass at one fetch depth (`fetchUntilFilled`). */
+interface RankedPass<R> {
+	readonly results: R[];
+	/**
+	 * A list that fed fusion was cut by COUNT (an engine list came back with
+	 * its full `limit`, or a merge input held rows past the depth), so a
+	 * deeper fetch can add candidates. `false` means every list was complete
+	 * and no depth can change the answer.
+	 */
+	readonly truncated: boolean;
+}
+
+/**
+ * Run `pass` at `firstFetch`, and again at doubling depths up to `cap`, while
+ * it comes back SHORT of `limit` and truncated; the LAST pass is the answer.
+ * See `searchMaxFetchLimit`.
+ *
+ * The common path is one call: a first pass that fills `limit` (or whose
+ * lists were all complete) is returned as it is, so its statements and its
+ * results are exactly what they were before deepening existed (N-2).
+ */
+async function fetchUntilFilled<P extends RankedPass<unknown>>(
+	limit: number,
+	firstFetch: number,
+	cap: number,
+	pass: (fetchLimit: number) => Promise<P>,
+): Promise<P> {
+	let fetchLimit = firstFetch;
+	for (;;) {
+		const ranked = await pass(fetchLimit);
+		if (ranked.results.length >= limit || !ranked.truncated) return ranked;
+		const next = nextFetchLimit(fetchLimit, cap);
+		if (next === null) return ranked;
+		fetchLimit = next;
+	}
+}
+
 /** BM25 weight in hybrid search */
 const BM25_WEIGHT = 0.4;
 
@@ -922,9 +1007,11 @@ export interface IVectorStore {
 		storedPaths: readonly string[],
 	): Promise<number>;
 	/**
-	 * Top `searchFetchLimit(limit)` rows by vector distance among `ids`, under
-	 * the user's language/path filters; materialised, id-unique, `(_distance,
-	 * id)` order. The dirty overlay's vector channel (step 3, §5 Merge).
+	 * Top `fetchLimit` (default `searchFetchLimit(limit)`) rows by vector
+	 * distance among `ids`, under the user's language/path filters;
+	 * materialised, id-unique, `(_distance, id)` order. The dirty overlay's
+	 * vector channel (step 3, §5 Merge). The overlay reads at
+	 * `searchMaxFetchLimit(limit)` so a deepened search pass has its rows.
 	 */
 	vectorCandidates(
 		queryVector: number[],
@@ -933,6 +1020,7 @@ export interface IVectorStore {
 			SearchOptions,
 			"limit" | "language" | "filePath" | "pathPattern"
 		>,
+		fetchLimit?: number,
 	): Promise<OverlayVectorRow[]>;
 	/** The rows behind `ids`, materialised without vectors, id-unique. */
 	rowsByIds(ids: readonly string[]): Promise<OverlayVectorRow[]>;
@@ -1590,11 +1678,11 @@ export class VectorStore implements IVectorStore {
 			SearchOptions,
 			"limit" | "language" | "filePath" | "pathPattern"
 		>,
+		fetchLimit: number = searchFetchLimit(options.limit ?? DEFAULT_LIMIT),
 	): Promise<OverlayVectorRow[]> {
 		if (ids.length === 0) return [];
 		const table = await this.ensureTableOpen();
 		if (!table) return [];
-		const fetchLimit = searchFetchLimit(options.limit ?? DEFAULT_LIMIT);
 		const user = this.buildUserFilters(options);
 		const rows: OverlayVectorRow[] = [];
 		for (const batch of chunkIds(ids)) {
@@ -1664,6 +1752,10 @@ export class VectorStore implements IVectorStore {
 	 * the single method did (N-2 deep-equals a snapshot frozen before the split).
 	 * With an overlay, its rows are merged into the index's retriever lists
 	 * BEFORE fusion and the stale index rows are pre-filtered out (R3.2/R3.3).
+	 *
+	 * Stages 2-4 re-run at a deeper `fetchLimit` only when a pass comes back
+	 * SHORT of `limit` while a list was cut by count (`fetchUntilFilled`,
+	 * `searchMaxFetchLimit`). A pass that fills `limit` is the only pass.
 	 */
 	async search(
 		queryText: string,
@@ -1676,18 +1768,31 @@ export class VectorStore implements IVectorStore {
 		if (!table) {
 			return [];
 		}
-		const plan = this.buildSearchFilters(scope, options, overlay);
-		const lists = await this.retrieveCandidates(
-			table,
-			queryText,
-			queryVector,
-			plan,
+		const first = this.buildSearchFilters(scope, options, overlay);
+		const ranked = await fetchUntilFilled(
+			first.limit,
+			first.fetchLimit,
+			searchDepthCap(first, overlay),
+			async (fetchLimit) => {
+				const plan =
+					fetchLimit === first.fetchLimit ? first : { ...first, fetchLimit };
+				const lists = await this.retrieveCandidates(
+					table,
+					queryText,
+					queryVector,
+					plan,
+				);
+				const merged =
+					overlay === undefined
+						? lists
+						: await this.applyOverlay(table, queryText, plan, lists, overlay);
+				return {
+					results: this.fuseAndHydrate(merged, plan),
+					truncated: merged.truncated,
+				};
+			},
 		);
-		const merged =
-			overlay === undefined
-				? lists
-				: await this.applyOverlay(table, queryText, plan, lists, overlay);
-		return this.fuseAndHydrate(merged, plan);
+		return ranked.results;
 	}
 
 	/**
@@ -1770,6 +1875,7 @@ export class VectorStore implements IVectorStore {
 		// Vector search (skip if keyword-only mode or no vector)
 		let vector: Record<string, unknown>[] = [];
 		let vectorEdge: number | null = null;
+		let truncated = false;
 		const vectorRan = !plan.keywordOnly && queryVector !== undefined;
 		if (vectorRan) {
 			let vectorQuery = table.vectorSearch(queryVector).limit(fetchLimit);
@@ -1780,6 +1886,7 @@ export class VectorStore implements IVectorStore {
 				await vectorQuery.toArray(),
 				"_distance",
 			);
+			truncated ||= ordered.length >= fetchLimit;
 			vectorEdge = retrieverEdge(ordered, "_distance", fetchLimit);
 			vector = trimIncompleteTieTail(ordered, "_distance", {
 				fetched: fetchLimit,
@@ -1803,6 +1910,7 @@ export class VectorStore implements IVectorStore {
 				await ftsQuery.toArray(),
 				"_score",
 			);
+			truncated ||= ordered.length >= fetchLimit;
 			bm25Edge = retrieverEdge(ordered, "_score", fetchLimit);
 			bm25 = trimIncompleteTieTail(ordered, "_score", {
 				fetched: fetchLimit,
@@ -1817,7 +1925,7 @@ export class VectorStore implements IVectorStore {
 			// overlay-free path never reads the edge.
 			bm25Edge = Number.NaN;
 		}
-		return { vector, bm25, vectorRan, vectorEdge, bm25Edge };
+		return { vector, bm25, vectorRan, vectorEdge, bm25Edge, truncated };
 	}
 
 	/**
@@ -1833,6 +1941,13 @@ export class VectorStore implements IVectorStore {
 	 *   take the BM25 score of their index twin (`calibratedTwins`), gated
 	 *   at the main BM25 list's edge (`lists.bm25Edge`) the same way, and
 	 *   changed/new chunks are vector-only (ruling 4).
+	 *
+	 * Depth: the overlay's vector list may be materialised DEEPER than this
+	 * pass (`OverlayCandidates.vectorFetchLimit`), so it is cut here at
+	 * `plan.fetchLimit` — `(_distance, id)` order, so its first `fetchLimit`
+	 * rows are exactly a fetch at that depth. Both sides of the merge are then
+	 * cut at the same depth on every pass (`searchDepthCap` keeps a deepened
+	 * pass from outrunning the overlay's own depth).
 	 */
 	private async applyOverlay(
 		table: lancedb.Table,
@@ -1842,13 +1957,15 @@ export class VectorStore implements IVectorStore {
 		overlay: OverlayCandidates,
 	): Promise<RetrieverLists> {
 		const cut = { fetched: plan.fetchLimit, keepAtLeast: plan.limit };
+		let truncated = lists.truncated;
 		let vector = lists.vector;
 		if (lists.vectorRan && overlay.vector.length > 0) {
+			truncated ||= overlay.vector.length > plan.fetchLimit;
 			vector = mergeRetrieverLists(
 				lists.vector,
-				overlay.vector.map((row) =>
-					overlayRetrieverRow(row, { _distance: row._distance }),
-				),
+				overlay.vector
+					.slice(0, plan.fetchLimit)
+					.map((row) => overlayRetrieverRow(row, { _distance: row._distance })),
 				"_distance",
 				{ ...cut, indexEdge: lists.vectorEdge },
 			);
@@ -1856,6 +1973,7 @@ export class VectorStore implements IVectorStore {
 		let bm25 = lists.bm25;
 		const twins = await this.calibratedTwins(table, queryText, plan, overlay);
 		if (twins.length > 0) {
+			truncated ||= twins.length > plan.fetchLimit;
 			bm25 = mergeRetrieverLists(lists.bm25, twins, "_score", {
 				...cut,
 				indexEdge: lists.bm25Edge,
@@ -1867,6 +1985,7 @@ export class VectorStore implements IVectorStore {
 			vectorRan: lists.vectorRan,
 			vectorEdge: lists.vectorEdge,
 			bm25Edge: lists.bm25Edge,
+			truncated,
 		};
 	}
 
@@ -2878,59 +2997,77 @@ export class VectorStore implements IVectorStore {
 
 		const filterStr = filters.length > 0 ? filters.join(" AND ") : undefined;
 
-		// Vector search. NFR-5: deterministic rank order, see `search` above.
-		let vectorQuery = table.vectorSearch(queryVector).limit(limit * 3);
-		if (filterStr) {
-			vectorQuery = vectorQuery.where(filterStr);
-		}
-		const vectorResults = trimIncompleteTieTail(
-			stabilizeRetrieverOrder(await vectorQuery.toArray(), "_distance"),
-			"_distance",
-			{ fetched: limit * 3, keepAtLeast: limit },
-		);
-
-		// BM25 full-text search
-		await this.ensureFtsIndex();
-		let bm25Results: any[] = [];
-		try {
-			let ftsQuery = table
-				.query()
-				.fullTextSearch(queryText, { columns: ["content"] })
-				.limit(limit * 3);
-			if (filterStr) {
-				ftsQuery = ftsQuery.where(filterStr);
-			}
-			bm25Results = trimIncompleteTieTail(
-				stabilizeRetrieverOrder(await ftsQuery.toArray(), "_score"),
-				"_score",
-				{ fetched: limit * 3, keepAtLeast: limit },
-			);
-		} catch {
-			bm25Results = [];
-		}
-
 		// Get weights for the use case
 		const weights = typeWeights || getUseCaseWeights(useCase);
-
-		// Type-aware RRF fusion with test file handling
 		const testFileMode = getTestFileMode(this.pathRoot);
-		const results = typeAwareRRFFusion(
-			vectorResults,
-			bm25Results,
-			VECTOR_WEIGHT,
-			BM25_WEIGHT,
-			weights,
-			this.testFileDetector,
-			testFileMode,
-		);
 
-		// R2: one slot per code span, collapsed before the cut (code rows only;
-		// every other document type keeps its own slot). See `search`. No
-		// identity carry-over (R2-A) here: `BaseDocument` carries no name,
-		// chunk type, signature or parent, so a nameless kept row shows nothing
-		// that a twin could complete.
-		const { kept: topResults } = collapseSpanTwins(results, limit, (r) =>
-			this.spanKeyOf(r),
+		// One ranked pass at `fetchLimit`; re-run deeper only when it comes
+		// back short with a list cut by count (`fetchUntilFilled`).
+		const rankAt = async (
+			fetchLimit: number,
+		): Promise<RankedPass<FusedResult>> => {
+			// Vector search. NFR-5: deterministic rank order, see `search` above.
+			let vectorQuery = table.vectorSearch(queryVector).limit(fetchLimit);
+			if (filterStr) {
+				vectorQuery = vectorQuery.where(filterStr);
+			}
+			const vectorRows = await vectorQuery.toArray();
+			let truncated = vectorRows.length >= fetchLimit;
+			const vectorResults = trimIncompleteTieTail(
+				stabilizeRetrieverOrder(vectorRows, "_distance"),
+				"_distance",
+				{ fetched: fetchLimit, keepAtLeast: limit },
+			);
+
+			// BM25 full-text search
+			await this.ensureFtsIndex();
+			let bm25Results: any[] = [];
+			try {
+				let ftsQuery = table
+					.query()
+					.fullTextSearch(queryText, { columns: ["content"] })
+					.limit(fetchLimit);
+				if (filterStr) {
+					ftsQuery = ftsQuery.where(filterStr);
+				}
+				const ftsRows = await ftsQuery.toArray();
+				truncated ||= ftsRows.length >= fetchLimit;
+				bm25Results = trimIncompleteTieTail(
+					stabilizeRetrieverOrder(ftsRows, "_score"),
+					"_score",
+					{ fetched: fetchLimit, keepAtLeast: limit },
+				);
+			} catch {
+				bm25Results = [];
+			}
+
+			// Type-aware RRF fusion with test file handling
+			const results = typeAwareRRFFusion(
+				vectorResults,
+				bm25Results,
+				VECTOR_WEIGHT,
+				BM25_WEIGHT,
+				weights,
+				this.testFileDetector,
+				testFileMode,
+			);
+
+			// R2: one slot per code span, collapsed before the cut (code rows
+			// only; every other document type keeps its own slot). See `search`.
+			// No identity carry-over (R2-A) here: `BaseDocument` carries no
+			// name, chunk type, signature or parent, so a nameless kept row
+			// shows nothing that a twin could complete.
+			const { kept } = collapseSpanTwins(results, limit, (r) =>
+				this.spanKeyOf(r),
+			);
+			return { results: kept, truncated };
+		};
+		const firstFetch = limit * 3;
+		const { results: topResults } = await fetchUntilFilled(
+			limit,
+			firstFetch,
+			Math.max(firstFetch, searchMaxFetchLimit(limit)),
+			rankAt,
 		);
 
 		// Convert to EnrichedSearchResult format
@@ -3430,54 +3567,76 @@ export class VectorStore implements IVectorStore {
 		}
 
 		const filterStr = filters.join(" AND ");
-
-		// Vector search. NFR-5: deterministic rank order, see `search` above.
-		let vectorQuery = table.vectorSearch(queryVector).limit(limit * 2);
-		vectorQuery = vectorQuery.where(filterStr);
-		const vectorResults = trimIncompleteTieTail(
-			stabilizeRetrieverOrder(await vectorQuery.toArray(), "_distance"),
-			"_distance",
-			{ fetched: limit * 2, keepAtLeast: limit },
-		);
-
-		// BM25 search (search both content and summary if summaries exist)
-		await this.ensureFtsIndex();
-		let bm25Results: any[] = [];
-		try {
-			let ftsQuery = table
-				.query()
-				.fullTextSearch(queryText, { columns: ["content"] })
-				.limit(limit * 2);
-			ftsQuery = ftsQuery.where(filterStr);
-			bm25Results = trimIncompleteTieTail(
-				stabilizeRetrieverOrder(await ftsQuery.toArray(), "_score"),
-				"_score",
-				{ fetched: limit * 2, keepAtLeast: limit },
-			);
-		} catch {
-			bm25Results = [];
-		}
-
-		// RRF fusion with test file handling
 		const testFileMode = getTestFileMode(this.pathRoot);
-		const results = reciprocalRankFusion(
-			vectorResults,
-			bm25Results,
-			VECTOR_WEIGHT,
-			BM25_WEIGHT,
-			this.testFileDetector,
-			testFileMode,
-		);
 
-		// R2: the pre-filter admits only `code_unit` rows, so a twin here is
-		// two REVISIONS of one span (a unit id carries its content, D-7): in a
-		// SCOPE_ALL superset, or two rows one branch still holds. One slot per
-		// span, as on the other two paths, and a nameless kept revision takes a
-		// branch-sharing twin's identity (R2-A).
-		const { kept, twinIdsOf } = collapseSpanTwins(results, limit, (r) =>
-			this.spanKeyOf(r),
+		// One ranked pass at `fetchLimit`; re-run deeper only when it comes
+		// back short with a list cut by count (`fetchUntilFilled`). The pass
+		// carries its fused list and twin map out with it, for hydration.
+		const rankAt = async (fetchLimit: number) => {
+			// Vector search. NFR-5: deterministic rank order, see `search` above.
+			let vectorQuery = table.vectorSearch(queryVector).limit(fetchLimit);
+			vectorQuery = vectorQuery.where(filterStr);
+			const vectorRows = await vectorQuery.toArray();
+			let truncated = vectorRows.length >= fetchLimit;
+			const vectorResults = trimIncompleteTieTail(
+				stabilizeRetrieverOrder(vectorRows, "_distance"),
+				"_distance",
+				{ fetched: fetchLimit, keepAtLeast: limit },
+			);
+
+			// BM25 search (search both content and summary if summaries exist)
+			await this.ensureFtsIndex();
+			let bm25Results: any[] = [];
+			try {
+				let ftsQuery = table
+					.query()
+					.fullTextSearch(queryText, { columns: ["content"] })
+					.limit(fetchLimit);
+				ftsQuery = ftsQuery.where(filterStr);
+				const ftsRows = await ftsQuery.toArray();
+				truncated ||= ftsRows.length >= fetchLimit;
+				bm25Results = trimIncompleteTieTail(
+					stabilizeRetrieverOrder(ftsRows, "_score"),
+					"_score",
+					{ fetched: fetchLimit, keepAtLeast: limit },
+				);
+			} catch {
+				bm25Results = [];
+			}
+
+			// RRF fusion with test file handling
+			const results = reciprocalRankFusion(
+				vectorResults,
+				bm25Results,
+				VECTOR_WEIGHT,
+				BM25_WEIGHT,
+				this.testFileDetector,
+				testFileMode,
+			);
+
+			// R2: the pre-filter admits only `code_unit` rows, so a twin here
+			// is two REVISIONS of one span (a unit id carries its content,
+			// D-7): in a SCOPE_ALL superset, or two rows one branch still
+			// holds. One slot per span, as on the other two paths, and a
+			// nameless kept revision takes a branch-sharing twin's identity
+			// (R2-A).
+			const { kept, twinIdsOf } = collapseSpanTwins(results, limit, (r) =>
+				this.spanKeyOf(r),
+			);
+			return { results: kept, truncated, twinIdsOf, fused: results };
+		};
+		const firstFetch = limit * 2;
+		const {
+			results: kept,
+			twinIdsOf,
+			fused,
+		} = await fetchUntilFilled(
+			limit,
+			firstFetch,
+			Math.max(firstFetch, searchMaxFetchLimit(limit)),
+			rankAt,
 		);
-		const unitById = new Map(results.map((r) => [r.id, r]));
+		const unitById = new Map(fused.map((r) => [r.id, r]));
 		return kept.map((keptRow) => {
 			const r = withCarriedIdentity(
 				keptRow,
@@ -3571,6 +3730,29 @@ interface RetrieverLists {
 	 */
 	readonly vectorEdge: number | null;
 	readonly bm25Edge: number | null;
+	/** `RankedPass.truncated`: a deeper fetch could add candidates. */
+	readonly truncated: boolean;
+}
+
+/**
+ * The deepest `search` may fetch: `searchMaxFetchLimit`, and with an overlay
+ * no deeper than the overlay's own vector list reaches.
+ *
+ * The merge gate (`mergeRetrieverLists`) relies on both sides being cut at
+ * the SAME depth: an overlay list materialised at depth `d` and FULL there is
+ * missing whatever lies past `d`, so a pass at a depth beyond `d` would rank
+ * index rows the overlay's absent rows should have beaten. A list SHORTER
+ * than its depth holds every served row, so it bounds nothing.
+ */
+function searchDepthCap(
+	plan: SearchPlan,
+	overlay: OverlayCandidates | undefined,
+): number {
+	const cap = Math.max(plan.fetchLimit, searchMaxFetchLimit(plan.limit));
+	if (overlay === undefined) return cap;
+	const depth = overlay.vectorFetchLimit ?? plan.fetchLimit;
+	if (overlay.vector.length < depth) return cap;
+	return Math.min(cap, Math.max(plan.fetchLimit, depth));
 }
 
 /** Test file weight multiplier for downranking */
