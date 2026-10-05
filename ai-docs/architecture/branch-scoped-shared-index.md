@@ -184,6 +184,14 @@ Two states are distinguished, because they have different causes and different r
 `branchUnknown` (the registry has never seen this branch) and `branchEmpty` (registered, holds
 no rows — what a `--force` or a partial sweep creates). *(I-13, I-16, I-17.)*
 
+**This amends requirement FR-4, and the amendment is recorded here.** FR-4 says a chunk indexed
+on branch X must not be returned by a search on branch Y. The flagged superset is the one
+permitted deviation, under three conditions that all hold in the code: the response carries
+`branchUnknown`; the flag reaches the MCP `search_code` response, not only `--agent`; and every
+result carries per-row branch attribution, so a caller can discount a foreign row. A branch that
+IS in the registry is filtered absolutely. Reversing the carve-out is a one-predicate change.
+`test/unit/mcp/branch-unknown-response.test.ts` reads this paragraph to keep it from being lost.
+
 ## D-7 — A row id and a reference live in different namespaces
 
 `code-unit-extractor.ts` built a unit id from `filePath:unitType:name:startRow` and hashed **no

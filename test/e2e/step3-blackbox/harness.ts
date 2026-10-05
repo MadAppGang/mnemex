@@ -336,12 +336,16 @@ export function assertNoSecuritySpawn(sb: Sandbox): void {
 
 /**
  * Inherited variables that would make a child non-hermetic: provider keys and
- * endpoints, git redirection, and the agent-session markers (AI_AGENT,
- * CLAUDECODE, CLAUDE_*) that switch mnemex to agent output when the suite
- * itself runs inside an AI agent.
+ * endpoints, git redirection, the agent-session markers (AI_AGENT,
+ * CLAUDECODE, CLAUDE_*, OPENCODE) that switch mnemex to agent output when the
+ * suite itself runs inside an AI agent, and the non-interactive markers
+ * `isAgentMode()` also honours (`CI=true`, `NO_COLOR`, `TERM=dumb`). GitHub
+ * runners set `CI=true`, which made TEST-48's pseudo-TTY child print `--agent`
+ * output in CI while it passed locally. A scenario that wants one of these
+ * passes it through `extra`.
  */
 const STRIP_ENV =
-	/^(MNEMEX_|CLAUDEMEM_|GIT_|OLLAMA_|OPENROUTER_|VOYAGE_|ANTHROPIC_|CONTEXT7_|LMSTUDIO_|CLAUDE_|CLAUDECODE$|AI_AGENT$|TERM_THEME$)/;
+	/^(MNEMEX_|CLAUDEMEM_|GIT_|OLLAMA_|OPENROUTER_|VOYAGE_|ANTHROPIC_|CONTEXT7_|LMSTUDIO_|CLAUDE_|CLAUDECODE$|AI_AGENT$|OPENCODE$|TERM_THEME$|CI$|NO_COLOR$)/;
 
 /** The sandbox variables every child carries (fed to keychainSafeChildEnv at each spawn site). */
 export function sandboxVars(sb: Sandbox): Record<string, string> {

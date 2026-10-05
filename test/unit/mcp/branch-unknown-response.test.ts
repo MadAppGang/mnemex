@@ -176,8 +176,12 @@ describe("D1 — the resolver drops the filter and flags it", () => {
 // Required item 1 — the FR-4 carve-out is RECORDED, not merely intended
 // ════════════════════════════════════════════════════════════════════════════
 
-describe("D1 required item 1 — the FR-4 carve-out is in requirements.md", () => {
-	test("FR-4 names the carve-out, in the file, as bytes", () => {
+// The amendment was first written into the build's session requirements, which
+// are gitignored — so this test passed only on the machine that had them and
+// failed in CI and in every fresh clone. It now reads the COMMITTED architecture
+// record (D-6), where the amendment is restated in full.
+describe("D1 required item 1 — the FR-4 carve-out is in the committed architecture record", () => {
+	test("D-6 names the carve-out, in the file, as bytes", () => {
 		const requirements = readFileSync(
 			join(
 				import.meta.dir,
@@ -185,9 +189,8 @@ describe("D1 required item 1 — the FR-4 carve-out is in requirements.md", () =
 				"..",
 				"..",
 				"ai-docs",
-				"sessions",
-				"dev-feature-repo-stable-dataset-20260911-233750-2f49f045",
-				"requirements.md",
+				"architecture",
+				"branch-scoped-shared-index.md",
 			),
 			"utf8",
 		);
