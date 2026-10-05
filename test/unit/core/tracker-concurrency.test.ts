@@ -58,6 +58,48 @@ const B_MAX_MS = BUSY_TIMEOUT_MS + MAX_SYNC_REGION_MS;
 /** Process spawn + a bun build of the tracker leaves the default 5 s tight. */
 const CHILD_TEST_TIMEOUT_MS = 30_000;
 
+/**
+ * How long ONE busy-wait of `busyTimeoutMs` really blocks on this platform's
+ * SQLite, measured against a held EXCLUSIVE lock in a scratch database.
+ *
+ * WHY THIS EXISTS. SQLite's default busy handler sleeps in milliseconds only
+ * when the library was built with `usleep`; without it, it sleeps in WHOLE
+ * SECONDS, so a 125 ms `busy_timeout` blocks ~1 s. GitHub's macOS runner
+ * measured 1 403 ms and 1 241 ms for the two-attempt read below, where this
+ * repository's development machine (SQLite 3.54) measures ~150 ms per wait.
+ * The region bound is "two attempts' worth of the platform's real busy-wait,
+ * plus one region's work" — asserting 500 ms there asserts a sleep resolution
+ * the platform does not have. The SAFETY property (the heartbeat never ages
+ * past `DEFAULT_STALE_TIMEOUT`, 10 s — CLAUDE.md #31) is asserted unchanged.
+ */
+function measureOneBusyWaitMs(busyTimeoutMs: number): number {
+	const probeDir = mkdtempSync(join(tmpdir(), "busy-probe-"));
+	try {
+		const path = join(probeDir, "probe.db");
+		const holder = createDatabaseSync(path);
+		holder.exec("PRAGMA journal_mode = DELETE");
+		holder.exec("CREATE TABLE t (x)");
+		const waiter = createDatabaseSync(path);
+		const read = waiter.prepare("SELECT count(*) AS n FROM t");
+		holder.exec("BEGIN EXCLUSIVE");
+		holder.prepare("INSERT INTO t VALUES (1)").run();
+		waiter.exec(`PRAGMA busy_timeout = ${busyTimeoutMs}`);
+		const started = performance.now();
+		try {
+			read.get();
+		} catch {
+			// SQLITE_BUSY after the busy handler gave up: the case being timed.
+		}
+		const blocked = performance.now() - started;
+		holder.exec("ROLLBACK");
+		holder.close();
+		waiter.close();
+		return blocked;
+	} finally {
+		rmSync(probeDir, { recursive: true, force: true });
+	}
+}
+
 let dir: string;
 let home: string;
 let root: string;
@@ -466,8 +508,17 @@ describe("V2.11 — contention past the bounded wait is a NAMED error, never a f
 			expect(run.result.rows).toBeNull();
 			expect(run.result.error?.name).toBe("TrackerContendedError");
 			expect(run.result.error?.region).toBe("R-read");
-			// Two attempts at 125 ms each: one region's worth, not more.
-			expect(run.maxBeatGapMs).toBeLessThan(B_MAX_MS);
+			// Two attempts at 125 ms each: one region's worth, not more — in the
+			// platform's real busy-wait resolution (see measureOneBusyWaitMs).
+			const oneWaitMs = measureOneBusyWaitMs(BUSY_TIMEOUT_MS / 2);
+			const boundMs = Math.max(B_MAX_MS, 2 * oneWaitMs + MAX_SYNC_REGION_MS);
+			console.log(
+				`V2.11 rollback read: one ${BUSY_TIMEOUT_MS / 2} ms busy-wait blocks ${oneWaitMs.toFixed(0)} ms here; bound ${boundMs.toFixed(0)} ms; measured gap ${run.maxBeatGapMs} ms`,
+			);
+			expect(run.maxBeatGapMs).toBeLessThan(boundMs);
+			// The safety property, unconditionally: a second indexer may reclaim
+			// the lock only once the heartbeat is 10 s old.
+			expect(run.maxBeatGapMs).toBeLessThan(10_000);
 
 			// Positive control: the rows were there all along.
 			expect(inspect("SELECT path FROM files ORDER BY path")).toEqual([
