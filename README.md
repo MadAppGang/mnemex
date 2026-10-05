@@ -361,7 +361,7 @@ mnemex init              # setup wizard
 mnemex index [path]      # index codebase
 mnemex search <query>    # search (auto-reindexes changed files)
 mnemex status            # what's indexed
-mnemex clear             # nuke the index
+mnemex clear             # clear this branch's rows (--all: the whole shared index)
 mnemex models            # list embedding models
 mnemex benchmark         # benchmark embedding models
 mnemex --mcp             # run as MCP server
@@ -624,10 +624,16 @@ not a rebuild.
 
 Upgrading moves the index once. The first `mnemex index` on this version rebuilds into the
 new location and tells you where the old one is — under `--agent` as `abandoned_store_dir=`.
-**The old index is left in place, never deleted**, so you can check it and remove it yourself.
-Coming from 0.36 or earlier, the embedding cache below is new and starts empty, so that first
-rebuild re-embeds each repository once; every later rebuild, and every other worktree of the
-same tree, is served from the cache.
+**The old index files are left in place, never deleted**: you can remove `index.db*`,
+`vectors/` and `docs-cache/` from that directory yourself. **Do not delete the `.mnemex/`
+directory itself** — it still holds your MCP memories (`memories/`), edit history, project
+config and the uncommitted-work overlay.
+
+Coming from 0.36 or earlier, that first rebuild costs real work once: the embedding cache below
+is new and starts empty, so each repository is re-embedded, and with enrichment on (the
+default) every LLM summary is re-generated (`--no-llm` skips that). After it, another worktree
+of the same tree costs no embedding requests and no LLM calls, and later rebuilds take their
+embeddings from the cache.
 
 To keep an index per worktree instead, set `indexDir` in `mnemex.json` to any path other
 than the literal `".mnemex"` — that one string is read as a copied default rather than an

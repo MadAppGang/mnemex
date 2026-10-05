@@ -18,9 +18,14 @@
  * and reports `abandoned_store_dir=<old>` (§6.1, §6.3). The OLD directory is
  * left exactly where it was — not moved, not merged, not deleted — because §6.2
  * proves an N-worktrees-to-1 rename with non-portable rows has no correct form.
- * The rebuild costs ZERO embedding requests: the embedding cache is keyed on
- * `sha256(model \0 dimension \0 text)` with no path in it (CLAUDE.md #31), and
- * zero LLM calls through §4.6's content-keyed enrichment reuse.
+ * What the rebuild costs depends on what the machine already holds. The
+ * embedding cache is keyed on `sha256(model \0 dimension \0 text)` with no path
+ * in it (CLAUDE.md #31), so text already embedded on this machine costs nothing —
+ * but a user upgrading from a release without the cache starts with it empty and
+ * re-embeds once. Enrichment reuse (§4.6, `enrichment_by_content`) lives in the
+ * NEW store and starts empty, so the upgrade also re-generates every summary
+ * once while enrichment is on. After that, another worktree of the same tree
+ * costs zero embedding requests and zero LLM calls.
  *
  * WHY IT COULD NOT LAND EARLIER, and what had to be true first. A store shared
  * while the graph and the tracker are not yet branch-scoped is a correctness

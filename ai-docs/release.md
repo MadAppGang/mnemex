@@ -27,18 +27,19 @@ Publisher: `release.yml`, on `push` of a `v*` tag. Order: `build` (4-target matr
 Soft-fails this project can produce while the run shows green:
 - `update-homebrew` is SKIPPED, not failed, when `vars.ENABLE_HOMEBREW` is not `true`. Check the job's conclusion, not the run's.
 - The `bun-darwin-x64` artifact is built but never executed (the smoke test is skipped for that target by design).
+- `update-homebrew` can push a formula with EMPTY `sha256` values and still conclude `success`: its `curl -sL` has no `-f` and the step has no `pipefail`, so a `checksums.txt` that is not yet downloadable after its `sleep 10` yields blank SHAs. Only the formula's own contents show it.
 Distinguish a real publish with `npm view mnemex version` and the tap's formula version, not the run colour.
 
 ## Deploy monitoring
 none — mnemex is a CLI and MCP server installed by users; nothing is deployed to run as a service. Watching `release.yml` to completion is part of Verification.
 
 ## Verification
-- Tag: `git ls-remote --tags origin refs/tags/vX.Y.Z` → one ref at the merge commit.
+- Tag: `git ls-remote origin 'refs/tags/vX.Y.Z^{}'` → the merge commit SHA (the tag is annotated, so the un-peeled ref names the tag object, not the commit).
 - Workflow: the `release.yml` run for the tag concluded `success`, and every job — including `update-homebrew` — concluded `success`, not `skipped`.
 - GitHub Release: `gh release view vX.Y.Z` → not a draft, 4 binaries + `manifest.json` + `checksums.txt`.
 - npm: `npm view mnemex@X.Y.Z version`, and `npm view mnemex dist-tags.latest` moved to X.Y.Z.
 - Clean install: `npx -y mnemex@X.Y.Z --version` prints X.Y.Z.
-- Homebrew: the tap's `Formula/mnemex.rb` declares X.Y.Z.
+- Homebrew: the tap's `Formula/mnemex.rb` declares X.Y.Z AND its four `sha256` values equal the release's `checksums.txt`.
 
 ## Rollback
 - Tag and GitHub Release: immutable once pushed — forward fix with a new version; never delete or move a pushed tag.
@@ -47,7 +48,7 @@ none — mnemex is a CLI and MCP server installed by users; nothing is deployed 
 
 ## Decisions
 - Authorisation: the maintainer authorises each release, once, up front; after that the release command may merge, tag and let CI publish without stopping.
-- Process observed in v0.36.0 and v0.36.1: a `release/vX.Y.Z` branch with one `chore(release): X.Y.Z` commit (`CHANGELOG.md`, `package.json`, `package-lock.json`), a PR, a merge commit on `main`, then an annotated tag on that merge commit.
+- Process observed in v0.36.1 (v0.36.0 carried its version change inside the feature commit): a `release/vX.Y.Z` branch with one `chore(release): X.Y.Z` commit (`CHANGELOG.md`, `package.json`, `package-lock.json`), a PR, a merge commit on `main`, then an annotated tag on that merge commit.
 - Commits are signed through 1Password's SSH agent (`commit.gpgsign`); a signing failure stops the release — never bypass it with `--no-gpg-sign`. Release tags are annotated but not signed (as `v0.36.1` is); `tag.gpgsign` is unset.
 
 verified: 2026-10-05 @ 5064cae

@@ -914,7 +914,13 @@ export function formatStoreRelocationLines(result: {
 			`    The old index is still at ${result.abandonedStoreDir} and is no longer used;`,
 		);
 		lines.push(
-			"    it was left in place rather than deleted. You can remove it.",
+			"    it was left in place rather than deleted. You can remove its index files",
+		);
+		lines.push(
+			"    (index.db*, vectors/, docs-cache/) — NOT the directory itself: it still",
+		);
+		lines.push(
+			"    holds your memories, edit history, project config and the dirty overlay.",
 		);
 	}
 	if (result.degradedReason !== undefined) {

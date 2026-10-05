@@ -436,7 +436,8 @@ definition, `src/core/chunker.ts`), and still requires the symbol to overlap the
 *(Step 3, found by black-box test TEST-54, not by any white-box test.)*
 
 The reference extractor captured every `type_identifier`, including the name in a type's own
-declaration, so every exported interface and type alias was recorded as a reference to itself.
+declaration, so every type declaration — interface, type alias, class, Rust struct; exported or
+not — was recorded as a reference to itself.
 `in_degree` was therefore ≥ 1 for every type, and the dead-code rule (`inDegree === 0 &&
 pagerank < 0.001`) could never fire for one. The self-edge also made a PageRank self-loop: an
 unreferenced type scored 6.7× an unreferenced function. Two changes, each needed:
@@ -449,8 +450,9 @@ unreferenced type scored 6.7× an unreferenced function. Two changes, each neede
   (`export type User = api.User;`), which would have made `api.User` falsely dead; the identity
   test keeps them, pinned by TS, Go, Rust and C++ fixtures.
 
-**User-visible:** `dead-code --include-exported`, the MCP dead-code tool and the search penalty can
-report unreferenced exported types (119 more on this repository); `callers <Type>` no longer lists
+**User-visible:** `dead-code` can report unreferenced non-exported types and `--include-exported`
+adds exported ones (119 more exported on this repository); the MCP dead-code tool and the search
+penalty follow; `callers <Type>` no longer lists
 the type itself; exported types lose inflated PageRank after the next rebuild, which shifts `map`
 and search ranking. No index-version bump: the change rides the v5 rebuild every user already gets.
 
@@ -661,7 +663,7 @@ finished phase byte-for-byte separable across a locked signing key and a session
 
 ## What stayed in the session record, and why
 
-Kept in `decisions-implementation.md` because it informs that session only:
+Left out of this document because it informed that session only:
 
 | Entry | Why it stays |
 |---|---|

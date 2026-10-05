@@ -14,16 +14,24 @@ you have not committed yet. Three ranking defects are fixed along the way.
 - **Every repository rebuilds its index once.** The index format moves to version 5 and its
   location moves to `<git-common-dir>/mnemex`, shared by all worktrees. The first `mnemex index`
   on this version rebuilds there and reports where the old index was (`abandoned_store_dir=` under
-  `--agent`). **The old `.mnemex/` index is left in place, never deleted** — remove it yourself.
-- **That first rebuild re-embeds each repository once.** The embedding cache is new in this
-  release and starts empty. Every rebuild after it, and every other worktree of the same tree, is
-  served from the cache.
-- **Session observations do not survive the rebuild.** Observations recorded with the MCP
-  `observe` tool live in the index and are not carried across. MCP memories (the `memory_*`
-  tools) are separate files and are unaffected.
-- **Search rejects unknown flags.** `mnemex search` now fails on an unrecognised dash-argument and
-  suggests the closest real flag, instead of ignoring it.
-- **`dead-code` reports more.** Unreferenced exported types are now reportable (see Fixed).
+  `--agent`). The old index files are left in place, never deleted: you can remove `index.db*`,
+  `vectors/` and `docs-cache/` from that directory. **Do not delete the `.mnemex/` directory
+  itself** — it still holds your MCP memories (`memories/`), edit history, project config and the
+  new uncommitted-work overlay.
+- **That first rebuild costs real work once.** The embedding cache is new in this release and
+  starts empty, so each repository is re-embedded; with enrichment on (the default) every LLM
+  summary is also re-generated — `--no-llm` skips that. After it, another worktree of the same
+  tree costs no embedding requests and no LLM calls, and later rebuilds take their embeddings
+  from the cache.
+- **Session observations do not survive the rebuild.** Observations recorded with `observe` (the
+  MCP tool or `mnemex observe`) live in the index and are not carried across. MCP memories (the
+  `memory_*` tools) are separate files under `.mnemex/memories/` and are unaffected.
+- **`search`, `index` and `clear` reject unknown flags.** They now fail on an unrecognised
+  dash-argument, and suggest the intended flag when one is close, instead of ignoring it. A script
+  passing a flag these commands never read will now exit 1.
+- **`mnemex clear` clears only the current branch.** `mnemex clear --all` clears the whole shared
+  index — every branch and every worktree of the repository.
+- **`dead-code` reports more.** Unreferenced types are now reportable (see Fixed).
 
 ### Added
 
@@ -33,7 +41,8 @@ you have not committed yet. Three ranking defects are fixed along the way.
   index holds. `--force` now rebuilds only the current branch; `--force-all` rebuilds everything.
 - **Persistent, machine-global embedding cache** at `~/.mnemex/embed-cache.db`, keyed on the text
   embedded, so a rebase, a re-clone or a new worktree re-embeds nothing it has seen. Bounded at
-  2 GiB with LRU eviction. Off with `"embedCache": false` or `MNEMEX_DISABLE_EMBED_CACHE=1`.
+  2 GiB with LRU eviction. Off with `"embedCache": false` in `~/.mnemex/config.json` or
+  `MNEMEX_DISABLE_EMBED_CACHE=1`.
 - **Search includes uncommitted work.** Edited and new untracked files are searchable without
   re-indexing, through a per-worktree overlay that re-embeds only what changed: one edited file
   costs about 0.1 s and one embedding request. Overlay results are ranked by the same fusion as
@@ -53,10 +62,11 @@ you have not committed yet. Three ranking defects are fixed along the way.
   does nothing when that file has none.
 - **The same code appeared twice in search results.** A span indexed as both a code chunk and a
   code unit took two result slots (about 1 in 9); it now appears once and the freed slot is filled.
-- **No type could ever be reported dead.** The symbol graph recorded every exported type as its own
-  caller. `dead-code --include-exported` now reports unreferenced exported types, `callers <Type>`
-  no longer lists the type itself, and exported types lose inflated PageRank after the rebuild,
-  which shifts `map` and search ranking slightly.
+- **No type could ever be reported dead.** The symbol graph recorded every type declaration
+  (interfaces, type aliases, classes, structs) as its own caller. `dead-code` now reports
+  unreferenced non-exported types and `--include-exported` adds exported ones, `callers <Type>` no
+  longer lists the type itself, and types lose inflated PageRank after the rebuild, which shifts
+  `map` and search ranking.
 - **`resolveReferencesByName` could freeze indexing for over 10 s** on mid-size repositories,
   long enough for a second indexer to take the lock.
 - `mnemex hooks install` works from linked worktrees and submodules.
@@ -70,9 +80,10 @@ you have not committed yet. Three ranking defects are fixed along the way.
 - Self-recursive functions are still never reported dead.
 - If the embedding provider cannot embed the search QUERY, search fails as before; the overlay
   falls back to indexed results only for its own failures.
-- In a store shared by several branches, another branch's content takes part in keyword ranking
-  statistics, so result ORDER can differ slightly from a single-branch index; the result SET is
-  always correct for your branch.
+- In a store shared by several branches, another branch's content takes part in keyword-ranking
+  statistics. Every result still belongs to your branch, but which results make the top N, and
+  their order, can differ from a single-branch index (measured: 5 of 20 top-20 lists changed when
+  a second branch added 350 rows).
 
 ## [0.36.1] - 2026-09-09
 
