@@ -1454,6 +1454,24 @@ export function isEnrichmentEnabled(projectPath?: string): boolean {
 }
 
 /**
+ * Is the local dirty overlay on for this project (step 3, R3.1)?
+ *
+ * Priority: project `dirtyOverlay` > global `dirtyOverlay` > default (true).
+ * Only a boolean `false` turns it off; an absent key means "untouched", which
+ * is ON (the user's Phase 1 decision: automatic when the worktree is dirty).
+ * Read per search, never cached, so an MCP server sees a config edit at once.
+ */
+export function isDirtyOverlayEnabled(projectPath?: string): boolean {
+	if (projectPath) {
+		const projectConfig = loadProjectConfig(projectPath);
+		if (typeof projectConfig?.dirtyOverlay === "boolean") {
+			return projectConfig.dirtyOverlay;
+		}
+	}
+	return loadGlobalConfig().dirtyOverlay !== false;
+}
+
+/**
  * Check if vector embeddings are enabled
  * Priority: project config > default (true)
  * When false, only BM25 keyword search is used - no embedding API needed.

@@ -39,6 +39,48 @@ const MIN_CHUNK_TOKENS = 50;
 const CHARS_PER_TOKEN = 4;
 
 // ============================================================================
+// Chunk labels — the ONE grammar
+// ============================================================================
+
+/*
+ * Two kinds of code chunk are named with a LABEL rather than a symbol name:
+ * the parts of an oversized function (`X (part n/m)`) and the field gap of a
+ * split container (`X (fields)`). `partIndex`/`totalParts` are not stored
+ * columns, so at search time the label string is all that is left of that
+ * structure. The dead-code penalty must judge the SYMBOL `X` such a chunk
+ * belongs to (iteration 2, F1), so the label is parsed back — by the grammar
+ * below, which is the only place either label is spelled. A second regex copy
+ * elsewhere would drift silently; `chunk-labels.test.ts` sweeps this file for
+ * a third spelling and round-trips every builder output through the parser.
+ *
+ * The builders produce strings byte-identical to the template literals they
+ * replaced, so chunk names, `contentHash` (which hashes the name) and ids are
+ * unchanged and nothing needs reindexing (CH-1, frozen fixture).
+ */
+
+/** The name of part `part` (1-based) of `total` of an oversized symbol. */
+export function partLabel(name: string, part: number, total: number): string {
+	return `${name} (part ${part}/${total})`;
+}
+
+/** The name of a split container's field-declaration gap chunk. */
+export function fieldsLabel(container: string): string {
+	return `${container} (fields)`;
+}
+
+/** Exactly ONE label suffix, as the two builders above write it. */
+const CHUNK_LABEL = /^(.+) \((?:fields|part [1-9]\d*\/[1-9]\d*)\)$/;
+
+/**
+ * The symbol a chunk label names, or `null` when `name` is not one of the two
+ * labels. Strips ONE suffix: `X (fields)` -> `X`, `X (part 2/3)` -> `X`.
+ */
+export function symbolNameOfChunkLabel(name: string): string | null {
+	const match = CHUNK_LABEL.exec(name);
+	return match === null ? null : match[1];
+}
+
+// ============================================================================
 // Chunk Extraction
 // ============================================================================
 
@@ -337,7 +379,7 @@ function splitIntoConnectedParts(
 			startLine,
 			endLine: node.startPosition.row + end - 1,
 			chunkType,
-			name: name ? `${name} (part ${p + 1}/${totalParts})` : undefined,
+			name: name ? partLabel(name, p + 1, totalParts) : undefined,
 			parentName: containerName ?? extractParentName(node, language),
 			signature: p === 0 ? extractSignature(node, source, language) : undefined,
 			partIndex: p + 1,
@@ -367,7 +409,7 @@ function flushGap(
 		startLine,
 		endLine,
 		chunkType: "module", // imports, fields, declarations → module-level
-		name: containerName ? `${containerName} (fields)` : undefined,
+		name: containerName ? fieldsLabel(containerName) : undefined,
 		parentName: containerName ?? undefined,
 	});
 }

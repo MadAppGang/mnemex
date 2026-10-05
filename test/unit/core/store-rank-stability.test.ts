@@ -15,11 +15,13 @@
  *
  * So no score ever drifts, a forced FTS rebuild changes nothing (302-314 ms for
  * an identical reading), and the whole effect is ties reordering. Ties are
- * structural here and always will be: a `code_chunk` row and its `code_unit`
- * row carry the SAME text, so they score identically in both channels — the
- * same duplication that puts 49 repeated `(path, startLine, endLine)` tuples in
- * 400 result rows. Fusion is rank-only, so a tie swap is a real fused-score
- * difference, and at the top-20 boundary it evicts a result.
+ * structural here and always will be. One source is the `code_chunk` /
+ * `code_unit` pair over one span (collapsed to one slot since R2): 528 of 2 788
+ * such pairs are byte-identical and tie exactly in both channels; the other
+ * 2 260 differ (a leading `export\n` on the chunk) and do not. Identical
+ * content at different locations is another. Fusion is rank-only, so a tie
+ * swap is a real fused-score difference, and at the top-20 boundary it evicts
+ * a result.
  *
  * ── WHAT THIS FILE ASSERTS ──────────────────────────────────────────────────
  * The invariant, stated so it cannot be satisfied by luck: **for tied rows the

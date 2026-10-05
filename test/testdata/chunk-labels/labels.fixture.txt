@@ -1,0 +1,191 @@
+import { readFileSync } from "node:fs";
+
+/** A container large enough to be split: its fields become `(fields)` gap chunks. */
+export class ConfigHolder {
+	private readonly path: string = "/etc/config.json";
+	private cache: Map<string, string> = new Map();
+	public retries = 3;
+	public timeoutMs = 2500;
+
+	method0(value: number): number {
+		value = value * 2 + this.retries - Math.floor(this.timeoutMs / 7); // m0 k0
+		value = value * 3 + this.retries - Math.floor(this.timeoutMs / 8); // m0 k1
+		value = value * 4 + this.retries - Math.floor(this.timeoutMs / 9); // m0 k2
+		value = value * 5 + this.retries - Math.floor(this.timeoutMs / 10); // m0 k3
+		value = value * 6 + this.retries - Math.floor(this.timeoutMs / 11); // m0 k4
+		value = value * 7 + this.retries - Math.floor(this.timeoutMs / 12); // m0 k5
+		return value;
+	}
+
+	method1(value: number): number {
+		value = value * 2 + this.retries - Math.floor(this.timeoutMs / 7); // m1 k0
+		value = value * 3 + this.retries - Math.floor(this.timeoutMs / 8); // m1 k1
+		value = value * 4 + this.retries - Math.floor(this.timeoutMs / 9); // m1 k2
+		value = value * 5 + this.retries - Math.floor(this.timeoutMs / 10); // m1 k3
+		value = value * 6 + this.retries - Math.floor(this.timeoutMs / 11); // m1 k4
+		value = value * 7 + this.retries - Math.floor(this.timeoutMs / 12); // m1 k5
+		return value;
+	}
+
+	method2(value: number): number {
+		value = value * 2 + this.retries - Math.floor(this.timeoutMs / 7); // m2 k0
+		value = value * 3 + this.retries - Math.floor(this.timeoutMs / 8); // m2 k1
+		value = value * 4 + this.retries - Math.floor(this.timeoutMs / 9); // m2 k2
+		value = value * 5 + this.retries - Math.floor(this.timeoutMs / 10); // m2 k3
+		value = value * 6 + this.retries - Math.floor(this.timeoutMs / 11); // m2 k4
+		value = value * 7 + this.retries - Math.floor(this.timeoutMs / 12); // m2 k5
+		return value;
+	}
+
+	method3(value: number): number {
+		value = value * 2 + this.retries - Math.floor(this.timeoutMs / 7); // m3 k0
+		value = value * 3 + this.retries - Math.floor(this.timeoutMs / 8); // m3 k1
+		value = value * 4 + this.retries - Math.floor(this.timeoutMs / 9); // m3 k2
+		value = value * 5 + this.retries - Math.floor(this.timeoutMs / 10); // m3 k3
+		value = value * 6 + this.retries - Math.floor(this.timeoutMs / 11); // m3 k4
+		value = value * 7 + this.retries - Math.floor(this.timeoutMs / 12); // m3 k5
+		return value;
+	}
+
+	static defaultName = "config-holder-default-name-value";
+	static otherName = "config-holder-other-name-value";
+
+	method4(value: number): number {
+		value = value * 2 + this.retries - Math.floor(this.timeoutMs / 7); // m4 k0
+		value = value * 3 + this.retries - Math.floor(this.timeoutMs / 8); // m4 k1
+		value = value * 4 + this.retries - Math.floor(this.timeoutMs / 9); // m4 k2
+		value = value * 5 + this.retries - Math.floor(this.timeoutMs / 10); // m4 k3
+		value = value * 6 + this.retries - Math.floor(this.timeoutMs / 11); // m4 k4
+		value = value * 7 + this.retries - Math.floor(this.timeoutMs / 12); // m4 k5
+		return value;
+	}
+
+	method5(value: number): number {
+		value = value * 2 + this.retries - Math.floor(this.timeoutMs / 7); // m5 k0
+		value = value * 3 + this.retries - Math.floor(this.timeoutMs / 8); // m5 k1
+		value = value * 4 + this.retries - Math.floor(this.timeoutMs / 9); // m5 k2
+		value = value * 5 + this.retries - Math.floor(this.timeoutMs / 10); // m5 k3
+		value = value * 6 + this.retries - Math.floor(this.timeoutMs / 11); // m5 k4
+		value = value * 7 + this.retries - Math.floor(this.timeoutMs / 12); // m5 k5
+		return value;
+	}
+
+	method6(value: number): number {
+		value = value * 2 + this.retries - Math.floor(this.timeoutMs / 7); // m6 k0
+		value = value * 3 + this.retries - Math.floor(this.timeoutMs / 8); // m6 k1
+		value = value * 4 + this.retries - Math.floor(this.timeoutMs / 9); // m6 k2
+		value = value * 5 + this.retries - Math.floor(this.timeoutMs / 10); // m6 k3
+		value = value * 6 + this.retries - Math.floor(this.timeoutMs / 11); // m6 k4
+		value = value * 7 + this.retries - Math.floor(this.timeoutMs / 12); // m6 k5
+		return value;
+	}
+
+	method7(value: number): number {
+		value = value * 2 + this.retries - Math.floor(this.timeoutMs / 7); // m7 k0
+		value = value * 3 + this.retries - Math.floor(this.timeoutMs / 8); // m7 k1
+		value = value * 4 + this.retries - Math.floor(this.timeoutMs / 9); // m7 k2
+		value = value * 5 + this.retries - Math.floor(this.timeoutMs / 10); // m7 k3
+		value = value * 6 + this.retries - Math.floor(this.timeoutMs / 11); // m7 k4
+		value = value * 7 + this.retries - Math.floor(this.timeoutMs / 12); // m7 k5
+		return value;
+	}
+
+	static trailingName = "config-holder-trailing-name-value";
+	static trailingLimit = 4096;
+}
+
+/** An oversized function that is split into `(part n/m)` chunks. */
+export function handleEverything(input: number): number {
+	let total = input;
+	total = total + 0 * Math.max(input, 0) - Math.min(total, 0); // step 0
+	total = total + 1 * Math.max(input, 1) - Math.min(total, 3); // step 1
+	total = total + 2 * Math.max(input, 2) - Math.min(total, 6); // step 2
+	total = total + 3 * Math.max(input, 3) - Math.min(total, 9); // step 3
+	total = total + 4 * Math.max(input, 4) - Math.min(total, 12); // step 4
+	total = total + 5 * Math.max(input, 5) - Math.min(total, 15); // step 5
+	total = total + 6 * Math.max(input, 6) - Math.min(total, 18); // step 6
+	total = total + 7 * Math.max(input, 7) - Math.min(total, 21); // step 7
+	total = total + 8 * Math.max(input, 8) - Math.min(total, 24); // step 8
+	total = total + 9 * Math.max(input, 9) - Math.min(total, 27); // step 9
+	total = total + 10 * Math.max(input, 10) - Math.min(total, 30); // step 10
+	total = total + 11 * Math.max(input, 11) - Math.min(total, 33); // step 11
+	total = total + 12 * Math.max(input, 12) - Math.min(total, 36); // step 12
+	total = total + 13 * Math.max(input, 13) - Math.min(total, 39); // step 13
+	total = total + 14 * Math.max(input, 14) - Math.min(total, 42); // step 14
+	total = total + 15 * Math.max(input, 15) - Math.min(total, 45); // step 15
+	total = total + 16 * Math.max(input, 16) - Math.min(total, 48); // step 16
+	total = total + 17 * Math.max(input, 17) - Math.min(total, 51); // step 17
+	total = total + 18 * Math.max(input, 18) - Math.min(total, 54); // step 18
+	total = total + 19 * Math.max(input, 19) - Math.min(total, 57); // step 19
+	total = total + 20 * Math.max(input, 20) - Math.min(total, 60); // step 20
+	total = total + 21 * Math.max(input, 21) - Math.min(total, 63); // step 21
+	total = total + 22 * Math.max(input, 22) - Math.min(total, 66); // step 22
+	total = total + 23 * Math.max(input, 23) - Math.min(total, 69); // step 23
+	total = total + 24 * Math.max(input, 24) - Math.min(total, 72); // step 24
+	total = total + 25 * Math.max(input, 25) - Math.min(total, 75); // step 25
+	total = total + 26 * Math.max(input, 26) - Math.min(total, 78); // step 26
+	total = total + 27 * Math.max(input, 27) - Math.min(total, 81); // step 27
+	total = total + 28 * Math.max(input, 28) - Math.min(total, 84); // step 28
+	total = total + 29 * Math.max(input, 29) - Math.min(total, 87); // step 29
+	total = total + 30 * Math.max(input, 30) - Math.min(total, 90); // step 30
+	total = total + 31 * Math.max(input, 31) - Math.min(total, 93); // step 31
+	total = total + 32 * Math.max(input, 32) - Math.min(total, 96); // step 32
+	total = total + 33 * Math.max(input, 33) - Math.min(total, 99); // step 33
+	total = total + 34 * Math.max(input, 34) - Math.min(total, 102); // step 34
+	total = total + 35 * Math.max(input, 35) - Math.min(total, 105); // step 35
+	total = total + 36 * Math.max(input, 36) - Math.min(total, 108); // step 36
+	total = total + 37 * Math.max(input, 37) - Math.min(total, 111); // step 37
+	total = total + 38 * Math.max(input, 38) - Math.min(total, 114); // step 38
+	total = total + 39 * Math.max(input, 39) - Math.min(total, 117); // step 39
+	total = total + 40 * Math.max(input, 40) - Math.min(total, 120); // step 40
+	total = total + 41 * Math.max(input, 41) - Math.min(total, 123); // step 41
+	total = total + 42 * Math.max(input, 42) - Math.min(total, 126); // step 42
+	total = total + 43 * Math.max(input, 43) - Math.min(total, 129); // step 43
+	total = total + 44 * Math.max(input, 44) - Math.min(total, 132); // step 44
+	total = total + 45 * Math.max(input, 45) - Math.min(total, 135); // step 45
+	total = total + 46 * Math.max(input, 46) - Math.min(total, 138); // step 46
+	total = total + 47 * Math.max(input, 47) - Math.min(total, 141); // step 47
+	total = total + 48 * Math.max(input, 48) - Math.min(total, 144); // step 48
+	total = total + 49 * Math.max(input, 49) - Math.min(total, 147); // step 49
+	total = total + 50 * Math.max(input, 50) - Math.min(total, 150); // step 50
+	total = total + 51 * Math.max(input, 51) - Math.min(total, 153); // step 51
+	total = total + 52 * Math.max(input, 52) - Math.min(total, 156); // step 52
+	total = total + 53 * Math.max(input, 53) - Math.min(total, 159); // step 53
+	total = total + 54 * Math.max(input, 54) - Math.min(total, 162); // step 54
+	total = total + 55 * Math.max(input, 55) - Math.min(total, 165); // step 55
+	total = total + 56 * Math.max(input, 56) - Math.min(total, 168); // step 56
+	total = total + 57 * Math.max(input, 57) - Math.min(total, 171); // step 57
+	total = total + 58 * Math.max(input, 58) - Math.min(total, 174); // step 58
+	total = total + 59 * Math.max(input, 59) - Math.min(total, 177); // step 59
+	total = total + 60 * Math.max(input, 60) - Math.min(total, 180); // step 60
+	total = total + 61 * Math.max(input, 61) - Math.min(total, 183); // step 61
+	total = total + 62 * Math.max(input, 62) - Math.min(total, 186); // step 62
+	total = total + 63 * Math.max(input, 63) - Math.min(total, 189); // step 63
+	total = total + 64 * Math.max(input, 64) - Math.min(total, 192); // step 64
+	total = total + 65 * Math.max(input, 65) - Math.min(total, 195); // step 65
+	total = total + 66 * Math.max(input, 66) - Math.min(total, 198); // step 66
+	total = total + 67 * Math.max(input, 67) - Math.min(total, 201); // step 67
+	total = total + 68 * Math.max(input, 68) - Math.min(total, 204); // step 68
+	total = total + 69 * Math.max(input, 69) - Math.min(total, 207); // step 69
+	total = total + 70 * Math.max(input, 70) - Math.min(total, 210); // step 70
+	total = total + 71 * Math.max(input, 71) - Math.min(total, 213); // step 71
+	total = total + 72 * Math.max(input, 72) - Math.min(total, 216); // step 72
+	total = total + 73 * Math.max(input, 73) - Math.min(total, 219); // step 73
+	total = total + 74 * Math.max(input, 74) - Math.min(total, 222); // step 74
+	total = total + 75 * Math.max(input, 75) - Math.min(total, 225); // step 75
+	total = total + 76 * Math.max(input, 76) - Math.min(total, 228); // step 76
+	total = total + 77 * Math.max(input, 77) - Math.min(total, 231); // step 77
+	total = total + 78 * Math.max(input, 78) - Math.min(total, 234); // step 78
+	total = total + 79 * Math.max(input, 79) - Math.min(total, 237); // step 79
+	total = total + 80 * Math.max(input, 80) - Math.min(total, 240); // step 80
+	total = total + 81 * Math.max(input, 81) - Math.min(total, 243); // step 81
+	total = total + 82 * Math.max(input, 82) - Math.min(total, 246); // step 82
+	total = total + 83 * Math.max(input, 83) - Math.min(total, 249); // step 83
+	total = total + 84 * Math.max(input, 84) - Math.min(total, 252); // step 84
+	total = total + 85 * Math.max(input, 85) - Math.min(total, 255); // step 85
+	total = total + 86 * Math.max(input, 86) - Math.min(total, 258); // step 86
+	total = total + 87 * Math.max(input, 87) - Math.min(total, 261); // step 87
+	total = total + 88 * Math.max(input, 88) - Math.min(total, 264); // step 88
+	total = total + 89 * Math.max(input, 89) - Math.min(total, 267); // step 89
+	return total;
+}

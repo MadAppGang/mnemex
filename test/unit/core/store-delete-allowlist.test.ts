@@ -61,6 +61,12 @@ const DELETE_SITES: ReadonlyArray<{
 	},
 	{
 		file: "src/core/store.ts",
+		fn: "deleteRowsByStoredPathsStrict",
+		reason:
+			"the dirty overlay's own per-worktree sidecar store (step 3, R3.4), never the shared index: the method refuses unless the store was constructed with `role: \"overlay\"`, which only `src/core/overlay/dirty-overlay.ts` does, on the directory `getDirtyOverlayDirFor` resolves. Overlay rows are never registered in `chunk_index` or `chunk_branches` (R3.7), so W1's ordering has nothing to protect there",
+	},
+	{
+		file: "src/core/store.ts",
 		fn: "restoreAfterFailedUpdate",
 		reason:
 			"the same-id update round-trip. LanceDB has no upsert, so an in-place update is delete+add of ONE row addressed by `id = '<the id being updated>'`; this is the re-delete that makes the restore converge on exactly one row. It removes no membership and no row that was not about to be re-added",

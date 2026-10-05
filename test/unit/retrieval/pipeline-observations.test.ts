@@ -21,6 +21,7 @@ import type {
 	QueryClassification,
 	SearchResult,
 } from "../../../src/types.js";
+import { stubOverlayReport } from "../../helpers/overlay-report-stub.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -80,10 +81,18 @@ const CLASSIFICATION: QueryClassification = {
 	reasoning: "test",
 };
 
-/** Minimal Indexer stand-in for SemanticBackend. */
+/** Minimal Indexer stand-in for SemanticBackend (`searchScoped` + `close`). */
 function fakeIndexer(results: SearchResult[]) {
 	return {
-		search: async () => results,
+		searchScoped: async () => ({
+			results,
+			branchUnknown: false,
+			branchLabel: null,
+			branchEmpty: false,
+			storeRebuiltElsewhere: false,
+			penalty: { lookups: 0, sameFile: 0, applied: 0, labelled: 0 },
+			overlay: stubOverlayReport(),
+		}),
 		close: async () => {},
 	};
 }

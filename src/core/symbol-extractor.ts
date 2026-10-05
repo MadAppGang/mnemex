@@ -183,6 +183,7 @@ export class SymbolExtractor {
 		// Build symbol map for finding enclosing symbols
 		const symbolMap = new Map(symbols.map((s) => [s.id, s]));
 		const symbolsByLine = this.buildSymbolLineIndex(symbols);
+		const symbolIds = new Set(symbols.map((s) => s.id));
 
 		try {
 			// Get language object for query execution
@@ -218,6 +219,24 @@ export class SymbolExtractor {
 
 				// Skip if we can't find an enclosing symbol
 				if (!enclosingSymbol) {
+					continue;
+				}
+
+				// A declaration's own name is not a reference to itself. The bare
+				// `(type_identifier) @ref.type` pattern also matches the `name:` node
+				// of `interface X` / `type X` / `class X` / Rust `struct X`, and that
+				// line's enclosing symbol is X. Recorded, it resolved to X: every
+				// exported type listed itself under `callers`, had in_degree >= 1, and
+				// kept a PageRank self-loop, so dead-code and the search penalty could
+				// never fire for one (TEST-54). Only the declaration's OWN name node is
+				// skipped (see `isOwnDeclarationName`): a same-named usage is kept,
+				// including on a one-line declaration (`export type User = api.User;`,
+				// `type Tree<T> = { kids: Tree<T>[] }`, Go `func (s *S) Config() Config`).
+				if (
+					kind === "type_usage" &&
+					refName === enclosingSymbol.name &&
+					this.isOwnDeclarationName(capture.node, filePath, symbolIds)
+				) {
 					continue;
 				}
 
@@ -561,6 +580,44 @@ export class SymbolExtractor {
 			const currentSpan = current.endLine - current.startLine;
 			return currentSpan < smallestSpan ? current : smallest;
 		});
+	}
+
+	/**
+	 * True when `node` IS a declaration's own name node: its parent is a node
+	 * `extractSymbols` turns into a symbol (`NODE_TYPE_TO_SYMBOL_KIND`), `node` is
+	 * that parent's `name:` field, and the id the parent derives — the same
+	 * `createSymbolId(filePath, name, kind, row)` `extractSymbols` uses — is one
+	 * of this file's symbols. Identity, not position: a same-named USAGE whose
+	 * node also has a `name:` field (TS `api.User` / `Tree<T>`, Rust
+	 * `other::Foo`, C++ `ns::Foo`) has a parent that is not a declaration, and Go
+	 * `func (s *S) Config() Config` has a declaration parent whose `name:` is a
+	 * different node. A span comparison cannot tell these apart on one line.
+	 */
+	private isOwnDeclarationName(
+		node: Node,
+		filePath: string,
+		symbolIds: ReadonlySet<string>,
+	): boolean {
+		const parent = node.parent;
+		if (!parent) return false;
+		const kind = NODE_TYPE_TO_SYMBOL_KIND[parent.type];
+		if (!kind) return false;
+		const nameNode = parent.childForFieldName("name");
+		if (
+			!nameNode ||
+			nameNode.startIndex !== node.startIndex ||
+			nameNode.endIndex !== node.endIndex
+		) {
+			return false;
+		}
+		return symbolIds.has(
+			this.createSymbolId(
+				filePath,
+				node.text,
+				kind,
+				parent.startPosition.row + 1,
+			),
+		);
 	}
 
 	/**

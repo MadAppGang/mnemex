@@ -5,11 +5,88 @@
  * enclosing symbol, imports, related symbols via the reference graph.
  */
 
+import { isAbsolute, resolve } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import type { BranchScopedGraph } from "../../core/tracker.js";
 import { readSymbolBody } from "../../retrieval/backends/utils/read-body.js";
+import type { SymbolDefinition } from "../../types.js";
 import type { ToolDeps } from "./deps.js";
 import { buildFreshness, errorResponse } from "./deps.js";
+
+/**
+ * How a `context` file argument was matched to an indexed file. Reported in
+ * every response, so a suffix match is never a silent narrowing.
+ */
+export interface ContextFileResolution {
+	/**
+	 * `exact`: the argument, resolved against the workspace root if relative,
+	 * named an indexed file. `suffix`: it did not, and exactly ONE indexed file
+	 * ends with `/<argument>`. `ambiguous`: several do; nothing is answered.
+	 * `none`: no match at all.
+	 */
+	readonly match: "exact" | "suffix" | "ambiguous" | "none";
+	/** The matched file, in stored (repo-relative) spelling; null unless matched. */
+	readonly file: string | null;
+	/** `ambiguous` only: every indexed file the argument could mean, sorted. */
+	readonly candidates?: readonly string[];
+}
+
+/**
+ * The symbols of the file a `context` argument names (R1.4, orchestrator
+ * ruling 2).
+ *
+ * EXACT FIRST: `getSymbolsByFile` converts an absolute path to stored form
+ * itself, so an absolute argument and a repo-relative one reach the same rows.
+ * The old hedge (`s.filePath === file || s.filePath.endsWith("/" + file)`)
+ * compared a stored path with the raw argument, so an ABSOLUTE argument found
+ * nothing, and an ambiguous bare filename silently merged every file with that
+ * name.
+ *
+ * SUFFIX ONLY AS A FALLBACK, and only when it is unambiguous. `listFiles` is
+ * the branch's indexed files in stored spelling; a file EQUAL to a relative
+ * argument also counts, which keeps a repo-relative argument working when the
+ * workspace is a subdirectory of the repository (it resolves under the
+ * subdirectory and misses the exact lookup). An absolute argument never falls
+ * back: it already said exactly which file it meant.
+ */
+export function resolveContextFile(
+	file: string,
+	workspaceRoot: string,
+	graph: Pick<BranchScopedGraph, "getSymbolsByFile">,
+	listFiles: () => readonly string[],
+): { symbols: SymbolDefinition[]; resolution: ContextFileResolution } {
+	const exact = graph.getSymbolsByFile(
+		isAbsolute(file) ? file : resolve(workspaceRoot, file),
+	);
+	if (exact.length > 0) {
+		return {
+			symbols: exact,
+			resolution: { match: "exact", file: exact[0].filePath },
+		};
+	}
+	if (isAbsolute(file)) {
+		return { symbols: [], resolution: { match: "none", file: null } };
+	}
+
+	const arg = file.replace(/^(\.\/)+/, "");
+	const candidates = [
+		...new Set(listFiles().filter((p) => p === arg || p.endsWith(`/${arg}`))),
+	].sort();
+	if (candidates.length === 1) {
+		return {
+			symbols: graph.getSymbolsByFile(candidates[0]),
+			resolution: { match: "suffix", file: candidates[0] },
+		};
+	}
+	if (candidates.length > 1) {
+		return {
+			symbols: [],
+			resolution: { match: "ambiguous", file: null, candidates },
+		};
+	}
+	return { symbols: [], resolution: { match: "none", file: null } };
+}
 
 export function registerContextTools(server: McpServer, deps: ToolDeps): void {
 	const { cache, stateManager, config } = deps;
@@ -44,13 +121,17 @@ export function registerContextTools(server: McpServer, deps: ToolDeps): void {
 			try {
 				const { graphManager, tracker, branchId } = await cache.get();
 
-				// Find which symbol contains the given file:line, on THIS branch.
-				const allSymbols = tracker.graph(branchId).getAllSymbols();
-				const atLocation = allSymbols.filter(
-					(s) =>
-						(s.filePath === file || s.filePath.endsWith(`/${file}`)) &&
-						s.startLine <= (line ?? 1) &&
-						s.endLine >= (line ?? 1),
+				// The file's symbols, on THIS branch, and how the argument matched.
+				const { symbols: fileSymbols, resolution } = resolveContextFile(
+					file,
+					config.workspaceRoot,
+					tracker.graph(branchId),
+					() => tracker.getAllFiles(branchId).map((f) => f.path),
+				);
+
+				// Find which symbol contains the given file:line.
+				const atLocation = fileSymbols.filter(
+					(s) => s.startLine <= (line ?? 1) && s.endLine >= (line ?? 1),
 				);
 
 				// Pick the most specific (innermost) symbol
@@ -81,18 +162,14 @@ export function registerContextTools(server: McpServer, deps: ToolDeps): void {
 					}));
 				}
 
-				// Gather file-level imports by collecting callees from file symbols
-				const fileSymbols = allSymbols.filter(
-					(s) => s.filePath === file || s.filePath.endsWith(`/${file}`),
-				);
+				// Gather file-level imports by collecting callees from file symbols.
+				// Stored spelling on both sides: `resolution.file` and every
+				// `SymbolDefinition.filePath` are repo-relative.
 				const importSet = new Set<string>();
 				for (const sym of fileSymbols) {
 					const symCallees = graphManager.getCallees(sym.id);
 					for (const callee of symCallees) {
-						if (
-							callee.filePath !== file &&
-							!callee.filePath.endsWith(`/${file}`)
-						) {
+						if (callee.filePath !== resolution.file) {
 							importSet.add(callee.filePath);
 						}
 					}
@@ -129,6 +206,7 @@ export function registerContextTools(server: McpServer, deps: ToolDeps): void {
 						{
 							type: "text" as const,
 							text: JSON.stringify({
+								fileResolution: resolution,
 								enclosingSymbol: enclosingPayload,
 								imports: Array.from(importSet),
 								relatedSymbols: { callers, callees },

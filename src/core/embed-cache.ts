@@ -437,6 +437,13 @@ export interface EmbedCacheLike {
 	noteDimensionCorrection?(): void;
 	stats(): EmbedCacheStats;
 	enforceBudget(): Promise<EmbedCacheEvictionReport>;
+	/**
+	 * Whether the file is over its cap (`page_count * page_size > maxBytes`):
+	 * one bounded size read, no eviction. OPTIONAL on the port: a writer that
+	 * cannot evict (the dirty overlay, on the search path) asks it before
+	 * adding entries; a fake that omits it is never "over".
+	 */
+	isOverBudget?(): boolean;
 	close(): void;
 }
 
@@ -558,6 +565,13 @@ export interface EmbedCacheOpenOptions {
 	 * so `mnemex doctor` could one day sweep harder outside an index run).
 	 */
 	evictDeadlineMs?: number;
+	/**
+	 * MEMO ONLY: return the instance this process already holds open for the
+	 * path (the level-1 memo), or `null` — never run the open sequence. For a
+	 * caller that may be inside an index lock (the dirty overlay on the search
+	 * path, step 3), where the unbounded open must not run. See `openEmbedCache`.
+	 */
+	ifAlreadyOpen?: boolean;
 }
 
 export class EmbedCache implements EmbedCacheLike {
@@ -1035,6 +1049,12 @@ export class EmbedCache implements EmbedCacheLike {
 	 * incremental, so stopping early costs nothing but a larger file until the
 	 * next run.
 	 */
+	/** See `EmbedCacheLike.isOverBudget`. One region R4 read; false off-tier. */
+	isOverBudget(): boolean {
+		if (this.tier !== "sqlite" || this.closed) return false;
+		return this.fileBytes() > this.maxBytes;
+	}
+
 	async enforceBudget(): Promise<EmbedCacheEvictionReport> {
 		const before = this.fileBytes();
 		const report: EmbedCacheEvictionReport = {
@@ -1273,9 +1293,25 @@ function instanceMemoKey(path: string): string {
  * constant-bounded, because the WAL pragma takes a brief exclusive lock and
  * steps 1-2 run before `busy_timeout` is set at all.
  *
- * Called from ONE place in production: `Indexer.index()`, before
- * `globalLock.acquire()`. Never from `initialize()`, never from a search path —
- * `Indexer.clear()` must not create and DDL a file it will never use.
+ * Called from TWO places in production, each with its own rule:
+ *
+ *   1. `Indexer.index()`, before `globalLock.acquire()` — the full open,
+ *      outside both locks. Never from `initialize()`: `Indexer.clear()` must
+ *      not create and DDL a file it will never use.
+ *   2. The dirty overlay (`src/core/overlay/dirty-overlay.ts`), on the SEARCH
+ *      path (step 3, MEDIUM 4). An MCP server can hold the store lock in one
+ *      request while another request searches, so the overlay checks
+ *      `processHoldsIndexLock()` first: when this process holds a store or
+ *      global index lock it passes `{ ifAlreadyOpen: true }` and takes the
+ *      level-1 memo or nothing (a cold memo there is `skipped/busy`, reason
+ *      `cache-cold-under-lock`); otherwise it runs the normal open, outside
+ *      every lock — the overlay's own lock is taken only after this returns.
+ *      In practice the memo is warm in the first case, because `index()` opens
+ *      the cache before it takes `globalLock`.
+ *
+ * `ifAlreadyOpen` never creates, opens or DDLs anything. The user-path refusal
+ * still throws under it: reaching the user's file from a test is a bug, not a
+ * degradation, whichever way the call was made.
  */
 export function openEmbedCache(
 	path?: string,
@@ -1318,6 +1354,8 @@ export function openEmbedCache(
 		if (existing !== undefined && !existing.isClosed()) return existing;
 		if (existing !== undefined) openCaches.delete(memoKey);
 	}
+	// Memo only: nothing below may run (see the doc comment, caller 2).
+	if (options.ifAlreadyOpen === true) return null;
 
 	let db: SQLiteDatabase | null = null;
 	try {

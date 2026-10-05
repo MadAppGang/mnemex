@@ -222,6 +222,33 @@ export interface IndexedDocState {
  * Interface for file tracker implementations.
  * Allows swapping in alternative storage backends.
  */
+/** One `files` row as the dirty overlay classifies against it. */
+export interface IndexedFileState {
+	/** The STORED spelling, which may differ from the caller's in Unicode form. */
+	readonly path: string;
+	readonly contentHash: string;
+}
+
+/** A keyset position in `(indexed_at, path)` order. */
+export interface IndexedSinceMark {
+	readonly indexedAt: string;
+	readonly path: string;
+}
+
+export interface IndexedSinceRow {
+	readonly path: string;
+	readonly indexedAt: string;
+}
+
+/** Paths per `getIndexedFileStates` call: one region (CLAUDE.md #31's LOOKUP_CHUNK). */
+export const INDEXED_STATES_MAX_PATHS = 64;
+
+/** Rows per `getFilesIndexedSince` page: one region. */
+export const FILES_SINCE_MAX_PAGE = 512;
+
+/** Branch ids per statement in `getIndexedFileStates` (well under 999 bound parameters). */
+const STATE_BRANCH_BATCH = 256;
+
 export interface IFileTracker {
 	/**
 	 * EVERY per-branch member takes `branchId` as its FIRST positional
@@ -251,6 +278,29 @@ export interface IFileTracker {
 	removeFile(branchId: number, filePath: string): void;
 	getFileState(branchId: number, filePath: string): FileState | null;
 	getAllFiles(branchId: number): FileState[];
+	/**
+	 * The dirty overlay's classification read (step 3, R3): every `files` row
+	 * in `branchIds` for each of `paths` (≤ `INDEXED_STATES_MAX_PATHS`, ONE
+	 * region), matched under the path's NFC AND NFD spellings. Keyed by the
+	 * caller's spelling; each row carries the TRACKER's. Takes a branch SET,
+	 * first, because `SCOPE_ALL` classifies against every registered branch.
+	 */
+	getIndexedFileStates(
+		branchIds: readonly number[],
+		paths: readonly string[],
+	): Map<string, IndexedFileState[]>;
+	/**
+	 * Rows of `branchId` indexed strictly after `after` in `(indexed_at, path)`
+	 * order (keyset paging, ≤ `limit` ≤ `FILES_SINCE_MAX_PAGE`). `null` = from
+	 * the start. The overlay's `T` set.
+	 */
+	getFilesIndexedSince(
+		branchId: number,
+		after: IndexedSinceMark | null,
+		limit: number,
+	): IndexedSinceRow[];
+	/** The last `(indexed_at, path)` of `branchId`, or null when it holds none. */
+	getIndexedHighWater(branchId: number): IndexedSinceMark | null;
 	getMetadata(key: string): string | null;
 	setMetadata(key: string, value: string): void;
 	getStats(branchId: number): {
@@ -1555,6 +1605,15 @@ function reads(statements: number): TrackerRegion {
 	return { ...TRACKER_REGIONS.read, blockingStatements: statements };
 }
 
+/**
+ * `(file_path, name)` pairs per statement in `getSymbolsByNameInFiles`: two
+ * bound parameters each plus the branch, so 129 — far under the 999-parameter
+ * floor of the oldest SQLite either backend links. 64 matches the embed cache's
+ * point-lookup region size (CLAUDE.md #31), and a search's result list (≤ the
+ * user's limit) fits in one or two statements.
+ */
+const SYMBOL_PAIR_BATCH_SIZE = 64;
+
 /** A read may run twice (its retry), so it has twice the chances to wait. */
 function attemptsFor(region: TrackerRegion): number {
 	return region.onContention === "retry-once" ? 2 : 1;
@@ -2182,6 +2241,126 @@ export class FileTracker implements IFileTracker {
 				.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)")
 				.run(key, value);
 		});
+	}
+
+	/**
+	 * See `IFileTracker.getIndexedFileStates`.
+	 *
+	 * ONE region: `ceil(branches / 256)` statements, each a `(branch_id, path)`
+	 * primary-key probe per bound path. Refuses more than
+	 * `INDEXED_STATES_MAX_PATHS` paths rather than splitting them into several
+	 * regions with no yield between — the caller loops and yields (SR-2).
+	 *
+	 * Deliberately does NOT project `branch_id`: the V3.11b sweep accepts a
+	 * statement that mentions `branch_id`, and a projected column would keep
+	 * satisfying it after the predicate was deleted (G-1 pins this).
+	 */
+	getIndexedFileStates(
+		branchIds: readonly number[],
+		paths: readonly string[],
+	): Map<string, IndexedFileState[]> {
+		for (const id of branchIds) assertBranchId(id);
+		if (paths.length > INDEXED_STATES_MAX_PATHS) {
+			throw new RangeError(
+				`tracker: getIndexedFileStates takes at most ${INDEXED_STATES_MAX_PATHS} paths per call (one region), got ${paths.length}`,
+			);
+		}
+		const result = new Map<string, IndexedFileState[]>();
+		for (const path of paths) result.set(path, []);
+		if (paths.length === 0 || branchIds.length === 0) return result;
+
+		// Every spelling to probe, and which caller paths each one answers.
+		const askers = new Map<string, string[]>();
+		for (const path of paths) {
+			for (const spelling of new Set([
+				path,
+				path.normalize("NFC"),
+				path.normalize("NFD"),
+			])) {
+				const list = askers.get(spelling);
+				if (list === undefined) askers.set(spelling, [path]);
+				else if (!list.includes(path)) list.push(path);
+			}
+		}
+		const spellings = [...askers.keys()];
+		const pathMarks = spellings.map(() => "?").join(", ");
+		const branchBatches: number[][] = [];
+		const distinct = [...new Set(branchIds)];
+		for (let i = 0; i < distinct.length; i += STATE_BRANCH_BATCH) {
+			branchBatches.push(distinct.slice(i, i + STATE_BRANCH_BATCH));
+		}
+
+		const rows = this.withRegion(reads(branchBatches.length), () => {
+			const out: Array<{ path: string; content_hash: string }> = [];
+			for (const batch of branchBatches) {
+				const branchMarks = batch.map(() => "?").join(", ");
+				const found = this.db
+					.prepare(
+						`SELECT path, content_hash FROM files WHERE branch_id IN (${branchMarks}) AND path IN (${pathMarks})`,
+					)
+					.all(...batch, ...spellings) as Array<{
+					path: string;
+					content_hash: string;
+				}>;
+				out.push(...found);
+			}
+			return out;
+		});
+
+		for (const row of rows) {
+			for (const asker of askers.get(row.path) ?? []) {
+				result
+					.get(asker)
+					?.push({ path: row.path, contentHash: row.content_hash });
+			}
+		}
+		return result;
+	}
+
+	/** See `IFileTracker.getFilesIndexedSince`. One region per page. */
+	getFilesIndexedSince(
+		branchId: number,
+		after: IndexedSinceMark | null,
+		limit: number,
+	): IndexedSinceRow[] {
+		assertBranchId(branchId);
+		if (
+			!Number.isSafeInteger(limit) ||
+			limit < 1 ||
+			limit > FILES_SINCE_MAX_PAGE
+		) {
+			throw new RangeError(
+				`tracker: getFilesIndexedSince limit must be 1..${FILES_SINCE_MAX_PAGE}, got ${limit}`,
+			);
+		}
+		// `''` sorts before every ISO timestamp, so "from the start" needs no
+		// second statement. Keyset on the full `(indexed_at, path)` pair: one
+		// run stamps a whole batch with ONE `indexed_at`, so the timestamp alone
+		// would skip or repeat rows at a page boundary.
+		const at = after?.indexedAt ?? "";
+		const path = after?.path ?? "";
+		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare(
+					"SELECT path, indexed_at FROM files WHERE branch_id = ? AND (indexed_at > ? OR (indexed_at = ? AND path > ?)) ORDER BY indexed_at, path LIMIT ?",
+				)
+				.all(branchId, at, at, path, limit),
+		) as Array<{ path: string; indexed_at: string }>;
+		return rows.map((row) => ({ path: row.path, indexedAt: row.indexed_at }));
+	}
+
+	/** See `IFileTracker.getIndexedHighWater`. */
+	getIndexedHighWater(branchId: number): IndexedSinceMark | null {
+		assertBranchId(branchId);
+		const row = this.withRegion(TRACKER_REGIONS.read, () =>
+			this.db
+				.prepare(
+					"SELECT indexed_at, path FROM files WHERE branch_id = ? ORDER BY indexed_at DESC, path DESC LIMIT 1",
+				)
+				.get(branchId),
+		) as { indexed_at: string; path: string } | null | undefined;
+		// bun:sqlite answers `null` for no row, better-sqlite3 `undefined`.
+		return row == null ? null : { indexedAt: row.indexed_at, path: row.path };
 	}
 
 	/**
@@ -4351,6 +4530,72 @@ export class BranchScopedGraph {
 		return rows.map((row) => rowToSymbol(row));
 	}
 
+	/**
+	 * Symbols named `name` that live IN `filePath`, for many pairs at once — the
+	 * dead-code penalty's one read per search (R1, step 3).
+	 *
+	 * Returns one array per key, aligned with `keys`. `filePath` may be absolute
+	 * or already stored; it is converted with this handle's stored-path mapper
+	 * and compared IN STORED FORM, here, because the two spellings meet nowhere
+	 * else safely: a search result's path leaves the store ABSOLUTE and a
+	 * symbol's is stored REPO-RELATIVE, and comparing them at the call site is
+	 * what matched 0 of 217 times (I-23). Symbols still leave in stored spelling
+	 * (`rowToSymbol` is unchanged), so no command's output changes.
+	 *
+	 * A path outside the tree maps to null and gets `[]`, like every other
+	 * lookup on this handle. One region, at most 64 pairs per statement.
+	 */
+	getSymbolsByNameInFiles(
+		keys: ReadonlyArray<{ readonly name: string; readonly filePath: string }>,
+	): SymbolDefinition[][] {
+		const answers: SymbolDefinition[][] = keys.map(() => []);
+		// `${storedPath}\0${name}` -> the key positions that asked for it.
+		const asked = new Map<string, number[]>();
+		const pairs: Array<readonly [string, string]> = [];
+		keys.forEach((key, i) => {
+			const stored = this.storedPath(key.filePath);
+			if (stored === null) return;
+			const pair = `${stored}\0${key.name}`;
+			const positions = asked.get(pair);
+			if (positions) {
+				positions.push(i);
+			} else {
+				asked.set(pair, [i]);
+				pairs.push([stored, key.name]);
+			}
+		});
+		if (pairs.length === 0) return answers;
+
+		const batches: Array<Array<readonly [string, string]>> = [];
+		for (let i = 0; i < pairs.length; i += SYMBOL_PAIR_BATCH_SIZE) {
+			batches.push(pairs.slice(i, i + SYMBOL_PAIR_BATCH_SIZE));
+		}
+		const rows = this.withRegion(reads(batches.length), () => {
+			const all: Array<Record<string, unknown>> = [];
+			for (const batch of batches) {
+				const values = batch.map(() => "(?, ?)").join(", ");
+				all.push(
+					...(this.db
+						.prepare(
+							`SELECT * FROM symbols WHERE branch_id = ? AND (file_path, name) IN (VALUES ${values}) ORDER BY file_path, name, start_line, id`,
+						)
+						.all(this.branchId, ...batch.flat()) as Array<
+						Record<string, unknown>
+					>),
+				);
+			}
+			return all;
+		});
+
+		for (const row of rows) {
+			const symbol = rowToSymbol(row);
+			for (const i of asked.get(`${symbol.filePath}\0${symbol.name}`) ?? []) {
+				answers[i].push(symbol);
+			}
+		}
+		return answers;
+	}
+
 	/** Get all symbols whose parent_id matches the given parentId. */
 	getSymbolsByParent(parentId: string): SymbolDefinition[] {
 		const rows = this.withRegion(TRACKER_REGIONS.read, () =>
@@ -4627,6 +4872,12 @@ export class BranchScopedGraph {
 	 * The outer UPDATE and BOTH subqueries are scoped: unscoped, this wrote
 	 * across branches AND counted across them, so branch A's degrees reflected
 	 * branch B's references.
+	 *
+	 * `in_degree` does not count a symbol's references to ITSELF. A self-edge is
+	 * not a caller in the dead-code sense: self-recursion and a type naming
+	 * itself in its own body would otherwise make the dead-code penalty
+	 * (`inDegree === 0`) unreachable for them (TEST-54). `out_degree` is left as
+	 * is, because nothing reads it.
 	 */
 	updateDegreeCounts(): void {
 		this.withRegion(TRACKER_REGIONS.txn, () => {
@@ -4635,6 +4886,7 @@ export class BranchScopedGraph {
 			UPDATE symbols SET in_degree = (
 				SELECT COUNT(*) FROM symbol_references r
 				WHERE r.branch_id = ? AND r.to_symbol_id = symbols.id
+				AND r.from_symbol_id <> symbols.id
 			)
 			WHERE branch_id = ?
 		`)
@@ -4816,8 +5068,19 @@ export function computeHash(content: string): string {
  * Compute SHA256 hash of a file
  */
 export function computeFileHash(filePath: string): string {
-	const content = readFileSync(filePath);
-	return createHash("sha256").update(content).digest("hex");
+	return hashFileBytes(readFileSync(filePath));
+}
+
+/**
+ * SHA-256 of a file's BYTES — the one hash the tracker's `content_hash`
+ * column holds. `computeFileHash` is this over a fresh read; the indexer
+ * (P-E1) and the dirty overlay apply it to the buffer they already hold, so
+ * the hash describes exactly the bytes that were chunked or classified.
+ * Bytes, never a decoded string: a non-UTF-8 file decodes lossily, and a
+ * hash over the decoded text would never equal the tracker's.
+ */
+export function hashFileBytes(bytes: Uint8Array): string {
+	return createHash("sha256").update(bytes).digest("hex");
 }
 
 // ============================================================================

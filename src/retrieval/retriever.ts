@@ -29,6 +29,13 @@ import type {
 /**
  * Default weights per document type for each use case.
  * These can be overridden via project config or at search time.
+ *
+ * `code_unit` is listed explicitly in every table (R2.2). 0.1 is the value
+ * `typeAwareRRFFusion`'s `?? 0.1` fallback gave it before, so the entry
+ * changes no ranking; it makes the value a choice. The weight decides which of
+ * a `code_chunk`/`code_unit` twin pair survives the span collapse in
+ * `VectorStore.searchDocuments`. Whether it should equal `code_chunk` is an
+ * eval question (mnemex-bench), not settled here.
  */
 export const DEFAULT_TYPE_WEIGHTS: Record<
 	SearchUseCase,
@@ -37,6 +44,7 @@ export const DEFAULT_TYPE_WEIGHTS: Record<
 	// FIM completion: prioritize code and examples
 	fim: {
 		code_chunk: 0.5,
+		code_unit: 0.1,
 		usage_example: 0.25,
 		idiom: 0.15,
 		symbol_summary: 0.1,
@@ -46,6 +54,7 @@ export const DEFAULT_TYPE_WEIGHTS: Record<
 		file_summary: 0.25,
 		symbol_summary: 0.25,
 		code_chunk: 0.2,
+		code_unit: 0.1,
 		idiom: 0.15,
 		usage_example: 0.1,
 		anti_pattern: 0.05,
@@ -55,6 +64,7 @@ export const DEFAULT_TYPE_WEIGHTS: Record<
 		symbol_summary: 0.35,
 		file_summary: 0.3,
 		code_chunk: 0.2,
+		code_unit: 0.1,
 		idiom: 0.1,
 		project_doc: 0.05,
 	},

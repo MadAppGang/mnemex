@@ -19,6 +19,7 @@ import {
 	VOYAGE_EMBEDDINGS_URL,
 } from "../config.js";
 import type {
+	EmbedCallOptions,
 	EmbeddingProgressCallback,
 	EmbeddingProvider,
 	EmbeddingResponse,
@@ -78,8 +79,12 @@ export function isModelUnavailableError(message: string): boolean {
  * Failures that are about the setup — the daemon, the credentials, the model —
  * and so will repeat identically for every remaining text. Skipping past these
  * turns one legible error into N empty vectors.
+ *
+ * Exported for the dirty overlay, which must tell "this provider is unusable"
+ * (stop the pass at the first one) from "this chunk was refused" (fail that
+ * one file) by the SAME rule the clients use to decide whether to rethrow.
  */
-function isFatalEmbeddingFailure(message: string): boolean {
+export function isFatalEmbeddingFailure(message: string): boolean {
 	return (
 		message.includes("ECONNREFUSED") ||
 		message.includes("Cannot connect") ||
@@ -234,6 +239,7 @@ abstract class BaseEmbeddingsClient implements IEmbeddingsClient {
 	abstract embed(
 		texts: string[],
 		onProgress?: EmbeddingProgressCallback,
+		options?: EmbedCallOptions,
 	): Promise<EmbedResult>;
 
 	async embedOne(text: string): Promise<number[]> {
@@ -254,9 +260,85 @@ abstract class BaseEmbeddingsClient implements IEmbeddingsClient {
 		return embedding;
 	}
 
-	protected sleep(ms: number): Promise<void> {
-		return new Promise((resolve) => setTimeout(resolve, ms));
+	/**
+	 * A back-off sleep. With a `signal`, an abort ends it at once and rejects,
+	 * so a cancelled call never waits out a ladder step it will not use.
+	 */
+	protected sleep(ms: number, signal?: AbortSignal): Promise<void> {
+		if (signal === undefined) {
+			return new Promise((resolve) => setTimeout(resolve, ms));
+		}
+		return new Promise((resolve, reject) => {
+			if (signal.aborted) {
+				reject(abortReason(signal));
+				return;
+			}
+			const onAbort = () => {
+				clearTimeout(timer);
+				reject(abortReason(signal));
+			};
+			const timer = setTimeout(() => {
+				signal.removeEventListener("abort", onAbort);
+				resolve();
+			}, ms);
+			signal.addEventListener("abort", onAbort, { once: true });
+		});
 	}
+
+	/**
+	 * Attempts per request for this call: the client's own `ladder`, unless the
+	 * caller bounded it (`EmbedCallOptions.maxAttempts`). Never more than the
+	 * ladder, never fewer than one.
+	 */
+	protected attemptsFor(ladder: number, options?: EmbedCallOptions): number {
+		const cap = options?.maxAttempts;
+		if (cap === undefined || !Number.isFinite(cap)) return ladder;
+		return Math.max(1, Math.min(ladder, Math.floor(cap)));
+	}
+
+	/**
+	 * One request's abort controller: its own timeout, AND the caller's signal.
+	 * `done()` must run in a `finally` — it clears the timer and the listener,
+	 * so a finished request leaves nothing that keeps the process alive.
+	 */
+	protected requestController(
+		timeoutMs: number,
+		signal?: AbortSignal,
+	): { readonly signal: AbortSignal; done(): void } {
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), timeoutMs);
+		const onAbort = () => controller.abort(abortReason(signal));
+		if (signal !== undefined) {
+			if (signal.aborted) controller.abort(abortReason(signal));
+			else signal.addEventListener("abort", onAbort, { once: true });
+		}
+		return {
+			signal: controller.signal,
+			done: () => {
+				clearTimeout(timer);
+				signal?.removeEventListener("abort", onAbort);
+			},
+		};
+	}
+}
+
+/** What an aborted call rejects with: the caller's reason, or an AbortError. */
+function abortReason(signal: AbortSignal | undefined): unknown {
+	const reason = signal?.reason;
+	if (reason !== undefined) return reason;
+	const err = new Error("embedding call aborted");
+	err.name = "AbortError";
+	return err;
+}
+
+/** Throw now if the caller already cancelled — before any request is made. */
+function throwIfAborted(options: EmbedCallOptions | undefined): void {
+	if (options?.signal?.aborted === true) throw abortReason(options.signal);
+}
+
+/** Whether the caller cancelled — then a failure is the abort, not the provider. */
+function isAborted(options: EmbedCallOptions | undefined): boolean {
+	return options?.signal?.aborted === true;
 }
 
 // ============================================================================
@@ -285,8 +367,10 @@ export class OpenRouterEmbeddingsClient extends BaseEmbeddingsClient {
 	async embed(
 		texts: string[],
 		onProgress?: EmbeddingProgressCallback,
+		options?: EmbedCallOptions,
 	): Promise<EmbedResult> {
 		if (texts.length === 0) return { embeddings: [] };
+		throwIfAborted(options);
 
 		// Split into batches
 		const batches: string[][] = [];
@@ -315,10 +399,19 @@ export class OpenRouterEmbeddingsClient extends BaseEmbeddingsClient {
 			}
 
 			// Wrap each batch in try-catch to continue on failure
-			const batchPromises = batchGroup.map(async (batch) => {
+			const batchPromises = batchGroup.map(async (batch, g) => {
 				try {
-					return await this.embedBatch(batch);
+					const answered = await this.embedBatch(batch, options);
+					// Reported as THIS sub-batch lands, not after the group: an
+					// abort of a sibling must not drop it (iteration 2, O3).
+					const base = (i + g) * MAX_BATCH_SIZE;
+					answered.embeddings.forEach((vector, j) => {
+						options?.onAnswered?.(base + j, vector);
+					});
+					return answered;
 				} catch (error) {
+					// A cancelled call is not a failed batch: no `[]` slots for it.
+					if (isAborted(options)) throw error;
 					// Return empty embeddings for failed batch
 					const msg = error instanceof Error ? error.message : String(error);
 					// Auth and model-level errors should fail fast: they repeat
@@ -361,13 +454,17 @@ export class OpenRouterEmbeddingsClient extends BaseEmbeddingsClient {
 		};
 	}
 
-	private async embedBatch(texts: string[]): Promise<EmbedResult> {
+	private async embedBatch(
+		texts: string[],
+		options?: EmbedCallOptions,
+	): Promise<EmbedResult> {
 		let lastError: Error | undefined;
-		const maxRetries = MAX_RETRIES + 3; // Extra retries for transient JSON parse errors
+		// Extra retries for transient JSON parse errors
+		const maxRetries = this.attemptsFor(MAX_RETRIES + 3, options);
 
 		for (let attempt = 0; attempt < maxRetries; attempt++) {
 			try {
-				const response = await this.makeRequest(texts);
+				const response = await this.makeRequest(texts, options?.signal);
 
 				if (response.embeddings.length > 0 && !this.dimension) {
 					this.dimension = response.embeddings[0].length;
@@ -380,6 +477,7 @@ export class OpenRouterEmbeddingsClient extends BaseEmbeddingsClient {
 				};
 			} catch (error) {
 				lastError = error instanceof Error ? error : new Error(String(error));
+				if (isAborted(options)) throw error;
 
 				// Don't retry on authentication errors
 				if (
@@ -393,7 +491,7 @@ export class OpenRouterEmbeddingsClient extends BaseEmbeddingsClient {
 					const delay = lastError.message.includes("JSON")
 						? 2000 // Longer delay for parse errors
 						: BASE_RETRY_DELAY * 2 ** attempt;
-					await this.sleep(delay);
+					await this.sleep(delay, options?.signal);
 				}
 			}
 		}
@@ -401,9 +499,11 @@ export class OpenRouterEmbeddingsClient extends BaseEmbeddingsClient {
 		throw lastError || new Error("Failed to generate embeddings");
 	}
 
-	private async makeRequest(texts: string[]): Promise<EmbeddingResponse> {
-		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+	private async makeRequest(
+		texts: string[],
+		signal?: AbortSignal,
+	): Promise<EmbeddingResponse> {
+		const request = this.requestController(this.timeout, signal);
 
 		try {
 			const response = await fetch(OPENROUTER_EMBEDDINGS_URL, {
@@ -417,7 +517,7 @@ export class OpenRouterEmbeddingsClient extends BaseEmbeddingsClient {
 					model: this.model,
 					input: texts,
 				}),
-				signal: controller.signal,
+				signal: request.signal,
 			});
 
 			if (!response.ok) {
@@ -445,7 +545,7 @@ export class OpenRouterEmbeddingsClient extends BaseEmbeddingsClient {
 					: undefined,
 			};
 		} finally {
-			clearTimeout(timeoutId);
+			request.done();
 		}
 	}
 }
@@ -465,11 +565,13 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 	async embed(
 		texts: string[],
 		onProgress?: EmbeddingProgressCallback,
+		options?: EmbedCallOptions,
 	): Promise<EmbedResult> {
 		if (texts.length === 0) return { embeddings: [] };
+		throwIfAborted(options);
 
 		// Warmup: trigger model loading before processing the batch
-		await this.warmup();
+		await this.warmup(options);
 
 		// Pre-truncate texts client-side to avoid context length errors
 		// Ollama's truncate:true helps but some models still reject long inputs
@@ -488,14 +590,20 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 			}
 
 			try {
-				const embedding = await this.embedSingle(truncatedTexts[i]);
+				const embedding = await this.embedSingle(truncatedTexts[i], options);
 				results.push(embedding);
+				// Answered: reported now, so an abort later in this call cannot
+				// take it with it (iteration 2, O3). Legacy path included —
+				// `embedSingle` falls back to it internally.
+				options?.onAnswered?.(i, embedding);
 
 				// Store dimension on first result
 				if (!this.dimension && embedding.length > 0) {
 					this.dimension = embedding.length;
 				}
 			} catch (error) {
+				// A cancelled call ends here: no `[]` for this text or the rest.
+				if (isAborted(options)) throw error;
 				// Skip failed chunks instead of stopping entire process
 				// Return empty embedding - caller should filter these out
 				results.push([]);
@@ -542,14 +650,14 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 	 * Ollama unloads the previous model and loads the new one on first request,
 	 * which can return garbage JSON during the transition.
 	 */
-	private async warmup(): Promise<void> {
+	private async warmup(options?: EmbedCallOptions): Promise<void> {
 		if (this.warmedUp) return;
 
-		const maxWarmupAttempts = 8; // Up to ~20s total with backoff
+		// Up to ~20s total with backoff — unless the caller bounded this call.
+		const maxWarmupAttempts = this.attemptsFor(8, options);
 		for (let attempt = 0; attempt < maxWarmupAttempts; attempt++) {
 			try {
-				const controller = new AbortController();
-				const timeoutId = setTimeout(() => controller.abort(), 30000);
+				const request = this.requestController(30000, options?.signal);
 				try {
 					const response = await fetch(`${this.endpoint}/api/embed`, {
 						method: "POST",
@@ -559,7 +667,7 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 							input: "test",
 							truncate: true,
 						}),
-						signal: controller.signal,
+						signal: request.signal,
 					});
 
 					if (response.status === 404) {
@@ -589,15 +697,16 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 							data.embeddings[0]?.length > 0
 						) {
 							// Model loaded — let it stabilize in GPU memory before real requests
-							await this.sleep(500);
+							await this.sleep(500, options?.signal);
 							this.warmedUp = true;
 							return;
 						}
 					}
 				} finally {
-					clearTimeout(timeoutId);
+					request.done();
 				}
 			} catch (error) {
+				if (isAborted(options)) throw error;
 				// A model that does not exist will not appear by waiting. Retrying it
 				// eight times with backoff spends ~25s to reach the same answer.
 				const msg = error instanceof Error ? error.message : String(error);
@@ -606,22 +715,37 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 				}
 				// JSON parse error or network issue — model still loading
 			}
-			// Wait with backoff: 2s, 3s, 4s, 5s...
-			await this.sleep(Math.min(2000 + 1000 * attempt, 5000));
+			// Wait with backoff: 2s, 3s, 4s, 5s... A bounded call does not sleep
+			// after its last attempt; the unbounded one keeps its old schedule.
+			if (
+				options?.maxAttempts === undefined ||
+				attempt < maxWarmupAttempts - 1
+			) {
+				await this.sleep(
+					Math.min(2000 + 1000 * attempt, 5000),
+					options?.signal,
+				);
+			}
 		}
+		// A BOUNDED call that could not warm up does not mark the client warm:
+		// the next unbounded call (indexing, in the same MCP process) still gets
+		// the full warm-up it always had.
+		if (options?.maxAttempts !== undefined) return;
 		// If warmup fails after all attempts, proceed anyway — embed will handle errors
 		this.warmedUp = true;
 	}
 
-	private async embedSingle(text: string): Promise<number[]> {
+	private async embedSingle(
+		text: string,
+		options?: EmbedCallOptions,
+	): Promise<number[]> {
 		let lastError: Error | undefined;
 		// More retries for model-loading race conditions
-		const maxRetries = MAX_RETRIES + 3;
+		const maxRetries = this.attemptsFor(MAX_RETRIES + 3, options);
 
 		for (let attempt = 0; attempt < maxRetries; attempt++) {
 			try {
-				const controller = new AbortController();
-				const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+				const request = this.requestController(this.timeout, options?.signal);
 
 				try {
 					if (this.useNewApi) {
@@ -634,7 +758,7 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 								input: text,
 								truncate: true,
 							}),
-							signal: controller.signal,
+							signal: request.signal,
 						});
 
 						if (!response.ok) {
@@ -648,7 +772,7 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 								!isModelUnavailableError(errorText)
 							) {
 								this.useNewApi = false;
-								return this.embedSingleLegacy(text);
+								return this.embedSingleLegacy(text, options?.signal);
 							}
 							throw new Error(
 								`Ollama API error: ${response.status} - ${errorText}`,
@@ -669,13 +793,14 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 						}
 						return data.embeddings[0];
 					} else {
-						return await this.embedSingleLegacy(text);
+						return await this.embedSingleLegacy(text, options?.signal);
 					}
 				} finally {
-					clearTimeout(timeoutId);
+					request.done();
 				}
 			} catch (error) {
 				lastError = error instanceof Error ? error : new Error(String(error));
+				if (isAborted(options)) throw error;
 
 				// Check if Ollama is not running
 				if (lastError.message.includes("ECONNREFUSED")) {
@@ -696,7 +821,7 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 					const delay = lastError.message.includes("JSON Parse error")
 						? 3000 // Longer delay for model-loading race condition
 						: BASE_RETRY_DELAY * 2 ** attempt;
-					await this.sleep(delay);
+					await this.sleep(delay, options?.signal);
 				}
 			}
 		}
@@ -704,9 +829,11 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 		throw lastError || new Error("Failed to generate embeddings");
 	}
 
-	private async embedSingleLegacy(text: string): Promise<number[]> {
-		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+	private async embedSingleLegacy(
+		text: string,
+		signal?: AbortSignal,
+	): Promise<number[]> {
+		const request = this.requestController(this.timeout, signal);
 
 		try {
 			const response = await fetch(`${this.endpoint}/api/embeddings`, {
@@ -716,7 +843,7 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 					model: this.model,
 					prompt: text,
 				}),
-				signal: controller.signal,
+				signal: request.signal,
 			});
 
 			if (!response.ok) {
@@ -728,7 +855,7 @@ export class OllamaEmbeddingsClient extends BaseEmbeddingsClient {
 			const data: OllamaEmbeddingResponse = JSON.parse(responseText);
 			return data.embedding;
 		} finally {
-			clearTimeout(timeoutId);
+			request.done();
 		}
 	}
 }
@@ -838,20 +965,19 @@ export class LocalEmbeddingsClient extends BaseEmbeddingsClient {
 	 * Warmup: trigger model loading and wait for valid response.
 	 * LM Studio may need time to load a model when switching between them.
 	 */
-	private async warmup(): Promise<void> {
+	private async warmup(options?: EmbedCallOptions): Promise<void> {
 		if (this.warmedUp) return;
 
-		const maxWarmupAttempts = 8;
+		const maxWarmupAttempts = this.attemptsFor(8, options);
 		for (let attempt = 0; attempt < maxWarmupAttempts; attempt++) {
 			try {
-				const controller = new AbortController();
-				const timeoutId = setTimeout(() => controller.abort(), 30000);
+				const request = this.requestController(30000, options?.signal);
 				try {
 					const response = await fetch(`${this.endpoint}/embeddings`, {
 						method: "POST",
 						headers: { "Content-Type": "application/json" },
 						body: JSON.stringify({ model: this.model, input: "test" }),
-						signal: controller.signal,
+						signal: request.signal,
 					});
 					if (response.ok) {
 						const data: OpenRouterEmbeddingResponse = await response.json();
@@ -861,9 +987,10 @@ export class LocalEmbeddingsClient extends BaseEmbeddingsClient {
 						}
 					}
 				} finally {
-					clearTimeout(timeoutId);
+					request.done();
 				}
 			} catch (error) {
+				if (isAborted(options)) throw error;
 				// A model the server does not have will not appear by waiting.
 				const msg = error instanceof Error ? error.message : String(error);
 				if (isModelUnavailableError(msg)) {
@@ -871,19 +998,28 @@ export class LocalEmbeddingsClient extends BaseEmbeddingsClient {
 				}
 				// Model still loading — retry
 			}
-			await this.sleep(Math.min(1000 * (attempt + 1), 3000));
+			if (
+				options?.maxAttempts === undefined ||
+				attempt < maxWarmupAttempts - 1
+			) {
+				await this.sleep(Math.min(1000 * (attempt + 1), 3000), options?.signal);
+			}
 		}
+		// A bounded call that could not warm up leaves the client cold (see Ollama).
+		if (options?.maxAttempts !== undefined) return;
 		this.warmedUp = true;
 	}
 
 	async embed(
 		texts: string[],
 		onProgress?: EmbeddingProgressCallback,
+		options?: EmbedCallOptions,
 	): Promise<EmbedResult> {
 		if (texts.length === 0) return { embeddings: [] };
+		throwIfAborted(options);
 
 		// Warmup: trigger model loading before processing the batch
-		await this.warmup();
+		await this.warmup(options);
 
 		// Split into batches for progress reporting
 		const batches: string[][] = [];
@@ -906,7 +1042,12 @@ export class LocalEmbeddingsClient extends BaseEmbeddingsClient {
 				onProgress(completedTexts, texts.length, batch.length);
 			}
 
-			const batchResult = await this.embedBatch(batch);
+			const batchResult = await this.embedBatch(batch, options);
+			// Answered sub-batch, reported before the next one can be aborted
+			// (iteration 2, O3).
+			batchResult.forEach((vector, j) => {
+				options?.onAnswered?.(completedTexts + j, vector);
+			});
 			results.push(...batchResult);
 			completedTexts += batch.length;
 		}
@@ -922,15 +1063,17 @@ export class LocalEmbeddingsClient extends BaseEmbeddingsClient {
 	/**
 	 * Embed a single batch of texts
 	 */
-	private async embedBatch(texts: string[]): Promise<number[][]> {
+	private async embedBatch(
+		texts: string[],
+		options?: EmbedCallOptions,
+	): Promise<number[][]> {
 		let lastError: Error | undefined;
 		// More retries for model-loading race conditions
-		const maxRetries = MAX_RETRIES + 3;
+		const maxRetries = this.attemptsFor(MAX_RETRIES + 3, options);
 
 		for (let attempt = 0; attempt < maxRetries; attempt++) {
 			try {
-				const controller = new AbortController();
-				const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+				const request = this.requestController(this.timeout, options?.signal);
 
 				try {
 					// OpenAI-compatible format
@@ -941,7 +1084,7 @@ export class LocalEmbeddingsClient extends BaseEmbeddingsClient {
 							model: this.model,
 							input: texts,
 						}),
-						signal: controller.signal,
+						signal: request.signal,
 					});
 
 					if (!response.ok) {
@@ -962,10 +1105,11 @@ export class LocalEmbeddingsClient extends BaseEmbeddingsClient {
 
 					return embeddings;
 				} finally {
-					clearTimeout(timeoutId);
+					request.done();
 				}
 			} catch (error) {
 				lastError = error instanceof Error ? error : new Error(String(error));
+				if (isAborted(options)) throw error;
 
 				if (lastError.message.includes("ECONNREFUSED")) {
 					throw new Error(
@@ -977,7 +1121,7 @@ export class LocalEmbeddingsClient extends BaseEmbeddingsClient {
 					const delay = lastError.message.includes("JSON Parse error")
 						? 3000 // Longer delay for model-loading race condition
 						: BASE_RETRY_DELAY * 2 ** attempt;
-					await this.sleep(delay);
+					await this.sleep(delay, options?.signal);
 				}
 			}
 		}
@@ -1026,8 +1170,10 @@ export class VoyageEmbeddingsClient extends BaseEmbeddingsClient {
 	async embed(
 		texts: string[],
 		onProgress?: EmbeddingProgressCallback,
+		options?: EmbedCallOptions,
 	): Promise<EmbedResult> {
 		if (texts.length === 0) return { embeddings: [] };
+		throwIfAborted(options);
 
 		// Voyage supports batching up to 128 texts, use smaller batches for progress
 		const batches: string[][] = [];
@@ -1054,10 +1200,19 @@ export class VoyageEmbeddingsClient extends BaseEmbeddingsClient {
 			}
 
 			// Wrap each batch in try-catch to continue on failure
-			const batchPromises = batchGroup.map(async (batch) => {
+			const batchPromises = batchGroup.map(async (batch, g) => {
 				try {
-					return await this.embedBatch(batch);
+					const answered = await this.embedBatch(batch, options);
+					// Reported as THIS sub-batch lands, not after the group: an
+					// abort of a sibling must not drop it (iteration 2, O3).
+					const base = (i + g) * MAX_BATCH_SIZE;
+					answered.embeddings.forEach((vector, j) => {
+						options?.onAnswered?.(base + j, vector);
+					});
+					return answered;
 				} catch (error) {
+					// A cancelled call is not a failed batch: no `[]` slots for it.
+					if (isAborted(options)) throw error;
 					const msg = error instanceof Error ? error.message : String(error);
 					// Auth and model-level errors should fail fast: they repeat
 					// identically for every remaining batch.
@@ -1106,14 +1261,16 @@ export class VoyageEmbeddingsClient extends BaseEmbeddingsClient {
 		return (tokens / 1_000_000) * pricePerMillion;
 	}
 
-	private async embedBatch(texts: string[]): Promise<EmbedResult> {
+	private async embedBatch(
+		texts: string[],
+		options?: EmbedCallOptions,
+	): Promise<EmbedResult> {
 		let lastError: Error | undefined;
-		const maxRetries = MAX_RETRIES + 3;
+		const maxRetries = this.attemptsFor(MAX_RETRIES + 3, options);
 
 		for (let attempt = 0; attempt < maxRetries; attempt++) {
 			try {
-				const controller = new AbortController();
-				const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+				const request = this.requestController(this.timeout, options?.signal);
 
 				try {
 					const response = await fetch(VOYAGE_EMBEDDINGS_URL, {
@@ -1126,7 +1283,7 @@ export class VoyageEmbeddingsClient extends BaseEmbeddingsClient {
 							model: this.model,
 							input: texts,
 						}),
-						signal: controller.signal,
+						signal: request.signal,
 					});
 
 					if (!response.ok) {
@@ -1154,10 +1311,11 @@ export class VoyageEmbeddingsClient extends BaseEmbeddingsClient {
 						totalTokens: data.usage?.total_tokens,
 					};
 				} finally {
-					clearTimeout(timeoutId);
+					request.done();
 				}
 			} catch (error) {
 				lastError = error instanceof Error ? error : new Error(String(error));
+				if (isAborted(options)) throw error;
 
 				// Don't retry on authentication errors
 				if (
@@ -1171,7 +1329,7 @@ export class VoyageEmbeddingsClient extends BaseEmbeddingsClient {
 					const delay = lastError.message.includes("JSON")
 						? 2000
 						: BASE_RETRY_DELAY * 2 ** attempt;
-					await this.sleep(delay);
+					await this.sleep(delay, options?.signal);
 				}
 			}
 		}

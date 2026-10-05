@@ -261,6 +261,8 @@ mnemex dead-code
 # Great for: cleaning up unused code
 ```
 
+A type's own declaration does not count as a caller, so `dead-code --include-exported` (and the search dead-code penalty) can report an exported interface or type alias that nothing references. A symbol that references itself, such as a recursive function or a type that names itself in its body, still lists itself under `callers`, and `dead-code` does not report it.
+
 ### Test coverage gaps
 ```bash
 mnemex test-gaps
@@ -364,6 +366,73 @@ mnemex models            # list embedding models
 mnemex benchmark         # benchmark embedding models
 mnemex --mcp             # run as MCP server
 ```
+
+### Search flags
+```
+-n, --limit <n>          # max results (default: 10)
+-l, --language <lang>    # filter by language
+-p, --path <path>        # project path (default: cwd)
+-m, --model <model>      # embedding model (must match the index)
+-k, --keyword            # BM25 only, no embedding call
+--use-case <case>        # fim | search | navigation
+--no-reindex             # skip the auto-reindex before searching
+-y, --yes                # create the index if missing, no prompt
+--no-dirty               # leave uncommitted changes out of this search
+--                       # end of flags: `mnemex search -- -foo`
+```
+
+Flags are checked strictly: a typo such as `--no-dirtyy` exits 1, names the
+flag you probably meant, and runs nothing.
+
+### Uncommitted changes (the dirty overlay)
+
+`search` includes work you have not indexed yet — modified tracked files and
+untracked files that git does not ignore — without running `mnemex index`. The
+changed files are chunked and embedded on the spot (through the same embedding
+cache `index` uses, so only text that actually changed reaches the provider),
+kept in a small per-worktree store, and ranked in the same fusion as indexed
+rows. Index rows of a changed or deleted file are hidden only when the overlay
+replaces them or the file is gone; if the overlay cannot be built, the index's
+own rows are shown and the output says why.
+
+- Off for one search: `mnemex search "q" --no-dirty`. Off for a project:
+  `"dirtyOverlay": false` in `mnemex.json`. Off everywhere: `"dirtyOverlay":
+  false` in `~/.mnemex/config.json` (a project value wins).
+- Each worktree has its own overlay; one worktree never sees another's
+  uncommitted files.
+- Overlay results have no symbol graph (no dead-code penalty), no code units
+  and no summaries, and a changed chunk has no BM25 score of its own. They are
+  marked `[uncommitted]` in human output and `source=dirty` under `--agent`,
+  whose header always carries `overlay=on|off|skipped`, `overlay_reason=…` and
+  the file counts. When files are served, `overlay_gaps` (and MCP's
+  `overlay.gaps`) lists those gaps as tokens: `no-symbol-graph`,
+  `no-code-units`, `no-summaries`, `bm25-unchanged-chunks-only`.
+- `overlay_gaps` holds machine tokens only, from a closed set, each once: a
+  skip's cause (`busy`, `embed-failed`, `too-large`, …), a failed file as
+  `file-failed-<read|too-large|chunk|embed|write|inconsistent>`, the pass
+  events `embed-deadline`, `unclassified-budget`,
+  `unclassified-watch-capacity`, `embed-cache-over-cap`, `overlay-wiped`,
+  `delete-failed`, `optimize-failed`, `add-failed`, and the four row gaps
+  above. The free text — which file, the error message, a provider's error
+  body — is on the next header line, `overlay_gap_details=` (always present;
+  `token[ path]: message` entries joined with `; `), and in MCP's
+  `overlay.gapDetails`. Inside a path or message, `%` and `;` are
+  percent-encoded (`%25`, `%3B`), and so is a path's `:` (`%3A`): split on
+  `; `, end the path at the first `:`, then percent-decode each field.
+- If the embedding provider accepts none of the overlay's texts after the
+  query was embedded, and the overlay has nothing else to show (no file it
+  could still serve, no deleted file to hide), the search reports
+  `overlay=skipped overlay_reason=embed-failed` and shows index rows.
+  Otherwise it stays `overlay=on` and counts the refused files in
+  `overlay_files_failed`; their indexed versions are shown.
+  `overlay_embedded` counts only texts the provider returned a vector for —
+  including those it answered before a slow pass hit its time budget, which
+  are cached so the next search does not send them again.
+- `mnemex rg` never uses the overlay (its output stays exactly ripgrep's).
+- "Dirty" means different from the INDEX, decided by content hash — not
+  merely "git status says modified". Content that git reports as clean but
+  that the index has not caught up with (e.g. after a `git pull` with no
+  reindex) is the index's job: run `mnemex index`.
 
 ### Symbol graph commands (for AI agents)
 ```

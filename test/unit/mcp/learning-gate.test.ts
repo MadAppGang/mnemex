@@ -30,6 +30,7 @@ import { dirname, join } from "node:path";
 import { loadGlobalConfig } from "../../../src/config.js";
 import { resolveStoreLocation } from "../../../src/core/store-location.js";
 import type { SearchResult } from "../../../src/types.js";
+import { stubOverlayReport } from "../../helpers/overlay-report-stub.js";
 
 // ── Module mocks ────────────────────────────────────────────────────────────
 // The real opener is captured by value BEFORE the mock is registered, so the
@@ -82,6 +83,7 @@ mock.module("../../../src/core/indexer.js", () => ({
 			results: indexerResults,
 			branchUnknown: false,
 			branchLabel: null,
+			overlay: stubOverlayReport(),
 		}),
 		close: async () => {},
 		getStatus: async () => ({ exists: false }),

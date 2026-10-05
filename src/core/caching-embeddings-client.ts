@@ -63,6 +63,7 @@
  */
 
 import type {
+	EmbedCallOptions,
 	EmbeddingProgressCallback,
 	EmbeddingProvider,
 	EmbedResult,
@@ -164,9 +165,32 @@ export interface CachingEmbeddingsStats {
 	mode: EmbedCacheMode;
 	/** `"sqlite"` only when a persistent cache is open AND healthy. */
 	tier: EmbedCacheTier;
+	/**
+	 * Texts served from the cache by calls that RETURNED, and by calls ABORTED
+	 * through their signal (outer review 2, LOW 3). Any other thrown call adds
+	 * nothing. Always 0 in mode `"off"`.
+	 */
 	hits: number;
 	l0Hits: number;
+	/**
+	 * Cache misses the provider dealt with: every miss of a call that RETURNED
+	 * (a downgraded total failure included), and, for a call ABORTED through
+	 * its signal, the misses the provider ANSWERED before the cut (a `[]`
+	 * answer included; the texts the cut left unanswered are not counted).
+	 * Any other thrown call adds nothing. Always 0 in mode `"off"`: with no
+	 * cache there is nothing to miss.
+	 */
 	misses: number;
+	/**
+	 * Texts the provider returned a NON-EMPTY vector for — the wire's own
+	 * answer, counted where the response lands, on a returned call AND on the
+	 * answered prefix of an aborted one. Counted in EVERY mode, `"off"`
+	 * included (outer review 2, MEDIUM 1): `overlay_embedded` reads it. A text
+	 * answered `[]` (refused, or a downgraded total failure) is not here, so
+	 * while a cache is in use `misses - accepted` is what the provider
+	 * refused. A call that threw for any reason but its signal adds nothing.
+	 */
+	accepted: number;
 	/** Entries handed to `putMany`. Not the same as rows written — see the cache. */
 	writes: number;
 	/** Rule R firings. */
@@ -227,6 +251,56 @@ function describe(text: string | undefined): string {
 	if (text === undefined) return "<missing>";
 	const head = text.length > 60 ? `${text.slice(0, 60)}…` : text;
 	return `${text.length} chars ${JSON.stringify(head)}`;
+}
+
+/**
+ * The options handed to the inner client. A call that carries neither a
+ * signal nor its own `onAnswered` gets `options` back BY IDENTITY — the
+ * indexing path passes none, and must reach the inner client unchanged.
+ * Otherwise an `onAnswered` is installed that records each answer into
+ * `answered` (indexed as the inner client reports it) and forwards it to the
+ * caller's own callback under `toCallerIndex(j)`: the contract
+ * (`EmbedCallOptions.onAnswered`) is an index into the CALLER's `texts`.
+ */
+function collectAnswers(
+	options: EmbedCallOptions | undefined,
+	answered: (readonly number[] | undefined)[],
+	toCallerIndex: (innerIndex: number) => number,
+): EmbedCallOptions | undefined {
+	if (
+		options === undefined ||
+		(options.signal === undefined && options.onAnswered === undefined)
+	) {
+		return options;
+	}
+	return {
+		...options,
+		onAnswered: (j, vector) => {
+			answered[j] = vector;
+			options.onAnswered?.(toCallerIndex(j), vector);
+		},
+	};
+}
+
+/** Vectors that carry an answer: `!== 0`, never truthiness (CLAUDE.md #15). */
+function countNonEmpty(
+	vectors: readonly (readonly number[] | undefined)[],
+): number {
+	let n = 0;
+	for (const v of vectors) if (v !== undefined && v.length !== 0) n++;
+	return n;
+}
+
+/**
+ * Whether `onInnerFailure` serves the batch from cache instead of throwing:
+ * a non-fatal total failure with at least one hit (H3). Its own predicate so
+ * the abort path can tell, without counting the same batch twice.
+ */
+function isDowngradable(
+	err: unknown,
+	hitCount: number,
+): err is TotalEmbeddingFailureError {
+	return err instanceof TotalEmbeddingFailureError && hitCount > 0;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -441,6 +515,7 @@ export class CachingEmbeddingsClient implements IEmbeddingsClient {
 	private hits = 0;
 	private l0Hits = 0;
 	private misses = 0;
+	private accepted = 0;
 	private writes = 0;
 	private dimensionCorrections = 0;
 	private restarts = 0;
@@ -465,11 +540,17 @@ export class CachingEmbeddingsClient implements IEmbeddingsClient {
 
 	// ── IEmbeddingsClient — all six members ──────────────────────────────────
 
+	/**
+	 * `options` bounds the INNER call only (the provider request); the cache
+	 * scan and writes are already region-bounded (#31). Forwarded verbatim,
+	 * including on the opt-out pass-through.
+	 */
 	async embed(
 		texts: string[],
 		onProgress?: CacheAwareProgressCallback,
+		options?: EmbedCallOptions,
 	): Promise<CachedEmbedResult> {
-		return this.run(texts, onProgress);
+		return this.run(texts, onProgress, options);
 	}
 
 	/**
@@ -479,7 +560,7 @@ export class CachingEmbeddingsClient implements IEmbeddingsClient {
 	 * (CLAUDE.md #15: "`embedOne` refuses a zero-length vector").
 	 */
 	async embedOne(text: string): Promise<number[]> {
-		const result = await this.run([text], undefined);
+		const result = await this.run([text], undefined, undefined);
 		const vector = result.embeddings[0];
 		// `=== 0`, never truthiness.
 		if (vector === undefined || vector.length === 0) {
@@ -528,6 +609,7 @@ export class CachingEmbeddingsClient implements IEmbeddingsClient {
 		items: readonly T[],
 		site: "chunks" | "code-units" | "docs",
 		onProgress?: CacheAwareProgressCallback,
+		options?: EmbedCallOptions,
 	): Promise<CachedEmbedResult> {
 		const texts = items.map((item) => item.content);
 		// Any future transform of `texts` would go here — which is exactly why the
@@ -537,7 +619,7 @@ export class CachingEmbeddingsClient implements IEmbeddingsClient {
 			items.map((item) => item.content),
 			site,
 		);
-		return this.run(texts, onProgress);
+		return this.run(texts, onProgress, options);
 	}
 
 	/**
@@ -568,6 +650,7 @@ export class CachingEmbeddingsClient implements IEmbeddingsClient {
 			hits: this.hits,
 			l0Hits: this.l0Hits,
 			misses: this.misses,
+			accepted: this.accepted,
 			writes: this.writes,
 			dimensionCorrections: this.dimensionCorrections,
 			restarts: this.restarts,
@@ -586,13 +669,10 @@ export class CachingEmbeddingsClient implements IEmbeddingsClient {
 	private async run(
 		texts: readonly string[],
 		onProgress: CacheAwareProgressCallback | undefined,
+		options: EmbedCallOptions | undefined,
 	): Promise<CachedEmbedResult> {
-		if (this.mode === "off") {
-			// The opt-out is a pass-through, not a degraded cache: no ticker, no
-			// keys, no lookups, the caller's callback forwarded verbatim. Today's
-			// behaviour, byte for byte.
-			return this.inner.embed([...texts], onProgress);
-		}
+		if (this.mode === "off")
+			return this.passThrough(texts, onProgress, options);
 
 		const ticker = new ProgressTicker(
 			onProgress,
@@ -601,13 +681,51 @@ export class CachingEmbeddingsClient implements IEmbeddingsClient {
 			this.tickMs,
 		);
 		try {
-			const result = await this.pass(texts, ticker, undefined, false);
+			const result = await this.pass(texts, ticker, undefined, false, options);
 			ticker.settle();
 			return result;
 		} finally {
 			// Guarantee 4. Reached on every path, including a throw and `embed([])`.
 			ticker.final();
 		}
+	}
+
+	/**
+	 * The opt-out. A pass-through, not a degraded cache: no ticker, no keys,
+	 * no lookups, no writes, the caller's progress callback forwarded verbatim
+	 * — and, when the call carries neither a signal nor an `onAnswered`, the
+	 * caller's options object too (the indexing path: byte for byte).
+	 *
+	 * What it does keep is `accepted` (outer review 2, MEDIUM 1). It is the
+	 * provider's answer, not a cache figure: `overlay_embedded` reads it, and
+	 * so does the overlay's provider-wide-refusal rule, so a zero here under
+	 * `"embedCache": false` reported no embedding work AND made one refused
+	 * file read as "the provider accepted none". Counted the same way as the
+	 * cached path: a non-empty vector on a completed call, the answered prefix
+	 * of an aborted one, nothing for any other throw. `hits`/`misses` stay 0:
+	 * there is no cache for a text to hit or miss.
+	 */
+	private async passThrough(
+		texts: readonly string[],
+		onProgress: CacheAwareProgressCallback | undefined,
+		options: EmbedCallOptions | undefined,
+	): Promise<CachedEmbedResult> {
+		const answered: (readonly number[] | undefined)[] = new Array(texts.length);
+		let result: EmbedResult;
+		try {
+			result = await this.inner.embed(
+				[...texts],
+				onProgress,
+				collectAnswers(options, answered, (i) => i),
+			);
+		} catch (err) {
+			if (options?.signal?.aborted === true) {
+				this.accepted += countNonEmpty(answered);
+			}
+			throw err;
+		}
+		this.accepted += countNonEmpty(result.embeddings);
+		return result;
 	}
 
 	/**
@@ -623,6 +741,7 @@ export class CachingEmbeddingsClient implements IEmbeddingsClient {
 		ticker: ProgressTicker,
 		forcedDim: number | undefined,
 		restarted: boolean,
+		options: EmbedCallOptions | undefined,
 	): Promise<CachedEmbedResult> {
 		const total = texts.length;
 		// §3.6's identity rule: the model and provider always come from the client
@@ -688,13 +807,52 @@ export class CachingEmbeddingsClient implements IEmbeddingsClient {
 
 		if (missTexts.length > 0) {
 			ticker.flush();
+			// What the provider answered, as it landed (iteration 2, O3). Only a
+			// cancellable call can be cut mid-way, and only a caller's own
+			// `onAnswered` needs re-basing, so only then is the callback
+			// installed: a call with neither (the indexing path) hands the inner
+			// client exactly the options it always did. The inner client reports
+			// indices into `missTexts`; the caller is told `missIdx[j]`, an index
+			// into ITS `texts` (outer review 2, MEDIUM 2).
+			const answered: (readonly number[] | undefined)[] = new Array(
+				missTexts.length,
+			);
+			const innerOptions = collectAnswers(
+				options,
+				answered,
+				(j) => missIdx[j] as number,
+			);
 			let inner: EmbedResult;
 			try {
-				inner = await this.inner.embed(missTexts, (c, _t, ip) => {
-					// Re-based into the full index space, one-for-one (guarantee 3).
-					ticker.forward(hitCount + c, ip, hitCount);
-				});
+				inner = await this.inner.embed(
+					missTexts,
+					(c, _t, ip) => {
+						// Re-based into the full index space, one-for-one (guarantee 3).
+						ticker.forward(hitCount + c, ip, hitCount);
+					},
+					innerOptions,
+				);
 			} catch (err) {
+				if (options?.signal?.aborted === true) {
+					const answeredCount = await this.salvageAborted(
+						ticker,
+						answered,
+						missIdx,
+						keys,
+						dim,
+						model,
+						provider,
+					);
+					// Outer review 2, LOW 3: the hits this call served and the
+					// texts the provider answered before the cut are real, so
+					// they are counted — `overlay_cache_hits` no longer reads
+					// short on a cut pass. Not when `onInnerFailure` will
+					// downgrade instead: that path counts the batch itself.
+					if (!isDowngradable(err, hitCount)) {
+						this.hits += hitCount;
+						this.misses += answeredCount;
+					}
+				}
 				return await this.onInnerFailure(
 					err,
 					ticker,
@@ -714,6 +872,11 @@ export class CachingEmbeddingsClient implements IEmbeddingsClient {
 			for (let j = 0; j < missIdx.length; j++) {
 				const vector = inner.embeddings[j];
 				out[missIdx[j] as number] = vector === undefined ? [] : vector;
+				// Counted HERE, before Rule R can restart the batch: these are
+				// the vectors this response carried, so a restart that later
+				// serves them as hits does not erase the provider's answer.
+				// `!== 0`, never truthiness (CLAUDE.md #15).
+				if (vector !== undefined && vector.length !== 0) this.accepted++;
 			}
 
 			// §4.2's WRITER RULE. `model_dims` only ever receives a length taken
@@ -745,6 +908,7 @@ export class CachingEmbeddingsClient implements IEmbeddingsClient {
 					dim as number,
 					trueDim,
 					restarted,
+					options,
 				);
 			}
 		}
@@ -822,8 +986,7 @@ export class CachingEmbeddingsClient implements IEmbeddingsClient {
 		hitCount: number,
 		dim: number | undefined,
 	): Promise<CachedEmbedResult> {
-		if (!(err instanceof TotalEmbeddingFailureError) || hitCount === 0)
-			throw err;
+		if (!isDowngradable(err, hitCount)) throw err;
 
 		this.downgrades++;
 		for (const i of missIdx) out[i] = [];
@@ -835,6 +998,71 @@ export class CachingEmbeddingsClient implements IEmbeddingsClient {
 		return this.result(out, keys, dim, hitCount, undefined, undefined, [
 			err.message,
 		]);
+	}
+
+	/**
+	 * An ABORTED call's answered prefix (iteration 2, O3).
+	 *
+	 * A budget cut aborts the batch in flight. The texts the provider had
+	 * already answered were on the wire and paid for, but the rejection dropped
+	 * them: `accepted` never counted them (so `overlay_embedded` read short of
+	 * the wire on every cut pass, by up to `OVERLAY_EMBED_BATCH - 1`) and the
+	 * cache never stored them (so the next pass sent them again). Here:
+	 *
+	 *   - COUNT every non-empty answered vector (`!== 0`, CLAUDE.md #15), so
+	 *     `accepted` means provider-accepted texts on every pass, cut or not;
+	 *   - WRITE those of the resolved width under their keys, through the one
+	 *     writer, so the next pass serves them as hits. At most one aborted
+	 *     batch per call, so one `putMany` well under `WRITE_CHUNK` — #31's
+	 *     region arithmetic is untouched;
+	 *   - skip the write when the width is unknown: no key can be computed
+	 *     honestly, and a learned width is only ever recorded from a COMPLETED
+	 *     response (§4.2's writer rule).
+	 *
+	 * Returns how many texts the provider ANSWERED (a `[]` answer included),
+	 * which the caller adds to `misses`, so `misses - accepted` is still what
+	 * the provider refused. Counting before the width check is deliberate:
+	 * `accepted` is what the provider answered, not what this cache stored.
+	 *
+	 * The caller still rethrows: the batch is still a deadline for the overlay
+	 * and its files stay pending.
+	 */
+	private async salvageAborted(
+		ticker: ProgressTicker,
+		answered: readonly (readonly number[] | undefined)[],
+		missIdx: readonly number[],
+		keys: readonly string[],
+		dim: number | undefined,
+		model: string,
+		provider: EmbeddingProvider,
+	): Promise<number> {
+		const entries: EmbedCacheEntry[] = [];
+		let answeredCount = 0;
+		for (let j = 0; j < missIdx.length; j++) {
+			const vector = answered[j];
+			if (vector === undefined) continue;
+			answeredCount++;
+			// `=== 0`, never truthiness (CLAUDE.md #15): a refused text.
+			if (vector.length === 0) continue;
+			this.accepted++;
+			if (dim === undefined || vector.length !== dim) continue;
+			const key = keys[missIdx[j] as number] as string;
+			if (key.length === 0) continue;
+			const copy = [...vector];
+			this.l0.set(key, copy);
+			entries.push({
+				key,
+				model,
+				provider,
+				dimension: dim,
+				fingerprint: this.fingerprint,
+				vector: copy,
+			});
+		}
+		if (entries.length === 0) return answeredCount;
+		await this.flushWrites(ticker, entries, [], [], undefined);
+		this.writes += entries.length;
+		return answeredCount;
 	}
 
 	/**
@@ -866,6 +1094,7 @@ export class CachingEmbeddingsClient implements IEmbeddingsClient {
 		staleDim: number,
 		trueDim: number,
 		restarted: boolean,
+		options: EmbedCallOptions | undefined,
 	): Promise<CachedEmbedResult> {
 		this.dimensionCorrections++;
 		this.cache?.noteDimensionCorrection?.();
@@ -918,7 +1147,7 @@ export class CachingEmbeddingsClient implements IEmbeddingsClient {
 			);
 		}
 		this.restarts++;
-		return this.pass(texts, ticker, trueDim, true);
+		return this.pass(texts, ticker, trueDim, true, options);
 	}
 
 	/**

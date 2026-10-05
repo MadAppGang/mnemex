@@ -126,6 +126,15 @@ beforeEach(() => {
 
 afterEach(() => {
 	rmSync(dir, { recursive: true, force: true });
+	// `mock.module` is PROCESS-WIDE and outlives this file: every store any
+	// later test file opens goes through `countingTable`. The last test here
+	// leaves `createIndexError` set, so without this reset every later
+	// `createIndex` threw, `ensureFtsIndex` swallowed it, and the rest of the
+	// suite ran BM25 on LanceDB's index-less flat scan (different scores, no
+	// FTS index on disk). Found by N-2 (`store-search-n2-snapshot.test.ts`),
+	// whose frozen BM25 ranks moved only in the full run.
+	createIndexError = null;
+	createIndexCalls = [];
 });
 
 /** Open a store the way a search does: fresh instance, initialize, use, close. */

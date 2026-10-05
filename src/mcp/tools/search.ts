@@ -27,7 +27,10 @@ import {
 import { getParserManager } from "../../parsers/parser-manager.js";
 import { LocationBackend } from "../../retrieval/backends/location.js";
 import { LspBackend } from "../../retrieval/backends/lsp.js";
-import { SemanticBackend } from "../../retrieval/backends/semantic.js";
+import {
+	SemanticBackend,
+	type SemanticScopedReport,
+} from "../../retrieval/backends/semantic.js";
 import { SymbolGraphBackend } from "../../retrieval/backends/symbol-graph.js";
 import { TreeSitterBackend } from "../../retrieval/backends/tree-sitter.js";
 import { loadPipelineConfig } from "../../retrieval/pipeline/config.js";
@@ -211,11 +214,19 @@ export function registerSearchTools(server: McpServer, deps: ToolDeps): void {
 					}
 				}
 
-				// Semantic backend (wraps indexer)
+				// Semantic backend (wraps indexer). Its overlay report reaches THIS
+				// response through a request-local sink (revision 1, HIGH 7): the
+				// backend is built per request, so the closure is per request too.
+				let scopedReport: SemanticScopedReport | null = null;
 				if (pipelineConfig.backends.semantic) {
 					backends.push(
-						new SemanticBackend(() =>
-							createIndexer({ projectPath: config.workspaceRoot }),
+						new SemanticBackend(
+							() => createIndexer({ projectPath: config.workspaceRoot }),
+							{
+								onScoped: (report) => {
+									scopedReport = report;
+								},
+							},
 						),
 					);
 				}
@@ -336,7 +347,19 @@ export function registerSearchTools(server: McpServer, deps: ToolDeps): void {
 					snippet: r.snippet,
 					score: r.rrfScore === Number.POSITIVE_INFINITY ? 1.0 : r.rrfScore,
 					backend: r.backends.join("+"),
+					// This worktree's uncommitted text (step 3, R3.9); absent on
+					// index rows.
+					...(r.source === "dirty" ? { source: "dirty" as const } : {}),
 				}));
+
+				// The dirty overlay's report, from the semantic backend's sink.
+				// "Unreported" when that backend was disabled, aborted, or threw:
+				// the pipeline ran without it, so there is nothing true to say.
+				const reported = scopedReport as SemanticScopedReport | null;
+				const overlay = reported?.overlay ?? {
+					state: "unreported" as const,
+					reason: "semantic-backend-not-run",
+				};
 
 				// D1's response-level flag on the pipeline path too (§4.4.2).
 				//
@@ -389,6 +412,7 @@ export function registerSearchTools(server: McpServer, deps: ToolDeps): void {
 								...buildFreshness(stateManager, startTime),
 								...indexState,
 								...branchState,
+								overlay,
 							}),
 						},
 					],

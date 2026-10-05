@@ -13,6 +13,7 @@ import type { CodeChunk, DocumentType } from "../../types.js";
 
 export const SYSTEM_PROMPTS: Record<DocumentType, string> = {
 	code_chunk: "", // Not used - code chunks are extracted directly
+	code_unit: "", // Not used - code units are extracted from the AST directly
 
 	file_summary: `You are a code documentation expert. Analyze the provided source code file and generate a concise summary.
 

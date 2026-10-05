@@ -13,6 +13,8 @@
  */
 
 import { branchHintForAgent } from "../core/branch-notices.js";
+import type { PenaltyStats } from "../core/indexer.js";
+import type { SearchOverlayReport } from "../core/overlay/types.js";
 import type {
 	EnrichedIndexResult,
 	IndexStatus,
@@ -249,6 +251,14 @@ function searchResults(
 		storeRebuiltElsewhere?: boolean;
 		/** The HEAD label this search resolved; absent outside a repository. */
 		branch?: string | null;
+		/** What the dead-code penalty did (R1). Absent = it did not run. */
+		penalty?: PenaltyStats;
+		/**
+		 * What the local dirty overlay did (step 3, R3.9). Absent only on a
+		 * path that never runs it (the cloud search): the keys are still
+		 * emitted, as `overlay=unreported`.
+		 */
+		overlay?: SearchOverlayReport;
 	},
 ): void {
 	console.log(`query=${query}`);
@@ -271,6 +281,14 @@ function searchResults(
 	if (meta?.branch) {
 		console.log(`branch=${meta.branch}`);
 	}
+	// R1: what the dead-code penalty did, on EVERY search, zeros included. The
+	// penalty it replaces matched 0 of 217 lookups and nothing printed the 0.
+	console.log(`penalty_lookups=${meta?.penalty?.lookups ?? 0}`);
+	console.log(`penalty_same_file=${meta?.penalty?.sameFile ?? 0}`);
+	console.log(`penalty_applied=${meta?.penalty?.applied ?? 0}`);
+	// R3.9: the dirty overlay's state, on EVERY search, one key per line like
+	// every other header key (revision 1 rejected a compound line, LOW 8).
+	for (const line of overlayHeaderLines(meta?.overlay)) console.log(line);
 	// The SAME sentence the CLI's graph commands and the MCP tools render, from
 	// the one declaration in `src/core/branch-state.ts`.
 	const hint = branchHintForAgent(branchState, meta?.branch ?? null, "search");
@@ -301,6 +319,15 @@ function searchResults(
 			if (r.branches && r.branches.length > 0) {
 				line += ` branches=${r.branches.join(",")}`;
 			}
+			// BEFORE ` summary=`: parsers read the summary as the free-text tail.
+			// `"dirty"` ONLY: the cloud path's `"cloud"`/`"overlay"` values are a
+			// different mechanism and print nothing here, as before.
+			if (r.source === "dirty") {
+				line += " source=dirty";
+			}
+			if (r.penalty === "dead") {
+				line += " penalty=dead";
+			}
 			if (r.summary) {
 				// Extract first sentence of summary for agent context
 				const summaryMatch = r.summary.match(/Summary:\s*(.+?)(?:\n|$)/);
@@ -311,6 +338,98 @@ function searchResults(
 			console.log(line);
 		}
 	}
+}
+
+/**
+ * One field of an `overlay_gap_details` entry, escaped so the line splits
+ * back into exactly one entry per gap event (outer review 2, LOW 4): `%`
+ * first (so the escape is reversible), then `;` (the entry separator) and,
+ * in a PATH, `:` (the path/message boundary). A message keeps its own `:`
+ * readable — the first `:` after the path ends the path, so later ones are
+ * unambiguous. CR/LF runs become one space: the value is one header line.
+ */
+function gapDetailField(text: string, isPath: boolean): string {
+	const flat = text
+		.replace(/[\r\n]+/g, " ")
+		.replace(/%/g, "%25")
+		.replace(/;/g, "%3B");
+	return isPath ? flat.replace(/:/g, "%3A") : flat;
+}
+
+/**
+ * The overlay's `--agent` header keys (step 3, R3.9), ALWAYS all of them, so a
+ * consumer relies on each key rather than on its absence:
+ *
+ *   overlay                      on | off | skipped | unreported
+ *   overlay_reason               the gate's / the pass's reason
+ *   overlay_files                |served|
+ *   overlay_files_index_current  candidates the index already holds verbatim
+ *   overlay_files_deleted        |staleDeleted| (suppressed, nothing served)
+ *   overlay_files_pending        not reached this pass (index rows visible)
+ *   overlay_files_failed         per-file failures (index rows visible)
+ *   overlay_files_unclassified   tracker candidates the budget did not reach
+ *   overlay_rebuilt              files whose overlay rows were written
+ *   overlay_embedded             texts the provider ACCEPTED (returned a
+ *                                vector for); a refused text is not counted
+ *   overlay_cache_hits           texts the embed cache answered
+ *   overlay_suppressed_rows      index rows the pre-filter hid (R3.3)
+ *   overlay_rebuild_ms           the locked build + write + read section
+ *   overlay_gaps                 `; `-separated MACHINE TOKENS from a closed
+ *                                set (`OVERLAY_GAP_TOKENS`), each once: a skip's
+ *                                cause, `file-failed-<read|too-large|chunk|
+ *                                embed|write|inconsistent>`, a pass event
+ *                                (`embed-deadline`, `unclassified-budget`,
+ *                                `unclassified-watch-capacity`,
+ *                                `embed-cache-over-cap`, `overlay-wiped`,
+ *                                `delete-failed`, `optimize-failed`,
+ *                                `add-failed`) and, when rows are served,
+ *                                R3.8's row gaps (`no-symbol-graph`,
+ *                                `no-code-units`, `no-summaries`,
+ *                                `bm25-unchanged-chunks-only`). Never free text.
+ *                                MCP's `overlay.gaps` matches entry for entry.
+ *   overlay_gap_details          `; `-separated, one per gap EVENT:
+ *                                `token[ path]: message` — the free text behind
+ *                                the tokens (paths, counts, error messages,
+ *                                provider JSON). Always present, empty when
+ *                                there is nothing. MCP: `overlay.gapDetails`.
+ *                                Splittable without ambiguity: `%` and `;` are
+ *                                percent-encoded (`%25`, `%3B`) in path and
+ *                                message, and `:` (`%3A`) in the path; CR/LF
+ *                                runs become one space. So split on `; `, end
+ *                                the token at the first space or `:`, end the
+ *                                path at the first `:`, and percent-decode
+ *                                (`decodeURIComponent`) each field.
+ *
+ * `unreported` is a path that never runs the overlay (the cloud search).
+ */
+export function overlayHeaderLines(
+	overlay: SearchOverlayReport | undefined,
+): string[] {
+	const gaps = overlay?.gaps ?? [];
+	const details = overlay?.gapDetails ?? [];
+
+	return [
+		`overlay=${overlay?.state ?? "unreported"}`,
+		`overlay_reason=${overlay?.reason ?? "not-run"}`,
+		`overlay_files=${overlay?.files ?? 0}`,
+		`overlay_files_index_current=${overlay?.filesIndexCurrent ?? 0}`,
+		`overlay_files_deleted=${overlay?.filesDeleted ?? 0}`,
+		`overlay_files_pending=${overlay?.filesPending ?? 0}`,
+		`overlay_files_failed=${overlay?.filesFailed ?? 0}`,
+		`overlay_files_unclassified=${overlay?.filesUnclassified ?? 0}`,
+		`overlay_rebuilt=${overlay?.rebuilt ?? 0}`,
+		`overlay_embedded=${overlay?.embedded ?? 0}`,
+		`overlay_cache_hits=${overlay?.cacheHits ?? 0}`,
+		`overlay_suppressed_rows=${overlay?.suppressedRows ?? 0}`,
+		`overlay_rebuild_ms=${Math.round(overlay?.rebuildMs ?? 0)}`,
+		`overlay_gaps=${gaps.join("; ")}`,
+		`overlay_gap_details=${details
+			.map(
+				(d) =>
+					`${d.token}${d.path === undefined ? "" : ` ${gapDetailField(d.path, true)}`}: ${gapDetailField(d.message, false)}`,
+			)
+			.join("; ")}`,
+	];
 }
 
 /**

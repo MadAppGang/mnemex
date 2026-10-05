@@ -126,6 +126,7 @@ describe("document classification", () => {
 	/** The full union, written out, so an ADDED type also fails compilation here */
 	const EVERY_DOCUMENT_TYPE = [
 		"code_chunk",
+		"code_unit",
 		"file_summary",
 		"symbol_summary",
 		"idiom",
@@ -168,6 +169,7 @@ describe("document classification", () => {
 		// Re-derivable from repo source.
 		for (const type of [
 			"code_chunk",
+			"code_unit",
 			"file_summary",
 			"symbol_summary",
 			"idiom",

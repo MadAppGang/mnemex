@@ -154,7 +154,15 @@ const ITERATOR_METHODS = new Set([
 	"sort",
 ]);
 
-const TRACKER_TYPE = /\bI?FileTracker\b/;
+/**
+ * A declared type that makes a parameter, alias or field a TRACKER HANDLE (T1).
+ * `BranchScopedGraph` is included since step 3 (R1): its statements run in the
+ * tracker's own regions on the tracker's own connection (T2b), and
+ * `applyDeadCodePenalty(results, graph)` receives one as a PARAMETER, a shape
+ * T2b's `<handle>.graph(…)` assignment rule never sees. `Pick<…>` and other
+ * wrappers match because the test is a word search over the type's text.
+ */
+const TRACKER_TYPE = /\b(?:I?FileTracker|BranchScopedGraph)\b/;
 
 function namedChildren(node: Node): Node[] {
 	const out: Node[] = [];

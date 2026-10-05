@@ -472,3 +472,93 @@ describe("guarding the guard", () => {
 		expect(sqlStatements(fixture)).toEqual([]);
 	});
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// Step 3, G-1: the sweep SEES the reads added after it was written
+// ════════════════════════════════════════════════════════════════════════════
+
+describe("G-1 — step 3's graph reads are inside the sweep's sight", () => {
+	/**
+	 * `getSymbolsByNameInFiles` (R1) builds its statement as a TEMPLATE literal
+	 * with an interpolated VALUES list. A sweep that only read plain strings, or
+	 * that lost its place at the `${…}`, would pass over it in silence — so the
+	 * statement is located, counted and then broken, and the break must fire.
+	 */
+	const R1_READ_MARKER = "(file_path, name) IN (VALUES";
+
+	test("the R1 same-file read is seen, exactly once, and is scoped", () => {
+		const seen = sqlStatements(SOURCE).filter((s) =>
+			s.sql.includes(R1_READ_MARKER),
+		);
+		expect(seen).toHaveLength(1);
+		expect(seen[0].sql).toContain("branch_id = ?");
+	});
+
+	test("dropping its branch predicate is named", () => {
+		const broken = SOURCE.replace(
+			`WHERE branch_id = ? AND ${R1_READ_MARKER}`,
+			`WHERE ${R1_READ_MARKER}`,
+		);
+		expect(broken).not.toBe(SOURCE);
+		const findings = unscopedStatements(broken, TABLE_GROUPS["symbol graph"]);
+		expect(findings).toHaveLength(1);
+		expect(findings[0]).toContain(R1_READ_MARKER);
+	});
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Step 3, G-1 (LOW 6): the dirty overlay's tracker reads are in the sweep's sight
+// ════════════════════════════════════════════════════════════════════════════
+
+describe("G-1 — the overlay's file-state and high-water reads are seen and scoped", () => {
+	/**
+	 * Three new reads on `files`, one of them a TEMPLATE literal with two
+	 * interpolated `IN` lists. Each is located by a marker unique to it, must
+	 * be seen EXACTLY once and carry `branch_id`, and breaking its predicate
+	 * must be named — so a sweep that lost sight of any of them fails here.
+	 */
+	const OVERLAY_READS = [
+		{
+			name: "getIndexedFileStates",
+			// NOT `SELECT branch_id, …`: a projected column would satisfy the
+			// sweep's `includes("branch_id")` with the predicate gone.
+			marker: "SELECT path, content_hash FROM files WHERE",
+			// The source's own template-literal text, `${branchMarks}` included.
+			scoped: `WHERE branch_id IN (\${branchMarks}) AND `,
+			unscoped: "WHERE ",
+		},
+		{
+			name: "getFilesIndexedSince",
+			marker: "SELECT path, indexed_at FROM files WHERE",
+			scoped: "WHERE branch_id = ? AND (indexed_at",
+			unscoped: "WHERE (indexed_at",
+		},
+		{
+			name: "getIndexedHighWater",
+			marker: "SELECT indexed_at, path FROM files WHERE",
+			scoped: "WHERE branch_id = ? ORDER BY indexed_at DESC",
+			unscoped: "WHERE 1 = 1 ORDER BY indexed_at DESC",
+		},
+	] as const;
+
+	for (const read of OVERLAY_READS) {
+		test(`${read.name}: seen exactly once, and scoped`, () => {
+			const seen = sqlStatements(SOURCE).filter((s) =>
+				s.sql.includes(read.marker),
+			);
+			expect(seen).toHaveLength(1);
+			expect(seen[0].sql).toContain("branch_id");
+		});
+
+		test(`${read.name}: dropping its branch predicate is named`, () => {
+			const broken = SOURCE.replace(read.scoped, read.unscoped);
+			expect(broken).not.toBe(SOURCE);
+			const findings = unscopedStatements(
+				broken,
+				TABLE_GROUPS["files / documents / indexed_docs"],
+			);
+			expect(findings).toHaveLength(1);
+			expect(findings[0]).toContain(read.marker.split(" WHERE")[0]);
+		});
+	}
+});

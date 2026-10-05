@@ -305,7 +305,14 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 						? { store_rebuilt_elsewhere: true }
 						: {}),
 					branch: scoped.branchLabel,
+					// Step 3, R3.9: what the dirty overlay did, on every return path.
+					overlay: scoped.overlay,
 				};
+				// The LEARNING record names index rows only. An overlay row's id
+				// is uncommitted text no later search can return from the index,
+				// so a feedback or activity record against it would teach the
+				// ranker about rows that do not exist (revision 1, LOW 7).
+				const indexResults = () => results.filter((r) => r.source !== "dirty");
 
 				// ONE index-db connection for this request, shared by the learning
 				// system and activity recording. Learning goes through the same
@@ -323,7 +330,7 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 						recordSearchInteraction(session, {
 							query,
 							sessionId,
-							resultCount: results.length,
+							resultCount: indexResults().length,
 							useCase: useCase ?? "search",
 						});
 
@@ -344,19 +351,21 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 							adaptiveApplied = true;
 						}
 
-						// Record activity
+						// Record activity — index rows only (see `indexResults`).
+						const recorded = indexResults();
+						const top = recorded[0];
 						const activityId = tracker.recordActivity("search_code", {
 							query,
-							resultCount: results.length,
-							topScore: results[0]?.score ?? 0,
-							topResult: results[0]
+							resultCount: recorded.length,
+							topScore: top?.score ?? 0,
+							topResult: top
 								? {
-										chunk: results[0].chunk,
-										score: results[0].score,
-										vectorScore: results[0].vectorScore,
-										keywordScore: results[0].keywordScore,
-										summary: results[0].summary,
-										fileSummary: results[0].fileSummary,
+										chunk: top.chunk,
+										score: top.score,
+										vectorScore: top.vectorScore,
+										keywordScore: top.keywordScore,
+										summary: top.summary,
+										fileSummary: top.fileSummary,
 									}
 								: null,
 						});
@@ -412,6 +421,11 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 				if (adaptiveApplied) {
 					response += `*Adaptive ranking applied*\n\n`;
 				}
+				if (scoped.overlay.state === "on" && scoped.overlay.files > 0) {
+					response += `*Including ${scoped.overlay.files} uncommitted file(s) from this worktree, marked "Source: uncommitted"*\n\n`;
+				} else if (scoped.overlay.state === "skipped") {
+					response += `*Uncommitted changes are not included (overlay skipped: ${scoped.overlay.reason})*\n\n`;
+				}
 				response += `Found ${results.length} result(s):\n\n`;
 
 				for (let i = 0; i < results.length; i++) {
@@ -429,6 +443,11 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 					// foreign row instead of discarding the whole response.
 					if (r.branches && r.branches.length > 0) {
 						response += `Branches: ${r.branches.join(", ")}\n`;
+					}
+					if (r.source === "dirty") {
+						// R3.8: no graph, units or summaries for uncommitted text.
+						response +=
+							"Source: uncommitted (dirty overlay; not yet indexed)\n";
 					}
 					response += `ID: \`${chunk.id.slice(0, 12)}...\`\n\n`;
 					response += `\`\`\`${chunk.language}\n`;
@@ -450,6 +469,7 @@ export function registerLegacyTools(server: McpServer, deps: ToolDeps): void {
 						id: r.chunk.id,
 						file: r.chunk.filePath,
 						branches: r.branches ?? [],
+						...(r.source === "dirty" ? { source: "dirty" as const } : {}),
 					})),
 				});
 				response += `\n${trailer}`;

@@ -444,26 +444,42 @@ describe("V5.4b — a second branch that adds NO rows changes nothing", () => {
 	});
 });
 
+/**
+ * Branch B changes files that contain the query terms: new rows for the SAME
+ * paths, with the terms repeated so BM25 ranks them high.
+ *
+ * Each rewrite also MOVES its function down one line, so B's rows are NEW
+ * spans, not same-span revisions of A's. Until step 3's R2 the rows sat on
+ * A's exact lines, and the FALSIFIER below saw them only because a same-span
+ * revision took a SECOND slot beside A's in the `SCOPE_ALL` list — the D-TWIN
+ * duplication. R2 collapses one span to one slot (in `SCOPE_ALL` too, by
+ * design: architecture §4), the higher-ranked revision is A's, and a span-keyed
+ * ranking then cannot tell the lists apart, so the falsifier went blind on a
+ * leak it was meant to see. On distinct spans the leaked rows occupy slots of
+ * their own and the instrument sees them again; the gate itself is unchanged
+ * (B shares A's text, so the BM25 corpus statistics are the same either way).
+ */
+async function seedBranchB(): Promise<void> {
+	await seed(
+		FEAT,
+		Array.from({ length: 12 }, (_, i) =>
+			chunk(
+				`b${i}`,
+				`src/a${i}.ts`,
+				0.5,
+				`parseConfig${i} parseConfig${i} topic${i % 7} topic${i % 7} rewritten on feat`,
+				2 + i * 10,
+			),
+		),
+	);
+}
+
 describe("V5.4c — the release gate: a second branch that changes the query terms' files", () => {
 	test("branch A's ordered lists are identical, and the displacement is 0", async () => {
 		await seedBranchA();
 		const before = await rankingsFor(branchScope(MAIN));
 
-		// Branch B changes files that contain the query terms: new rows for the
-		// SAME paths, ranked nearer than anything A holds, with the terms
-		// repeated so BM25 ranks them high too.
-		await seed(
-			FEAT,
-			Array.from({ length: 12 }, (_, i) =>
-				chunk(
-					`b${i}`,
-					`src/a${i}.ts`,
-					0.5,
-					`parseConfig${i} parseConfig${i} topic${i % 7} topic${i % 7} rewritten on feat`,
-					1 + i * 10,
-				),
-			),
-		);
+		await seedBranchB();
 
 		const after = await rankingsFor(branchScope(MAIN));
 
@@ -497,18 +513,7 @@ describe("V5.4c — the release gate: a second branch that changes the query ter
 		await seedBranchA();
 		const before = await rankingsFor(branchScope(MAIN));
 
-		await seed(
-			FEAT,
-			Array.from({ length: 12 }, (_, i) =>
-				chunk(
-					`b${i}`,
-					`src/a${i}.ts`,
-					0.5,
-					`parseConfig${i} parseConfig${i} topic${i % 7} topic${i % 7} rewritten on feat`,
-					1 + i * 10,
-				),
-			),
-		);
+		await seedBranchB();
 
 		const unfiltered = await rankingsFor(SCOPE_ALL);
 

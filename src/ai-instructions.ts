@@ -100,6 +100,8 @@ CODE ANALYSIS COMMANDS:
 
 SEARCH COMMAND:
   search "query"    → Semantic search across code + LLM summaries
+  (search includes uncommitted edits, marked source=dirty; symbol/callers/
+   callees/impact see them only after "mnemex index"; --no-dirty to omit)
 </memory>
 
 <workflow>
@@ -192,6 +194,8 @@ CODE ANALYSIS COMMANDS:
 
 SEARCH COMMAND:
   search "query"    → Find by meaning when name unknown
+  (search includes uncommitted edits, marked source=dirty; symbol/callers/
+   callees/impact see them only after "mnemex index"; --no-dirty to omit)
 </memory>
 
 <workflow>
@@ -291,6 +295,8 @@ CODE ANALYSIS COMMANDS:
 
 SEARCH COMMAND:
   search "query"    → Find tests by description
+  (search includes uncommitted edits, marked source=dirty; symbol/callers/
+   callees/impact see them only after "mnemex index"; --no-dirty to omit)
 </memory>
 
 <workflow>
@@ -385,6 +391,8 @@ CODE ANALYSIS COMMANDS:
 
 SEARCH COMMAND:
   search "query"    → Find by error message or behavior
+  (search includes uncommitted edits, marked source=dirty; symbol/callers/
+   callees/impact see them only after "mnemex index"; --no-dirty to omit)
 </memory>
 
 <workflow>
@@ -498,7 +506,8 @@ Commands: map "task" → symbol <name> → callers (impact!) → callees (deps)
 Analysis: impact <name> (all transitive callers), test-gaps (what needs tests)
 Workflow: map → locate → impact analysis → implement → verify with test-gaps
 Best: ALWAYS use impact before major changes, use exact file:line from symbol
-Avoid: Modifying without impact check, grep, reading whole files`,
+Avoid: Modifying without impact check, grep, reading whole files
+Note: search includes uncommitted edits (source=dirty); the graph sees them only after index`,
 
 	tester: `TESTER: Use mnemex test-gaps for automated coverage analysis.
 Commands: test-gaps (coverage gaps!), map "test" (find tests), callers (who tests?)

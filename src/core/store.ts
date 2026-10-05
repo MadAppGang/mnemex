@@ -39,6 +39,11 @@ import {
 	branchMembershipFilter,
 	decodeBranchIds,
 } from "./branch-scope.js";
+import type {
+	OverlayCandidates,
+	OverlayChunkRef,
+	OverlayVectorRow,
+} from "./overlay/types.js";
 import {
 	fromStoredPath,
 	isStoredRepoPath,
@@ -78,6 +83,22 @@ const FTS_INDEX_TYPE = "FTS";
 
 /** Default search limit */
 const DEFAULT_LIMIT = 10;
+
+/**
+ * How many candidates each retriever fetches for a result list of `limit`
+ * (`fetchLimit`). ONE formula, exported, because the dirty overlay's vector
+ * read (`vectorCandidates`) and `search` must cut their lists at the same depth
+ * before the two are merged (step 3, §5 Merge): a different depth on either
+ * side changes which candidates can win.
+ *
+ * Equal depth in COUNT is not equal COVERAGE: after `trimIncompleteTieTail`
+ * the index list is exact only for rows strictly better than its edge. The
+ * merge therefore also gates overlay rows at that edge (`mergeRetrieverLists`,
+ * iteration 2, F2); the shared depth alone does not make the merge exact.
+ */
+export function searchFetchLimit(limit: number): number {
+	return limit * 3;
+}
 
 /** BM25 weight in hybrid search */
 const BM25_WEIGHT = 0.4;
@@ -512,6 +533,59 @@ function chunkIds(ids: readonly string[]): string[][] {
 	return batches;
 }
 
+/** The columns an overlay row is materialised from — never `vector`. */
+const OVERLAY_ROW_COLUMNS = [
+	"id",
+	"filePath",
+	"content",
+	"language",
+	"chunkType",
+	"name",
+	"parentName",
+	"signature",
+	"contentHash",
+	"fileHash",
+	"startLine",
+	"endLine",
+];
+
+function overlayRowOf(row: Record<string, unknown>): OverlayVectorRow {
+	const text = (v: unknown) => (typeof v === "string" ? v : "");
+	const optional = (v: unknown) =>
+		typeof v === "string" && v.length > 0 ? v : undefined;
+	return {
+		id: text(row.id),
+		filePath: text(row.filePath),
+		content: text(row.content),
+		language: text(row.language),
+		chunkType: text(row.chunkType),
+		name: optional(row.name),
+		parentName: optional(row.parentName),
+		signature: optional(row.signature),
+		contentHash: text(row.contentHash),
+		fileHash: text(row.fileHash),
+		startLine: Number(row.startLine),
+		endLine: Number(row.endLine),
+		_distance: typeof row._distance === "number" ? row._distance : 0,
+	};
+}
+
+/**
+ * First row per id. Identical ids are identical rows here: a chunk id hashes
+ * path, lines and content (`chunker.ts`), so a duplicate is a late or repeated
+ * append of the same row, never a different one.
+ */
+function dedupeById(rows: OverlayVectorRow[]): OverlayVectorRow[] {
+	const seen = new Set<string>();
+	const out: OverlayVectorRow[] = [];
+	for (const row of rows) {
+		if (seen.has(row.id)) continue;
+		seen.add(row.id);
+		out.push(row);
+	}
+	return out;
+}
+
 /**
  * The stored row's column names, taken from the DECLARED schema so a round trip
  * cannot silently drop a column added later. The width is irrelevant — only the
@@ -575,8 +649,9 @@ function storedRowsForUnits(
 		vector: unit.vector,
 		// Index v3.
 		embedKey: unit.embedKey ?? "",
-		// Document fields for unified storage
-		documentType: "code_unit",
+		// Document fields for unified storage. `satisfies`: the value written
+		// must be a member of the union every reader types it as (R2.3).
+		documentType: "code_unit" satisfies DocumentType,
 		sourceIds: "[]",
 		metadata: JSON.stringify(unit.metadata || {}),
 		createdAt: now,
@@ -795,7 +870,22 @@ export interface IVectorStore {
 		queryVector: number[] | undefined,
 		scope: BranchScope,
 		options?: SearchOptions,
+		/**
+		 * This worktree's dirty overlay (step 3, R3.2/R3.3). `undefined` is
+		 * today's search, statement for statement (NFR-2, pinned by N-2).
+		 */
+		overlay?: OverlayCandidates,
 	): Promise<SearchResult[]>;
+	/**
+	 * Rows a `suppressedPaths` pre-filter hides from `scope`: `pathKind =
+	 * 'repo' AND filePath IN (…)` under the branch predicate. The overlay
+	 * report's `suppressedRows` (R3.3 asks for a POSITIVE count). Paths are
+	 * stored spelling, compared by equality (`escapeSqlLiteral`, #22).
+	 */
+	countRowsForStoredPaths(
+		scope: BranchScope,
+		storedPaths: readonly string[],
+	): Promise<number>;
 	/**
 	 * Rows actually deleted (LanceDB's `numDeletedRows`); 0 on no match or failure.
 	 *
@@ -824,7 +914,29 @@ export interface IVectorStore {
 	): Promise<number>;
 	writeBranchIdsMirror(rows: WidenSourceRow[]): Promise<number>;
 	deleteByIds(ids: string[]): Promise<number>;
-	optimize(): Promise<void>;
+	/**
+	 * The dirty overlay's delete (step 3): every row whose `filePath` is one of
+	 * `storedPaths`, and it THROWS on failure. Overlay-role stores only.
+	 */
+	deleteRowsByStoredPathsStrict(
+		storedPaths: readonly string[],
+	): Promise<number>;
+	/**
+	 * Top `searchFetchLimit(limit)` rows by vector distance among `ids`, under
+	 * the user's language/path filters; materialised, id-unique, `(_distance,
+	 * id)` order. The dirty overlay's vector channel (step 3, §5 Merge).
+	 */
+	vectorCandidates(
+		queryVector: number[],
+		ids: readonly string[],
+		options: Pick<
+			SearchOptions,
+			"limit" | "language" | "filePath" | "pathPattern"
+		>,
+	): Promise<OverlayVectorRow[]>;
+	/** The rows behind `ids`, materialised without vectors, id-unique. */
+	rowsByIds(ids: readonly string[]): Promise<OverlayVectorRow[]>;
+	optimize(options?: OptimizeOptions): Promise<void>;
 	/** The highest branch id any ROW carries, or null (3a-2 finding 4). */
 	highestBranchId(): Promise<number | null>;
 	getVectorsByIds(ids: string[]): Promise<Map<string, number[]>>;
@@ -927,9 +1039,30 @@ export interface IVectorStore {
  * derived from wherever the store happens to sit. An object with no optional
  * field makes every such caller a compile error instead.
  */
+/** `VectorStore.optimize` options. */
+export interface OptimizeOptions {
+	/**
+	 * Keep dataset versions younger than this, ms. Default
+	 * `VERSION_RETENTION_MS`. Below the default only on an `"overlay"`-role
+	 * store, whose handles are never open outside its own lock.
+	 */
+	retentionMs?: number;
+}
+
+/**
+ * What a store is FOR. `"shared"` (the default) is the repository's index,
+ * opened by many processes. `"overlay"` is one worktree's dirty-overlay
+ * sidecar (step 3): every handle to it is opened after its lock is taken and
+ * dropped before it is released, which is what makes the overlay-only
+ * operations (strict path delete, zero retention) safe there and only there.
+ */
+export type VectorStoreRole = "shared" | "overlay";
+
 export interface VectorStoreOptions {
 	/** The LanceDB directory: the store's `vectors/`. */
 	vectorsDir: string;
+	/** Default `"shared"`. See `VectorStoreRole`. */
+	role?: VectorStoreRole;
 	/**
 	 * The caller's own `resolveStoreLocation(startPath).pathRoot`: the worktree
 	 * root, or the start path outside a repository. Never derived from
@@ -940,6 +1073,8 @@ export interface VectorStoreOptions {
 
 export class VectorStore implements IVectorStore {
 	private dbPath: string;
+	/** See `VectorStoreRole`. */
+	private readonly role: VectorStoreRole;
 	/** See `VectorStoreOptions.pathRoot`. Read by `getTestFileMode`. */
 	private pathRoot: string;
 	private db: lancedb.Connection | null = null;
@@ -959,6 +1094,7 @@ export class VectorStore implements IVectorStore {
 	 */
 	constructor(options: VectorStoreOptions) {
 		this.dbPath = options.vectorsDir;
+		this.role = options.role ?? "shared";
 		this.pathRoot = options.pathRoot;
 		this.testFileDetector = createTestFileDetector();
 	}
@@ -990,6 +1126,24 @@ export class VectorStore implements IVectorStore {
 	 */
 	private outputPath(row: { filePath: string; pathKind?: unknown }): string {
 		return fromStoredPath(this.pathRoot, row);
+	}
+
+	/**
+	 * R2's span key for a fused row, through THE read seam above, so a
+	 * `code_chunk` and a `code_unit` over one span get one key: both writers
+	 * store the same repo-relative path (`membershipColumns` refuses anything
+	 * else for a `"repo"` row) and both are read back here. `null` — never
+	 * collapsed — for a row with no path (a corrupt row) or a non-code type.
+	 */
+	private spanKeyOf(row: {
+		filePath: string;
+		pathKind?: unknown;
+		documentType?: unknown;
+		startLine?: unknown;
+		endLine?: unknown;
+	}): string | null {
+		if (!row.filePath) return null;
+		return codeSpanKey(row, this.outputPath(row));
 	}
 
 	/**
@@ -1360,6 +1514,141 @@ export class VectorStore implements IVectorStore {
 	}
 
 	/**
+	 * The USER's predicates — language, `filePath`, `pathPattern` — in the
+	 * order and spelling `search` has always rendered them. One builder, so the
+	 * dirty overlay's vector read (`vectorCandidates`) filters exactly as the
+	 * index side does and the two lists cannot diverge (step 3, §5 Merge).
+	 *
+	 * Two escapers, by operator context (CLAUDE.md #22): the equality literal
+	 * takes `escapeSqlLiteral`, the LIKE patterns `escapeFilterValue`.
+	 */
+	buildUserFilters(
+		options: Pick<SearchOptions, "language" | "filePath" | "pathPattern">,
+	): string[] {
+		const filters: string[] = [];
+		if (options.language) {
+			filters.push(`language = '${escapeSqlLiteral(options.language)}'`);
+		}
+		if (options.filePath) {
+			filters.push(
+				`filePath LIKE '%${escapeFilterValue(this.likePatternArg(options.filePath))}%'`,
+			);
+		}
+		if (options.pathPattern) {
+			filters.push(
+				`filePath LIKE '%${escapeFilterValue(this.likePatternArg(options.pathPattern))}%'`,
+			);
+		}
+		return filters;
+	}
+
+	/** Overlay-only operations refuse on any other store. See `VectorStoreRole`. */
+	private assertOverlayRole(operation: string): void {
+		if (this.role !== "overlay") {
+			throw new Error(
+				`${operation}: only the dirty overlay's own store may do this (role "${this.role}")`,
+			);
+		}
+	}
+
+	/**
+	 * See `IVectorStore.deleteRowsByStoredPathsStrict`.
+	 *
+	 * Unlike `deleteByFile`, nothing is caught: a LanceDB error, a timeout or a
+	 * refused predicate propagates. The overlay advances a file's manifest
+	 * entry only after its delete AND add both resolved, and a delete that
+	 * failed silently would let it name rows that were never removed. Paths
+	 * are STORED (repo-relative) and compared by equality, so they take
+	 * `escapeSqlLiteral` (CLAUDE.md #22); ≤ 256 per statement.
+	 */
+	async deleteRowsByStoredPathsStrict(
+		storedPaths: readonly string[],
+	): Promise<number> {
+		this.assertOverlayRole("deleteRowsByStoredPathsStrict");
+		if (storedPaths.length === 0) return 0;
+		const table = await this.ensureTableOpen();
+		if (!table) return 0;
+		let deleted = 0;
+		for (let i = 0; i < storedPaths.length; i += ID_PREDICATE_BATCH) {
+			const batch = storedPaths.slice(i, i + ID_PREDICATE_BATCH);
+			const list = batch.map((p) => `'${escapeSqlLiteral(p)}'`).join(", ");
+			const result = await withTimeout(
+				table.delete(`filePath IN (${list})`),
+				LANCEDB_WRITE_TIMEOUT_MS,
+				"deleteRowsByStoredPathsStrict:table.delete",
+			);
+			deleted += result.numDeletedRows;
+		}
+		return deleted;
+	}
+
+	/** See `IVectorStore.vectorCandidates`. */
+	async vectorCandidates(
+		queryVector: number[],
+		ids: readonly string[],
+		options: Pick<
+			SearchOptions,
+			"limit" | "language" | "filePath" | "pathPattern"
+		>,
+	): Promise<OverlayVectorRow[]> {
+		if (ids.length === 0) return [];
+		const table = await this.ensureTableOpen();
+		if (!table) return [];
+		const fetchLimit = searchFetchLimit(options.limit ?? DEFAULT_LIMIT);
+		const user = this.buildUserFilters(options);
+		const rows: OverlayVectorRow[] = [];
+		for (const batch of chunkIds(ids)) {
+			const where = [hexIdList(batch), ...user].join(" AND ");
+			const found = await table
+				.vectorSearch(queryVector)
+				.where(where)
+				// `_distance` named explicitly: LanceDB warns that an explicit
+				// projection will stop including it implicitly, and a missing
+				// distance would read as 0 and rank every overlay row first.
+				.select([...OVERLAY_ROW_COLUMNS, "_distance"])
+				.limit(fetchLimit)
+				.toArray();
+			for (const row of found) {
+				// Never default a missing distance: 0 would rank the row first.
+				if (typeof row._distance !== "number") {
+					throw new Error(
+						"vectorCandidates: LanceDB returned a row with no _distance",
+					);
+				}
+				rows.push(overlayRowOf(row));
+			}
+		}
+		return dedupeById(rows)
+			.sort((a, b) =>
+				a._distance !== b._distance
+					? a._distance - b._distance
+					: a.id < b.id
+						? -1
+						: a.id > b.id
+							? 1
+							: 0,
+			)
+			.slice(0, fetchLimit);
+	}
+
+	/** See `IVectorStore.rowsByIds`. */
+	async rowsByIds(ids: readonly string[]): Promise<OverlayVectorRow[]> {
+		if (ids.length === 0) return [];
+		const table = await this.ensureTableOpen();
+		if (!table) return [];
+		const rows: OverlayVectorRow[] = [];
+		for (const batch of chunkIds(ids)) {
+			const found = await table
+				.query()
+				.where(hexIdList(batch))
+				.select(OVERLAY_ROW_COLUMNS)
+				.toArray();
+			for (const row of found) rows.push(overlayRowOf(row));
+		}
+		return dedupeById(rows);
+	}
+
+	/**
 	 * Unified search: type-aware hybrid search across all document layers.
 	 *
 	 * Uses typeAwareRRFFusion to weight code_chunks, symbol_summaries, and
@@ -1368,13 +1657,66 @@ export class VectorStore implements IVectorStore {
 	 * attached LLM summaries.
 	 *
 	 * This is the single search path used by CLI, TUI, and MCP.
+	 *
+	 * Four stages (step 3, phase 5): `buildSearchFilters` → `retrieveCandidates`
+	 * → `applyOverlay` → `fuseAndHydrate`. With `overlay === undefined` the
+	 * third stage does not run and the other three issue exactly the statements
+	 * the single method did (N-2 deep-equals a snapshot frozen before the split).
+	 * With an overlay, its rows are merged into the index's retriever lists
+	 * BEFORE fusion and the stale index rows are pre-filtered out (R3.2/R3.3).
 	 */
 	async search(
 		queryText: string,
 		queryVector: number[] | undefined,
 		scope: BranchScope,
 		options: SearchOptions = {},
+		overlay?: OverlayCandidates,
 	): Promise<SearchResult[]> {
+		const table = await this.ensureTableOpen();
+		if (!table) {
+			return [];
+		}
+		const plan = this.buildSearchFilters(scope, options, overlay);
+		const lists = await this.retrieveCandidates(
+			table,
+			queryText,
+			queryVector,
+			plan,
+		);
+		const merged =
+			overlay === undefined
+				? lists
+				: await this.applyOverlay(table, queryText, plan, lists, overlay);
+		return this.fuseAndHydrate(merged, plan);
+	}
+
+	/**
+	 * Stage 1: every predicate and limit of one search, decided before any I/O.
+	 *
+	 * Note the two escapers: equality literals take `escapeSqlLiteral`, LIKE
+	 * patterns take `escapeFilterValue` (which additionally neutralises the
+	 * `%` / `_` wildcards). Swapping either way is a silent bug — see the
+	 * comments on the two functions.
+	 *
+	 * D6, part 1: the branch predicate is a PRE-filter, on BOTH retrievers. It
+	 * goes in the same `filters` array the language and path predicates use,
+	 * which is passed to `.where()` on the vectorSearch query AND on the
+	 * fullTextSearch query. A foreign row then never enters the candidate set,
+	 * never consumes a `limit` slot and never displaces a visible row. A
+	 * POST-filter would silently return fewer than `limit` results — a far
+	 * larger NFR-5 break than any statistical drift — which is why `postfilter`
+	 * must not appear in this file at all (swept).
+	 *
+	 * R3.3's suppression predicate joins the SAME array, last, for the same
+	 * reason: a stale row of a dirty file must not take a candidate slot. It is
+	 * absent when nothing is suppressed, so an empty overlay renders today's
+	 * predicate string exactly (N-1).
+	 */
+	private buildSearchFilters(
+		scope: BranchScope,
+		options: SearchOptions,
+		overlay: OverlayCandidates | undefined,
+	): SearchPlan {
 		const {
 			limit = DEFAULT_LIMIT,
 			language,
@@ -1383,68 +1725,72 @@ export class VectorStore implements IVectorStore {
 			keywordOnly,
 			useCase,
 		} = options;
-
-		const table = await this.ensureTableOpen();
-		if (!table) {
-			return [];
-		}
-
-		// Build filter string with escaped values to prevent injection.
-		// Note the two escapers: equality literals take `escapeSqlLiteral`, LIKE
-		// patterns take `escapeFilterValue` (which additionally neutralises the
-		// `%` / `_` wildcards). Swapping either way is a silent bug — see the
-		// comments on the two functions.
 		const filters: string[] = [];
-		// D6, part 1: the branch predicate is a PRE-filter, on BOTH retrievers.
-		// It goes in the same `filters` array the language and path predicates
-		// use, which is passed to `.where()` on the vectorSearch query AND on the
-		// fullTextSearch query below. A foreign row then never enters the
-		// candidate set, never consumes a `limit` slot and never displaces a
-		// visible row. A POST-filter would silently return fewer than `limit`
-		// results — a far larger NFR-5 break than any statistical drift — which is
-		// why `postfilter` must not appear in this file at all (swept).
 		const branchFilter = branchMembershipFilter(scope);
 		if (branchFilter !== null) filters.push(branchFilter);
-		if (language) {
-			filters.push(`language = '${escapeSqlLiteral(language)}'`);
-		}
-		if (filePath) {
-			filters.push(
-				`filePath LIKE '%${escapeFilterValue(this.likePatternArg(filePath))}%'`,
-			);
-		}
-		if (pathPattern) {
-			filters.push(
-				`filePath LIKE '%${escapeFilterValue(this.likePatternArg(pathPattern))}%'`,
-			);
-		}
-		const filterStr = filters.length > 0 ? filters.join(" AND ") : undefined;
+		const userFilters = this.buildUserFilters({
+			language,
+			filePath,
+			pathPattern,
+		});
+		filters.push(...userFilters);
+		const suppression =
+			overlay === undefined
+				? null
+				: suppressionPredicate(overlay.suppressedPaths);
+		if (suppression !== null) filters.push(suppression);
+		return {
+			limit,
+			// Fetch more results to account for multi-type documents
+			fetchLimit: searchFetchLimit(limit),
+			filterStr: filters.length > 0 ? filters.join(" AND ") : undefined,
+			branchFilter,
+			userFilters,
+			keywordOnly: keywordOnly === true,
+			useCase,
+		};
+	}
 
-		// Fetch more results to account for multi-type documents
-		const fetchLimit = limit * 3;
+	/**
+	 * Stage 2: the index's two retriever lists.
+	 *
+	 * NFR-5: both lists go through `stabilizeRetrieverOrder` before fusion.
+	 * Tied rows come back from the engine in STORAGE order, which every
+	 * widening rewrite changes, and rank-only fusion turns a tie swap into a
+	 * real reordering. See that function for the measurement.
+	 */
+	private async retrieveCandidates(
+		table: lancedb.Table,
+		queryText: string,
+		queryVector: number[] | undefined,
+		plan: SearchPlan,
+	): Promise<RetrieverLists> {
+		const { filterStr, fetchLimit, limit } = plan;
 
 		// Vector search (skip if keyword-only mode or no vector)
-		//
-		// NFR-5: both retriever lists go through `stabilizeRetrieverOrder` before
-		// fusion. Tied rows come back from the engine in STORAGE order, which every
-		// widening rewrite changes, and rank-only fusion turns a tie swap into a
-		// real reordering. See that function for the measurement.
-		let vectorResults: any[] = [];
-		if (!keywordOnly && queryVector) {
+		let vector: Record<string, unknown>[] = [];
+		let vectorEdge: number | null = null;
+		const vectorRan = !plan.keywordOnly && queryVector !== undefined;
+		if (vectorRan) {
 			let vectorQuery = table.vectorSearch(queryVector).limit(fetchLimit);
 			if (filterStr) {
 				vectorQuery = vectorQuery.where(filterStr);
 			}
-			vectorResults = trimIncompleteTieTail(
-				stabilizeRetrieverOrder(await vectorQuery.toArray(), "_distance"),
+			const ordered = stabilizeRetrieverOrder(
+				await vectorQuery.toArray(),
 				"_distance",
-				{ fetched: fetchLimit, keepAtLeast: limit },
 			);
+			vectorEdge = retrieverEdge(ordered, "_distance", fetchLimit);
+			vector = trimIncompleteTieTail(ordered, "_distance", {
+				fetched: fetchLimit,
+				keepAtLeast: limit,
+			});
 		}
 
 		// BM25 full-text search (if available)
 		await this.ensureFtsIndex();
-		let bm25Results: any[] = [];
+		let bm25: Record<string, unknown>[] = [];
+		let bm25Edge: number | null = null;
 		try {
 			let ftsQuery = table
 				.query()
@@ -1453,21 +1799,156 @@ export class VectorStore implements IVectorStore {
 			if (filterStr) {
 				ftsQuery = ftsQuery.where(filterStr);
 			}
-			bm25Results = trimIncompleteTieTail(
-				stabilizeRetrieverOrder(await ftsQuery.toArray(), "_score"),
+			const ordered = stabilizeRetrieverOrder(
+				await ftsQuery.toArray(),
 				"_score",
-				{ fetched: fetchLimit, keepAtLeast: limit },
 			);
+			bm25Edge = retrieverEdge(ordered, "_score", fetchLimit);
+			bm25 = trimIncompleteTieTail(ordered, "_score", {
+				fetched: fetchLimit,
+				keepAtLeast: limit,
+			});
 		} catch {
-			bm25Results = [];
+			bm25 = [];
+			// A channel that THREW is not a complete list, so not `null`. `NaN`
+			// admits no overlay row (`mergeRetrieverLists`): a calibrated twin
+			// found by a later, successful FTS query must not own a BM25 channel
+			// the index side could not fill (outer review 2, LOW 5). The
+			// overlay-free path never reads the edge.
+			bm25Edge = Number.NaN;
 		}
+		return { vector, bm25, vectorRan, vectorEdge, bm25Edge };
+	}
+
+	/**
+	 * Stage 3 (overlay only): merge the overlay's candidates into the index's
+	 * lists, BEFORE fusion (R3.2).
+	 *
+	 * - Vector channel, exact: the overlay's rows (top `fetchLimit` by flat L2
+	 *   in its own store, same model, same metric — M-2) that are strictly
+	 *   better than the index list's edge (`lists.vectorEdge`) join it by
+	 *   `(_distance, id)`. Only when the vector channel ran at all.
+	 * - BM25 channel, calibrated: the overlay's own FTS scores are NOT
+	 *   commensurable (separate index, own IDF), so unchanged overlay chunks
+	 *   take the BM25 score of their index twin (`calibratedTwins`), gated
+	 *   at the main BM25 list's edge (`lists.bm25Edge`) the same way, and
+	 *   changed/new chunks are vector-only (ruling 4).
+	 */
+	private async applyOverlay(
+		table: lancedb.Table,
+		queryText: string,
+		plan: SearchPlan,
+		lists: RetrieverLists,
+		overlay: OverlayCandidates,
+	): Promise<RetrieverLists> {
+		const cut = { fetched: plan.fetchLimit, keepAtLeast: plan.limit };
+		let vector = lists.vector;
+		if (lists.vectorRan && overlay.vector.length > 0) {
+			vector = mergeRetrieverLists(
+				lists.vector,
+				overlay.vector.map((row) =>
+					overlayRetrieverRow(row, { _distance: row._distance }),
+				),
+				"_distance",
+				{ ...cut, indexEdge: lists.vectorEdge },
+			);
+		}
+		let bm25 = lists.bm25;
+		const twins = await this.calibratedTwins(table, queryText, plan, overlay);
+		if (twins.length > 0) {
+			bm25 = mergeRetrieverLists(lists.bm25, twins, "_score", {
+				...cut,
+				indexEdge: lists.bm25Edge,
+			});
+		}
+		return {
+			vector,
+			bm25,
+			vectorRan: lists.vectorRan,
+			vectorEdge: lists.vectorEdge,
+			bm25Edge: lists.bm25Edge,
+		};
+	}
+
+	/**
+	 * The calibrated BM25 channel (revision 1, HIGH 2): one FTS query on the
+	 * INDEX for the twins of served overlay chunks (`calibrationPredicate`),
+	 * paired one-to-one and re-labelled as the overlay chunk
+	 * (`pairCalibratedTwins`).
+	 *
+	 * Exactness under dropped rows: the query starts at `2 × fetchLimit`. If
+	 * pairing left fewer twins than `fetchLimit` (and fewer than the served
+	 * chunk count, which bounds it) while the query returned its FULL limit,
+	 * unpaired rows may have crowded twins out, so it is re-issued with the
+	 * limit doubled, at most `CALIBRATION_REISSUES` times. An FTS failure means
+	 * no calibrated twins — the same answer the main BM25 query gives then.
+	 */
+	private async calibratedTwins(
+		table: lancedb.Table,
+		queryText: string,
+		plan: SearchPlan,
+		overlay: OverlayCandidates,
+	): Promise<Record<string, unknown>[]> {
+		if (overlay.servedPaths.length === 0) return [];
+		const hashes = new Set<string>();
+		let servedChunks = 0;
+		for (const [key, refs] of overlay.chunksByPathHash) {
+			hashes.add(key.slice(key.lastIndexOf("\0") + 1));
+			servedChunks += refs.length;
+		}
+		if (servedChunks === 0) return [];
+		const where = calibrationPredicate(
+			plan.branchFilter,
+			overlay.servedPaths,
+			[...hashes].sort(),
+			plan.userFilters,
+		);
+		const wanted = Math.min(plan.fetchLimit, servedChunks);
+		let queryLimit = 2 * plan.fetchLimit;
+		for (let attempt = 0; ; attempt++) {
+			let rows: Record<string, unknown>[];
+			try {
+				rows = await table
+					.query()
+					.fullTextSearch(queryText, { columns: ["content"] })
+					.where(where)
+					.limit(queryLimit)
+					.toArray();
+			} catch {
+				return [];
+			}
+			const twins = pairCalibratedTwins(rows, overlay);
+			if (
+				twins.length >= wanted ||
+				rows.length < queryLimit ||
+				attempt >= CALIBRATION_REISSUES
+			) {
+				return twins;
+			}
+			queryLimit *= 2;
+		}
+	}
+
+	/**
+	 * Stage 4: type-aware RRF fusion, summary separation, the R2 span collapse
+	 * (which is also the `limit` cut) and hydration.
+	 *
+	 * Overlay rows (`source: "dirty"`) hydrate from their materialised
+	 * candidate: no summary lookup, no carry-over in either direction, no
+	 * `branchIds` (R3.7, R3.8).
+	 */
+	private fuseAndHydrate(
+		lists: RetrieverLists,
+		plan: SearchPlan,
+	): SearchResult[] {
+		const { limit } = plan;
 
 		// Type-aware Reciprocal Rank Fusion
-		const weights = getUseCaseWeights(useCase || "search");
+		const weights = getUseCaseWeights(plan.useCase || "search");
 		const testFileMode = getTestFileMode(this.pathRoot);
 		const fused = typeAwareRRFFusion(
-			vectorResults,
-			bm25Results,
+			lists.vector,
+			lists.bm25,
 			VECTOR_WEIGHT,
 			BM25_WEIGHT,
 			weights,
@@ -1512,11 +1993,42 @@ export class VectorStore implements IVectorStore {
 			}
 		}
 
-		// Attach summaries to their source code chunks
-		// Prefer symbol-level summary (more specific), fall back to file-level
-		const topResults = codeResults.slice(0, limit);
+		// R2 (D-TWIN): one result slot per code span. A span indexed as BOTH a
+		// `code_chunk` and a `code_unit` row reaches the fused list twice; the
+		// collapse keeps the higher-ranked twin and back-fills the freed slot
+		// from further down the fused list, so this is the `limit` cut too.
+		const { kept: topResults, twinIdsOf } = collapseSpanTwins(
+			codeResults,
+			limit,
+			(r) => this.spanKeyOf(r),
+		);
+		const codeById = new Map(codeResults.map((r) => [r.id, r]));
+
+		// Attach summaries to their source code chunks.
+		// Prefer symbol-level summary (more specific), fall back to file-level.
+		// A dropped twin's summaries are CARRIED OVER to the kept row, after the
+		// kept row's own at each level: a `symbol_summary` usually names the
+		// chunk's id and a unit summary lives on the unit row, so keeping either
+		// twin alone would otherwise lose the other's.
 		const maxFused = topResults.length > 0 ? topResults[0].fusedScore : 1;
-		return topResults.map((r) => {
+		return topResults.map((keptRow) => {
+			if (keptRow.source === DIRTY_SOURCE) {
+				return this.hydrateOverlayRow(keptRow, maxFused);
+			}
+			const sources = carryOverSourcesFor(
+				keptRow,
+				twinIdsOf.get(keptRow.id),
+				codeById,
+			);
+			// R2-A: a nameless kept row (a gap chunk) takes its named twin's
+			// identity; id, content, lines and score stay its own.
+			const r = withCarriedIdentity(keptRow, sources);
+			const symbolLevel = firstNonEmpty(
+				sources.map((s) => s.summary || symbolSummaryById.get(s.id)),
+			);
+			const fileLevel = firstNonEmpty(
+				sources.map((s) => fileSummaryById.get(s.id)),
+			);
 			const docType = (r.documentType || "code_chunk") as string;
 			let meta: Record<string, unknown> | undefined;
 			if (r.metadata) {
@@ -1553,12 +2065,8 @@ export class VectorStore implements IVectorStore {
 				// labels. Per-row attribution is what lets an agent discount a
 				// foreign row instead of discarding the whole response (§4.4.2).
 				branchIds: decodeBranchIds(r[BRANCH_IDS_COLUMN]),
-				summary:
-					r.summary ||
-					symbolSummaryById.get(r.id) ||
-					fileSummaryById.get(r.id) ||
-					undefined,
-				fileSummary: fileSummaryById.get(r.id) || undefined,
+				summary: symbolLevel || fileLevel || undefined,
+				fileSummary: fileLevel || undefined,
 				unitType: r.unitType || undefined,
 				...(docType === "session_observation"
 					? {
@@ -1568,6 +2076,63 @@ export class VectorStore implements IVectorStore {
 					: {}),
 			};
 		});
+	}
+
+	/**
+	 * An overlay row as a result: its own materialised fields, the output path
+	 * through THE read seam (a `"repo"` row, so absolute), `source: "dirty"`.
+	 * No `branchIds` key at all — it belongs to no branch (R3.7) — and no
+	 * summary or unit type: the overlay has no enrichment (R3.8). Its id can
+	 * equal an index chunk's (an unchanged chunk at unchanged lines), so a
+	 * summary keyed to that id describes the INDEXED revision and is never
+	 * looked up here.
+	 */
+	private hydrateOverlayRow(r: FusedResult, maxFused: number): SearchResult {
+		return {
+			chunk: {
+				id: r.id,
+				contentHash: r.contentHash || "",
+				content: r.content,
+				filePath: this.outputPath(r),
+				startLine: r.startLine,
+				endLine: r.endLine,
+				language: r.language,
+				chunkType: r.chunkType as SearchResult["chunk"]["chunkType"],
+				name: r.name || undefined,
+				parentName: r.parentName || undefined,
+				signature: r.signature || undefined,
+				fileHash: r.fileHash,
+			},
+			score: maxFused > 0 ? r.fusedScore / maxFused : 0,
+			vectorScore: r.vectorScore || 0,
+			keywordScore: r.keywordScore || 0,
+			source: DIRTY_SOURCE,
+		};
+	}
+
+	/** See `IVectorStore.countRowsForStoredPaths`. */
+	async countRowsForStoredPaths(
+		scope: BranchScope,
+		storedPaths: readonly string[],
+	): Promise<number> {
+		// Not `unique`: tree-sitter's TS grammar reads that as the `unique
+		// symbol` keyword and the AST sweeps over this file lose the line.
+		const paths = [...new Set(storedPaths)];
+		if (paths.length === 0) return 0;
+		const table = await this.ensureTableOpen();
+		if (!table) return 0;
+		const branchFilter = branchMembershipFilter(scope);
+		let total = 0;
+		for (let i = 0; i < paths.length; i += ID_PREDICATE_BATCH) {
+			const parts: string[] = [];
+			if (branchFilter !== null) parts.push(branchFilter);
+			parts.push(`${PATH_KIND_COLUMN} = 'repo'`);
+			parts.push(
+				equalityInLists("filePath", paths.slice(i, i + ID_PREDICATE_BATCH)),
+			);
+			total += await table.countRows(parts.join(" AND "));
+		}
+		return total;
 	}
 
 	/**
@@ -1922,12 +2487,22 @@ export class VectorStore implements IVectorStore {
 	 * files minutes old, `cleanupOlderThan` removed 42 old versions and
 	 * 4 166 555 bytes, taking the directory from 4.6 MB to 1.9 MB.
 	 */
-	async optimize(): Promise<void> {
+	async optimize(options: OptimizeOptions = {}): Promise<void> {
+		const retentionMs = options.retentionMs ?? VERSION_RETENTION_MS;
+		// The hour above is what protects ANOTHER process's pinned handle. Only
+		// the dirty overlay's store may go below it: no handle to it is ever open
+		// outside its lock (step 3, §5 Storage), so nothing can be reading an old
+		// version when it prunes. `deleteUnverified` stays unset either way.
+		if (retentionMs < VERSION_RETENTION_MS && this.role !== "overlay") {
+			throw new RangeError(
+				`optimize: retention ${retentionMs} ms is below ${VERSION_RETENTION_MS} ms, which only the dirty overlay's store may use`,
+			);
+		}
 		const table = await this.ensureTableOpen();
 		if (!table) return;
 		await withTimeout(
 			table.optimize({
-				cleanupOlderThan: new Date(Date.now() - VERSION_RETENTION_MS),
+				cleanupOlderThan: new Date(Date.now() - retentionMs),
 			}),
 			LANCEDB_WRITE_TIMEOUT_MS,
 			"optimize:table.optimize",
@@ -2349,8 +2924,16 @@ export class VectorStore implements IVectorStore {
 			testFileMode,
 		);
 
+		// R2: one slot per code span, collapsed before the cut (code rows only;
+		// every other document type keeps its own slot). See `search`. No
+		// identity carry-over (R2-A) here: `BaseDocument` carries no name,
+		// chunk type, signature or parent, so a nameless kept row shows nothing
+		// that a twin could complete.
+		const { kept: topResults } = collapseSpanTwins(results, limit, (r) =>
+			this.spanKeyOf(r),
+		);
+
 		// Convert to EnrichedSearchResult format
-		const topResults = results.slice(0, limit);
 		const maxFused = topResults.length > 0 ? topResults[0].fusedScore : 1;
 		return topResults.map((r) => ({
 			document: {
@@ -2886,10 +3469,22 @@ export class VectorStore implements IVectorStore {
 			testFileMode,
 		);
 
-		return results.slice(0, limit).map((r) => ({
-			...this.rowToCodeUnit(r),
-			score: r.fusedScore,
-		}));
+		// R2: the pre-filter admits only `code_unit` rows, so a twin here is
+		// two REVISIONS of one span (a unit id carries its content, D-7): in a
+		// SCOPE_ALL superset, or two rows one branch still holds. One slot per
+		// span, as on the other two paths, and a nameless kept revision takes a
+		// branch-sharing twin's identity (R2-A).
+		const { kept, twinIdsOf } = collapseSpanTwins(results, limit, (r) =>
+			this.spanKeyOf(r),
+		);
+		const unitById = new Map(results.map((r) => [r.id, r]));
+		return kept.map((keptRow) => {
+			const r = withCarriedIdentity(
+				keptRow,
+				carryOverSourcesFor(keptRow, twinIdsOf.get(keptRow.id), unitById),
+			);
+			return { ...this.rowToCodeUnit(r), score: r.fusedScore };
+		});
 	}
 
 	/**
@@ -2948,6 +3543,36 @@ interface FusedResult extends StoredChunk {
 	keywordScore?: number;
 }
 
+/** One search's predicates and limits (`VectorStore.buildSearchFilters`). */
+interface SearchPlan {
+	readonly limit: number;
+	readonly fetchLimit: number;
+	/** Branch AND user AND suppression predicates, for both main retrievers. */
+	readonly filterStr: string | undefined;
+	readonly branchFilter: string | null;
+	readonly userFilters: readonly string[];
+	readonly keywordOnly: boolean;
+	readonly useCase: SearchUseCase | undefined;
+}
+
+/** The two retriever lists `typeAwareRRFFusion` consumes. */
+interface RetrieverLists {
+	readonly vector: Record<string, unknown>[];
+	readonly bm25: Record<string, unknown>[];
+	/** The vector channel ran (not keyword-only, a query vector exists). */
+	readonly vectorRan: boolean;
+	/**
+	 * `retrieverEdge` of each channel's engine list: the score of its last row
+	 * when the engine FILLED it, `null` when the channel did not run or came
+	 * back short (complete), `NaN` when its order cannot be trusted or the
+	 * BM25 query THREW (admits nothing). The dirty overlay's merge admits only
+	 * rows strictly better than it (`mergeRetrieverLists`); the overlay-free
+	 * path computes it and never reads it.
+	 */
+	readonly vectorEdge: number | null;
+	readonly bm25Edge: number | null;
+}
+
 /** Test file weight multiplier for downranking */
 const TEST_FILE_WEIGHT = 0.3;
 
@@ -2970,10 +3595,16 @@ const TEST_FILE_WEIGHT = 0.3;
  * So the scores never drift — not across the rewrite, not across compaction —
  * and a full FTS rebuild changes nothing (314 ms for an identical reading). The
  * list moves because **the retrievers return TIED rows in storage order**, and
- * every rewrite changes storage order. Ties are not rare here and never will be:
- * a `code_chunk` row and its `code_unit` row carry the SAME text, so they score
- * identically in both channels by construction — the same duplication that puts
- * 49 repeated `(path, startLine, endLine)` tuples in 400 result rows.
+ * every rewrite changes storage order. Ties are not rare here and never will be.
+ * One source of them is the `code_chunk` / `code_unit` pair over one span —
+ * the duplication that put 49 repeated `(path, startLine, endLine)` tuples in
+ * 400 result rows before `collapseSpanTwins` (R2). The two rows are NOT the same
+ * text by construction: measured over 2 788 such pairs, 528 are byte-identical
+ * and tie exactly, while 2 260 differ (the chunk usually carries a leading
+ * `export\n` the unit lacks) and score close but not equal. Identical content
+ * at different locations is another source (`(a, b) => a + b` is indexed 40
+ * times in this repository). Ties are about ORDER; why the rows exist twice is
+ * the collapse's business, not this function's.
  *
  * Fusion is rank-only (`1 / (k + i + 1)`), so a tie SWAP at ranks i / i+1 is a
  * real fused-score difference, and at the top-20 boundary it evicts a result.
@@ -3037,9 +3668,13 @@ export function stabilizeRetrieverOrder<T extends Record<string, unknown>>(
  *     both at distance 0.7403558492660522 — bit-identical
  *
  * One row in, one row out, of an IDENTICALLY-scored pair, split by the cut. And
- * the two are not interchangeable downstream: the fusion weights `code_chunk`
- * at 0.25 and has no entry for `code_unit`, which falls back to 0.1, so which
- * twin survives changes the fused score 2.5x. That single swap is the whole of
+ * the two are not interchangeable downstream: the type weight differs, so which
+ * twin survives changes the fused score. On the path users take (CLI search
+ * passes no use case, so `getUseCaseWeights("search")`) `code_chunk` weighs
+ * 0.15 against `code_unit`'s 0.1 — 1.5x, not the 2.5x this comment once quoted
+ * from the DEFAULT table's 0.25. `fim` is 4x (0.4). `code_unit` had no entry
+ * in any table then and took the `?? 0.1` fallback; it is now explicit at the
+ * same value (R2.2). That single swap is the whole of
  * the one ordered list (of 20) that still moved after a fifth worktree's first
  * index, and it moved by EVICTING a result from the top 20.
  *
@@ -3076,6 +3711,598 @@ export function trimIncompleteTieTail<T extends Record<string, unknown>>(
 	while (cut > 0 && rows[cut - 1][scoreField] === edge) cut--;
 	if (cut < options.keepAtLeast) return rows;
 	return rows.slice(0, cut);
+}
+
+/**
+ * The EDGE of one engine retriever list: the score below which the list is no
+ * longer exact.
+ *
+ * `trimIncompleteTieTail` turns a count-bounded list into a threshold-bounded
+ * one, so a list the engine FILLED (`rows.length >= fetched`) is exact only for
+ * rows strictly better than its last row's score; what lies at or past that
+ * score was never fetched, or was fetched as an arbitrary sample of a tie
+ * group. A SHORT list holds every row matching its predicate, so it has no
+ * edge: `null`.
+ *
+ * Read from the trim's own INPUT (the `stabilizeRetrieverOrder`-ed engine
+ * list), never from its output, which is shorter than `fetched` exactly when
+ * the trim fired.
+ *
+ * `NaN` when the list is full but its order cannot be trusted: a row in it
+ * carries no finite score, so `stabilizeRetrieverOrder` returned it untouched.
+ * A non-finite edge admits no overlay row at all (`mergeRetrieverLists`),
+ * which fails toward the index-only ranking.
+ */
+export function retrieverEdge(
+	ordered: readonly Record<string, unknown>[],
+	scoreField: "_score" | "_distance",
+	fetched: number,
+): number | null {
+	if (ordered.length < fetched || fetched <= 0) return null;
+	for (let i = 0; i < fetched; i++) {
+		const score = ordered[i][scoreField];
+		if (typeof score !== "number" || !Number.isFinite(score)) return Number.NaN;
+	}
+	return ordered[fetched - 1][scoreField] as number;
+}
+
+// ============================================================================
+// The dirty overlay's candidate-level merge (step 3, R3.2 / R3.3)
+// ============================================================================
+
+/** `SearchResult.source` of an overlay row. */
+const DIRTY_SOURCE = "dirty" as const;
+
+/**
+ * `score` is a finite number strictly better than `edge` on `scoreField`'s
+ * metric (`_distance`: smaller, `_score`: larger). A non-finite `edge` makes
+ * every comparison false, so nothing passes.
+ */
+function strictlyBetter(
+	score: unknown,
+	edge: number,
+	scoreField: "_score" | "_distance",
+): boolean {
+	if (typeof score !== "number" || !Number.isFinite(score)) return false;
+	if (!Number.isFinite(edge)) return false;
+	return scoreField === "_distance" ? score < edge : score > edge;
+}
+
+/**
+ * One retriever list built from two sources, ordered and cut exactly as one
+ * engine list would be: overlay rows GATED at the index list's edge, then
+ * `(score, id)` order (`stabilizeRetrieverOrder`), one entry per id, cut at
+ * `fetched`, then the incomplete tie tail dropped (`trimIncompleteTieTail`).
+ *
+ * ── THE GATE (iteration 2, F2) ──────────────────────────────────────────────
+ * `index` arrives already trimmed, i.e. THRESHOLD-bounded: when the engine
+ * filled it, it is exact only for rows strictly better than `indexEdge`
+ * (`retrieverEdge`), and is shorter than `fetched` whenever the trim fired.
+ * Cutting the union by COUNT would refill those freed slots with the
+ * overlay's best rows however far past the edge they lie — compared against
+ * index rows the engine never fetched. Measured on a real store (q7 of the
+ * pinned set): an unchanged overlay chunk whose index twin sits at vector rank
+ * 1742 took rank 29, result #8 of 10. So an overlay row is admitted only
+ * where the index list is exact:
+ *
+ *   - `indexEdge === null` (the index list is short, hence complete): every
+ *     overlay row competes;
+ *   - otherwise only rows STRICTLY better than the edge. The group AT the edge
+ *     is the arbitrary sample the trim drops; an overlay row at exactly that
+ *     value would join the same sample;
+ *   - a non-finite edge admits none, which fails toward the index-only ranking.
+ *
+ * Index rows are never gated against the overlay's own edge: `overlay` is cut
+ * at `fetched` too, so an index row past the overlay's edge already falls past
+ * position `fetched` in the union, and a tie AT that edge is dropped by the
+ * trim below. The index channel's membership with an overlay therefore equals
+ * the suppressed index list, and an unchanged overlay chunk takes exactly the
+ * channel rank its index twin would take under the same suppression.
+ *
+ * A PRE-FUSION ordering step, and the reason the local overlay does not ship
+ * D-MERGE (`step3-scope.md` §2.3): the cloud merger min-max normalises each
+ * list on its own, so the best overlay row is always 1.0 however poor it is.
+ * Here an overlay row competes on its RAW `_distance` / calibrated `_score`
+ * against index rows from the same metric, and `typeAwareRRFFusion` then ranks
+ * both by position, unchanged.
+ *
+ * Duplicate ids keep the better-ranked entry. Identical ids are identical
+ * rows (a chunk id hashes path, lines and content), and fusion would otherwise
+ * credit one row twice.
+ */
+export function mergeRetrieverLists<T extends Record<string, unknown>>(
+	index: readonly T[],
+	overlay: readonly T[],
+	scoreField: "_score" | "_distance",
+	options: { fetched: number; keepAtLeast: number; indexEdge: number | null },
+): T[] {
+	const { indexEdge } = options;
+	const admitted =
+		indexEdge === null
+			? overlay
+			: overlay.filter((row) =>
+					strictlyBetter(row[scoreField], indexEdge, scoreField),
+				);
+	const ordered = stabilizeRetrieverOrder([...index, ...admitted], scoreField);
+	const seen = new Set<unknown>();
+	const distinct: T[] = [];
+	for (const row of ordered) {
+		if (seen.has(row.id)) continue;
+		seen.add(row.id);
+		distinct.push(row);
+	}
+	return trimIncompleteTieTail(
+		distinct.slice(0, options.fetched),
+		scoreField,
+		options,
+	);
+}
+
+/**
+ * `(col IN (…) OR col IN (…))`, ≤ 256 values per list (`ID_PREDICATE_BATCH`).
+ * EQUALITY over stored text, so `escapeSqlLiteral` and nothing else
+ * (CLAUDE.md #22): `escapeFilterValue` would turn `my_file.ts` into
+ * `my\_file.ts`, which matches no row.
+ *
+ * PARENTHESISED HERE, not by the callers (review 1, LOW 12): `AND` binds
+ * tighter than `OR`, so an unparenthesised multi-list result joined with
+ * `AND` widens to every row the later lists match, whatever the other terms
+ * say. Exported for that test.
+ *
+ * An EMPTY `values` is a predicate that matches NOTHING, `(1 = 0)` — the
+ * meaning of "equal to one of no values" — never `()`, which LanceDB rejects
+ * as a parse error (review 2, LOW 9). Pinned against a real table.
+ */
+export const MATCH_NOTHING_PREDICATE = "(1 = 0)";
+
+export function equalityInLists(
+	column: string,
+	values: readonly string[],
+): string {
+	if (values.length === 0) return MATCH_NOTHING_PREDICATE;
+	const lists: string[] = [];
+	for (let i = 0; i < values.length; i += ID_PREDICATE_BATCH) {
+		const batch = values.slice(i, i + ID_PREDICATE_BATCH);
+		lists.push(
+			`${column} IN (${batch.map((v) => `'${escapeSqlLiteral(v)}'`).join(", ")})`,
+		);
+	}
+	return `(${lists.join(" OR ")})`;
+}
+
+/**
+ * R3.3's stale-row pre-filter: hide every `"repo"` row whose stored path is
+ * suppressed (`served ∪ staleDeleted`), or `null` when nothing is.
+ *
+ * The `pathKind` guard (MEDIUM 1) keeps session observations visible: they
+ * store `filePath = affectedFiles[0]` with `pathKind: "synthetic"` and are
+ * authored data, never stale. Summary rows of a suppressed file are `"repo"`
+ * rows of that path and go with it.
+ */
+export function suppressionPredicate(
+	storedPaths: readonly string[],
+): string | null {
+	if (storedPaths.length === 0) return null;
+	return `NOT (${PATH_KIND_COLUMN} = 'repo' AND ${equalityInLists("filePath", storedPaths)})`;
+}
+
+/**
+ * The calibrated BM25 twin query's predicate (revision 1, HIGH 2). Every row
+ * it returns is a TRUE twin of a served overlay chunk, so its `limit` is spent
+ * on twins only (CAL-1):
+ *
+ *   - `branchFilter` — the SAME branch predicate the main retrievers carry
+ *     (absent only in SCOPE_ALL), so another branch's copy of the text never
+ *     lends a row its score (BR-1);
+ *   - `documentType = 'code_chunk' AND pathKind = 'repo'` — the overlay holds
+ *     code chunks of repository files only;
+ *   - `filePath IN (served)` and `contentHash IN (served chunk hashes)`;
+ *   - the user's language/path predicates (`buildUserFilters`).
+ */
+export function calibrationPredicate(
+	branchFilter: string | null,
+	servedPaths: readonly string[],
+	contentHashes: readonly string[],
+	userFilters: readonly string[],
+): string {
+	const parts: string[] = [];
+	if (branchFilter !== null) parts.push(branchFilter);
+	parts.push("documentType = 'code_chunk'");
+	parts.push(`${PATH_KIND_COLUMN} = 'repo'`);
+	parts.push(equalityInLists("filePath", servedPaths));
+	parts.push(equalityInLists("contentHash", contentHashes));
+	parts.push(...userFilters);
+	return parts.join(" AND ");
+}
+
+/**
+ * A materialised overlay row in the shape the retriever lists and fusion read:
+ * a `code_chunk` of a `"repo"` path, marked `source: "dirty"`, with NO
+ * `branchIds` (R3.7: overlay rows belong to no branch). `rank` carries the
+ * row's retriever score — `_distance` for the vector channel, the index
+ * twin's `_score` for the calibrated BM25 channel.
+ */
+function overlayRetrieverRow(
+	row: OverlayVectorRow,
+	rank: { _distance: number } | { _score: number },
+): Record<string, unknown> {
+	return {
+		id: row.id,
+		filePath: row.filePath,
+		content: row.content,
+		language: row.language,
+		chunkType: row.chunkType,
+		name: row.name ?? "",
+		parentName: row.parentName ?? "",
+		signature: row.signature ?? "",
+		contentHash: row.contentHash,
+		fileHash: row.fileHash,
+		startLine: row.startLine,
+		endLine: row.endLine,
+		documentType: "code_chunk",
+		[PATH_KIND_COLUMN]: "repo",
+		source: DIRTY_SOURCE,
+		...rank,
+	};
+}
+
+const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * Above this many candidate pairs in ONE `(filePath, contentHash)` group,
+ * `pairCalibratedTwins` stops materialising the Cartesian product (review 2,
+ * MEDIUM 6). That product is quadratic and synchronous: one 512 KiB file of
+ * 2 500 identical chunks gave 6.25 M pairs and ~1.1 s of blocked event loop,
+ * past CLAUDE.md #31's 250 ms work allowance. 65 536 pairs sorts in a few ms.
+ */
+export const TWIN_PAIRING_EXACT_MAX_PAIRS = 65_536;
+
+type TwinRef = OverlayChunkRef;
+
+/**
+ * The large-group pairing: O((R + N) log) instead of O(R × N). Index rows in
+ * `(startLine, id)` order each take the NEAREST still-unused overlay chunk
+ * (ties: overlay id asc), found through two "next unused" pointer forests
+ * over the chunks sorted by `(startLine, id)`. Still ONE-TO-ONE, so DUP-1
+ * holds; it differs from the exact global-nearest-first order only in which
+ * of several equally plausible lines a twin is shown on, in a group of
+ * identical chunks the exact rule could not afford.
+ */
+function pairLargeGroup(
+	rows: readonly Record<string, unknown>[],
+	refs: readonly TwinRef[],
+): Array<{ ref: TwinRef; row: Record<string, unknown> }> {
+	const sortedRefs = [...refs].sort(
+		(a, b) => a.startLine - b.startLine || byText(a.id, b.id),
+	);
+	const sortedRows = [...rows].sort(
+		(a, b) =>
+			Number(a.startLine) - Number(b.startLine) ||
+			byText(String(a.id), String(b.id)),
+	);
+	const n = sortedRefs.length;
+	// right[i]: the first unused index >= i (n = none); left[i + 1]: the last
+	// unused index <= i (0 = none), shifted by one so "none" has a slot.
+	const right = Array.from({ length: n + 1 }, (_, i) => i);
+	const left = Array.from({ length: n + 1 }, (_, i) => i);
+	const find = (forest: number[], i: number): number => {
+		let root = i;
+		while (forest[root] !== root) root = forest[root] as number;
+		let at = i;
+		while (forest[at] !== root) {
+			const next = forest[at] as number;
+			forest[at] = root;
+			at = next;
+		}
+		return root;
+	};
+	const out: Array<{ ref: TwinRef; row: Record<string, unknown> }> = [];
+	for (const row of sortedRows) {
+		if (out.length >= n) break;
+		const line = Number(row.startLine);
+		let lo = 0;
+		let hi = n;
+		while (lo < hi) {
+			const mid = (lo + hi) >> 1;
+			if ((sortedRefs[mid] as TwinRef).startLine < line) lo = mid + 1;
+			else hi = mid;
+		}
+		const r = find(right, lo); // n = none
+		const l = find(left, lo) - 1; // -1 = none
+		const rRef = r < n ? sortedRefs[r] : undefined;
+		const lRef = l >= 0 ? sortedRefs[l] : undefined;
+		let pick: number;
+		if (rRef === undefined) pick = l;
+		else if (lRef === undefined) pick = r;
+		else {
+			const dr = Math.abs(rRef.startLine - line);
+			const dl = Math.abs(lRef.startLine - line);
+			pick = dl < dr || (dl === dr && byText(lRef.id, rRef.id) < 0) ? l : r;
+		}
+		const ref = sortedRefs[pick] as TwinRef;
+		out.push({ ref, row });
+		right[pick] = pick + 1;
+		left[pick + 1] = pick;
+	}
+	return out;
+}
+
+/**
+ * Pair calibrated index BM25 rows with the overlay chunks they are twins of,
+ * ONE-TO-ONE (revision 1, HIGH 2), and re-label each pair as its overlay chunk.
+ *
+ * Grouped by `(filePath, contentHash)` — the key `chunksByPathHash` uses.
+ * Within a group the candidate pairs are taken in order of
+ * `|index.startLine − overlay.startLine|` asc, then overlay id asc, then index
+ * id asc, and a pair is accepted when neither side is used yet. So each overlay
+ * id appears AT MOST ONCE, and `typeAwareRRFFusion`'s duplicate summing can
+ * never credit it twice (DUP-1) — identical chunks twice in one file, or one
+ * chunk on two branches in SCOPE_ALL, still give one entry.
+ *
+ * Unpaired index rows are dropped. A paired row keeps the index row's
+ * `_score`: identical content scores identically, so the pairing chooses which
+ * LINES are shown (the overlay's, current), never the score.
+ */
+export function pairCalibratedTwins(
+	indexRows: readonly Record<string, unknown>[],
+	overlay: Pick<OverlayCandidates, "chunksByPathHash" | "rowsById">,
+): Record<string, unknown>[] {
+	const groups = new Map<string, Record<string, unknown>[]>();
+	for (const row of indexRows) {
+		const key = `${String(row.filePath)}\0${String(row.contentHash)}`;
+		if (!overlay.chunksByPathHash.has(key)) continue;
+		const group = groups.get(key);
+		if (group === undefined) groups.set(key, [row]);
+		else group.push(row);
+	}
+	const out: Record<string, unknown>[] = [];
+	for (const [key, groupRows] of groups) {
+		const groupRefs = overlay.chunksByPathHash.get(key) ?? [];
+		// Only pairable members take part: a ref with a materialised row, a row
+		// with a numeric score. (The exact path below skips the same ones.)
+		const refs = groupRefs.filter((ref) => overlay.rowsById.has(ref.id));
+		const rows = groupRows.filter((row) => typeof row._score === "number");
+		if (refs.length * rows.length > TWIN_PAIRING_EXACT_MAX_PAIRS) {
+			for (const { ref, row } of pairLargeGroup(rows, refs)) {
+				const materialised = overlay.rowsById.get(ref.id);
+				if (materialised !== undefined) {
+					out.push(
+						overlayRetrieverRow(materialised, { _score: row._score as number }),
+					);
+				}
+			}
+		} else {
+			out.push(...pairExactGroup(rows, refs, overlay));
+		}
+	}
+	return out;
+}
+
+/** The exact rule, for a group whose Cartesian product is affordable. */
+function pairExactGroup(
+	rows: readonly Record<string, unknown>[],
+	refs: readonly TwinRef[],
+	overlay: Pick<OverlayCandidates, "rowsById">,
+): Record<string, unknown>[] {
+	const out: Record<string, unknown>[] = [];
+	const pairs: {
+		distance: number;
+		ref: (typeof refs)[number];
+		row: Record<string, unknown>;
+	}[] = [];
+	for (const ref of refs) {
+		for (const row of rows) {
+			pairs.push({
+				distance: Math.abs(Number(row.startLine) - ref.startLine),
+				ref,
+				row,
+			});
+		}
+	}
+	pairs.sort(
+		(x, y) =>
+			x.distance - y.distance ||
+			byText(x.ref.id, y.ref.id) ||
+			byText(String(x.row.id), String(y.row.id)),
+	);
+	const usedRefs = new Set<string>();
+	const usedRows = new Set<unknown>();
+	for (const { ref, row } of pairs) {
+		if (usedRefs.has(ref.id) || usedRows.has(row.id)) continue;
+		const materialised = overlay.rowsById.get(ref.id);
+		if (materialised === undefined) continue;
+		if (typeof row._score !== "number") continue;
+		usedRefs.add(ref.id);
+		usedRows.add(row.id);
+		out.push(overlayRetrieverRow(materialised, { _score: row._score }));
+	}
+	return out;
+}
+
+/**
+ * How many times the calibrated twin query is re-issued with its limit
+ * doubled when pairing dropped rows and left fewer twins than `fetchLimit`.
+ */
+const CALIBRATION_REISSUES = 3;
+
+/**
+ * R2's span key: one `(output path, startLine, endLine)` per code span, or
+ * `null` for a row that must never be collapsed.
+ *
+ * Only `code_chunk` and `code_unit` rows have one (a missing `documentType` is
+ * a `code_chunk`, the store's own default). Summaries, observations and the
+ * external-docs types keep a slot each, whatever path and lines they carry.
+ *
+ * The key is the SPAN, never the content hash. Measured on this repository's
+ * store, only 528 of 2 788 chunk/unit twins are byte-identical — the chunk
+ * usually carries a leading `export\n` the unit does not — and a `code_unit`
+ * row stores `contentHash: ""` anyway. `\0` separates the parts because no
+ * path can contain it, so `a.ts` + line 12 never collides with `a.ts1` + 2.
+ *
+ * `outputPath` is the row's path as the caller sees it (`VectorStore`'s read
+ * seam), not the stored column, so the key is the span the USER would see
+ * twice.
+ */
+export function codeSpanKey(
+	row: {
+		readonly documentType?: unknown;
+		readonly startLine?: unknown;
+		readonly endLine?: unknown;
+	},
+	outputPath: string,
+): string | null {
+	const type = row.documentType || "code_chunk";
+	if (type !== "code_chunk" && type !== "code_unit") return null;
+	return `${outputPath}\0${String(row.startLine)}\0${String(row.endLine)}`;
+}
+
+export interface SpanCollapse<T> {
+	/** At most `limit` rows, fused order kept, one per span key. */
+	readonly kept: T[];
+	/** Kept row id -> ids of the rows dropped as its twins, fused order. */
+	readonly twinIdsOf: ReadonlyMap<string, readonly string[]>;
+	/** How many rows were dropped as the twin of a KEPT row. */
+	readonly collapsed: number;
+}
+
+/**
+ * R2 (D-TWIN): one result slot per code span, applied to the FUSED list in
+ * place of the `slice(0, limit)` cut.
+ *
+ * Measured before this existed: 49 of 400 top-20 slots (12.3 %) on 19 of 20
+ * queries showed a span the list had already shown, because one span is
+ * indexed as a `code_chunk` row and as a `code_unit` row and both rank.
+ *
+ * - The FIRST occurrence of a key wins. The fused list is ordered by
+ *   `(fusedScore desc, id asc)` (`sortFused`), so that is the higher-ranked
+ *   twin after fusion — which is why every weight table carries an explicit
+ *   `code_unit` entry: the weight decides the winner.
+ * - The walk covers the WHOLE list, not the first `limit` rows: a freed slot
+ *   is back-filled from below, so the result is short only when fewer than
+ *   `limit` distinct spans exist, and a twin ranked below the cut is still
+ *   recorded against its kept row (summary carry-over needs it).
+ * - Rows with a `null` key always take a slot of their own.
+ *
+ * Pure: no I/O, the input is not mutated.
+ */
+export function collapseSpanTwins<T extends { readonly id: string }>(
+	fused: readonly T[],
+	limit: number,
+	spanKeyOf: (row: T) => string | null,
+): SpanCollapse<T> {
+	const kept: T[] = [];
+	const twinIdsOf = new Map<string, string[]>();
+	// Span key -> id of the kept row that owns it, or null when the key's
+	// first occurrence fell below the cut (its twins are then irrelevant).
+	const ownerOf = new Map<string, string | null>();
+	let collapsed = 0;
+	for (const row of fused) {
+		const key = spanKeyOf(row);
+		if (key === null) {
+			if (kept.length < limit) kept.push(row);
+			continue;
+		}
+		if (ownerOf.has(key)) {
+			const owner = ownerOf.get(key);
+			if (owner !== null && owner !== undefined) {
+				const twins = twinIdsOf.get(owner);
+				if (twins) twins.push(row.id);
+				else twinIdsOf.set(owner, [row.id]);
+				collapsed++;
+			}
+			continue;
+		}
+		if (kept.length < limit) {
+			kept.push(row);
+			ownerOf.set(key, row.id);
+		} else {
+			ownerOf.set(key, null);
+		}
+	}
+	return { kept, twinIdsOf, collapsed };
+}
+
+/**
+ * The rows a kept row may borrow from — its summaries (`search`) and, when it
+ * has no name, its symbol identity (`withCarriedIdentity`): itself, then each
+ * dropped twin that shares at least one branch with it, in fused order.
+ *
+ * Within one branch scope every row passed the branch pre-filter, so every
+ * twin qualifies. In `SCOPE_ALL` (an unknown branch, a flagged superset) one
+ * span can hold DIFFERENT REVISIONS from different branches — a unit id
+ * carries its content (D-7) — and a summary of one revision describes code the
+ * other does not contain. So a twin with no branch in common contributes
+ * nothing; the kept row shows its own summary (and name) or none.
+ *
+ * A dirty-overlay row (`source: "dirty"`, step 3) never takes part in either
+ * direction: it describes uncommitted text no index summary or unit was built
+ * from. It carries no `branchIds`, so the membership rule already excludes
+ * it; the explicit test keeps that true if overlay rows ever gain one.
+ */
+function carryOverSourcesFor(
+	kept: FusedResult,
+	twinIds: readonly string[] | undefined,
+	byId: ReadonlyMap<string, FusedResult>,
+): FusedResult[] {
+	if (!twinIds || twinIds.length === 0) return [kept];
+	if (kept.source === DIRTY_SOURCE) return [kept];
+	const keptBranches = new Set(decodeBranchIds(kept[BRANCH_IDS_COLUMN]));
+	const sources = [kept];
+	for (const id of twinIds) {
+		const twin = byId.get(id);
+		if (!twin || twin.source === DIRTY_SOURCE) continue;
+		const shared = decodeBranchIds(twin[BRANCH_IDS_COLUMN]).some((b) =>
+			keptBranches.has(b),
+		);
+		if (shared) sources.push(twin);
+	}
+	return sources;
+}
+
+/**
+ * Orchestrator ruling R2-A — IDENTITY carry-over, the sibling of summary
+ * carry-over.
+ *
+ * The chunker writes a function under `MIN_CHUNK_TOKENS` as a GAP chunk
+ * (`chunkType: "module"`, no name; `chunker.ts` `flushGap`) while the unit
+ * extractor names the same span. Measured over this repository's `src/`: 683
+ * of 1 895 chunk/unit twin spans have that shape, and none the other way
+ * round. The chunk is the higher-ranked twin under every weight table, so
+ * keeping it alone printed `type=module name=` and took the span out of the
+ * dead-code penalty, which looks a symbol up BY NAME (R1).
+ *
+ * So: when the kept row has no `name`, it takes `name`, `chunkType`,
+ * `signature` and `parentName` from the FIRST named row in `sources` — the
+ * highest-ranked twin at the same span key that shares a branch with it
+ * (`carryOverSourcesFor`). For a `code_unit` kept row the unit's type lives in
+ * `unitType` (which `rowToCodeUnit` reads), so it follows `chunkType`. The
+ * kept row's id, content, lines and score are untouched: R2.2's "the higher-
+ * ranked twin wins" is unchanged, only its label is completed. A named kept
+ * row is returned as is, never relabelled by a twin.
+ */
+function withCarriedIdentity(
+	kept: FusedResult,
+	sources: readonly FusedResult[],
+): FusedResult {
+	if (kept.name) return kept;
+	const named = sources.find((s) => s !== kept && s.name);
+	if (!named) return kept;
+	const carried: FusedResult = {
+		...kept,
+		name: named.name,
+		chunkType: named.chunkType,
+		signature: named.signature,
+		parentName: named.parentName,
+	};
+	if (kept.documentType === "code_unit" && named.unitType) {
+		carried.unitType = named.unitType;
+	}
+	return carried;
+}
+
+function firstNonEmpty(values: ReadonlyArray<string | undefined>): string {
+	for (const value of values) if (value) return value;
+	return "";
 }
 
 /**
@@ -3184,7 +4411,17 @@ function reciprocalRankFusion(
 // Use Case Weights
 // ============================================================================
 
-/** Default weights per document type for each use case */
+/**
+ * Default weights per document type for each use case.
+ *
+ * `code_unit` is listed EXPLICITLY in every table, the default included
+ * (R2.2). 0.1 is exactly what the `?? 0.1` fallback in `typeAwareRRFFusion`
+ * gave it before, so these entries change no ranking — they turn an unchosen
+ * fallback into a chosen value. It matters because the weight decides which
+ * twin of a `code_chunk`/`code_unit` pair ranks higher after fusion, and
+ * `collapseSpanTwins` keeps exactly that one. Whether `code_unit` should equal
+ * `code_chunk` instead is queued as a mnemex-bench eval, not decided here.
+ */
 const USE_CASE_WEIGHTS: Record<
 	SearchUseCase,
 	Partial<Record<DocumentType, number>>
@@ -3192,6 +4429,7 @@ const USE_CASE_WEIGHTS: Record<
 	// FIM completion: prioritize code and examples, include API docs
 	fim: {
 		code_chunk: 0.4,
+		code_unit: 0.1,
 		usage_example: 0.2,
 		idiom: 0.12,
 		symbol_summary: 0.08,
@@ -3205,6 +4443,7 @@ const USE_CASE_WEIGHTS: Record<
 		file_summary: 0.2,
 		symbol_summary: 0.2,
 		code_chunk: 0.15,
+		code_unit: 0.1,
 		idiom: 0.12,
 		usage_example: 0.08,
 		anti_pattern: 0.05,
@@ -3218,6 +4457,7 @@ const USE_CASE_WEIGHTS: Record<
 		symbol_summary: 0.28,
 		file_summary: 0.25,
 		code_chunk: 0.15,
+		code_unit: 0.1,
 		idiom: 0.08,
 		project_doc: 0.04,
 		framework_doc: 0.1, // Framework understanding
@@ -3228,9 +4468,11 @@ const USE_CASE_WEIGHTS: Record<
 };
 
 /**
- * Get weights for a use case (or default balanced weights)
+ * Get weights for a use case (or default balanced weights). Exported for the
+ * weight-table test (T-3); search callers go through `search` /
+ * `searchDocuments`.
  */
-function getUseCaseWeights(
+export function getUseCaseWeights(
 	useCase?: SearchUseCase,
 ): Partial<Record<DocumentType, number>> {
 	if (useCase && USE_CASE_WEIGHTS[useCase]) {
@@ -3239,6 +4481,7 @@ function getUseCaseWeights(
 	// Default balanced weights (includes external docs)
 	return {
 		code_chunk: 0.25,
+		code_unit: 0.1,
 		file_summary: 0.12,
 		symbol_summary: 0.15,
 		idiom: 0.12,

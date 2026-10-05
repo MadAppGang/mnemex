@@ -27,6 +27,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { resolveStoreLocation } from "../../../src/core/store-location.js";
 import type { SearchResult } from "../../../src/types.js";
+import { stubOverlayReport } from "../../helpers/overlay-report-stub.js";
 
 // ── Module mocks ────────────────────────────────────────────────────────────
 
@@ -50,6 +51,13 @@ mock.module("../../../src/core/indexer.js", () => ({
 			errors: [],
 		}),
 		search: async () => indexerResults,
+		// `SemanticBackend` calls `searchScoped` (step 3, phase 6).
+		searchScoped: async () => ({
+			results: indexerResults,
+			branchUnknown: false,
+			branchLabel: null,
+			overlay: stubOverlayReport(),
+		}),
 		close: async () => {},
 		getStatus: async () => ({ exists: false }),
 	}),

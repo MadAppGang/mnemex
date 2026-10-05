@@ -1,0 +1,1554 @@
+[
+	{
+		"name": "branch1-limit5",
+		"statements": [
+			{
+				"on": "table",
+				"method": "vectorSearch",
+				"args": [[1, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "limit",
+				"args": [15]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "where",
+				"args": ["(branchIds LIKE '%,0,%' OR branchIds LIKE '%,1,%')"]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "toArray",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "listIndices",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "createIndex",
+				"args": [
+					"content",
+					{
+						"config": "<Index>",
+						"replace": true
+					}
+				]
+			},
+			{
+				"on": "table",
+				"method": "query",
+				"args": []
+			},
+			{
+				"on": "Query",
+				"method": "fullTextSearch",
+				"args": [
+					"parseConfig",
+					{
+						"columns": ["content"]
+					}
+				]
+			},
+			{
+				"on": "Query",
+				"method": "limit",
+				"args": [15]
+			},
+			{
+				"on": "Query",
+				"method": "where",
+				"args": ["(branchIds LIKE '%,0,%' OR branchIds LIKE '%,1,%')"]
+			},
+			{
+				"on": "Query",
+				"method": "toArray",
+				"args": []
+			}
+		],
+		"results": [
+			{
+				"chunk": {
+					"id": "ba6af022521e03ef",
+					"contentHash": "",
+					"content": "observation: parseConfig breaks on an empty file",
+					"filePath": "src/alpha.ts",
+					"startLine": 0,
+					"endLine": 0,
+					"language": "",
+					"chunkType": "",
+					"fileHash": ""
+				},
+				"score": 1,
+				"vectorScore": 0.16666666666666666,
+				"keywordScore": 0.14285714285714285,
+				"branchIds": [0],
+				"documentType": "session_observation",
+				"observationMetadata": {
+					"observationType": "gotcha",
+					"affectedFiles": ["src/alpha.ts"]
+				}
+			},
+			{
+				"chunk": {
+					"id": "fa583a7e17139a3fce29d14d6ccab000fbdd55c5681fd5085013b13c7cf74232",
+					"contentHash": "26a37b4d833a5c53f8f643e8c9a9d1cddd86a48a16fcb395923d661e96c0b0e9",
+					"content": "export\nfunction tiny() { parseConfig(); }",
+					"filePath": "<root>/src/alpha.ts",
+					"startLine": 12,
+					"endLine": 14,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "tiny",
+					"fileHash": "84b3f0aab1c3a41447e4e22225aeb66bf3266f6e66c0aa64cdb7d9dd7065b89f"
+				},
+				"score": 0.7780827702702702,
+				"vectorScore": 0.25,
+				"keywordScore": 0.25,
+				"branchIds": [1],
+				"summary": "file summary: alpha holds config parsing",
+				"fileSummary": "file summary: alpha holds config parsing"
+			},
+			{
+				"chunk": {
+					"id": "f6d2ad14426375dc8589e397df8837cc228ac02c7106ae93b902c11e3a041920",
+					"contentHash": "ee43114f768831a1de0c5fa24bdd61a5f395c228bf373936b00b5b1b26f673cf",
+					"content": "export\nfunction parseConfig() { return readFile(config); }",
+					"filePath": "<root>/src/alpha.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "parseConfig",
+					"fileHash": "1bd46ffed43f265ca3ef59c8e9115e0c4f55cab07afcafe59c9e52f846714422"
+				},
+				"score": 0.7664653132395066,
+				"vectorScore": 0.5,
+				"keywordScore": 0.1,
+				"branchIds": [1],
+				"summary": "summary: parseConfig reads the config file",
+				"fileSummary": "file summary: alpha holds config parsing"
+			},
+			{
+				"chunk": {
+					"id": "5f0786682ef7ec158eaa7dcfa90f52b1d3cd2cdc74567a3f48915f65d5614206",
+					"contentHash": "35598eb84a2f350bf7bb6a479557002394f5738754daa686fdabaaf99e2f4d79",
+					"content": "def parse_config():\n    return parseConfig",
+					"filePath": "<root>/lib/tool.py",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "python",
+					"chunkType": "function",
+					"name": "parse_config",
+					"fileHash": "1c7bf8a6aaac104fcae442bd91ee42475cc5be08d0b9d30dbeb6946b1dc1a186"
+				},
+				"score": 0.7477477477477477,
+				"vectorScore": 0.14285714285714285,
+				"keywordScore": 0.16666666666666666,
+				"branchIds": [1]
+			},
+			{
+				"chunk": {
+					"id": "f3c0250a1cc994787571e0b763f63ddd6d4574a4617ebaff9e626ede953a4bad",
+					"contentHash": "18e02e01d915a5f519d751c08044a356df3cc8582096152ca5e09969fc3078a5",
+					"content": "function quote() { return parseConfig(); }",
+					"filePath": "<root>/src/o'brien.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "quote",
+					"fileHash": "65c9c48ef070b80a199cbb60131d8d449fac4058517dd5663e5e1a52e7f61734"
+				},
+				"score": 0.7369955468547017,
+				"vectorScore": 0.09090909090909091,
+				"keywordScore": 0.3333333333333333,
+				"branchIds": [1]
+			}
+		]
+	},
+	{
+		"name": "all-limit5",
+		"statements": [
+			{
+				"on": "table",
+				"method": "vectorSearch",
+				"args": [[1, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "limit",
+				"args": [15]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "toArray",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "listIndices",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "query",
+				"args": []
+			},
+			{
+				"on": "Query",
+				"method": "fullTextSearch",
+				"args": [
+					"parseConfig",
+					{
+						"columns": ["content"]
+					}
+				]
+			},
+			{
+				"on": "Query",
+				"method": "limit",
+				"args": [15]
+			},
+			{
+				"on": "Query",
+				"method": "toArray",
+				"args": []
+			}
+		],
+		"results": [
+			{
+				"chunk": {
+					"id": "ba6af022521e03ef",
+					"contentHash": "",
+					"content": "observation: parseConfig breaks on an empty file",
+					"filePath": "src/alpha.ts",
+					"startLine": 0,
+					"endLine": 0,
+					"language": "",
+					"chunkType": "",
+					"fileHash": ""
+				},
+				"score": 1,
+				"vectorScore": 0.14285714285714285,
+				"keywordScore": 0.125,
+				"branchIds": [0],
+				"documentType": "session_observation",
+				"observationMetadata": {
+					"observationType": "gotcha",
+					"affectedFiles": ["src/alpha.ts"]
+				}
+			},
+			{
+				"chunk": {
+					"id": "059f0c13de83100623e3602fe7215e73325a3d9bada694b564708e6e14577f95",
+					"contentHash": "1096b4a2cb592bd7bddb40b72b1dc2e3e6304d59c6c951624a471c0aa2371c13",
+					"content": "export\nfunction parseConfig() { return readFileOnBranchTwo(config); }",
+					"filePath": "<root>/src/alpha.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "parseConfig",
+					"fileHash": "bfe4872912fbc481b100fdcbc103af7202386db106c24fac2619228836b9f669"
+				},
+				"score": 0.7819606551912112,
+				"vectorScore": 1,
+				"keywordScore": 0.09090909090909091,
+				"branchIds": [2]
+			},
+			{
+				"chunk": {
+					"id": "fa583a7e17139a3fce29d14d6ccab000fbdd55c5681fd5085013b13c7cf74232",
+					"contentHash": "26a37b4d833a5c53f8f643e8c9a9d1cddd86a48a16fcb395923d661e96c0b0e9",
+					"content": "export\nfunction tiny() { parseConfig(); }",
+					"filePath": "<root>/src/alpha.ts",
+					"startLine": 12,
+					"endLine": 14,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "tiny",
+					"fileHash": "84b3f0aab1c3a41447e4e22225aeb66bf3266f6e66c0aa64cdb7d9dd7065b89f"
+				},
+				"score": 0.7776513427401,
+				"vectorScore": 0.2,
+				"keywordScore": 0.2,
+				"branchIds": [1],
+				"summary": "file summary: alpha holds config parsing",
+				"fileSummary": "file summary: alpha holds config parsing"
+			},
+			{
+				"chunk": {
+					"id": "5f0786682ef7ec158eaa7dcfa90f52b1d3cd2cdc74567a3f48915f65d5614206",
+					"contentHash": "35598eb84a2f350bf7bb6a479557002394f5738754daa686fdabaaf99e2f4d79",
+					"content": "def parse_config():\n    return parseConfig",
+					"filePath": "<root>/lib/tool.py",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "python",
+					"chunkType": "function",
+					"name": "parse_config",
+					"fileHash": "1c7bf8a6aaac104fcae442bd91ee42475cc5be08d0b9d30dbeb6946b1dc1a186"
+				},
+				"score": 0.7477810650887573,
+				"vectorScore": 0.125,
+				"keywordScore": 0.14285714285714285,
+				"branchIds": [1]
+			},
+			{
+				"chunk": {
+					"id": "f3c0250a1cc994787571e0b763f63ddd6d4574a4617ebaff9e626ede953a4bad",
+					"contentHash": "18e02e01d915a5f519d751c08044a356df3cc8582096152ca5e09969fc3078a5",
+					"content": "function quote() { return parseConfig(); }",
+					"filePath": "<root>/src/o'brien.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "quote",
+					"fileHash": "65c9c48ef070b80a199cbb60131d8d449fac4058517dd5663e5e1a52e7f61734"
+				},
+				"score": 0.7371486686390533,
+				"vectorScore": 0.08333333333333333,
+				"keywordScore": 0.25,
+				"branchIds": [1]
+			}
+		]
+	},
+	{
+		"name": "language",
+		"statements": [
+			{
+				"on": "table",
+				"method": "vectorSearch",
+				"args": [[1, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "limit",
+				"args": [9]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "where",
+				"args": [
+					"(branchIds LIKE '%,0,%' OR branchIds LIKE '%,1,%') AND language = 'typescript'"
+				]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "toArray",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "listIndices",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "query",
+				"args": []
+			},
+			{
+				"on": "Query",
+				"method": "fullTextSearch",
+				"args": [
+					"parseConfig",
+					{
+						"columns": ["content"]
+					}
+				]
+			},
+			{
+				"on": "Query",
+				"method": "limit",
+				"args": [9]
+			},
+			{
+				"on": "Query",
+				"method": "where",
+				"args": [
+					"(branchIds LIKE '%,0,%' OR branchIds LIKE '%,1,%') AND language = 'typescript'"
+				]
+			},
+			{
+				"on": "Query",
+				"method": "toArray",
+				"args": []
+			}
+		],
+		"results": [
+			{
+				"chunk": {
+					"id": "f6d2ad14426375dc8589e397df8837cc228ac02c7106ae93b902c11e3a041920",
+					"contentHash": "ee43114f768831a1de0c5fa24bdd61a5f395c228bf373936b00b5b1b26f673cf",
+					"content": "export\nfunction parseConfig() { return readFile(config); }",
+					"filePath": "<root>/src/alpha.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "parseConfig",
+					"fileHash": "1bd46ffed43f265ca3ef59c8e9115e0c4f55cab07afcafe59c9e52f846714422"
+				},
+				"score": 1,
+				"vectorScore": 0.5,
+				"keywordScore": 0.14285714285714285,
+				"branchIds": [1]
+			},
+			{
+				"chunk": {
+					"id": "fa583a7e17139a3fce29d14d6ccab000fbdd55c5681fd5085013b13c7cf74232",
+					"contentHash": "26a37b4d833a5c53f8f643e8c9a9d1cddd86a48a16fcb395923d661e96c0b0e9",
+					"content": "export\nfunction tiny() { parseConfig(); }",
+					"filePath": "<root>/src/alpha.ts",
+					"startLine": 12,
+					"endLine": 14,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "tiny",
+					"fileHash": "84b3f0aab1c3a41447e4e22225aeb66bf3266f6e66c0aa64cdb7d9dd7065b89f"
+				},
+				"score": 0.9985576923076922,
+				"vectorScore": 0.25,
+				"keywordScore": 0.25,
+				"branchIds": [1]
+			},
+			{
+				"chunk": {
+					"id": "f3c0250a1cc994787571e0b763f63ddd6d4574a4617ebaff9e626ede953a4bad",
+					"contentHash": "18e02e01d915a5f519d751c08044a356df3cc8582096152ca5e09969fc3078a5",
+					"content": "function quote() { return parseConfig(); }",
+					"filePath": "<root>/src/o'brien.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "quote",
+					"fileHash": "65c9c48ef070b80a199cbb60131d8d449fac4058517dd5663e5e1a52e7f61734"
+				},
+				"score": 0.978070818070818,
+				"vectorScore": 0.14285714285714285,
+				"keywordScore": 0.3333333333333333,
+				"branchIds": [1]
+			}
+		]
+	},
+	{
+		"name": "pathPattern-underscore",
+		"statements": [
+			{
+				"on": "table",
+				"method": "vectorSearch",
+				"args": [[0.5, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "limit",
+				"args": [30]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "where",
+				"args": [
+					"(branchIds LIKE '%,0,%' OR branchIds LIKE '%,1,%') AND filePath LIKE '%beta\\_util%'"
+				]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "toArray",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "listIndices",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "query",
+				"args": []
+			},
+			{
+				"on": "Query",
+				"method": "fullTextSearch",
+				"args": [
+					"config",
+					{
+						"columns": ["content"]
+					}
+				]
+			},
+			{
+				"on": "Query",
+				"method": "limit",
+				"args": [30]
+			},
+			{
+				"on": "Query",
+				"method": "where",
+				"args": [
+					"(branchIds LIKE '%,0,%' OR branchIds LIKE '%,1,%') AND filePath LIKE '%beta\\_util%'"
+				]
+			},
+			{
+				"on": "Query",
+				"method": "toArray",
+				"args": []
+			}
+		],
+		"results": [
+			{
+				"chunk": {
+					"id": "cc62bb89917cd430f7dda88043ad2c646c865ce58cf234543e7f5188cb3dd276",
+					"contentHash": "b139f4219f5a68424fecf68cf753d7a986e8008675538c03b16c54ee601152f2",
+					"content": "class ConfigLoader { load() { return parseConfig(); } }",
+					"filePath": "<root>/src/beta_util.ts",
+					"startLine": 1,
+					"endLine": 20,
+					"language": "typescript",
+					"chunkType": "class",
+					"name": "ConfigLoader",
+					"fileHash": "175224390477e7b38316e0d5ff55ad3ea7b86473e857d021aacb1827bb380f27"
+				},
+				"score": 1,
+				"vectorScore": 1,
+				"keywordScore": 0,
+				"branchIds": [1]
+			}
+		]
+	},
+	{
+		"name": "no-vector",
+		"statements": [
+			{
+				"on": "table",
+				"method": "listIndices",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "query",
+				"args": []
+			},
+			{
+				"on": "Query",
+				"method": "fullTextSearch",
+				"args": [
+					"parseConfig",
+					{
+						"columns": ["content"]
+					}
+				]
+			},
+			{
+				"on": "Query",
+				"method": "limit",
+				"args": [15]
+			},
+			{
+				"on": "Query",
+				"method": "where",
+				"args": ["(branchIds LIKE '%,0,%' OR branchIds LIKE '%,1,%')"]
+			},
+			{
+				"on": "Query",
+				"method": "toArray",
+				"args": []
+			}
+		],
+		"results": [
+			{
+				"chunk": {
+					"id": "ba6af022521e03ef",
+					"contentHash": "",
+					"content": "observation: parseConfig breaks on an empty file",
+					"filePath": "src/alpha.ts",
+					"startLine": 0,
+					"endLine": 0,
+					"language": "",
+					"chunkType": "",
+					"fileHash": ""
+				},
+				"score": 1,
+				"vectorScore": 0,
+				"keywordScore": 0.14285714285714285,
+				"branchIds": [0],
+				"documentType": "session_observation",
+				"observationMetadata": {
+					"observationType": "gotcha",
+					"affectedFiles": ["src/alpha.ts"]
+				}
+			},
+			{
+				"chunk": {
+					"id": "f3c0250a1cc994787571e0b763f63ddd6d4574a4617ebaff9e626ede953a4bad",
+					"contentHash": "18e02e01d915a5f519d751c08044a356df3cc8582096152ca5e09969fc3078a5",
+					"content": "function quote() { return parseConfig(); }",
+					"filePath": "<root>/src/o'brien.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "quote",
+					"fileHash": "65c9c48ef070b80a199cbb60131d8d449fac4058517dd5663e5e1a52e7f61734"
+				},
+				"score": 0.7976190476190474,
+				"vectorScore": 0,
+				"keywordScore": 0.3333333333333333,
+				"branchIds": [1]
+			},
+			{
+				"chunk": {
+					"id": "fa583a7e17139a3fce29d14d6ccab000fbdd55c5681fd5085013b13c7cf74232",
+					"contentHash": "26a37b4d833a5c53f8f643e8c9a9d1cddd86a48a16fcb395923d661e96c0b0e9",
+					"content": "export\nfunction tiny() { parseConfig(); }",
+					"filePath": "<root>/src/alpha.ts",
+					"startLine": 12,
+					"endLine": 14,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "tiny",
+					"fileHash": "84b3f0aab1c3a41447e4e22225aeb66bf3266f6e66c0aa64cdb7d9dd7065b89f"
+				},
+				"score": 0.7851562499999998,
+				"vectorScore": 0,
+				"keywordScore": 0.25,
+				"branchIds": [1]
+			},
+			{
+				"chunk": {
+					"id": "5f0786682ef7ec158eaa7dcfa90f52b1d3cd2cdc74567a3f48915f65d5614206",
+					"contentHash": "35598eb84a2f350bf7bb6a479557002394f5738754daa686fdabaaf99e2f4d79",
+					"content": "def parse_config():\n    return parseConfig",
+					"filePath": "<root>/lib/tool.py",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "python",
+					"chunkType": "function",
+					"name": "parse_config",
+					"fileHash": "1c7bf8a6aaac104fcae442bd91ee42475cc5be08d0b9d30dbeb6946b1dc1a186"
+				},
+				"score": 0.7613636363636362,
+				"vectorScore": 0,
+				"keywordScore": 0.16666666666666666,
+				"branchIds": [1]
+			},
+			{
+				"chunk": {
+					"id": "cc62bb89917cd430f7dda88043ad2c646c865ce58cf234543e7f5188cb3dd276",
+					"contentHash": "b139f4219f5a68424fecf68cf753d7a986e8008675538c03b16c54ee601152f2",
+					"content": "class ConfigLoader { load() { return parseConfig(); } }",
+					"filePath": "<root>/src/beta_util.ts",
+					"startLine": 1,
+					"endLine": 20,
+					"language": "typescript",
+					"chunkType": "class",
+					"name": "ConfigLoader",
+					"fileHash": "175224390477e7b38316e0d5ff55ad3ea7b86473e857d021aacb1827bb380f27"
+				},
+				"score": 0.7389705882352939,
+				"vectorScore": 0,
+				"keywordScore": 0.125,
+				"branchIds": [1]
+			}
+		]
+	},
+	{
+		"name": "keyword-only",
+		"statements": [
+			{
+				"on": "table",
+				"method": "listIndices",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "query",
+				"args": []
+			},
+			{
+				"on": "Query",
+				"method": "fullTextSearch",
+				"args": [
+					"parseConfig",
+					{
+						"columns": ["content"]
+					}
+				]
+			},
+			{
+				"on": "Query",
+				"method": "limit",
+				"args": [30]
+			},
+			{
+				"on": "Query",
+				"method": "where",
+				"args": ["(branchIds LIKE '%,0,%' OR branchIds LIKE '%,1,%')"]
+			},
+			{
+				"on": "Query",
+				"method": "toArray",
+				"args": []
+			}
+		],
+		"results": [
+			{
+				"chunk": {
+					"id": "ba6af022521e03ef",
+					"contentHash": "",
+					"content": "observation: parseConfig breaks on an empty file",
+					"filePath": "src/alpha.ts",
+					"startLine": 0,
+					"endLine": 0,
+					"language": "",
+					"chunkType": "",
+					"fileHash": ""
+				},
+				"score": 1,
+				"vectorScore": 0,
+				"keywordScore": 0.14285714285714285,
+				"branchIds": [0],
+				"documentType": "session_observation",
+				"observationMetadata": {
+					"observationType": "gotcha",
+					"affectedFiles": ["src/alpha.ts"]
+				}
+			},
+			{
+				"chunk": {
+					"id": "f3c0250a1cc994787571e0b763f63ddd6d4574a4617ebaff9e626ede953a4bad",
+					"contentHash": "18e02e01d915a5f519d751c08044a356df3cc8582096152ca5e09969fc3078a5",
+					"content": "function quote() { return parseConfig(); }",
+					"filePath": "<root>/src/o'brien.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "quote",
+					"fileHash": "65c9c48ef070b80a199cbb60131d8d449fac4058517dd5663e5e1a52e7f61734"
+				},
+				"score": 0.7976190476190474,
+				"vectorScore": 0,
+				"keywordScore": 0.3333333333333333,
+				"branchIds": [1]
+			},
+			{
+				"chunk": {
+					"id": "fa583a7e17139a3fce29d14d6ccab000fbdd55c5681fd5085013b13c7cf74232",
+					"contentHash": "26a37b4d833a5c53f8f643e8c9a9d1cddd86a48a16fcb395923d661e96c0b0e9",
+					"content": "export\nfunction tiny() { parseConfig(); }",
+					"filePath": "<root>/src/alpha.ts",
+					"startLine": 12,
+					"endLine": 14,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "tiny",
+					"fileHash": "84b3f0aab1c3a41447e4e22225aeb66bf3266f6e66c0aa64cdb7d9dd7065b89f"
+				},
+				"score": 0.7851562499999998,
+				"vectorScore": 0,
+				"keywordScore": 0.25,
+				"branchIds": [1]
+			},
+			{
+				"chunk": {
+					"id": "5f0786682ef7ec158eaa7dcfa90f52b1d3cd2cdc74567a3f48915f65d5614206",
+					"contentHash": "35598eb84a2f350bf7bb6a479557002394f5738754daa686fdabaaf99e2f4d79",
+					"content": "def parse_config():\n    return parseConfig",
+					"filePath": "<root>/lib/tool.py",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "python",
+					"chunkType": "function",
+					"name": "parse_config",
+					"fileHash": "1c7bf8a6aaac104fcae442bd91ee42475cc5be08d0b9d30dbeb6946b1dc1a186"
+				},
+				"score": 0.7613636363636362,
+				"vectorScore": 0,
+				"keywordScore": 0.16666666666666666,
+				"branchIds": [1]
+			},
+			{
+				"chunk": {
+					"id": "cc62bb89917cd430f7dda88043ad2c646c865ce58cf234543e7f5188cb3dd276",
+					"contentHash": "b139f4219f5a68424fecf68cf753d7a986e8008675538c03b16c54ee601152f2",
+					"content": "class ConfigLoader { load() { return parseConfig(); } }",
+					"filePath": "<root>/src/beta_util.ts",
+					"startLine": 1,
+					"endLine": 20,
+					"language": "typescript",
+					"chunkType": "class",
+					"name": "ConfigLoader",
+					"fileHash": "175224390477e7b38316e0d5ff55ad3ea7b86473e857d021aacb1827bb380f27"
+				},
+				"score": 0.7389705882352939,
+				"vectorScore": 0,
+				"keywordScore": 0.125,
+				"branchIds": [1]
+			},
+			{
+				"chunk": {
+					"id": "f6d2ad14426375dc8589e397df8837cc228ac02c7106ae93b902c11e3a041920",
+					"contentHash": "ee43114f768831a1de0c5fa24bdd61a5f395c228bf373936b00b5b1b26f673cf",
+					"content": "export\nfunction parseConfig() { return readFile(config); }",
+					"filePath": "<root>/src/alpha.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "parseConfig",
+					"fileHash": "1bd46ffed43f265ca3ef59c8e9115e0c4f55cab07afcafe59c9e52f846714422"
+				},
+				"score": 0.7178571428571426,
+				"vectorScore": 0,
+				"keywordScore": 0.1,
+				"branchIds": [1],
+				"summary": "summary: parseConfig reads the config file"
+			},
+			{
+				"chunk": {
+					"id": "cf8d0977844fcf3c225c984c294c52c62382b1a0a671c100a0cc1a122cc4e544",
+					"contentHash": "bbc47756550d608469ce8a1cdf353b0881324d83d872a679c763c08c29d9cb17",
+					"content": "test('parseConfig', () => { parseConfig(); });",
+					"filePath": "<root>/src/alpha.test.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "testParse",
+					"fileHash": "674c749ecae64d5ad377e5e6d444346fe68c132fd51d92e85a05e46153dfe8ba"
+				},
+				"score": 0.24713114754098353,
+				"vectorScore": 0,
+				"keywordScore": 1,
+				"branchIds": [1]
+			}
+		]
+	},
+	{
+		"name": "branch2-fim",
+		"statements": [
+			{
+				"on": "table",
+				"method": "vectorSearch",
+				"args": [[1, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "limit",
+				"args": [12]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "where",
+				"args": ["(branchIds LIKE '%,0,%' OR branchIds LIKE '%,2,%')"]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "toArray",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "listIndices",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "query",
+				"args": []
+			},
+			{
+				"on": "Query",
+				"method": "fullTextSearch",
+				"args": [
+					"parseConfig",
+					{
+						"columns": ["content"]
+					}
+				]
+			},
+			{
+				"on": "Query",
+				"method": "limit",
+				"args": [12]
+			},
+			{
+				"on": "Query",
+				"method": "where",
+				"args": ["(branchIds LIKE '%,0,%' OR branchIds LIKE '%,2,%')"]
+			},
+			{
+				"on": "Query",
+				"method": "toArray",
+				"args": []
+			}
+		],
+		"results": [
+			{
+				"chunk": {
+					"id": "059f0c13de83100623e3602fe7215e73325a3d9bada694b564708e6e14577f95",
+					"contentHash": "1096b4a2cb592bd7bddb40b72b1dc2e3e6304d59c6c951624a471c0aa2371c13",
+					"content": "export\nfunction parseConfig() { return readFileOnBranchTwo(config); }",
+					"filePath": "<root>/src/alpha.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "parseConfig",
+					"fileHash": "bfe4872912fbc481b100fdcbc103af7202386db106c24fac2619228836b9f669"
+				},
+				"score": 1,
+				"vectorScore": 1,
+				"keywordScore": 0.3333333333333333,
+				"branchIds": [2]
+			},
+			{
+				"chunk": {
+					"id": "73d1fb93bb55f95725c9f3914dafb540181149ce6323ab17233b148ddf0625ca",
+					"contentHash": "58f583e9ee7a2ef9004f8a0d15c0639b1b524d8c45792785a1a3e055228a7bdb",
+					"content": "function delta() { parseConfig(); }",
+					"filePath": "<root>/src/delta.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "delta",
+					"fileHash": "9836060ffc4e0ae953293cbfde0d9e024289850dda838972a9aba24fe23009fa"
+				},
+				"score": 0.9935691318327974,
+				"vectorScore": 0.3333333333333333,
+				"keywordScore": 1,
+				"branchIds": [2]
+			},
+			{
+				"chunk": {
+					"id": "ba6af022521e03ef",
+					"contentHash": "",
+					"content": "observation: parseConfig breaks on an empty file",
+					"filePath": "src/alpha.ts",
+					"startLine": 0,
+					"endLine": 0,
+					"language": "",
+					"chunkType": "",
+					"fileHash": ""
+				},
+				"score": 0.12456565708951356,
+				"vectorScore": 0.5,
+				"keywordScore": 0.5,
+				"branchIds": [0],
+				"documentType": "session_observation",
+				"observationMetadata": {
+					"observationType": "gotcha",
+					"affectedFiles": ["src/alpha.ts"]
+				}
+			}
+		]
+	},
+	{
+		"name": "quote-filePath",
+		"statements": [
+			{
+				"on": "table",
+				"method": "vectorSearch",
+				"args": [[0.4, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "limit",
+				"args": [30]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "where",
+				"args": ["filePath LIKE '%o''brien%'"]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "toArray",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "listIndices",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "query",
+				"args": []
+			},
+			{
+				"on": "Query",
+				"method": "fullTextSearch",
+				"args": [
+					"quote",
+					{
+						"columns": ["content"]
+					}
+				]
+			},
+			{
+				"on": "Query",
+				"method": "limit",
+				"args": [30]
+			},
+			{
+				"on": "Query",
+				"method": "where",
+				"args": ["filePath LIKE '%o''brien%'"]
+			},
+			{
+				"on": "Query",
+				"method": "toArray",
+				"args": []
+			}
+		],
+		"results": [
+			{
+				"chunk": {
+					"id": "f3c0250a1cc994787571e0b763f63ddd6d4574a4617ebaff9e626ede953a4bad",
+					"contentHash": "18e02e01d915a5f519d751c08044a356df3cc8582096152ca5e09969fc3078a5",
+					"content": "function quote() { return parseConfig(); }",
+					"filePath": "<root>/src/o'brien.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "quote",
+					"fileHash": "65c9c48ef070b80a199cbb60131d8d449fac4058517dd5663e5e1a52e7f61734"
+				},
+				"score": 1,
+				"vectorScore": 1,
+				"keywordScore": 1,
+				"branchIds": [1]
+			}
+		]
+	},
+	{
+		"name": "navigation-limit10",
+		"statements": [
+			{
+				"on": "table",
+				"method": "vectorSearch",
+				"args": [[1, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "limit",
+				"args": [30]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "where",
+				"args": ["(branchIds LIKE '%,0,%' OR branchIds LIKE '%,1,%')"]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "toArray",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "listIndices",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "query",
+				"args": []
+			},
+			{
+				"on": "Query",
+				"method": "fullTextSearch",
+				"args": [
+					"parseConfig",
+					{
+						"columns": ["content"]
+					}
+				]
+			},
+			{
+				"on": "Query",
+				"method": "limit",
+				"args": [30]
+			},
+			{
+				"on": "Query",
+				"method": "where",
+				"args": ["(branchIds LIKE '%,0,%' OR branchIds LIKE '%,1,%')"]
+			},
+			{
+				"on": "Query",
+				"method": "toArray",
+				"args": []
+			}
+		],
+		"results": [
+			{
+				"chunk": {
+					"id": "fa583a7e17139a3fce29d14d6ccab000fbdd55c5681fd5085013b13c7cf74232",
+					"contentHash": "26a37b4d833a5c53f8f643e8c9a9d1cddd86a48a16fcb395923d661e96c0b0e9",
+					"content": "export\nfunction tiny() { parseConfig(); }",
+					"filePath": "<root>/src/alpha.ts",
+					"startLine": 12,
+					"endLine": 14,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "tiny",
+					"fileHash": "84b3f0aab1c3a41447e4e22225aeb66bf3266f6e66c0aa64cdb7d9dd7065b89f"
+				},
+				"score": 1,
+				"vectorScore": 0.25,
+				"keywordScore": 0.25,
+				"branchIds": [1],
+				"summary": "file summary: alpha holds config parsing",
+				"fileSummary": "file summary: alpha holds config parsing"
+			},
+			{
+				"chunk": {
+					"id": "f6d2ad14426375dc8589e397df8837cc228ac02c7106ae93b902c11e3a041920",
+					"contentHash": "ee43114f768831a1de0c5fa24bdd61a5f395c228bf373936b00b5b1b26f673cf",
+					"content": "export\nfunction parseConfig() { return readFile(config); }",
+					"filePath": "<root>/src/alpha.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "parseConfig",
+					"fileHash": "1bd46ffed43f265ca3ef59c8e9115e0c4f55cab07afcafe59c9e52f846714422"
+				},
+				"score": 0.9850691244239631,
+				"vectorScore": 0.5,
+				"keywordScore": 0.1,
+				"branchIds": [1],
+				"summary": "summary: parseConfig reads the config file",
+				"fileSummary": "file summary: alpha holds config parsing"
+			},
+			{
+				"chunk": {
+					"id": "ba6af022521e03ef",
+					"contentHash": "",
+					"content": "observation: parseConfig breaks on an empty file",
+					"filePath": "src/alpha.ts",
+					"startLine": 0,
+					"endLine": 0,
+					"language": "",
+					"chunkType": "",
+					"fileHash": ""
+				},
+				"score": 0.9639077340569878,
+				"vectorScore": 0.16666666666666666,
+				"keywordScore": 0.14285714285714285,
+				"branchIds": [0],
+				"documentType": "session_observation",
+				"observationMetadata": {
+					"observationType": "gotcha",
+					"affectedFiles": ["src/alpha.ts"]
+				}
+			},
+			{
+				"chunk": {
+					"id": "5f0786682ef7ec158eaa7dcfa90f52b1d3cd2cdc74567a3f48915f65d5614206",
+					"contentHash": "35598eb84a2f350bf7bb6a479557002394f5738754daa686fdabaaf99e2f4d79",
+					"content": "def parse_config():\n    return parseConfig",
+					"filePath": "<root>/lib/tool.py",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "python",
+					"chunkType": "function",
+					"name": "parse_config",
+					"fileHash": "1c7bf8a6aaac104fcae442bd91ee42475cc5be08d0b9d30dbeb6946b1dc1a186"
+				},
+				"score": 0.9610131162369969,
+				"vectorScore": 0.14285714285714285,
+				"keywordScore": 0.16666666666666666,
+				"branchIds": [1]
+			},
+			{
+				"chunk": {
+					"id": "f3c0250a1cc994787571e0b763f63ddd6d4574a4617ebaff9e626ede953a4bad",
+					"contentHash": "18e02e01d915a5f519d751c08044a356df3cc8582096152ca5e09969fc3078a5",
+					"content": "function quote() { return parseConfig(); }",
+					"filePath": "<root>/src/o'brien.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "quote",
+					"fileHash": "65c9c48ef070b80a199cbb60131d8d449fac4058517dd5663e5e1a52e7f61734"
+				},
+				"score": 0.9471942767717416,
+				"vectorScore": 0.09090909090909091,
+				"keywordScore": 0.3333333333333333,
+				"branchIds": [1]
+			},
+			{
+				"chunk": {
+					"id": "cc62bb89917cd430f7dda88043ad2c646c865ce58cf234543e7f5188cb3dd276",
+					"contentHash": "b139f4219f5a68424fecf68cf753d7a986e8008675538c03b16c54ee601152f2",
+					"content": "class ConfigLoader { load() { return parseConfig(); } }",
+					"filePath": "<root>/src/beta_util.ts",
+					"startLine": 1,
+					"endLine": 20,
+					"language": "typescript",
+					"chunkType": "class",
+					"name": "ConfigLoader",
+					"fileHash": "175224390477e7b38316e0d5ff55ad3ea7b86473e857d021aacb1827bb380f27"
+				},
+				"score": 0.9329923273657289,
+				"vectorScore": 0.1111111111111111,
+				"keywordScore": 0.125,
+				"branchIds": [1]
+			},
+			{
+				"chunk": {
+					"id": "2204b1ece4905c22940c632d6b170983d14f6d6575d552305cc5de958b0de69c",
+					"contentHash": "657086cf727ea820a30a88f610d2f79bb731e73d89acb975fe10fc782226e165",
+					"content": "function widget() { return unrelated; }",
+					"filePath": "<root>/src/gamma.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "widget",
+					"fileHash": "ef2710f647926ad4c910ef333ca230467c1118c6d68b556cc0f73b8412b8d912"
+				},
+				"score": 0.5333333333333333,
+				"vectorScore": 0.08333333333333333,
+				"keywordScore": 0,
+				"branchIds": [1]
+			},
+			{
+				"chunk": {
+					"id": "cf8d0977844fcf3c225c984c294c52c62382b1a0a671c100a0cc1a122cc4e544",
+					"contentHash": "bbc47756550d608469ce8a1cdf353b0881324d83d872a679c763c08c29d9cb17",
+					"content": "test('parseConfig', () => { parseConfig(); });",
+					"filePath": "<root>/src/alpha.test.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "testParse",
+					"fileHash": "674c749ecae64d5ad377e5e6d444346fe68c132fd51d92e85a05e46153dfe8ba"
+				},
+				"score": 0.3147540983606557,
+				"vectorScore": 1,
+				"keywordScore": 1,
+				"branchIds": [1]
+			}
+		]
+	},
+	{
+		"name": "no-match",
+		"statements": [
+			{
+				"on": "table",
+				"method": "vectorSearch",
+				"args": [[0.3333333333333333, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "limit",
+				"args": [6]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "where",
+				"args": ["(branchIds LIKE '%,0,%' OR branchIds LIKE '%,1,%')"]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "toArray",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "listIndices",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "query",
+				"args": []
+			},
+			{
+				"on": "Query",
+				"method": "fullTextSearch",
+				"args": [
+					"nothingmatcheszzz",
+					{
+						"columns": ["content"]
+					}
+				]
+			},
+			{
+				"on": "Query",
+				"method": "limit",
+				"args": [6]
+			},
+			{
+				"on": "Query",
+				"method": "where",
+				"args": ["(branchIds LIKE '%,0,%' OR branchIds LIKE '%,1,%')"]
+			},
+			{
+				"on": "Query",
+				"method": "toArray",
+				"args": []
+			}
+		],
+		"results": [
+			{
+				"chunk": {
+					"id": "2204b1ece4905c22940c632d6b170983d14f6d6575d552305cc5de958b0de69c",
+					"contentHash": "657086cf727ea820a30a88f610d2f79bb731e73d89acb975fe10fc782226e165",
+					"content": "function widget() { return unrelated; }",
+					"filePath": "<root>/src/gamma.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "widget",
+					"fileHash": "ef2710f647926ad4c910ef333ca230467c1118c6d68b556cc0f73b8412b8d912"
+				},
+				"score": 1,
+				"vectorScore": 1,
+				"keywordScore": 0,
+				"branchIds": [1]
+			},
+			{
+				"chunk": {
+					"id": "f3c0250a1cc994787571e0b763f63ddd6d4574a4617ebaff9e626ede953a4bad",
+					"contentHash": "18e02e01d915a5f519d751c08044a356df3cc8582096152ca5e09969fc3078a5",
+					"content": "function quote() { return parseConfig(); }",
+					"filePath": "<root>/src/o'brien.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "quote",
+					"fileHash": "65c9c48ef070b80a199cbb60131d8d449fac4058517dd5663e5e1a52e7f61734"
+				},
+				"score": 0.9838709677419354,
+				"vectorScore": 0.5,
+				"keywordScore": 0,
+				"branchIds": [1]
+			}
+		]
+	},
+	{
+		"name": "absolute-filePath",
+		"statements": [
+			{
+				"on": "table",
+				"method": "vectorSearch",
+				"args": [[1, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "limit",
+				"args": [30]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "where",
+				"args": [
+					"(branchIds LIKE '%,0,%' OR branchIds LIKE '%,1,%') AND filePath LIKE '%src/alpha.ts%'"
+				]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "toArray",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "listIndices",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "query",
+				"args": []
+			},
+			{
+				"on": "Query",
+				"method": "fullTextSearch",
+				"args": [
+					"parseConfig",
+					{
+						"columns": ["content"]
+					}
+				]
+			},
+			{
+				"on": "Query",
+				"method": "limit",
+				"args": [30]
+			},
+			{
+				"on": "Query",
+				"method": "where",
+				"args": [
+					"(branchIds LIKE '%,0,%' OR branchIds LIKE '%,1,%') AND filePath LIKE '%src/alpha.ts%'"
+				]
+			},
+			{
+				"on": "Query",
+				"method": "toArray",
+				"args": []
+			}
+		],
+		"results": [
+			{
+				"chunk": {
+					"id": "ba6af022521e03ef",
+					"contentHash": "",
+					"content": "observation: parseConfig breaks on an empty file",
+					"filePath": "src/alpha.ts",
+					"startLine": 0,
+					"endLine": 0,
+					"language": "",
+					"chunkType": "",
+					"fileHash": ""
+				},
+				"score": 1,
+				"vectorScore": 0.2,
+				"keywordScore": 0.25,
+				"branchIds": [0],
+				"documentType": "session_observation",
+				"observationMetadata": {
+					"observationType": "gotcha",
+					"affectedFiles": ["src/alpha.ts"]
+				}
+			},
+			{
+				"chunk": {
+					"id": "fa583a7e17139a3fce29d14d6ccab000fbdd55c5681fd5085013b13c7cf74232",
+					"contentHash": "26a37b4d833a5c53f8f643e8c9a9d1cddd86a48a16fcb395923d661e96c0b0e9",
+					"content": "export\nfunction tiny() { parseConfig(); }",
+					"filePath": "<root>/src/alpha.ts",
+					"startLine": 12,
+					"endLine": 14,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "tiny",
+					"fileHash": "84b3f0aab1c3a41447e4e22225aeb66bf3266f6e66c0aa64cdb7d9dd7065b89f"
+				},
+				"score": 0.773964564788047,
+				"vectorScore": 0.3333333333333333,
+				"keywordScore": 0.5,
+				"branchIds": [1],
+				"summary": "file summary: alpha holds config parsing",
+				"fileSummary": "file summary: alpha holds config parsing"
+			},
+			{
+				"chunk": {
+					"id": "f6d2ad14426375dc8589e397df8837cc228ac02c7106ae93b902c11e3a041920",
+					"contentHash": "ee43114f768831a1de0c5fa24bdd61a5f395c228bf373936b00b5b1b26f673cf",
+					"content": "export\nfunction parseConfig() { return readFile(config); }",
+					"filePath": "<root>/src/alpha.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "parseConfig",
+					"fileHash": "1bd46ffed43f265ca3ef59c8e9115e0c4f55cab07afcafe59c9e52f846714422"
+				},
+				"score": 0.7701493089946403,
+				"vectorScore": 1,
+				"keywordScore": 0.16666666666666666,
+				"branchIds": [1],
+				"summary": "summary: parseConfig reads the config file",
+				"fileSummary": "file summary: alpha holds config parsing"
+			}
+		]
+	},
+	{
+		"name": "limit1",
+		"statements": [
+			{
+				"on": "table",
+				"method": "vectorSearch",
+				"args": [[1, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "limit",
+				"args": [3]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "where",
+				"args": ["(branchIds LIKE '%,0,%' OR branchIds LIKE '%,1,%')"]
+			},
+			{
+				"on": "VectorQuery",
+				"method": "toArray",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "listIndices",
+				"args": []
+			},
+			{
+				"on": "table",
+				"method": "query",
+				"args": []
+			},
+			{
+				"on": "Query",
+				"method": "fullTextSearch",
+				"args": [
+					"parseConfig",
+					{
+						"columns": ["content"]
+					}
+				]
+			},
+			{
+				"on": "Query",
+				"method": "limit",
+				"args": [3]
+			},
+			{
+				"on": "Query",
+				"method": "where",
+				"args": ["(branchIds LIKE '%,0,%' OR branchIds LIKE '%,1,%')"]
+			},
+			{
+				"on": "Query",
+				"method": "toArray",
+				"args": []
+			}
+		],
+		"results": [
+			{
+				"chunk": {
+					"id": "f6d2ad14426375dc8589e397df8837cc228ac02c7106ae93b902c11e3a041920",
+					"contentHash": "ee43114f768831a1de0c5fa24bdd61a5f395c228bf373936b00b5b1b26f673cf",
+					"content": "export\nfunction parseConfig() { return readFile(config); }",
+					"filePath": "<root>/src/alpha.ts",
+					"startLine": 1,
+					"endLine": 10,
+					"language": "typescript",
+					"chunkType": "function",
+					"name": "parseConfig",
+					"fileHash": "1bd46ffed43f265ca3ef59c8e9115e0c4f55cab07afcafe59c9e52f846714422"
+				},
+				"score": 1,
+				"vectorScore": 0.5,
+				"keywordScore": 0,
+				"branchIds": [1]
+			}
+		]
+	}
+]

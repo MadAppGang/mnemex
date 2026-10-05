@@ -80,6 +80,18 @@ CODE ANALYSIS COMMANDS:
 SEARCH (secondary - after structure understood):
   mnemex search "query"    # Semantic search, returns file:line + code
   mnemex search "q" --map  # Search + include repo map context
+  mnemex search "q" --no-dirty  # Leave uncommitted changes out
+  UNCOMMITTED WORK is searched automatically (modified + untracked files,
+  no reindex needed): such rows say source=dirty under --agent, and the
+  header always has overlay=on|off|skipped + overlay_reason. source=dirty
+  rows have no symbol graph, code units or summaries (overlay_gaps lists
+  no-symbol-graph, no-code-units, no-summaries, bm25-unchanged-chunks-only)
+  — use symbol/callers only after "mnemex index". overlay_gaps is machine
+  tokens only (e.g. file-failed-embed, embed-deadline, busy); the details
+  (paths, error text) are on the overlay_gap_details line: entries
+  "token[ path]: message" joined by "; ", with % ; (and a path's :)
+  percent-encoded inside fields, so splitting on "; " is safe. Typos of search
+  flags exit 1 and run nothing.
 
 PACK (export codebase for AI):
   mnemex pack [path]       # Pack to XML file (repomix-compatible)
@@ -287,6 +299,7 @@ PACK:
 
 SEARCH (after structure understood):
   mnemex search "query"    # Semantic search → file:line results
+                           # includes uncommitted work (source=dirty); --no-dirty to omit
 
 PAGERANK = importance:
   High (>0.05) = core abstractions, read first
@@ -315,7 +328,7 @@ NOTE: For AI agents, CLI commands with --agent are preferred.
 MCP tools available for Claude Code integration:
 
 TOOLS:
-  search_code(query, limit?, language?)  # Semantic search
+  search_code(query, limit?, language?)  # Semantic search (+ uncommitted work)
   index_codebase(path?, force?)          # Index project
   get_status(path?)                      # Check index
   clear_index(path?)                     # Reset index
@@ -334,6 +347,11 @@ PREFERRED CLI WORKFLOW:
 WHEN TO USE MCP:
   ✓ Quick semantic searches
   ✓ Integration with Claude Code
+
+UNCOMMITTED WORK: search_code and search include this worktree's modified
+and untracked files. Their rows carry source: "dirty"; every response has an
+"overlay" block (state on|off|skipped, reason, file counts). Off with
+"dirtyOverlay": false in mnemex.json or ~/.mnemex/config.json.
 
 WHEN TO USE CLI:
   ✓ Structure discovery (map, symbol, callers, callees)
@@ -354,6 +372,6 @@ export const MNEMEX_QUICK_REF = `mnemex: symbol graph + semantic search + code a
   dead-code        # Find unused (zero callers + low PageRank)
   test-gaps        # Find untested (high PageRank + no test callers)
   impact <name>    # ALL transitive callers (blast radius)
-  search "query"   # Semantic search (after structure understood)
+  search "query"   # Semantic search (after structure understood); incl. uncommitted (source=dirty), --no-dirty to omit
 WORKFLOW: map → symbol → impact → implement
 AVOID: grep, whole file reads, modifying without impact check`;

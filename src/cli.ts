@@ -1768,7 +1768,111 @@ async function handleTeam(args: string[]): Promise<void> {
 	}
 }
 
-async function handleSearch(args: string[]): Promise<void> {
+/**
+ * Every flag `mnemex search` accepts. STRICT — see {@link assertKnownFlags}.
+ *
+ * Added with `--no-dirty` (step 3, R3.1): a boolean off-switch parsed by
+ * membership would make every TYPO of it mean "on" (CLAUDE.md #30). The set
+ * was RE-DERIVED BY SEARCH (orchestrator ruling 5), never from the help text,
+ * over `src/`, `test/`, `tests/`, `vscode-extension/`, README and `docs/`,
+ * `ai-skill.ts`, `ai-instructions.ts`, the magus `mnemex`/`code-analysis`/
+ * `code-search` plugin skills and `../mnemex-bench/` — the evidence is in the
+ * step-3 implementation log, phase 6. Real callers pass four flags this
+ * handler never parsed:
+ *
+ *   `--map`               `ai-skill.ts`, code-analysis `codebase-detective.md`
+ *                         and `mnemex-search/SKILL.md` ("Search + include repo
+ *                         map context") — documented, never implemented
+ *   `--page-size`/`--page` code-analysis `codebase-detective.md`,
+ *                         `deep-analysis/SKILL.md`, `mnemex-search/SKILL.md`
+ *   `--raw`               `integrations/opencode/*`, `docs/CLAUDE_CODE_INTEGRATION.md`
+ *
+ * They stay accepted and do nothing, exactly as before this table existed:
+ * rejecting them would break agents following those skills on the day this
+ * shipped. Their values (`--page-size 20`) are positional, as they were.
+ *
+ * `--agent`, `--theme`, `--cloud`, `--help`/`-h`, `--version` and `--models`
+ * are absent on purpose: `runCli` strips or answers them before a handler runs.
+ */
+const SEARCH_ACCEPTED_FLAGS = [
+	"-n",
+	"--limit",
+	"-l",
+	"--language",
+	"-p",
+	"--path",
+	"-m",
+	"--model",
+	"-y",
+	"--yes",
+	"--no-reindex",
+	"--use-case",
+	"-k",
+	"--keyword",
+	"--no-dirty",
+	// Tolerated, unparsed, passed by real callers — see the header.
+	"--map",
+	"--page-size",
+	"--page",
+	"--raw",
+] as const;
+
+/** Search flags that take a SEPARATE value argument. */
+const SEARCH_VALUE_FLAGS: ReadonlySet<string> = new Set([
+	"-n",
+	"--limit",
+	"-l",
+	"--language",
+	"-p",
+	"--path",
+	"-m",
+	"--model",
+	"--use-case",
+]);
+
+/**
+ * `search`'s argv split at the first `--`: everything after it is query text,
+ * even when it begins with `-` (LOW 4). Only the part before it is flags.
+ */
+function splitSearchArgs(args: readonly string[]): {
+	flags: string[];
+	tail: string[];
+} {
+	const end = args.indexOf("--");
+	return end < 0
+		? { flags: [...args], tail: [] }
+		: { flags: args.slice(0, end), tail: args.slice(end + 1) };
+}
+
+/**
+ * The dash-arguments of `flags` the strict check must judge: a value-taking
+ * flag's VALUE is not a flag (`-p -dir`), unless it is itself spelled like a
+ * long flag (`-n --no-dirtyy`), which no real value is.
+ */
+function searchFlagCandidates(flags: readonly string[]): string[] {
+	return flags.filter(
+		(a, i) =>
+			!(i > 0 && SEARCH_VALUE_FLAGS.has(flags[i - 1]) && !a.startsWith("--")),
+	);
+}
+
+async function handleSearch(rawArgs: string[]): Promise<void> {
+	// STRICT FLAGS, BEFORE any work: no version check, no index open, no git,
+	// no embedding, no overlay directory (CLAUDE.md #30). `--no-dirtyy` used to
+	// be impossible to mistype only because `--no-dirty` did not exist; now its
+	// typo would silently mean "include uncommitted work".
+	const { flags: args, tail: queryTail } = splitSearchArgs(rawArgs);
+	if (
+		!assertKnownFlags(
+			"search",
+			searchFlagCandidates(args),
+			SEARCH_ACCEPTED_FLAGS,
+		)
+	) {
+		process.exitCode = 1;
+		return;
+	}
+
 	// Parse arguments
 	const limitIdx = args.findIndex((a) => a === "-n" || a === "--limit");
 	const limit =
@@ -1803,6 +1907,11 @@ async function handleSearch(args: string[]): Promise<void> {
 	// Keyword-only search (skip embedding API call, use BM25 only)
 	const keywordOnly = args.includes("-k") || args.includes("--keyword");
 
+	// The local dirty overlay (step 3, R3.1): on by default when the worktree
+	// is dirty; `--no-dirty` turns it off for this search. Membership is safe
+	// HERE only because the strict check above already refused every typo.
+	const noDirty = args.includes("--no-dirty");
+
 	// Get query (everything that's not a flag)
 	// Only add indices to flagIndices if the flag was actually found (>= 0)
 	const flagIndices = new Set<number>();
@@ -1829,7 +1938,8 @@ async function handleSearch(args: string[]): Promise<void> {
 	const queryParts = args.filter(
 		(_, i) => !flagIndices.has(i) && !args[i].startsWith("-"),
 	);
-	const query = queryParts.join(" ");
+	// After `--`, every word is query text, dashes included.
+	const query = [...queryParts, ...queryTail].join(" ");
 
 	if (!query) {
 		console.error("Error: No search query provided.");
@@ -2056,6 +2166,7 @@ async function handleSearch(args: string[]): Promise<void> {
 			language,
 			useCase,
 			keywordOnly,
+			overlay: noDirty ? "off" : "auto",
 		});
 		const results = scoped.results;
 
@@ -2079,6 +2190,10 @@ async function handleSearch(args: string[]): Promise<void> {
 			// V1.7 / §4.5: WHY it is empty, when the marker can say.
 			storeRebuiltElsewhere: scoped.storeRebuiltElsewhere,
 			branch: scoped.branchLabel,
+			// R1: what the dead-code penalty did, so a zero is visible.
+			penalty: scoped.penalty,
+			// R3.9: what the dirty overlay did, on every search.
+			overlay: scoped.overlay,
 		};
 		if (!agentMode && !adoptionReported) {
 			reportAdoptedModel(effective);
@@ -2150,10 +2265,12 @@ async function handleSearch(args: string[]): Promise<void> {
 				`Branch '${scoped.branchLabel ?? "?"}' is not in the index; showing results from every indexed branch.\n`,
 			);
 		}
+		const overlayNotice = overlayHumanNotice(scoped.overlay);
+		if (overlayNotice !== null) console.log(`${overlayNotice}\n`);
 		console.log(`Found ${results.length} result(s):\n`);
 
-		// Collect result IDs for feedback hint
-		const resultIds = results.map((r) => r.chunk.id);
+		// Collect result IDs for feedback hint (index rows only; see the helper).
+		const resultIds = feedbackResultIds(results);
 
 		const queryTerms = query.split(/\s+/).filter((t) => t.length > 0);
 
@@ -2162,7 +2279,12 @@ async function handleSearch(args: string[]): Promise<void> {
 			if (r.documentType === "session_observation") {
 				printObservationResult(r);
 			} else {
-				printSearchResult(r.chunk, r.score, queryTerms);
+				printSearchResult(
+					r.chunk,
+					r.score,
+					queryTerms,
+					r.source === "dirty" ? "[uncommitted]" : undefined,
+				);
 			}
 		}
 
@@ -2322,6 +2444,93 @@ function printObservationResult(r: {
 	console.log("");
 }
 
+/**
+ * The ids `mnemex search` offers for `mnemex feedback`: INDEX rows only.
+ * An overlay row's id names uncommitted text that is never in the index, so
+ * feedback on it would be recorded against a row no later search can return
+ * (step 3, R3.9).
+ */
+export function feedbackResultIds(
+	results: readonly Pick<
+		import("./types.js").SearchResult,
+		"chunk" | "source"
+	>[],
+): string[] {
+	return results.filter((r) => r.source !== "dirty").map((r) => r.chunk.id);
+}
+
+/** ` path:start-end`, plus a marker such as `[uncommitted]` when given. */
+export function searchResultLocation(
+	chunk: { filePath: string; startLine: number; endLine: number },
+	marker?: string,
+): string {
+	return ` ${chunk.filePath}:${chunk.startLine}-${chunk.endLine}${marker ? ` ${marker}` : ""}`;
+}
+
+/** The prefix of a failed file's gap token (`file-failed-<failure>`). */
+const FILE_FAILED_TOKEN = "file-failed-";
+
+/**
+ * The one human line about the dirty overlay, or `null` when there is nothing
+ * worth a line: off (the user chose it), `on` with nothing served and nothing
+ * missing, or no git repository at all (a non-git project would otherwise
+ * hear it every search).
+ *
+ * `on` is not "complete" (review 2, MEDIUM 7): a file that failed or is still
+ * pending is NOT in the results — its index rows, if any, are shown instead —
+ * and a search that could not check every recently indexed file may show
+ * stale rows. Each is said, with its reason, so a human is not left trusting
+ * results the agent output already marks as partial.
+ */
+export function overlayHumanNotice(
+	overlay: import("./core/overlay/types.js").SearchOverlayReport,
+): string | null {
+	if (overlay.state === "on") {
+		const plural = (n: number) => (n === 1 ? "file" : "files");
+		const parts: string[] = [];
+		if (overlay.files > 0) {
+			parts.push(
+				`Including ${overlay.files} uncommitted ${plural(overlay.files)} (not yet indexed; marked [uncommitted]).`,
+			);
+		}
+		const missing = overlay.filesFailed + overlay.filesPending;
+		if (missing > 0) {
+			// Tokens only (iteration 2, O4): no prose to re-parse.
+			const kinds = overlay.gaps
+				.filter((gap) => gap.startsWith(FILE_FAILED_TOKEN))
+				.map((gap) => gap.slice(FILE_FAILED_TOKEN.length));
+			const deadline = overlay.gaps.includes("embed-deadline");
+			const why: string[] = [];
+			if (overlay.filesFailed > 0) {
+				why.push(
+					`${overlay.filesFailed} failed${kinds.length > 0 ? `: ${kinds.join(", ")}` : ""}`,
+				);
+			}
+			if (overlay.filesPending > 0) {
+				why.push(
+					`${overlay.filesPending} pending${deadline ? ": embed-deadline" : ""}`,
+				);
+			}
+			parts.push(
+				overlay.files > 0
+					? `Uncommitted changes in ${missing} more ${plural(missing)} are not included (${why.join(", ")}); their indexed versions are shown.`
+					: `Uncommitted changes in ${missing} ${plural(missing)} are not included in these results (${why.join(", ")}); their indexed versions are shown.`,
+			);
+		}
+		if (overlay.filesUnclassified > 0) {
+			const n = overlay.filesUnclassified;
+			parts.push(
+				`At least ${n} recently indexed ${plural(n)} ${n === 1 ? "was" : "were"} not checked against disk in this search; results for them may be stale.`,
+			);
+		}
+		return parts.length === 0 ? null : parts.join(" ");
+	}
+	if (overlay.state === "skipped" && overlay.reason !== "no-git") {
+		return `Uncommitted changes are not included in these results (overlay skipped: ${overlay.reason}).`;
+	}
+	return null;
+}
+
 function printSearchResult(
 	chunk: {
 		filePath: string;
@@ -2334,6 +2543,8 @@ function printSearchResult(
 	},
 	score: number,
 	terms: string[],
+	/** Shown after the range, e.g. `[uncommitted]` for a dirty-overlay row. */
+	marker?: string,
 ): void {
 	const termWidth = process.stdout.columns || 80;
 	const divider = "─".repeat(termWidth);
@@ -2351,7 +2562,7 @@ function printSearchResult(
 	const scoreStr = `${scoreColor}${pct}%${ANSI_RESET}`;
 
 	// Header: path:range on left, name + score on right
-	const leftPart = ` ${chunk.filePath}:${chunk.startLine}-${chunk.endLine}`;
+	const leftPart = searchResultLocation(chunk, marker);
 	const nameScorePart = `${nameLabel}  ${pct}%`; // uncolored for length calc
 	const padding = Math.max(
 		1,
@@ -7974,6 +8185,8 @@ ${c.yellow}${c.bold}SEARCH OPTIONS${c.reset}
   ${c.cyan}--no-reindex${c.reset}           Skip auto-reindexing changed files
   ${c.cyan}--use-case${c.reset} <case>      Search preset: fim | search | navigation (default: search)
   ${c.cyan}-k, --keyword${c.reset}          Keyword-only search (skip embedding, use BM25 only)
+  ${c.cyan}--no-dirty${c.reset}             Leave uncommitted changes out ${c.dim}(default: included when the worktree is dirty; config: dirtyOverlay)${c.reset}
+  ${c.cyan}--${c.reset}                     End of flags: everything after it is query text ${c.dim}(search -- -foo)${c.reset}
 
 ${c.yellow}${c.bold}MODELS OPTIONS${c.reset}
   ${c.cyan}--free${c.reset}                 Show only free models
@@ -8809,6 +9022,9 @@ async function searchMnemex(
 		const searchPromise = indexer.search(pattern, {
 			limit: 30,
 			useCase: "search",
+			// `mnemex rg` is contractually byte-identical to ripgrep (CLAUDE.md
+			// #14) under a 2 s budget: no git status, no overlay build here.
+			overlay: "off",
 		});
 
 		const timeoutPromise = new Promise<never>((_, reject) =>

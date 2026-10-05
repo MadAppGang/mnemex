@@ -284,6 +284,28 @@ export interface SearchResult {
 	 * instead of discarding the whole response.
 	 */
 	branches?: string[];
+	/**
+	 * Set by `Indexer.searchScoped` when the dead-code penalty demoted this row:
+	 * the symbol IN THIS ROW'S OWN FILE has no callers and negligible PageRank
+	 * (R1). Absent otherwise — including when no same-file symbol was found,
+	 * which applies no penalty at all.
+	 */
+	penalty?: "dead";
+	/**
+	 * Where the row came from, when it was not the local index.
+	 *
+	 * - `"dirty"` — this worktree's LOCAL dirty overlay (step 3, R3), set by
+	 *   `VectorStore.search`: uncommitted content the index does not hold yet.
+	 *   Such a row has no `branchIds`, no summary and no symbol graph (R3.8).
+	 * - `"cloud"` / `"overlay"` — the CLOUD path's `OverlayMerger`
+	 *   (`MergedSearchResult`, `src/cloud/merger.ts`), which hands its rows to
+	 *   the same `SearchResult` consumers. A different mechanism; its
+	 *   `"overlay"` is not the local `"dirty"`, and a consumer that marks local
+	 *   overlay rows must test for `"dirty"` only.
+	 *
+	 * Absent on local index rows.
+	 */
+	source?: "dirty" | "cloud" | "overlay";
 }
 
 export interface SearchOptions {
@@ -299,6 +321,13 @@ export interface SearchOptions {
 	useCase?: SearchUseCase;
 	/** Use keyword search only (no embedding API call, faster but less semantic) */
 	keywordOnly?: boolean;
+	/**
+	 * The local dirty overlay (step 3, R3.1). `undefined` = `"auto"`: on when
+	 * the worktree is dirty, unless `dirtyOverlay: false` in config. `"off"` is
+	 * `--no-dirty`, and what `mnemex rg` passes (its output is byte-for-byte
+	 * ripgrep's, CLAUDE.md #14).
+	 */
+	overlay?: "auto" | "off";
 }
 
 // ============================================================================
@@ -635,14 +664,63 @@ export interface EmbedResult {
 }
 
 /**
+ * A per-CALL policy for `IEmbeddingsClient.embed`, for a caller whose time is
+ * bounded by someone else's budget — the dirty overlay on the SEARCH path
+ * (CLAUDE.md #33 d). Absent, a client behaves exactly as it always has: its
+ * own retry ladder, its own per-request timeout. That default is what indexing
+ * and the query embedding use, and no field here may change it.
+ *
+ * The shared raw client is the reason this is a parameter and not a client
+ * option: the overlay embeds with the SAME instance that embedded the query
+ * (#16), and inside the MCP server that instance also indexes. A setting on
+ * the instance would leak into indexing; a parameter cannot.
+ */
+export interface EmbedCallOptions {
+	/**
+	 * Cancels the call. An abort ends the in-flight request AND any back-off
+	 * sleep, and `embed` rejects — it never resolves with `[]` slots for the
+	 * texts it did not reach, and nothing it did not finish is retried. The
+	 * caller owns the signal, so the caller tells an abort from a failure by
+	 * reading `signal.aborted`.
+	 */
+	readonly signal?: AbortSignal;
+	/**
+	 * Attempts per provider request, including the first. `1` = no retry at
+	 * all. Absent = the client's own ladder. A client may use FEWER (its ladder
+	 * is the ceiling), never more.
+	 */
+	readonly maxAttempts?: number;
+	/**
+	 * Called once per text the provider answered with a vector, AS IT LANDS —
+	 * before the call resolves OR rejects. `index` is into the `texts` of this
+	 * call. A client that sends one request per text calls it after each
+	 * success; a sub-batching client calls it for each text of each completed
+	 * sub-batch response.
+	 *
+	 * Why (iteration 2, O3): an abort rejects the whole call, and the vectors
+	 * the provider had already returned were dropped with it — sent, paid for,
+	 * uncounted in `overlay_embedded`, uncached, and sent again next pass. The
+	 * caching client collects them through this callback and salvages them
+	 * when the call is aborted.
+	 */
+	readonly onAnswered?: (index: number, vector: readonly number[]) => void;
+}
+
+/**
  * Embeddings client interface
  * All embedding providers must implement this interface
  */
 export interface IEmbeddingsClient {
-	/** Generate embeddings for multiple texts */
+	/**
+	 * Generate embeddings for multiple texts. `options` bounds THIS call only
+	 * (see {@link EmbedCallOptions}); every production client honours it —
+	 * pinned per client, because a method that omits the parameter still
+	 * type-checks (CLAUDE.md #32).
+	 */
 	embed(
 		texts: string[],
 		onProgress?: EmbeddingProgressCallback,
+		options?: EmbedCallOptions,
 	): Promise<EmbedResult>;
 	/** Generate embedding for a single text */
 	embedOne(text: string): Promise<number[]>;
@@ -776,6 +854,14 @@ export interface GlobalConfig {
 	 * user set it — an absent field means "untouched", not "off".
 	 */
 	embedCache?: boolean;
+
+	// ─── Dirty Overlay ───
+	/**
+	 * Include uncommitted work (modified tracked + untracked files) in local
+	 * search (default: true). A project's `dirtyOverlay` wins over this one.
+	 * Equivalent per search: `mnemex search --no-dirty`.
+	 */
+	dirtyOverlay?: boolean;
 }
 
 export interface ProjectConfig {
@@ -827,6 +913,11 @@ export interface ProjectConfig {
 	 * - 'include': Treat test files normally (no special handling)
 	 */
 	testFiles?: "downrank" | "exclude" | "include";
+	/**
+	 * Include uncommitted work in search (default: true). Overrides the global
+	 * `dirtyOverlay`. Equivalent per search: `mnemex search --no-dirty`.
+	 */
+	dirtyOverlay?: boolean;
 
 	// ─── Self-Learning Settings ───
 	/**
@@ -1106,6 +1197,10 @@ export interface SymbolGraphStats {
 /** All document types in the enriched index */
 export type DocumentType =
 	| "code_chunk"
+	// A hierarchical code unit (`storedRowsForUnits`). It often covers the SAME
+	// span as a `code_chunk` row; ranked search collapses such twins to one
+	// slot (`collapseSpanTwins`, R2).
+	| "code_unit"
 	| "file_summary"
 	| "symbol_summary"
 	| "idiom"

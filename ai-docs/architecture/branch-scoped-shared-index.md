@@ -17,8 +17,9 @@ The problem, in the user's words: *"I don't want 10 developers on the same team 
 everything every time for every change."*
 
 Roadmap: **step 1** persistent embedding cache (shipped), **step 2** repo-stable dataset path
-(this document), **step 3** local dirty overlay plus the ranking fixes (scoped, not built),
-**step 4** cloud authorization (not started).
+(this document), **step 3** local dirty overlay plus the ranking fixes (built on this branch: R1 →
+D-13, R2 twin collapse, R3 → D-12; not yet committed), **step 4** cloud authorization (not started;
+owns the cloud D-MERGE item).
 
 ## What shipped
 
@@ -319,6 +320,110 @@ also rejected — preserving a known bug to avoid a visible one.
 **The warning goes through the MCP logger, never stdout.** Stdout is the MCP protocol channel
 (CLAUDE.md #14). *(I-9.)*
 
+## D-12 — Local search includes uncommitted work through a per-worktree overlay, merged before fusion
+
+*(Step 3, R3. Session `dev-feature-step3-ranking-overlay-20261001-115855-a33fe887`, architecture
+§5 and revision 1; CLAUDE.md #33.)*
+
+Before step 3 the overlay existed only behind the cloud gate (cloud + team + auth), and local
+search never saw uncommitted work. Now every local search surface — CLI `search`, MCP
+`search_code`, MCP `search` (its `SemanticBackend` switched to `searchScoped`), the TUI — runs one
+overlay pass inside `Indexer.searchScoped`, after the query is embedded. User decisions: automatic
+when the worktree is dirty; off with `--no-dirty` or `dirtyOverlay: false` (project over global);
+dirty = modified tracked + untracked-not-ignored, deleted files suppress only.
+
+**Where it lives.** `<worktreeDir>/dirty-overlay` (`getDirtyOverlayDirFor`), its own LanceDB store,
+manifest and lock. Per worktree by construction and never inside the shared git-common-dir store
+(D-1, R3.6/R3.7); one resolver for the data and its lock (D-2), swept by S-L.
+
+**"Dirty" is relative to the index, decided by content hash.** Candidates are git's porcelain
+listing (run with `--no-optional-locks`, so a search never competes for `index.lock`) plus the
+overlay's watch set plus tracker rows indexed after its high-water mark, restricted to the
+indexer's own file selection. Each is classified against the tracker by SHA-256 of the disk bytes.
+Tracker `mtime` is never consulted, and the indexer now hashes the bytes it chunks (P-E1), because
+the hash is the only currency proof.
+
+**One suppression rule.** An index row of a path is pre-filtered out (`NOT (pathKind = 'repo' AND
+filePath IN …)`, in the same `filters` array as the branch predicate, so it is a PRE-filter on both
+retrievers, D-6's reasoning) only when the overlay serves that path or the file is gone. Session
+observations (`pathKind: 'synthetic'`) are never suppressed. Every overlay failure — git, lock busy
+or lost, embedding refused after the query, corrupt overlay table, budget, file too large — leaves
+the index rows visible and is reported (`overlay=skipped`, `overlay_reason`, `overlay_gaps`,
+`overlay_gap_details`).
+
+**Merged before fusion, never after.** The cloud's `OverlayMerger` min-max-normalises each list
+separately and put 34 dirty chunks into 57.5 % of a top-10 (D-MERGE). Locally, overlay vector rows
+join the index's vector list by raw `_distance` (same metric, same model as the index AND the query
+— the overlay embeds with the raw client that embedded the query, identity = what that client was
+built with); unchanged overlay chunks borrow their index twin's BM25 score through one calibrated
+FTS query on the index, paired one-to-one; then `typeAwareRRFFusion` runs unchanged. A sweep (M-5)
+keeps `OverlayMerger` off every local path.
+
+**Gated at the index list's edge (iteration 2, F2; amends §5 Merge).** "Concatenated with the
+index's vector list, ordered `(_distance asc, id asc)`, cut at `fetchLimit`" became: overlay rows
+STRICTLY better than the index channel's edge, concatenated, ordered, cut at `fetchLimit`, tie
+tail trimmed — on both the vector and the calibrated BM25 channel. The edge (`retrieverEdge`) is
+the last score of an engine list the engine filled, `null` when it came back short. Cause: each
+index list is trimmed by THRESHOLD (`trimIncompleteTieTail` drops the tie group straddling
+`fetchLimit`), so a full list ends shorter than `fetchLimit`, and the count cut refilled the freed
+slots with the overlay's best rows however distant — compared against index rows the engine never
+fetched. Measured on a real store: an unchanged chunk whose index twin sat at vector rank 1742 took
+rank 29, result #8 of 10; across 40 lists, 5 overlay rows were admitted past the edge, and all 5
+were "poor" ones. The argument "both sides cut at the same depth" held in COUNT, not in COVERAGE.
+With the gate, an unchanged overlay chunk sits exactly at its twin's clean position (5/5 on the
+rig; MG-3/MG-4 in `overlay-merge-gate.test.ts`). Index rows are never gated, so the index
+channel's membership equals the suppressed index list. A rank comparison against the index must
+use a reference at the SAME `--limit`: channel depth is `3 × limit`.
+
+**Cost.** Rebuilt per file through the machine-global embed cache (only changed text reaches the
+provider), under its own lock (never the store or global lock), budgeted (8 s rebuild, 512 KiB per
+file, 2 000 candidate files), `optimize({ retentionMs: 0 })` after a writing pass so versions do not
+accumulate. A clean worktree costs one `git status` and takes today's code path statement for
+statement (NFR-2, pinned by a snapshot frozen before the refactor).
+
+**Contracts.** `BranchScopedSearch.overlay` is always present. `--agent` always emits the 15
+`overlay*` header keys and ` source=dirty` per overlay row (before ` summary=`); MCP responses carry
+an `overlay` block and `source: "dirty"` rows. `overlay_gaps` / MCP `overlay.gaps` is a CLOSED set
+of machine tokens (`OVERLAY_GAP_TOKENS`, `[a-z0-9-]+`, each once); every path, count, error
+message and provider JSON body goes to `overlay_gap_details` / MCP `overlay.gapDetails`
+(`{token, path?, message}`, one per event) — iteration 2, O4, which narrowed the VALUES of
+`overlay_gaps` and added one key (none renamed). `overlay_embedded` counts provider-accepted texts
+on every pass, budget-cut ones included (iteration 2, O3: the answered prefix of an aborted call is
+counted and cached); overlay ids are kept out of feedback hints and the
+`search_code` learning record. `mnemex rg` passes `overlay: "off"` (CLAUDE.md #14). Search flags
+are strict (`--no-dirtyy` exits 1 and runs nothing), with the accepted set derived by search over
+every real caller (CLAUDE.md #30).
+
+**Reversal cost:** low. `--no-dirty`/`dirtyOverlay: false` turn it off; deleting
+`<worktreeDir>/dirty-overlay` costs one rebuild of the changed files (cache hits).
+
+## D-13 — A symbol is compared with a result in STORED spelling, inside the tracker (the R1 seam)
+
+*(Step 3, R1; orchestrator ruling 1 in the step-3 architecture. Fixes I-23 — see "Open" below.)*
+
+The dead-code penalty must find a result's symbol in the result's OWN file. Chunk paths leave the
+store absolute (search output is a contract); symbol paths are stored repo-relative and leave the
+tracker that way. The fix keeps BOTH output spellings and moves the comparison to the one place
+that knows both: `BranchScopedGraph.getSymbolsByNameInFiles(keys)` converts each `filePath` with the
+handle's own `storedPath` mapper and matches `(file_path, name)` in SQL, `branch_id = ?` on the
+statement, ≤ 64 pairs per statement, one region. `applyDeadCodePenalty` picks the same-file symbol
+by line overlap and applies **no** penalty when there is none; the `?? syms[0]` fallback is gone.
+
+**Rejected: "symbols leave the tracker absolute"** (the text this document's release-blocker entry
+originally proposed). The consumer census found 13 groups of `SymbolDefinition.filePath` consumers;
+going absolute would change the `--agent` output of 8 commands (`symbol`, `callers`, `callees`,
+`context`, `map`, `dead-code`, `test-gaps`, `impact` print repo-relative today, pinned through the
+built binary) and flip `dead-code`/`test-gaps` verdicts (`test-detector.ts` matches `/test/` in
+absolute paths), for ~25 compensating edits. The seam changes no output spelling anywhere.
+
+**The rule it follows** (`repo-path.ts`'s contract): convert where a stored path is COMPARED, never
+by changing what a reader returns. MCP `context` follows it too: an absolute argument now answers
+(it returned nothing before); a bare filename falls back to a suffix match only when it is
+unambiguous, and an ambiguous one answers nothing and names the candidates.
+
+**Surfaced:** `penalty_lookups` / `penalty_same_file` / `penalty_applied` on every `--agent` search,
+and ` penalty=dead` per demoted row — the penalty that matched 0 of 217 printed nothing.
+
 ---
 
 ## Known limits — these belong in the release note
@@ -341,9 +446,51 @@ also rejected — preserving a known bug to avoid a visible one.
    D-8's corpus shift land on the user's next **search**, not on their index run. Unchanged by
    this build; deserves its own decision. *(I-22.)*
 
+**Step 3 (D-12, D-13) adds these:**
+
+6. **Changed or new overlay chunks are vector-only in BM25.** An unchanged chunk of a dirty file
+   borrows its index twin's BM25 score (one calibrated FTS query, paired one-to-one); a chunk whose
+   text the index does not hold has no commensurable BM25 score (the overlay's own FTS index has
+   its own IDF, ~4.5× inflated on common words — D-MERGE again), so it competes on vector distance
+   alone. It can be under-ranked, never flattered. Index-statistics BM25 for overlay text is a
+   follow-up, not built (step-3 ruling 4).
+7. **Git-clean staleness that predates a worktree's first overlay pass is not detected (H9
+   residual).** The overlay's candidates are git's dirty set plus its own watch set and the
+   tracker's high-water mark, so content indexed before the first pass that git now calls clean —
+   e.g. a `git pull` with no reindex — is not seen as stale. That is index-behind-working-tree,
+   owned by `mnemex index`, `watch` and the hooks. Closing it needs a full-tree hash on the first
+   pass, which would re-embed through the overlay after every pull. Not built, by decision.
+8. **R3.11 was re-scoped: a QUERY-embedding failure still fails the search.** R3.11 covers failures
+   of the overlay. With the endpoint fully down, the query cannot be embedded, and the index's own
+   vector retriever needs that vector, so search fails exactly as it did before step 3 (pinned,
+   I-2: exit 1, the provider's own "failed for all 1 texts" error). Degrading every search to
+   keyword-only on a query-embedding failure would change the non-overlay path — a user decision,
+   not taken. An endpoint that fails AFTER the query was embedded is covered: index results,
+   `overlay=skipped overlay_reason=embed-failed` when the failure is provider-wide, or a per-file
+   `failed(embed)` when one file's chunks were refused. "Provider-wide" (Phase 6, TEST-31): a
+   file failed `embed`, the provider accepted zero texts in the pass, nothing was left pending,
+   and the pass has nothing else to contribute — no file served from cache hits or an earlier
+   build, no deletion to suppress. When it still has something, it stays `on` and lists each
+   refused file, so a skip never discards a working overlay. `overlay_embedded` counts accepted
+   texts only, and R3.8's gaps ride in `overlay_gaps`/MCP `overlay.gaps` as the tokens
+   `no-symbol-graph`, `no-code-units`, `no-summaries`, `bm25-unchanged-chunks-only`. The overlay's embed calls make ONE attempt
+   and are cancelled at the 8 s rebuild budget (code review 1, HIGH 1), so the client's retry
+   ladder — still used by indexing and by the query embedding — cannot hold a search: a stalled
+   provider costs the budget, measured 8.7 s end to end through `dist/index.js` (CLAUDE.md #33 d).
+9. **Overlay rows carry no symbol graph, code units or summaries (R3.8).** The dead-code penalty
+   does not judge them, and MCP `search`'s symbol-graph backend still returns the INDEXED lines of
+   a dirty file's symbols (neither suppressed nor marked — dropping them would also drop symbols
+   that still exist).
+
 ## Open — must be settled before this merges
 
-### Release blocker: symbol paths are relative, chunk paths are absolute
+### ~~Release blocker: symbol paths are relative, chunk paths are absolute~~ — FIXED in step 3 (D-13)
+
+*Status (step 3, phase 1): **I-23 FIXED.** The text below is kept as the record of the defect;
+"The fix" paragraph is corrected to what was built. Verified by an absolute check through the
+built binary (`penalty_same_file` > 0, the live `get` unpenalised, a dead namesake penalised) and
+by mutation falsifiers (the old comparison, the `?? syms[0]` fallback, a dropped branch
+predicate, an absolute `rowToSymbol`).*
 
 `src/core/indexer.ts:3382-3383`:
 
@@ -363,11 +510,15 @@ base commit `ec43ed8` — the code did not change, what each side *stores* did.
 (`src/core/tracker.ts:4773`) returns `row.file_path` **verbatim** on read. Chunks got the
 read-side conversion because search output must stay absolute; symbols did not.
 
-**The fix:** symbols leave the tracker in the same spelling chunks leave the store — absolute —
-so no caller can get it wrong. Every `SymbolDefinition.filePath` consumer changes with it. The
-hedge at `src/mcp/tools/context.ts:51` and `:86`
-(`s.filePath === file || s.filePath.endsWith("/" + file)`) is a caller coping with this exact
-ambiguity and should become unnecessary and be removed.
+**The fix, as built (D-13) — corrected from the text first written here.** This entry originally
+proposed that symbols leave the tracker absolute. That was NOT built: the census showed it would
+change the `--agent` output of 8 commands and flip `dead-code`/`test-gaps` verdicts. Instead the
+comparison moved INTO the tracker: `BranchScopedGraph.getSymbolsByNameInFiles` converts the
+result's path to stored spelling with the handle's own mapper and matches `(file_path, name)` in
+SQL, branch-scoped. No output spelling changed anywhere. The hedge at `src/mcp/tools/context.ts`
+(`s.filePath === file || s.filePath.endsWith("/" + file)`) is gone: `context` resolves its argument
+through `getSymbolsByFile` (which converts), falls back to a suffix match only when exactly one
+indexed file matches, and answers nothing — naming the candidates — when several do.
 
 **The `?? syms[0]` fallback must go regardless.** A lookup that cannot find its subject must do
 **nothing**, not act on a different subject. It converted a path mismatch into a wrong ranking
@@ -390,12 +541,26 @@ rather than a missing penalty, which is why it stayed invisible. *(I-23.)*
    `main`, since v0.3.0. Fixed here in `4b08837`; reported because it affects the released
    version.
 
-### Carried to step 3
+### Carried to step 3 — status
 
 - **The twin `code_chunk` / `code_unit` pair** consumes two of the user's 20 result slots for one
   span — 49 of 400 slots, 12.3 %. Dedup must key on **span**, not content hash: only 528 of
-  2 788 twins are byte-identical.
-- **The local dirty overlay** is cloud-only today; local search never reaches it.
+  2 788 twins are byte-identical. *Step 3: built (R2) — span collapse before the `limit` cut on
+  all three ranked paths, back-filled, `code_unit` in `DocumentType` with an explicit 0.1 weight;
+  a nameless kept chunk carries its named twin's identity (ruling R2-A).*
+- **The local dirty overlay** is cloud-only today; local search never reaches it. *Step 3: built
+  for LOCAL search (D-12). The cloud path is unchanged — see D-MERGE below.*
+
+### Open — owned by step 4: D-MERGE on the CLOUD path
+
+The cloud search (`CloudAwareSearch`, reachable with cloud + team + auth) still merges its dirty
+overlay with `OverlayMerger`'s independent min-max normalisation: measured, 34 dirty chunks took
+**57.5 %** of the merged top-10 against 25 614 indexed rows and evicted 48 % of the index's own
+top-10. Step 3 fixed this only on the local path (D-12), because cloud results arrive
+**server-fused**: a candidate-level merge needs the server to return pre-fusion candidate lists,
+which is a wire change (and CLAUDE.md #11's dual-header discipline applies). Step 4 (cloud
+authorization) owns it. Until then `--agent` on the cloud path prints `overlay=unreported`, and a
+sweep (M-5) keeps `OverlayMerger` out of every local search path.
 - **The "two ranking defects"** are cited in four documents and defined in none. The phrase
   traces to a layering report that is on no disk in either checkout. **Step 3 must establish its
   own scope by measurement, not by looking for the lost report** — and the roadmap's "two" is an

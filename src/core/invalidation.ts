@@ -57,6 +57,12 @@ export type DocumentClass = "derived" | "observed" | "external";
 export const DOCUMENT_CLASS: Record<DocumentType, DocumentClass> = {
 	// Derived from repo source — re-derivable, so safe to supersede.
 	code_chunk: "derived",
+	// Re-derived from source on every index, like `code_chunk`. Code units are
+	// not tracked in the `documents` table, so in practice this classifies a
+	// LanceDB row type rather than driving an UPDATE; before it was listed,
+	// `classifyDocumentType` sent it to the "observed" fallback for strings it
+	// did not know.
+	code_unit: "derived",
 	file_summary: "derived",
 	symbol_summary: "derived",
 	idiom: "derived",

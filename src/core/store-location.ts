@@ -390,6 +390,46 @@ export function getWorktreeDirFor(loc: StoreLocation): string {
 	return loc.worktreeDir;
 }
 
+/** The dirty overlay's directory name under the per-worktree directory. */
+const DIRTY_OVERLAY_DIR = "dirty-overlay";
+/** Its lock: inside the overlay directory, beside the data it guards (D-2). */
+const DIRTY_OVERLAY_LOCK_FILE = ".overlay.lock";
+const DIRTY_OVERLAY_MANIFEST_FILE = "manifest.json";
+
+/**
+ * `<worktreeDir>/dirty-overlay`: the LOCAL dirty overlay's store (step 3, R3.6).
+ *
+ * PER-WORKTREE by construction: uncommitted files belong to one working tree,
+ * so this derives from `getWorktreeDirFor(loc)` (i.e. `pathRoot`), never from
+ * `storeDir`, which from Phase 3c is the git-common-dir store every worktree
+ * shares (R3.7: overlay rows never enter it). Distinct from the cloud
+ * overlay's `.mnemex/overlay`. Every overlay path below derives from this one
+ * function, and the S-L sweep (`overlay-location-lock.test.ts`) refuses any
+ * other file that spells these names.
+ *
+ * When `storeDir === worktreeDir` (row 4, outside a repository; or an override
+ * that points there) the overlay sits inside that directory by construction;
+ * it is still its own sub-directory and its own LanceDB store.
+ */
+export function getDirtyOverlayDirFor(loc: StoreLocation): string {
+	return join(getWorktreeDirFor(loc), DIRTY_OVERLAY_DIR);
+}
+
+/** `<overlay>/.overlay.lock` — the overlay's own lock (R3.12), never the store's. */
+export function getDirtyOverlayLockPathFor(loc: StoreLocation): string {
+	return join(getDirtyOverlayDirFor(loc), DIRTY_OVERLAY_LOCK_FILE);
+}
+
+/** `<overlay>/vectors` — the overlay's LanceDB directory. */
+export function getDirtyOverlayVectorsPathFor(loc: StoreLocation): string {
+	return join(getDirtyOverlayDirFor(loc), VECTORS_DIR);
+}
+
+/** `<overlay>/manifest.json` — the overlay's versioned per-file manifest. */
+export function getDirtyOverlayManifestPathFor(loc: StoreLocation): string {
+	return join(getDirtyOverlayDirFor(loc), DIRTY_OVERLAY_MANIFEST_FILE);
+}
+
 /**
  * The files `probeOldStore` (store-meta.ts) looks for inside a DIRECTORY it was
  * handed, not a resolved location (architecture §6.1). The store being replaced

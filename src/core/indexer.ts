@@ -21,6 +21,7 @@ import {
 	getIndexDbPath,
 	getModelMismatchMode,
 	getVectorStorePath,
+	isDirtyOverlayEnabled,
 	isDocsEnabled,
 	isEnrichmentEnabled,
 	isVectorEnabled,
@@ -51,6 +52,7 @@ import type {
 	SearchOptions,
 	SearchResult,
 	SupportedLanguage,
+	SymbolDefinition,
 } from "../types.js";
 import {
 	type CodeUnitExtractor,
@@ -95,7 +97,7 @@ import {
 	CachingEmbeddingsClient,
 	createCachingEmbeddingsClient,
 } from "./caching-embeddings-client.js";
-import { chunkFileByPath } from "./chunker.js";
+import { chunkFileByPath, symbolNameOfChunkLabel } from "./chunker.js";
 import {
 	type EmbedCacheLike,
 	type EmbedCacheTier,
@@ -112,6 +114,7 @@ import {
 	type Enricher,
 	type FileToEnrich,
 } from "./enrichment/index.js";
+import { createFileSelection } from "./file-selection.js";
 import { readCurrentHead } from "./git-layout.js";
 import { CURRENT_INDEX_VERSION, setIndexVersion } from "./index-version.js";
 import {
@@ -125,6 +128,16 @@ import {
 	type IndexLock,
 	type LockOptions,
 } from "./lock.js";
+import {
+	type DirtyOverlayContext,
+	overlayOffReport,
+	prepareDirtyOverlay,
+	resolveOverlayGate,
+} from "./overlay/dirty-overlay.js";
+import type {
+	OverlayCandidates,
+	SearchOverlayReport,
+} from "./overlay/types.js";
 import { createReferenceGraphManager } from "./reference-graph.js";
 import { createRepoMapGenerator } from "./repo-map.js";
 import { toRepoRelative } from "./repo-path.js";
@@ -145,12 +158,13 @@ import {
 import { createSymbolExtractor } from "./symbol-extractor.js";
 import { yieldToEventLoop } from "./sync-region.js";
 import {
+	type BranchScopedGraph,
 	type ChunkIndexRow,
-	computeFileHash,
 	computeHash,
 	createFileTracker,
 	type FileChanges,
 	type FileStamp,
+	hashFileBytes,
 	type IFileTracker,
 } from "./tracker.js";
 
@@ -173,6 +187,18 @@ function probeStoreBeingReplaced(
 		if (probe.exists) return { dir, recordedVersion: probe.recordedVersion };
 	}
 	return null;
+}
+
+/**
+ * A source file's text and its tracker hash from ONE read (P-E1, step 3).
+ *
+ * `content` is the UTF-8 decoding `readFileSync(path, "utf-8")` gives, and
+ * `fileHash` is `sha256` of the same buffer — the value `computeFileHash`
+ * returns for unchanged bytes, so no stored hash moves and nothing reindexes.
+ */
+function readFileOnce(path: string): { content: string; fileHash: string } {
+	const bytes = readFileSync(path);
+	return { content: bytes.toString("utf-8"), fileHash: hashFileBytes(bytes) };
 }
 
 /** `realpathSync.native(path)`, or `path` itself when that fails. */
@@ -522,6 +548,148 @@ export const CHANGES_SLICE = 2000;
 export const CHANGES_MAX_SLICES = 64;
 
 // ============================================================================
+// Dead-code penalty (R1)
+// ============================================================================
+
+/** Score multiplier for a result whose own symbol is dead: a 40 % reduction. */
+export const DEAD_CODE_PENALTY = 0.6;
+
+/**
+ * What the dead-code penalty did on one search. Surfaced under `--agent` as
+ * `penalty_lookups`, `penalty_same_file` and `penalty_applied`, because the
+ * defect this replaces (I-23) was invisible for a whole build: its comparison
+ * matched 0 of 217 times and nothing reported the zero.
+ */
+export interface PenaltyStats {
+	/** Results with a chunk name, for which a same-file symbol was looked up. */
+	readonly lookups: number;
+	/** Lookups that found their symbol in the result's OWN file. */
+	readonly sameFile: number;
+	/** Results demoted. */
+	readonly applied: number;
+	/**
+	 * Lookups made through a chunk LABEL (`X (fields)`, `X (part n/m)`),
+	 * i.e. for the symbol `X` the label names (iteration 2, F1). Internal: no
+	 * `--agent` key carries it; it is counted inside `lookups`.
+	 */
+	readonly labelled: number;
+}
+
+export const NO_PENALTY: PenaltyStats = {
+	lookups: 0,
+	sameFile: 0,
+	applied: 0,
+	labelled: 0,
+};
+
+/**
+ * Which of a result's same-file, same-name symbols the result IS.
+ *
+ * One candidate: it. Several (overloads, a nested namesake): the one whose
+ * lines overlap the chunk's span most, ties to the tighter span and then the
+ * earlier start. Several and none overlapping: null — the subject cannot be
+ * identified, and a lookup that cannot find its subject must do nothing (R1.2),
+ * not act on a different one.
+ *
+ * `requireOverlap`: a single candidate must overlap the span too. Used for a
+ * lookup made through a chunk LABEL, which asserts the chunk lies INSIDE its
+ * symbol (a part of X, the fields of X); a same-file X that does not overlap
+ * the span is not its subject.
+ */
+export function pickSameFileSymbol(
+	candidates: readonly SymbolDefinition[],
+	chunkStart: number,
+	chunkEnd: number,
+	options: { requireOverlap?: boolean } = {},
+): SymbolDefinition | null {
+	if (candidates.length === 0) return null;
+	if (candidates.length === 1 && options.requireOverlap !== true) {
+		return candidates[0];
+	}
+	let best: SymbolDefinition | null = null;
+	let bestOverlap = 0;
+	for (const s of candidates) {
+		const overlap =
+			Math.min(s.endLine, chunkEnd) - Math.max(s.startLine, chunkStart) + 1;
+		if (overlap <= 0) continue;
+		if (
+			best === null ||
+			overlap > bestOverlap ||
+			(overlap === bestOverlap &&
+				(s.endLine - s.startLine < best.endLine - best.startLine ||
+					(s.endLine - s.startLine === best.endLine - best.startLine &&
+						s.startLine < best.startLine)))
+		) {
+			best = s;
+			bestOverlap = overlap;
+		}
+	}
+	return best;
+}
+
+/**
+ * Demote results whose OWN symbol has no callers and negligible PageRank, so
+ * an agent is not steered to unused code. Mutates `score` and sets
+ * `penalty: "dead"` on each demoted row; the caller re-sorts.
+ *
+ * The symbol is found with ONE batched graph read that compares paths in
+ * stored form inside the tracker (`getSymbolsByNameInFiles`). There is no
+ * fallback to a same-named symbol in another file: the old `?? syms[0]` judged
+ * `get` in `embed-cache.ts` (371 callers) by a dead test helper and let the
+ * genuinely dead `SearchResult` escape on a namesake's 56 (step3-scope §1.1).
+ *
+ * Dirty-overlay rows (`source: "dirty"`) are skipped: the graph describes the
+ * INDEXED revision of their file, not the uncommitted one, so a symbol found
+ * there would judge code it was never built from (R3.8). The cloud path's
+ * `"cloud"`/`"overlay"` values are a different mechanism and are judged as
+ * before.
+ *
+ * A chunk named with a LABEL — `X (fields)`, `X (part n/m)` — is judged by the
+ * symbol `X` the label names (iteration 2, F1), parsed by the chunker's own
+ * grammar (`symbolNameOfChunkLabel`), and only when that same-file `X`
+ * overlaps the chunk's span. Looking the label up verbatim found nothing, so
+ * such a chunk escaped the penalty however dead its symbol was: 16 of 246
+ * lookups on the rig, `SearchResult (fields)` among them. The displayed name
+ * is untouched — only the LOOKUP name changes.
+ */
+export function applyDeadCodePenalty(
+	results: SearchResult[],
+	graph: Pick<BranchScopedGraph, "getSymbolsByNameInFiles">,
+): PenaltyStats {
+	const named = results.filter(
+		(r): r is SearchResult & { chunk: { name: string } } =>
+			r.source !== "dirty" && !!r.chunk.name,
+	);
+	if (named.length === 0) return NO_PENALTY;
+	const labelBases = named.map((r) => symbolNameOfChunkLabel(r.chunk.name));
+	const candidates = graph.getSymbolsByNameInFiles(
+		named.map((r, i) => ({
+			name: labelBases[i] ?? r.chunk.name,
+			filePath: r.chunk.filePath,
+		})),
+	);
+	let sameFile = 0;
+	let applied = 0;
+	named.forEach((r, i) => {
+		const sym = pickSameFileSymbol(
+			candidates[i],
+			r.chunk.startLine,
+			r.chunk.endLine,
+			{ requireOverlap: labelBases[i] !== null },
+		);
+		if (sym === null) return;
+		sameFile++;
+		if (sym.inDegree === 0 && sym.pagerankScore < 0.001) {
+			r.score *= DEAD_CODE_PENALTY;
+			r.penalty = "dead";
+			applied++;
+		}
+	});
+	const labelled = labelBases.filter((b) => b !== null).length;
+	return { lookups: named.length, sameFile, applied, labelled };
+}
+
+// ============================================================================
 // Indexer Class
 // ============================================================================
 
@@ -562,6 +730,14 @@ export interface BranchScopedSearch {
 	 * "another worktree rebuilt this index" instead of "your branch is empty".
 	 */
 	readonly storeRebuiltElsewhere: boolean;
+	/** What the dead-code penalty did (R1); all zeros when it did not run. */
+	readonly penalty: PenaltyStats;
+	/**
+	 * What the local dirty overlay did (step 3, R3.9). ALWAYS present: `off`
+	 * with the gate's reason, `skipped` with why the pass gave up (index rows
+	 * served, nothing suppressed), or `on`.
+	 */
+	readonly overlay: SearchOverlayReport;
 }
 
 /**
@@ -635,6 +811,14 @@ export class Indexer {
 	 * second one (the `use-indexed` adoption) replaces the client wholesale.
 	 */
 	private rawEmbeddingsClient: IEmbeddingsClient | null = null;
+	/**
+	 * The model and provider `rawEmbeddingsClient` was BUILT with — the adopted
+	 * stored pair under `use-indexed` — as the tracker spells them. The dirty
+	 * overlay compares it with the index's stored identity (HIGH 4, gotcha #16).
+	 * Deliberately NOT `client.getModel()`, which strips prefixes such as
+	 * `ollama/` and would never equal the stored name.
+	 */
+	private queryIdentity: { model: string; provider: string } | null = null;
 	/**
 	 * The machine-global embedding cache, opened by `index()` BEFORE either lock
 	 * and `null` on every other path — including `clear()`, which initialises a
@@ -991,6 +1175,17 @@ export class Indexer {
 				}),
 				forSearch,
 			);
+			// The identity that client was BUILT with, for the dirty overlay
+			// (see the field). The raw client was assigned on the line above, so
+			// the `""` fallback is unreachable; were it reached, the overlay would
+			// report `identity-mismatch` rather than embed under a guessed name.
+			this.queryIdentity = {
+				model: modelToUse,
+				provider:
+					providerToUse ?? this.rawEmbeddingsClient?.getProvider() ?? "",
+			};
+		} else {
+			this.queryIdentity = null;
 		}
 
 		// Create vector store
@@ -1977,8 +2172,11 @@ export class Indexer {
 				}
 
 				try {
-					const content = readFileSync(filePath, "utf-8");
-					const fileHash = computeFileHash(filePath);
+					// ONE read (P-E1): the hash is taken over the very bytes that are
+					// chunked. Hashing a second read let a save between the two record
+					// the new bytes' hash beside the old bytes' chunks, and the dirty
+					// overlay's index-current proof is exactly that hash.
+					const { content, fileHash } = readFileOnce(filePath);
 					// The STORED path, so the chunk id hashes it (§3.1): one relative path
 					// gives one id in every worktree.
 					const chunks = await chunkFileByPath(content, storedPath, fileHash);
@@ -2834,8 +3032,7 @@ export class Indexer {
 				if (!existsSync(absPath)) continue;
 
 				try {
-					const content = readFileSync(absPath, "utf-8");
-					const fileHash = computeFileHash(absPath);
+					const { content, fileHash } = readFileOnce(absPath);
 					const chunks = await chunkFileByPath(content, relPath, fileHash);
 					if (chunks.length === 0) continue;
 
@@ -3350,41 +3547,66 @@ export class Indexer {
 			resolveStoreLocation(this.projectPath),
 		);
 
-		// Search
-		const results = await this.vectorStore!.search(
+		// The local dirty overlay (step 3, R3), AFTER the query embedded: a
+		// query-embedding failure fails the search exactly as it always did
+		// (pinned, I-2); every failure of the overlay itself is a report state.
+		const { overlay: overlayFlag, ...storeOptions } = options;
+		// ONE options object for both channels (review 1, MEDIUM 7): the
+		// overlay's vector read builds its user filters from the same object
+		// the index search does, so a filter can never reach one and not the
+		// other — including one added to `SearchOptions` later.
+		const storeSearch = { ...storeOptions, keywordOnly: useKeywordOnly };
+		const { candidates, report } = await this.prepareOverlay(
+			overlayFlag,
+			useKeywordOnly,
+			queryVector,
+			branch,
+			storeSearch,
+		);
+
+		// Search. `initialize()` above always assigns the store.
+		const vectorStore = this.vectorStore;
+		if (vectorStore === null) {
+			throw new Error("searchScoped: the vector store was not initialised");
+		}
+		const results = await vectorStore.search(
 			query,
 			queryVector,
 			branch.scope,
-			{
-				...options,
-				keywordOnly: useKeywordOnly,
-			},
+			storeSearch,
+			candidates,
 		);
+
+		// What the pre-filter hid, as a POSITIVE count (R3.3). Only when
+		// something was suppressed: an index-only search pays nothing.
+		const suppressedRows =
+			candidates !== undefined && candidates.suppressedPaths.length > 0
+				? await vectorStore.countRowsForStoredPaths(
+						branch.scope,
+						candidates.suppressedPaths,
+					)
+				: 0;
+		const overlay: SearchOverlayReport = { ...report, suppressedRows };
 
 		// D1's per-row attribution: ids -> registry labels, from the snapshot the
 		// scope was resolved against. The registry is ~10 entries and already
-		// read, so this is a lookup, not a query.
+		// read, so this is a lookup, not a query. Overlay rows belong to no
+		// branch (they are this worktree's uncommitted text) and are not labelled.
 		for (const r of results) {
-			if (r.branchIds !== undefined) {
+			if (r.source !== "dirty" && r.branchIds !== undefined) {
 				r.branches = labelBranchIds(r.branchIds, branch.labels);
 			}
 		}
 
-		// Dead code deprioritization: penalize symbols with 0 callers
-		// This prevents agents from being directed to unused/dead code
+		// Dead code deprioritization: penalize results whose OWN symbol has no
+		// callers, so agents are not directed to unused code. One batched,
+		// branch-scoped graph read; no per-result tracker call (R1).
+		let penalty: PenaltyStats = NO_PENALTY;
 		if (this.fileTracker && results.length > 1) {
-			const DEAD_CODE_PENALTY = 0.6; // 40% score reduction
-			const graph = this.fileTracker.graph(graphBranchIdForRead(branch));
-			for (const r of results) {
-				if (!r.chunk.name) continue;
-				const syms = graph.getSymbolByName(r.chunk.name);
-				// Find the symbol in the same file
-				const sym =
-					syms.find((s) => s.filePath === r.chunk.filePath) ?? syms[0];
-				if (sym && sym.inDegree === 0 && sym.pagerankScore < 0.001) {
-					r.score *= DEAD_CODE_PENALTY;
-				}
-			}
+			penalty = applyDeadCodePenalty(
+				results,
+				this.fileTracker.graph(graphBranchIdForRead(branch)),
+			);
 			// Re-sort after penalty
 			results.sort((a, b) => b.score - a.score);
 		}
@@ -3406,13 +3628,18 @@ export class Indexer {
 		// against the ~0.15 ms the standalone path measures for open + count +
 		// close.
 		//
-		// Only when the results are EMPTY. A non-empty result set cannot have come
-		// from a branch that holds nothing, so computing it would be two queries
-		// spent to learn `false`. Only for a resolved live branch, for the reason
-		// `branch-state.ts` gives: outside a repository there is no branch to be
-		// empty, and an unknown branch is already reported as unknown.
+		// Only when no INDEX row came back. A result set with an index row cannot
+		// have come from a branch that holds nothing, so computing it would be
+		// two queries spent to learn `false`. Overlay rows (`source: "dirty"`)
+		// do not count: they are this worktree's uncommitted files, served
+		// whatever the branch holds, so a branch emptied by `--force-all` with a
+		// dirty file open must still say so (R-6). Only for a resolved live
+		// branch, for the reason `branch-state.ts` gives: outside a repository
+		// there is no branch to be empty, and an unknown branch is already
+		// reported as unknown.
+		const indexRowCount = results.filter((r) => r.source !== "dirty").length;
 		const branchEmpty =
-			results.length === 0 &&
+			indexRowCount === 0 &&
 			!branch.branchUnknown &&
 			branch.scope.kind === "branch" &&
 			this.fileTracker !== null
@@ -3453,7 +3680,87 @@ export class Indexer {
 			branchLabel: branch.label,
 			branchEmpty,
 			storeRebuiltElsewhere,
+			penalty,
+			overlay,
 		};
+	}
+
+	/**
+	 * The gate, then (when it is open) one overlay pass. Never throws except
+	 * for the two code-bug classes `prepareDirtyOverlay` rethrows.
+	 *
+	 * The pass's embeddings client is the RAW client that embedded the query
+	 * (HIGH 4): under `use-indexed` that is the ADOPTED model, so the overlay's
+	 * vectors are commensurable with the index's and the query's. Its
+	 * identity is what `initialize()` built the client with, compared with the
+	 * index's stored `embeddingModel`/`embeddingProvider` (gotcha #16).
+	 */
+	private async prepareOverlay(
+		flag: SearchOptions["overlay"],
+		keywordOnly: boolean,
+		queryVector: number[] | undefined,
+		branch: ReturnType<typeof resolveBranchScopeForRead>,
+		storeSearch: DirtyOverlayContext["search"],
+	): Promise<{
+		candidates: OverlayCandidates | undefined;
+		report: Omit<SearchOverlayReport, "suppressedRows">;
+	}> {
+		const off = resolveOverlayGate({
+			flag,
+			// Only read when the flag did not already decide: no config file is
+			// opened for `--no-dirty` / `rg`.
+			configEnabled: flag === "off" || isDirtyOverlayEnabled(this.projectPath),
+			keywordOnly,
+			queryVector,
+		});
+		const client = this.rawEmbeddingsClient;
+		const tracker = this.fileTracker;
+		if (
+			off !== null ||
+			queryVector === undefined ||
+			client === null ||
+			tracker === null ||
+			this.queryIdentity === null
+		) {
+			return {
+				candidates: undefined,
+				report: overlayOffReport(off ?? "no-vector"),
+			};
+		}
+
+		const loc = resolveStoreLocation(this.projectPath);
+		const storedModel = tracker.getMetadata("embeddingModel");
+		const result = await prepareDirtyOverlay({
+			loc,
+			selection: createFileSelection({
+				projectRealPath: realpathOrSelf(this.projectPath),
+				pathRoot: loc.pathRoot,
+				excludePatterns: this.excludePatterns,
+				includePatterns: this.includePatterns,
+			}),
+			tracker,
+			// Branch scope: this branch. SCOPE_ALL (an unknown branch): every id
+			// in the registry snapshot the scope was resolved from, so a path is
+			// classified against every revision the superset can show.
+			branchIds:
+				branch.scope.kind === "branch"
+					? [branch.scope.branchId]
+					: [...branch.labels.keys()],
+			trackerBranchId:
+				branch.scope.kind === "branch" ? branch.scope.branchId : null,
+			indexIdentity: storedModel
+				? {
+						model: storedModel,
+						provider: tracker.getMetadata("embeddingProvider") ?? null,
+					}
+				: null,
+			queryIdentity: this.queryIdentity,
+			queryClient: client,
+			queryVector,
+			search: storeSearch,
+			embedCacheConfigEnabled: loadGlobalConfig().embedCache,
+		});
+		return result;
 	}
 
 	/**

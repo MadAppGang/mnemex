@@ -45,7 +45,11 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { getLockPathFor, type StoreLocation } from "./store-location.js";
+import {
+	getDirtyOverlayLockPathFor,
+	getLockPathFor,
+	type StoreLocation,
+} from "./store-location.js";
 
 /** Lock file data structure */
 interface LockData {
@@ -626,6 +630,54 @@ export interface IIndexLock {
 	forceRelease(): boolean;
 }
 
+/**
+ * Thrown by `IndexLock.assertStillHeld()` when this instance no longer owns
+ * the lock file at its path: it was never acquired, it was released, or the
+ * name now points at another holder's file (a stale reclaim after this
+ * process's heartbeat stopped — laptop sleep, SIGSTOP). Named for its one
+ * consumer, the dirty overlay, which checks it before every write and stops
+ * with `skipped/lock-lost` instead of writing under someone else's lock.
+ */
+export class OverlayLockLostError extends Error {
+	constructor(readonly lockPath: string) {
+		super(
+			`lock lost: ${lockPath} is no longer held by this process (released, or reclaimed as stale)`,
+		);
+		this.name = "OverlayLockLostError";
+	}
+}
+
+/**
+ * What kind of lock an `IndexLock` is, for `processHoldsIndexLock()`.
+ *
+ * `"index"` (the default) is a store or global indexing lock. `"overlay"` is
+ * the dirty overlay's own lock, which guards a per-worktree sidecar store and
+ * is deliberately NOT counted: the embed-cache open rule asks whether THIS
+ * process holds a lock whose heartbeat a long open could starve while another
+ * INDEXER waits on it, and the overlay's lock is the one the open runs under.
+ */
+export type IndexLockKind = "index" | "overlay";
+
+/**
+ * Held `"index"`-kind locks in this process. A module-level count rather than a
+ * per-instance flag (CLAUDE.md #21): the question is about the PROCESS, and
+ * lock instances are created per run and per request.
+ */
+let heldIndexLocks = 0;
+
+/**
+ * Does this process currently hold a store or global indexing lock?
+ *
+ * The dirty overlay runs on the search path, and an MCP server can be indexing
+ * (holding the store lock) in one request while another request searches. The
+ * embed cache's full open is the one region that is not constant-bounded, and
+ * it is safe only outside both index locks (`embed-cache.ts`); when this is
+ * true the overlay takes the memoised instance or nothing.
+ */
+export function processHoldsIndexLock(): boolean {
+	return heldIndexLocks > 0;
+}
+
 /** What a holder keeps: the descriptor it created the file with, and its record. */
 interface HeldLock {
 	fd: number;
@@ -667,6 +719,7 @@ function errorMessageOf(error: unknown): string {
  */
 export class IndexLock implements IIndexLock {
 	private readonly lockPath: string;
+	private readonly kind: IndexLockKind;
 	private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 	/** Non-null exactly while this instance holds the lock. */
 	private held: HeldLock | null = null;
@@ -675,9 +728,12 @@ export class IndexLock implements IIndexLock {
 	 * @param lockPath ABSOLUTE path of the lock file. For the store lock use
 	 *                 `createStoreLock(loc)`, which derives it from the resolved
 	 *                 store location; do not rebuild it from a project path.
+	 * @param kind     `"overlay"` only from `createDirtyOverlayLock`; see
+	 *                 `IndexLockKind`.
 	 */
-	constructor(lockPath: string) {
+	constructor(lockPath: string, kind: IndexLockKind = "index") {
 		this.lockPath = lockPath;
+		this.kind = kind;
 	}
 
 	/** The lock file this instance takes. */
@@ -723,6 +779,7 @@ export class IndexLock implements IIndexLock {
 			const attempt = this.tryCreate();
 			if (attempt.kind === "created") {
 				this.held = attempt.held;
+				if (this.kind === "index") heldIndexLocks++;
 				this.startHeartbeat();
 				return { acquired: true };
 			}
@@ -808,6 +865,7 @@ export class IndexLock implements IIndexLock {
 			return;
 		}
 		this.held = null;
+		if (this.kind === "index") heldIndexLocks--;
 
 		try {
 			// Cheap pre-check, made while `fd` still pins our inode so its number
@@ -837,6 +895,31 @@ export class IndexLock implements IIndexLock {
 			try {
 				closeSync(held.fd);
 			} catch {}
+		}
+	}
+
+	/**
+	 * Throw `OverlayLockLostError` unless this instance still owns the file at
+	 * its path: held, and the name still points at the inode this instance
+	 * created. The same pre-check `release()` makes, and sound for the same
+	 * reason: our descriptor pins our inode, so its number cannot be reused by
+	 * a reclaimer's new file while we hold it.
+	 *
+	 * For a holder that WRITES between heartbeats (the dirty overlay): called
+	 * before each write, it stops a holder whose lock was reclaimed as stale
+	 * at its next write rather than letting it write under another owner.
+	 */
+	assertStillHeld(): void {
+		const held = this.held;
+		if (held === null) throw new OverlayLockLostError(this.lockPath);
+		let ino: number;
+		try {
+			ino = statSync(this.lockPath).ino;
+		} catch {
+			throw new OverlayLockLostError(this.lockPath);
+		}
+		if (held.ino !== 0 && ino !== held.ino) {
+			throw new OverlayLockLostError(this.lockPath);
 		}
 	}
 
@@ -1016,6 +1099,18 @@ export class IndexLock implements IIndexLock {
  */
 export function createStoreLock(loc: StoreLocation): IndexLock {
 	return new IndexLock(getLockPathFor(loc));
+}
+
+/**
+ * The dirty overlay's lock (step 3, R3.12): its OWN file inside the overlay
+ * directory, resolved by the same seam as the overlay's data (D-2), so the
+ * lock and what it guards cannot be found in two places. Never the store lock
+ * and never the global lock: the overlay runs on the search path and must not
+ * block, or be blocked by, an indexer. `"overlay"` kind, so it is not counted
+ * by `processHoldsIndexLock()`.
+ */
+export function createDirtyOverlayLock(loc: StoreLocation): IndexLock {
+	return new IndexLock(getDirtyOverlayLockPathFor(loc), "overlay");
 }
 
 /** Filename of the machine-global indexing lock (lives under ~/.mnemex). */

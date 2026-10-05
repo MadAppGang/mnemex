@@ -65,18 +65,14 @@ const REGION_DRIVING_SOURCES: readonly string[] = [
 /**
  * Loops that may keep an unyielded shape. One line of reason each; an entry
  * that stops matching fails the suite, so this cannot rot into a blanket pass.
+ *
+ * EMPTY since step 3 (R1). Its one entry licensed the dead-code penalty's
+ * per-result `getSymbolByName` loop in `searchScoped`, and named "one batched
+ * tracker read" as the durable fix. That fix is built —
+ * `BranchScopedGraph.getSymbolsByNameInFiles`, called once per search by
+ * `applyDeadCodePenalty` — so the licence went with the loop.
  */
-export const INDEXER_LOOP_ALLOWANCES: readonly LoopAllowance[] = [
-	{
-		// Renamed in Phase 3b-1: the dead-code penalty moved into
-		// `searchScoped`, which `search` now delegates to. Same loop, same
-		// reason.
-		method: "searchScoped",
-		callee: "getSymbolByName",
-		reason:
-			"the dead-code penalty loop: search() never runs inside index(), is bounded by the result limit, and a per-result yield would add ~1 ms of setTimeout(0) per result to every query. The durable fix is one batched tracker read (residue, tracker.ts).",
-	},
-];
+export const INDEXER_LOOP_ALLOWANCES: readonly LoopAllowance[] = [];
 
 let parser: Parser;
 
@@ -541,6 +537,25 @@ describe("the rules fire on the shapes they exist for", () => {
 	}`),
 			),
 		).toEqual([]);
+	});
+
+	test("a graph HANDLE handed in as a parameter is still a handle (step 3, R1)", () => {
+		// R1 moved the dead-code penalty out of `searchScoped` into
+		// `applyDeadCodePenalty(results, graph)`. A free function whose
+		// parameter is the branch-scoped graph was invisible to T1/T2b, so the
+		// per-result loop the deleted allowance licensed could come back inside
+		// it and pass in silence (CLAUDE.md #32: a refactor that relocates calls
+		// relocates them out of the sweeps that watch them).
+		for (const type of [
+			"BranchScopedGraph",
+			'Pick<BranchScopedGraph, "getSymbolByName">',
+		]) {
+			const source = `
+function penalise(results: string[], graph: ${type}) {
+	for (const r of results) graph.getSymbolByName(r);
+}`;
+			expect(rulesOf(source), type).toContain("SR-2-caller");
+		}
 	});
 
 	test("an allowance moves a finding aside by name, and a stale one is reported", () => {

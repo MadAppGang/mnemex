@@ -25,6 +25,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { SearchResult } from "../../../src/types.js";
+import { stubOverlayReport } from "../../helpers/overlay-report-stub.js";
 
 const tempDirs: string[] = [];
 
@@ -55,7 +56,7 @@ mock.module("../../../src/core/indexer.js", () => ({
 			errors: [],
 		}),
 		search: async () => scoped.results,
-		searchScoped: async () => scoped,
+		searchScoped: async () => ({ ...scoped, overlay: stubOverlayReport() }),
 		close: async () => {},
 		getStatus: async () => ({ exists: false }),
 	}),
