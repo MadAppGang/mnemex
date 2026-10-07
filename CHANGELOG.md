@@ -3,6 +3,31 @@
 All notable changes to mnemex are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow semver.
 
+## [0.36.2] - 2026-10-07
+
+The macOS binaries attached to releases could not start on Apple Silicon. This
+fixes them, and makes the build fail when a signature is bad.
+
+If you installed mnemex from npm you were never affected. If you installed the
+`darwin-arm64` binary from a GitHub Release, or through Homebrew on an Apple
+Silicon Mac, 0.36.1 was killed at launch (exit 137) before running a command.
+
+### Fixed
+
+- **The macOS binaries are signed correctly.** `bun build --compile` (Bun 1.4.0)
+  keeps the linker's ad hoc signature after it appends the bundle, so the
+  signature no longer matches the file and the kernel kills the binary. The build
+  now re-signs every darwin binary ad hoc and fails unless
+  `codesign --verify --strict` passes. The smoke test could not see this: the
+  GitHub macOS runner executed the same binary without complaint.
+
+### Changed
+
+- **One build for every binary.** `scripts/build-binary.ts` compiles, re-signs and
+  verifies; the release workflow, the CI `binary` job and the `build:binary*`
+  package scripts all run it, so a pull request now checks the signature the
+  release ships.
+
 ## [0.36.1] - 2026-09-09
 
 The compiled binaries attached to releases could not start. This fixes them, and
