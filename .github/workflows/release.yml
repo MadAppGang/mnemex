@@ -48,22 +48,11 @@ jobs:
       - name: Download grammars
         run: bun run download-grammars
 
-      # These externals are NOT interchangeable with the `@opentui/core` /
-      # `@opentui/react` they replace. Externalising the packages themselves means
-      # nothing embeds them, so the binary cannot resolve them at all and dies at
-      # startup — every published binary since v0.33.0 is broken that way (#15).
-      #
-      #   `@opentui/core-*` — the eight per-platform native packages ONLY. The
-      #   glob requires the hyphen, so it does not match `@opentui/core` itself.
-      #   They must stay external: `bun install` on a glibc runner skips the musl
-      #   optional dependency, while the bundler demands both libc branches.
-      #
-      #   `web-tree-sitter/tree-sitter.wasm` — OpenTUI 0.5.1 asks for the pre-0.26
-      #   specifier; web-tree-sitter 0.26 exports `./web-tree-sitter.wasm`. The bad
-      #   specifier is latent on the npm path too, reached only by OpenTUI's
-      #   syntax highlighting.
+      # The same build the CI `binary` job runs. On the two darwin targets it
+      # re-signs the binary ad hoc and fails unless `codesign --verify --strict`
+      # passes; scripts/build-binary.ts says why the smoke test below cannot.
       - name: Build binary
-        run: bun build src/index.ts --compile --compile-exec-argv="--env-file=/dev/null" --target=${{ matrix.target }} --external "web-tree-sitter/tree-sitter.wasm" --external "@opentui/core-*" --outfile ${{ matrix.artifact }}
+        run: bun scripts/build-binary.ts --target ${{ matrix.target }} --outfile ${{ matrix.artifact }}
 
       # A successful build is not the check. The defect this replaces was a
       # STARTUP crash: all four builds succeeded for three releases while
