@@ -2,7 +2,7 @@
 // ^ --env-file=/dev/null stops bun's OWN .env auto-load (bun loads cwd .env,
 //   .env.local and .env.$NODE_ENV into process.env before any user code runs);
 //   dotenv below is then the only .env loader. Compiled binaries get the same
-//   flag via --compile-exec-argv (package.json build:binary*, release.yml).
+//   flag via --compile-exec-argv (scripts/build-binary.ts).
 //   Spell it exactly this way: --no-env-file works in a shebang but leaks
 //   through --compile-exec-argv. Without it a cwd .env could supply
 //   TERM_THEME / MNEMEX_THEME indistinguishably from the real environment (FR3).
