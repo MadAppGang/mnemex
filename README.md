@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/madappgang-mnemex-badge.png)](https://mseep.ai/app/madappgang-mnemex)
+
 <p align="center">
   <img src="assets/logo.png" alt="mnemex" width="600">
 </p>
